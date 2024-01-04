@@ -1,0 +1,54 @@
+[package]
+name = "oxidd-cache"
+version = "0.1.0"
+edition = "2021"
+description = "Apply cache for OxiDD"
+license = "MIT OR Apache-2.0"
+
+
+[dependencies]
+oxidd-core = { path = "../oxidd-core" }
+
+# fast alternative Mutex & RwLock implementation
+parking_lot = "0.12"
+
+# document feature flags
+document-features = "0.2"
+
+# allocation with madvise for huge pages
+hugealloc = { path = "../hugealloc", optional = true }
+allocator-api2 = { version = "0.2", optional = true }
+
+[dev-dependencies]
+oxidd-derive = { path = "../oxidd-derive" }
+oxidd-test-utils = { path = "../oxidd-test-utils" }
+
+# fast hash function
+rustc-hash = "1"
+
+
+[features]
+default = ["direct"]
+
+## Collect statistics about cache hits etc.
+statistics = []
+
+## Enable the direct mapped apply cache implementation
+direct = []
+## Enable the FIFO apply cache implementation
+fifo = []
+## Enable the LFU apply cache implementation
+lfu = []
+
+## Check that an apply cache is never dropped via its `Drop` implementation.
+## This is done by adding a function call to a non-existing external function to
+## the `Drop` implementation. So if the check fails, there will be a weird
+## linker error. Using this feature in unoptimized builds may cause false
+## positives.
+static_leak_check = []
+
+## Use the hugealloc crate to allocate memory
+hugealloc = ["dep:hugealloc", "dep:allocator-api2"]
+
+## Use parking_lot instead of spinlocks
+parking_lot = []

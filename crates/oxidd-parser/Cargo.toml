@@ -1,0 +1,36 @@
+[package]
+name = "oxidd-parser"
+version = "0.1.0"
+edition = "2021"
+description = "Parsers for logic file formats"
+license = "MIT OR Apache-2.0"
+
+
+[dependencies]
+# parser combinator
+nom = "7"
+
+# byte string utilities
+memchr = "2"
+
+# error reporting
+codespan-reporting = { version = "0.11", optional = true }
+
+# bit vectors
+bitvec = "1"
+
+# hash function
+rustc-hash = "1"
+
+# `Builder` derive macro
+derive_builder = "0.12"
+
+# document feature flags
+document-features = "0.2"
+
+
+[features]
+default = ["load-file"]
+
+## Convenience functions etc. to load a problem from file ([`load_file`])
+load-file = ["dep:codespan-reporting"]

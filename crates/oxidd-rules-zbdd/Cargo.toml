@@ -1,0 +1,30 @@
+[package]
+name = "oxidd-rules-zbdd"
+version = "0.1.0"
+edition = "2021"
+description = "Zero-suppressed decision diagrams (ZBDDs) for OxiDD"
+license = "MIT OR Apache-2.0"
+
+
+[dependencies]
+oxidd-core = { path = "../oxidd-core" }
+oxidd-derive = { path = "../oxidd-derive" }
+
+# for implementing `DotStyle`
+oxidd-dump = { path = "../oxidd-dump", default-features = false, features = ["dot"] }
+
+# bit vectors for memory efficient valuations
+bitvec = "1"
+
+# document feature flags
+document-features = "0.2"
+
+
+[features]
+default = []
+
+## Enable multi-threaded apply implemenations
+multi-threading = []
+
+## Enable statistics generation
+statistics = []

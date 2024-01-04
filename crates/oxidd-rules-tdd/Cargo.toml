@@ -1,0 +1,27 @@
+[package]
+name = "oxidd-rules-tdd"
+version = "0.1.0"
+edition = "2021"
+description = "Ternary decision diagrams (TDDs) for OxiDD"
+license = "MIT OR Apache-2.0"
+
+
+[dependencies]
+oxidd-core = { path = "../oxidd-core" }
+oxidd-derive = { path = "../oxidd-derive" }
+
+# For implementing `DotStyle`
+oxidd-dump = { path = "../oxidd-dump", default-features = false, features = ["dot"] }
+
+# document feature flags
+document-features = "0.2"
+
+
+[features]
+default = []
+
+## Enable multi-threaded apply implemenations
+multi-threading = []
+
+## Enable statistics generation
+statistics = []

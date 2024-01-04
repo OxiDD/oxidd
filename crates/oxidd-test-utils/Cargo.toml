@@ -1,0 +1,12 @@
+[package]
+name = "oxidd-test-utils"
+version = "0.1.0"
+edition = "2021"
+description = "Test utilities for OxiDD"
+license = "MIT OR Apache-2.0"
+
+
+[dependencies]
+oxidd-core = { path = "../oxidd-core" }
+
+rayon = "1.7"

@@ -1,0 +1,26 @@
+[package]
+name = "oxidd-reorder"
+version = "0.1.0"
+edition = "2021"
+description = "Reordering algorithms for OxiDD"
+license = "MIT OR Apache-2.0"
+
+
+[dependencies]
+oxidd-core = { path = "../oxidd-core" }
+
+# stack-allocated vectors
+smallvec = { version = "1", features = ["union", "const_generics"] }
+
+# check whether an iterator is sorted
+# (TODO: remove this once the `is_sorted` feature becomes stable)
+is_sorted = "0.1"
+
+# thread pools, parallel iterators, etc.
+rayon = "1.7"
+
+# mpmc channels
+flume = { version = "0.10", default-features = false }
+
+[dev-dependencies]
+oxidd-test-utils = { path = "../oxidd-test-utils" }

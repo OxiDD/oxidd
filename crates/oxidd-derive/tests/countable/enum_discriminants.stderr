@@ -1,0 +1,11 @@
+error: cannot derive `Countable` for `enum`s with explicit discriminants
+ --> tests/countable/enum_discriminants.rs:6:12
+  |
+6 |     None = 0,
+  |            ^
+
+error: cannot derive `Countable` for `enum`s with explicit discriminants
+ --> tests/countable/enum_discriminants.rs:7:20
+  |
+7 |     Complemented = 1,
+  |                    ^

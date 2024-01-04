@@ -1,0 +1,14 @@
+error: `Countable` can only be derived for `struct`s with zero fields
+ --> tests/countable/struct_fields.rs:4:12
+  |
+4 | struct Tag1(u8);
+  |            ^^^^
+
+error: `Countable` can only be derived for `struct`s with zero fields
+ --> tests/countable/struct_fields.rs:7:13
+  |
+7 |   struct Tag2 {
+  |  _____________^
+8 | |     field: u8,
+9 | | }
+  | |_^

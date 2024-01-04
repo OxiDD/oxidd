@@ -1,0 +1,55 @@
+[package]
+name = "oxidd-cli"
+version = "0.1.0"
+edition = "2021"
+description = "Command line interface for OxiDD"
+license = "MIT OR Apache-2.0"
+
+
+[dependencies]
+oxidd = { path = "../oxidd", features = ["bdd", "cbdd"], default-features = false }
+oxidd-core = { path = "../oxidd-core" }
+oxidd-dump = { path = "../oxidd-dump" }
+oxidd-reorder = { path = "../oxidd-reorder" }
+oxidd-parser = { path = "../oxidd-parser", features = ["load-file"] }
+
+# command line argument parsing
+clap = { version = "4", features = ["derive", "wrap_help"] }
+
+# big integers
+num-bigint = "0.4"
+
+parking_lot = "0.12" # fast alternative Mutex & RwLock implementation
+rustc-hash = "1"     # fast hash function
+rayon = "1.7"        # thread pools, parallel iterators etc.
+bitvec = "1"
+
+sysinfo = "0.29" # get available memory
+
+
+[features]
+default = ["manager-index", "multi-threading", "apply-cache-direct-mapped"]
+
+## Use multi-threaded implementations of the apply algorithm
+multi-threading = ["oxidd/multi-threading"]
+
+## Use the index-based manager implementation
+##
+## This implementation is generally faster than the pointer-based
+## implementation, but is more restricted: There is no possibility to reserve
+## space for more nodes after the initial allocation and the total number of
+## nodes is limited to 2³² nodes for BDDs/ZBDDs, or 2³¹ nodes for CBDDs.
+manager-index = ["oxidd/manager-index"]
+
+## Use the pointer-based manager implementation (suitable for BDDs/ZBDDs with
+## more than 2³² nodes, or CBDDs with more than 2³¹ nodes)
+##
+## If both `manager-index` and `manager-pointer` are specified, the
+## pointer-based implementation will be used.
+manager-pointer = ["oxidd/manager-pointer"]
+
+## Enable the direct mapped apply cache
+apply-cache-direct-mapped = ["oxidd/apply-cache-direct-mapped"]
+
+## Enable statistics (will harm performance)
+statistics = ["oxidd/statistics"]

@@ -1,0 +1,36 @@
+[package]
+name = "oxidd-dump"
+version = "0.1.0"
+edition = "2021"
+description = "Dump OxiDD decision diagrams to file"
+license = "MIT OR Apache-2.0"
+
+
+[dependencies]
+oxidd-core = { path = "../oxidd-core" }
+
+# bit vectors
+bitvec = { version = "1", optional = true }
+
+# fast hash function
+rustc-hash = { version = "1", optional = true }
+
+# optimized searching for characters in &[u8]
+memchr = { version = "2", optional = true }
+
+# check whether an iterator is sorted
+# TODO: remove this once `is_sorted` becomes stable
+is_sorted = { version = "0.1", optional = true }
+
+# document feature flags
+document-features = "0.2"
+
+
+[features]
+default = ["dddmp", "dot"]
+
+## DDDMP format originally from CUDD
+dddmp = ["bitvec", "rustc-hash", "memchr", "is_sorted"]
+
+## Visualization using dot
+dot = []

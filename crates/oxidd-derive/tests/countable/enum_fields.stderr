@@ -1,0 +1,20 @@
+error: can only derive `Countable` for `enum`s with `repr(u8)`
+ --> tests/countable/enum_fields.rs:4:1
+  |
+4 | / enum Tag {
+5 | |     X(u8),
+6 | |     Y(u32),
+7 | | }
+  | |_^
+
+error: can only derive `Countable` for fieldless `enum`s
+ --> tests/countable/enum_fields.rs:5:6
+  |
+5 |     X(u8),
+  |      ^^^^
+
+error: can only derive `Countable` for fieldless `enum`s
+ --> tests/countable/enum_fields.rs:6:6
+  |
+6 |     Y(u32),
+  |      ^^^^^

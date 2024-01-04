@@ -1,0 +1,5 @@
+error: `Countable` cannot be derived for `union`s
+ --> tests/countable/union.rs:4:1
+  |
+4 | union Tag {
+  | ^^^^^

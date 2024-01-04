@@ -1,0 +1,41 @@
+[package]
+name = "oxidd-manager-pointer"
+version = "0.1.0"
+edition = "2021"
+description = "Pointer-based manager implementation for OxiDD"
+license = "MIT OR Apache-2.0"
+
+
+[dependencies]
+oxidd-core = { path = "../oxidd-core" }
+
+arcslab = { path = "../arcslab" }
+
+# strict provenance polyfill
+# (TODO: remove this once the `strict_provenance` feature becomes stable)
+sptr = "0.3"
+
+# fast alternative Mutex & RwLock implementation
+parking_lot = "0.12"
+
+# hash table for the unique table
+linear-hashtbl = { path = "../linear-hashtbl" }
+
+# fast hash function
+rustc-hash = "1"
+
+# bit vectors
+bitvec = "1"
+
+# thread pool
+rayon = "1.7"
+
+
+[features]
+default = []
+
+## Check that `Edge` is never dropped via its `Drop` implementation. This is
+## done by adding a function call to a non-existing external function to the
+## `Drop` implementation. So if the check fails, there will be a weird linker
+## error. Using this feature in unoptimized builds may cause false positives.
+static_leak_check = []

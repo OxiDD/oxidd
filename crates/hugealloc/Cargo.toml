@@ -1,0 +1,16 @@
+[package]
+name = "hugealloc"
+version = "0.1.0"
+edition = "2021"
+description = "Hugepage-aware allocator"
+license = "MIT OR Apache-2.0"
+
+
+[dependencies]
+allocator-api2 = { version = "0.2", default-features = false }
+
+sptr = "0.3"
+
+[target.'cfg(not(miri))'.dependencies]
+# `mmap`, `madvise`
+rustix = { version = "0.38", features = ["mm"], default-features = false }

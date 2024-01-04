@@ -1,0 +1,5 @@
+error: can only derive `Countable` for `enum`s with `repr(u8)`
+ --> tests/countable/enum_repr_u64.rs:3:8
+  |
+3 | #[repr(u64)]
+  |        ^^^

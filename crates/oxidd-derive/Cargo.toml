@@ -1,0 +1,27 @@
+[package]
+name = "oxidd-derive"
+version = "0.1.0"
+edition = "2021"
+description = "Derive macros for OxiDD"
+license = "MIT OR Apache-2.0"
+
+[lib]
+proc-macro = true
+
+
+[dependencies]
+syn = "2.0"
+quote = "1.0"
+proc-macro2 = "1.0"
+proc-macro-error = { version = "1.0", default-features = false }
+
+[dev-dependencies]
+oxidd-core = { path = "../oxidd-core" }
+oxidd-test-utils = { path = "../oxidd-test-utils" }
+trybuild = "1.0"
+
+
+[features]
+default = []
+
+nightly-ui-tests = []

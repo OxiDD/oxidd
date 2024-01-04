@@ -1,0 +1,36 @@
+error: can only derive `Function` for `struct`s with precisely one field
+ --> tests/function/field_count.rs:3:10
+  |
+3 | #[derive(Function)]
+  |          ^^^^^^^^
+  |
+  = note: this error originates in the derive macro `Function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: can only derive `Function` for `struct`s with precisely one field
+ --> tests/function/field_count.rs:6:10
+  |
+6 | #[derive(Function)]
+  |          ^^^^^^^^
+  |
+  = note: this error originates in the derive macro `Function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: can only derive `Function` for `struct`s with precisely one field
+  --> tests/function/field_count.rs:10:20
+   |
+10 | struct Unnamed2<F>(F, bool);
+   |                    ^^^^^^^
+
+error: can only derive `Function` for `struct`s with precisely one field
+  --> tests/function/field_count.rs:12:10
+   |
+12 | #[derive(Function)]
+   |          ^^^^^^^^
+   |
+   = note: this error originates in the derive macro `Function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: can only derive `Function` for `struct`s with precisely one field
+  --> tests/function/field_count.rs:17:5
+   |
+17 | /     x: bool,
+18 | |     y: u32,
+   | |___________^

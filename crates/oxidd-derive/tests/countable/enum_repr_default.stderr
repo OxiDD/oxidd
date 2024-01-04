@@ -1,0 +1,7 @@
+error: can only derive `Countable` for `enum`s with `repr(u8)`
+ --> tests/countable/enum_repr_default.rs:4:1
+  |
+4 | / enum Tag {
+5 | |     X,
+6 | | }
+  | |_^

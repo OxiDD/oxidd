@@ -1,0 +1,11 @@
+error: can only derive `Countable` for `enum`s with `repr(u8)`
+ --> tests/countable/enum_zero_variants.rs:4:1
+  |
+4 | enum Tag {}
+  | ^^^^^^^^^^^
+
+error: cannot derive `Countable` for `enum`s with zero variants
+ --> tests/countable/enum_zero_variants.rs:4:1
+  |
+4 | enum Tag {}
+  | ^^^^^^^^^^^

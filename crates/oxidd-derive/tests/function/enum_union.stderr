@@ -1,0 +1,11 @@
+error: `Function` can only be derived for `struct`s
+ --> tests/function/enum_union.rs:4:1
+  |
+4 | enum Foo {}
+  | ^^^^
+
+error: `Function` can only be derived for `struct`s
+ --> tests/function/enum_union.rs:7:1
+  |
+7 | union Bar {
+  | ^^^^^
