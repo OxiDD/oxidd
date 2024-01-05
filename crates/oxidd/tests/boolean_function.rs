@@ -1,4 +1,6 @@
-//! Test for Boolean Function implementations
+//! Tests for BooleanFunction implementations
+
+#![cfg_attr(miri, allow(unused))]
 
 use std::fmt;
 use std::fmt::Write;
@@ -356,6 +358,7 @@ fn test_depth3_3vars<B: BooleanFunction>(manager: &B::ManagerRef, vars: &[B], va
     }
 }
 
+#[cfg(not(miri))]
 #[test]
 fn bdd_test_depth3_3vars() {
     let mref = oxidd::bdd::new_manager(65536, 1024, 2);
@@ -369,6 +372,7 @@ fn bdd_test_depth3_3vars() {
     test_depth3_3vars(&mref, &vars, &vars);
 }
 
+#[cfg(not(miri))]
 #[test]
 fn cbdd_test_depth3_3vars() {
     let mref = oxidd::cbdd::new_manager(65536, 1024, 2);
@@ -382,6 +386,7 @@ fn cbdd_test_depth3_3vars() {
     test_depth3_3vars(&mref, &vars, &vars);
 }
 
+#[cfg(not(miri))]
 #[test]
 fn zbdd_test_depth3_3vars() {
     let mref = oxidd::zbdd::new_manager(65536, 1024, 2);
