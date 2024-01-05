@@ -817,7 +817,7 @@ where
         for (edge, val) in env {
             let node = manager
                 .get_node(edge)
-                .expect_inner("edges in `env` must refer to terminal nodes");
+                .expect_inner("edges in `env` must refer to inner nodes");
             vals.set(node.level() as usize, val);
         }
 
