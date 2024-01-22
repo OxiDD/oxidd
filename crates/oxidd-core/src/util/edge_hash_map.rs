@@ -137,7 +137,7 @@ impl<'a, M: Manager, V: Clone, S: Default + BuildHasher> Clone for EdgeHashMap<'
     fn clone(&self) -> Self {
         let mut map = HashMap::with_capacity_and_hasher(self.len(), S::default());
         for (k, v) in self.map.iter() {
-            let _res = map.insert(ManuallyDrop::new(self.manager.clone_edge(&*k)), v.clone());
+            let _res = map.insert(ManuallyDrop::new(self.manager.clone_edge(k)), v.clone());
             debug_assert!(_res.is_none());
         }
         Self {
@@ -197,7 +197,7 @@ impl<'a, M: Manager, V> Iterator for Iter<'a, M, V> {
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         match self.0.next() {
-            Some((key, value)) => Some((&*key, value)),
+            Some((key, value)) => Some((&key, value)),
             None => None,
         }
     }
@@ -216,7 +216,8 @@ impl<'a, 'b, M: Manager, V, S> IntoIterator for &'b EdgeHashMap<'a, M, V, S> {
 
 /// Mutable iterator over the entries of an [`EdgeHashMap`]
 ///
-/// Created by [`EdgeHashMap::iter_mut()`], see its documentation for more details.
+/// Created by [`EdgeHashMap::iter_mut()`], see its documentation for more
+/// details.
 pub struct IterMut<'a, M: Manager, V>(hash_map::IterMut<'a, ManuallyDrop<M::Edge>, V>);
 
 impl<'a, M: Manager, V> Iterator for IterMut<'a, M, V> {
@@ -225,7 +226,7 @@ impl<'a, M: Manager, V> Iterator for IterMut<'a, M, V> {
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         match self.0.next() {
-            Some((key, value)) => Some((&*key, value)),
+            Some((key, value)) => Some((&key, value)),
             None => None,
         }
     }

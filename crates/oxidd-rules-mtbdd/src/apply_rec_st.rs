@@ -30,7 +30,7 @@ where
     T: NumberBase,
 {
     stat!(call OP);
-    let (operator, op1, op2) = match terminal_bin::<M, T, OP>(manager, &*f, &*g)? {
+    let (operator, op1, op2) = match terminal_bin::<M, T, OP>(manager, &f, &g)? {
         Operation::Binary(o, op1, op2) => (o, op1, op2),
         Operation::Done(h) => return Ok(h),
     };
@@ -45,8 +45,8 @@ where
         return Ok(h);
     }
 
-    let fnode = manager.get_node(&*f);
-    let gnode = manager.get_node(&*g);
+    let fnode = manager.get_node(&f);
+    let gnode = manager.get_node(&g);
     let flevel = fnode.level();
     let glevel = gnode.level();
     let level = std::cmp::min(flevel, glevel);

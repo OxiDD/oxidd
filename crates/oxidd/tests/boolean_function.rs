@@ -219,76 +219,59 @@ impl Prop {
                 true
             }
             And(p, q) => {
-                if !p.next(depth - 1, nvars) {
-                    if !q.next(depth - 1, nvars) {
-                        *self = Or(Box::new(False), Box::new(False));
-                    }
+                if !p.next(depth - 1, nvars) && !q.next(depth - 1, nvars) {
+                    *self = Or(Box::new(False), Box::new(False));
                 }
                 true
             }
             Or(p, q) => {
-                if !p.next(depth - 1, nvars) {
-                    if !q.next(depth - 1, nvars) {
-                        *self = Xor(Box::new(False), Box::new(False));
-                    }
+                if !p.next(depth - 1, nvars) && !q.next(depth - 1, nvars) {
+                    *self = Xor(Box::new(False), Box::new(False));
                 }
                 true
             }
             Xor(p, q) => {
-                if !p.next(depth - 1, nvars) {
-                    if !q.next(depth - 1, nvars) {
-                        *self = Equiv(Box::new(False), Box::new(False));
-                    }
+                if !p.next(depth - 1, nvars) && !q.next(depth - 1, nvars) {
+                    *self = Equiv(Box::new(False), Box::new(False));
                 }
                 true
             }
             Equiv(p, q) => {
-                if !p.next(depth - 1, nvars) {
-                    if !q.next(depth - 1, nvars) {
-                        *self = Nand(Box::new(False), Box::new(False));
-                    }
+                if !p.next(depth - 1, nvars) && !q.next(depth - 1, nvars) {
+                    *self = Nand(Box::new(False), Box::new(False));
                 }
                 true
             }
             Nand(p, q) => {
-                if !p.next(depth - 1, nvars) {
-                    if !q.next(depth - 1, nvars) {
-                        *self = Nor(Box::new(False), Box::new(False));
-                    }
+                if !p.next(depth - 1, nvars) && !q.next(depth - 1, nvars) {
+                    *self = Nor(Box::new(False), Box::new(False));
                 }
                 true
             }
             Nor(p, q) => {
-                if !p.next(depth - 1, nvars) {
-                    if !q.next(depth - 1, nvars) {
-                        *self = Imp(Box::new(False), Box::new(False));
-                    }
+                if !p.next(depth - 1, nvars) && !q.next(depth - 1, nvars) {
+                    *self = Imp(Box::new(False), Box::new(False));
                 }
                 true
             }
             Imp(p, q) => {
-                if !p.next(depth - 1, nvars) {
-                    if !q.next(depth - 1, nvars) {
-                        *self = ImpStrict(Box::new(False), Box::new(False));
-                    }
+                if !p.next(depth - 1, nvars) && !q.next(depth - 1, nvars) {
+                    *self = ImpStrict(Box::new(False), Box::new(False));
                 }
                 true
             }
             ImpStrict(p, q) => {
-                if !p.next(depth - 1, nvars) {
-                    if !q.next(depth - 1, nvars) {
-                        *self = Ite(Box::new(False), Box::new(False), Box::new(False));
-                    }
+                if !p.next(depth - 1, nvars) && !q.next(depth - 1, nvars) {
+                    *self = Ite(Box::new(False), Box::new(False), Box::new(False));
                 }
                 true
             }
             Ite(i, t, e) => {
-                if !i.next(depth - 1, nvars) {
-                    if !t.next(depth - 1, nvars) {
-                        if !e.next(depth - 1, nvars) {
-                            return false;
-                        }
-                    }
+                if !i.next(depth - 1, nvars)
+                    && !t.next(depth - 1, nvars)
+                    && !e.next(depth - 1, nvars)
+                {
+                    return false;
                 }
                 true
             }

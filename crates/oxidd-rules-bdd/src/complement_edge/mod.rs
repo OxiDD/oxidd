@@ -161,10 +161,10 @@ impl<'a, E: Edge<Tag = EdgeTag>, I: ExactSizeIterator<Item = Borrowed<'a, E>>> E
 /// Collect the two cofactors of a binary node
 #[inline]
 #[must_use]
-fn collect_cofactors<'a, E: Edge<Tag = EdgeTag>, N: InnerNode<E>>(
+fn collect_cofactors<E: Edge<Tag = EdgeTag>, N: InnerNode<E>>(
     tag: EdgeTag,
-    node: &'a N,
-) -> (Borrowed<'a, E>, Borrowed<'a, E>) {
+    node: &N,
+) -> (Borrowed<E>, Borrowed<E>) {
     debug_assert_eq!(N::ARITY, 2);
     let mut it = CBDDRules::cofactors(tag, node);
     let f0 = it.next().unwrap();
@@ -250,7 +250,7 @@ where
     let gt = g.tag();
     let fu = f.with_tag(None);
     let gu = g.with_tag(None);
-    if &*fu == &*gu {
+    if *fu == *gu {
         if ft == gt {
             return Done(manager.clone_edge(g));
         }
@@ -289,7 +289,7 @@ where
     let gt = g.tag();
     let fu = f.with_tag(None);
     let gu = g.with_tag(None);
-    if &*fu == &*gu {
+    if *fu == *gu {
         return Done(get_terminal(manager, !(ft == gt)));
     }
     let (h, tag) = match (manager.get_node(f), manager.get_node(g)) {

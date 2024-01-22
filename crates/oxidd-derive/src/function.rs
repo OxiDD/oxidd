@@ -10,7 +10,7 @@ struct StructField {
 }
 
 impl StructField {
-    fn from_inner(&self, inner: TokenStream) -> TokenStream {
+    fn gen_from_inner(&self, inner: TokenStream) -> TokenStream {
         let ident = &self.ident;
         if self.named {
             quote!(Self { #ident: #inner })
@@ -102,8 +102,9 @@ pub fn derive_function(input: syn::DeriveInput) -> TokenStream {
     let struct_field = StructField::single_from_item(input.data, "Function");
     proc_macro_error::abort_if_dirty();
     let ty = &struct_field.ty;
-    let from_edge_body = struct_field
-        .from_inner(quote!(<#ty as ::oxidd_core::function::Function>::from_edge(manager, edge)));
+    let from_edge_body = struct_field.gen_from_inner(
+        quote!(<#ty as ::oxidd_core::function::Function>::from_edge(manager, edge)),
+    );
     let field = struct_field.ident;
 
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
@@ -188,7 +189,7 @@ impl Method {
                 let method = syn::Ident::new(n, Span::call_site());
                 let method_edge = syn::Ident::new(&format!("{n}_edge"), Span::call_site());
                 let func =
-                    struct_field.from_inner(quote!(<#inner as #trait_path>::#method(manager)));
+                    struct_field.gen_from_inner(quote!(<#inner as #trait_path>::#method(manager)));
 
                 quote! {
                     #[inline]
@@ -205,7 +206,7 @@ impl Method {
             Method::NewVar(n) => {
                 let method = syn::Ident::new(n, Span::call_site());
                 let func =
-                    struct_field.from_inner(quote!(<#inner as #trait_path>::#method(manager)?));
+                    struct_field.gen_from_inner(quote!(<#inner as #trait_path>::#method(manager)?));
 
                 quote! {
                     #[inline]
@@ -218,7 +219,7 @@ impl Method {
             Method::Unary(n) => {
                 let method = syn::Ident::new(n, Span::call_site());
                 let method_edge = syn::Ident::new(&format!("{n}_edge"), Span::call_site());
-                let func = struct_field.from_inner(quote!(#trait_path::#method(&self.#field)?));
+                let func = struct_field.gen_from_inner(quote!(#trait_path::#method(&self.#field)?));
 
                 quote! {
                     #[inline]
@@ -235,7 +236,7 @@ impl Method {
             Method::UnaryOwned(n) => {
                 let method = syn::Ident::new(&format!("{n}_owned"), Span::call_site());
                 let method_edge = syn::Ident::new(&format!("{n}_edge_owned"), Span::call_site());
-                let func = struct_field.from_inner(quote!(#trait_path::#method(self.#field)?));
+                let func = struct_field.gen_from_inner(quote!(#trait_path::#method(self.#field)?));
 
                 quote! {
                     #[inline]
@@ -253,7 +254,7 @@ impl Method {
                 let method = syn::Ident::new(n, Span::call_site());
                 let method_edge = syn::Ident::new(&format!("{n}_edge"), Span::call_site());
                 let func = struct_field
-                    .from_inner(quote!(#trait_path::#method(&self.#field, &rhs.#field)?));
+                    .gen_from_inner(quote!(#trait_path::#method(&self.#field, &rhs.#field)?));
 
                 quote! {
                     #[inline]
@@ -270,7 +271,7 @@ impl Method {
             Method::Ternary(n) => {
                 let method = syn::Ident::new(n, Span::call_site());
                 let method_edge = syn::Ident::new(&format!("{n}_edge"), Span::call_site());
-                let func = struct_field.from_inner(
+                let func = struct_field.gen_from_inner(
                     quote!(#trait_path::#method(&self.#field, &f1.#field, &f2.#field)?),
                 );
 
@@ -499,8 +500,8 @@ pub fn derive_pseudo_boolean_function(input: syn::DeriveInput) -> TokenStream {
             } = ctx;
             let inner = &struct_field.ty;
 
-            let constant_func =
-                struct_field.from_inner(quote!(<#inner as #trait_path>::constant(manager, value)?));
+            let constant_func = struct_field
+                .gen_from_inner(quote!(<#inner as #trait_path>::constant(manager, value)?));
 
             quote! {
                 type Number = <#inner as #trait_path>::Number;

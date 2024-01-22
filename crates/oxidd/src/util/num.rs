@@ -102,12 +102,14 @@ impl<'a> SubAssign<&'a Self> for F64 {
     }
 }
 
-impl<'a> ShlAssign<u32> for F64 {
+impl ShlAssign<u32> for F64 {
+    #[allow(clippy::suspicious_op_assign_impl)]
     fn shl_assign(&mut self, rhs: u32) {
         self.0 *= (rhs as f64).exp2()
     }
 }
-impl<'a> ShrAssign<u32> for F64 {
+impl ShrAssign<u32> for F64 {
+    #[allow(clippy::suspicious_op_assign_impl)]
     fn shr_assign(&mut self, rhs: u32) {
         self.0 /= (rhs as f64).exp2()
     }

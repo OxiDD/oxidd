@@ -170,7 +170,8 @@ where
         // SAFETY: as above
         let value = unsafe { Borrowed::into_inner(value) };
         unsafe { &mut *self.0.value.get() }.write(ManuallyDrop::into_inner(value));
-        // Important: Set the arity last for exception safety (the functions above might panic).
+        // Important: Set the arity last for exception safety (the functions above might
+        // panic).
         unsafe { *self.0.arity.get() = arity as u8 };
     }
 
@@ -198,9 +199,11 @@ where
 
     /// Create a new `ApplyCache` with the given capacity (entries).
     ///
-    /// SAFETY: The apply cache must only be used inside a manager that
-    /// guarantees all node deletions to be wrapped inside an
-    /// [`ApplyCache::pre_gc()`] / [`ApplyCache::post_gc()`] pair.
+    /// # Safety
+    ///
+    /// The apply cache must only be used inside a manager that guarantees all
+    /// node deletions to be wrapped inside an [`ApplyCache::pre_gc()`] /
+    /// [`ApplyCache::post_gc()`] pair.
     pub unsafe fn with_capacity(capacity: usize) -> Self {
         let _ = Self::CHECK_ARITY;
         let buckets = capacity
@@ -276,7 +279,7 @@ where
 {
     #[inline(always)]
     fn get(&self, manager: &M, operator: O, operands: &[Borrowed<M::Edge>]) -> Option<M::Edge> {
-        if operands.len() == 0 || operands.len() > ARITY {
+        if operands.is_empty() || operands.len() > ARITY {
             return None;
         }
         self.bucket(operator, operands)
@@ -292,7 +295,7 @@ where
         operands: &[Borrowed<M::Edge>],
         value: Borrowed<M::Edge>,
     ) {
-        if operands.len() == 0 || operands.len() > ARITY {
+        if operands.is_empty() || operands.len() > ARITY {
             return;
         }
         if let Some(mut entry) = self.bucket(operator, operands).try_lock() {

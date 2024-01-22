@@ -34,7 +34,7 @@ impl<'id, ET: Tag, const ARITY: usize> PartialEq for NodeWithLevel<'id, ET, ARIT
     #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
         // SAFETY: we have shared access to the node
-        unsafe { &*self.children.get() == &*other.children.get() }
+        unsafe { *self.children.get() == *other.children.get() }
     }
 }
 impl<'id, ET: Tag, const ARITY: usize> Eq for NodeWithLevel<'id, ET, ARITY> {}
@@ -113,8 +113,8 @@ impl<'id, ET: Tag, const ARITY: usize> InnerNode<manager::Edge<'id, Self, ET>>
 
         // SAFETY:
         // - all elements are initialized
-        // - we effectively move out of `children`; the old `children` are not
-        //   dropped since they are `MaybeUninit`
+        // - we effectively move out of `children`; the old `children` are not dropped
+        //   since they are `MaybeUninit`
         //
         // TODO: replace this by `MaybeUninit::transpose()` /
         // `MaybeUninit::array_assume_init()` once stable
@@ -137,7 +137,7 @@ impl<'id, ET: Tag, const ARITY: usize> InnerNode<manager::Edge<'id, Self, ET>>
     }
 
     #[inline(always)]
-    fn children<'a>(&'a self) -> Self::ChildrenIter<'a> {
+    fn children(&self) -> Self::ChildrenIter<'_> {
         // SAFETY: we have shared access to the node
         BorrowedEdgeIter::from(unsafe { &*self.children.get() }.iter())
     }

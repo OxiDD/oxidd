@@ -103,6 +103,7 @@ struct Cli {
     file: Vec<PathBuf>,
 }
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Copy, Clone, PartialEq, Eq, Debug, ValueEnum)]
 enum DDType {
     /// Binary decision diagram
@@ -151,11 +152,11 @@ impl fmt::Display for HDuration {
         if us != 0 {
             return write!(f, "{us} us");
         }
-        return write!(f, "{} ns", d.subsec_nanos());
+        write!(f, "{} ns", d.subsec_nanos())
     }
 }
 
-const OOM_MSG: &'static str = "Out of memory";
+const OOM_MSG: &str = "Out of memory";
 
 fn make_vars<'id, B: BooleanFunction>(
     manager: &mut B::Manager<'id>,
@@ -208,11 +209,11 @@ where
     for<'id> B::Manager<'id>: WorkerManager,
     for<'id> <B::Manager<'id> as Manager>::InnerNode: HasLevel,
 {
-    fn prop_rec<'id, B: BooleanFunction>(manager: &B::Manager<'id>, prop: &Prop, vars: &[B]) -> B {
+    fn prop_rec<B: BooleanFunction>(manager: &B::Manager<'_>, prop: &Prop, vars: &[B]) -> B {
         match prop {
             Prop::Lit(v, false) => vars[(v.get() - 1) as usize].clone(),
             Prop::Lit(v, true) => vars[(v.get() - 1) as usize].not().expect(OOM_MSG),
-            Prop::Neg(p) => prop_rec(manager, &*p, vars).not().expect(OOM_MSG),
+            Prop::Neg(p) => prop_rec(manager, p, vars).not().expect(OOM_MSG),
             Prop::And(ps) => ps.iter().fold(B::t(manager), |b, p| {
                 b.and(&prop_rec(manager, p, vars)).expect(OOM_MSG)
             }),
@@ -233,7 +234,7 @@ where
         clause_order: &[ClauseOrderNode],
     ) -> (B, usize) {
         match clause_order[0] {
-            ClauseOrderNode::Clause(n) => (clauses[(n.get() - 1) as usize].clone(), 1),
+            ClauseOrderNode::Clause(n) => (clauses[n.get() - 1].clone(), 1),
             ClauseOrderNode::Conj => {
                 let mut consumed = 1;
                 let (lhs, c) = clause_tree_rec(clauses, &clause_order[consumed..]);
@@ -273,7 +274,7 @@ where
                 let clauses: Vec<B> = clauses
                     .into_iter()
                     .map(|mut clause| {
-                        if clause.len() == 0 {
+                        if clause.is_empty() {
                             return B::f(manager);
                         }
 
@@ -302,7 +303,7 @@ where
                     HDuration(start.elapsed())
                 );
 
-                if clauses.len() == 0 {
+                if clauses.is_empty() {
                     B::t(manager)
                 } else {
                     match cli.cnf_build_order {
@@ -499,7 +500,7 @@ where
         println!("parsing done within {}", HDuration(start.elapsed()));
 
         funcs.push((
-            make_bool_dd(&mref, problem, &cli, &mut vars),
+            make_bool_dd(&mref, problem, cli, &mut vars),
             file.file_name().unwrap().to_string_lossy().to_string(),
         ));
 
@@ -539,7 +540,7 @@ where
 
     mref.with_manager_shared(|manager| {
         if let Some(dotfile) = &cli.dot_output {
-            fs::File::create(&dotfile)
+            fs::File::create(dotfile)
                 .and_then(|file| {
                     dot::dump_all(
                         std::io::BufWriter::new(file),
@@ -554,7 +555,7 @@ where
         }
 
         if let Some(dmpfile) = &cli.dddmp_export {
-            fs::File::create(&dmpfile)
+            fs::File::create(dmpfile)
                 .and_then(|file| {
                     let mut var_edges = Vec::with_capacity(vars.len());
                     let mut var_names = Vec::with_capacity(vars.len());

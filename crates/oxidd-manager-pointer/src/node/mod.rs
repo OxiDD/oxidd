@@ -3,7 +3,9 @@ pub mod fixed_arity;
 /// Base traits to be satisfied by inner nodes for oxidd-manager. This does not
 /// include the [`InnerNode`][oxidd_core::InnerNode] trait.
 ///
-/// SAFETY: The reference counter must be initialized to 2.
+/// # Safety
+///
+/// The reference counter must be initialized to 2.
 pub unsafe trait NodeBase: arcslab::AtomicRefCounted + Eq + std::hash::Hash {
     /// Whether this node type contains additional data that needs to be dropped
     /// to avoid memory leaks.

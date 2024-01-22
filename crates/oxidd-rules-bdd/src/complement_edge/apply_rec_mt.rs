@@ -50,8 +50,8 @@ where
     }
     stat!(call OP);
     let (op, f, fnode, g, gnode) = if OP == CBDDOp::And as u8 {
-        match terminal_and(manager, &*f, &*g) {
-            NodesOrDone::Nodes(fnode, gnode) if &*f < &*g => {
+        match terminal_and(manager, &f, &g) {
+            NodesOrDone::Nodes(fnode, gnode) if f < g => {
                 (CBDDOp::And, f.borrowed(), fnode, g.borrowed(), gnode)
             }
             // `And` is commutative, hence we swap `f` and `g` in the apply
@@ -64,8 +64,8 @@ where
         }
     } else {
         assert_eq!(OP, CBDDOp::Xor as u8);
-        match terminal_xor(manager, &*f, &*g) {
-            NodesOrDone::Nodes(fnode, gnode) if &*f < &*g => {
+        match terminal_xor(manager, &f, &g) {
+            NodesOrDone::Nodes(fnode, gnode) if f < g => {
                 (CBDDOp::Xor, f.borrowed(), fnode, g.borrowed(), gnode)
             }
             NodesOrDone::Nodes(fnode, gnode) => {
@@ -125,7 +125,8 @@ where
     Ok(h)
 }
 
-/// Shorthand for `apply_bin_rec_mt::<M, { CBDDOp::And as u8 }>(manager, depth, f, g)`
+/// Shorthand for `apply_bin_rec_mt::<M, { CBDDOp::And as u8 }>(manager, depth,
+/// f, g)`
 #[inline(always)]
 fn apply_and<M>(
     manager: &M,
@@ -170,40 +171,41 @@ where
     // Terminal cases
     let gu = g.with_tag(EdgeTag::None); // untagged
     let hu = h.with_tag(EdgeTag::None);
-    if &*gu == &*hu {
+    if gu == hu {
         return Ok(if g.tag() == h.tag() {
-            manager.clone_edge(&*g)
+            manager.clone_edge(&g)
         } else {
             not_owned(apply_bin::<M, { CBDDOp::Xor as u8 }>(manager, depth, f, g)?)
             // f ↔ g
         });
     }
     let fu = f.with_tag(EdgeTag::None);
-    if &*fu == &*gu {
+    if fu == gu {
         return if f.tag() == g.tag() {
             Ok(not_owned(apply_and(manager, depth, not(&f), not(&h))?)) // f ∨ h
         } else {
             apply_and(manager, depth, not(&f), h) // f < h
         };
     }
-    if &*fu == &*hu {
+    if fu == hu {
         return if f.tag() == h.tag() {
             apply_and(manager, depth, f, g)
         } else {
             Ok(not_owned(apply_and(manager, depth, not(&f), g)?)) // f → g
         };
     }
-    let fnode = match manager.get_node(&*f) {
+    let fnode = match manager.get_node(&f) {
         Node::Inner(n) => n,
         Node::Terminal(_) => {
             return Ok(manager.clone_edge(&*if f.tag() == EdgeTag::None { g } else { h }))
         }
     };
-    let (gnode, hnode) = match (manager.get_node(&*g), manager.get_node(&*h)) {
+    let (gnode, hnode) = match (manager.get_node(&g), manager.get_node(&h)) {
         (Node::Inner(gn), Node::Inner(hn)) => (gn, hn),
         (Node::Terminal(_), Node::Inner(_)) => {
             return if g.tag() == EdgeTag::None {
-                Ok(not_owned(apply_and(manager, depth, not(&f), not(&h))?)) // f ∨ h
+                // f ∨ h
+                Ok(not_owned(apply_and(manager, depth, not(&f), not(&h))?))
             } else {
                 apply_and(manager, depth, not(&f), h) // f < h
             };
@@ -305,18 +307,18 @@ where
 
     stat!(call operator);
     // Terminal cases
-    let fnode = match manager.get_node(&*f) {
+    let fnode = match manager.get_node(&f) {
         Node::Inner(n) => n,
-        Node::Terminal(_) => return Ok(manager.clone_edge(&*f)),
+        Node::Terminal(_) => return Ok(manager.clone_edge(&f)),
     };
     let flevel = fnode.level();
 
     // We can ignore all variables above the top-most variable. Removing them
     // before querying the apply cache should increase the hit ratio by a lot.
     let vars = crate::set_pop(manager, vars, flevel);
-    let vlevel = match manager.get_node(&*vars) {
+    let vlevel = match manager.get_node(&vars) {
         Node::Inner(n) => n.level(),
-        Node::Terminal(_) => return Ok(manager.clone_edge(&*f)),
+        Node::Terminal(_) => return Ok(manager.clone_edge(&f)),
     };
     debug_assert!(flevel <= vlevel);
     let vars = vars.borrowed();
@@ -349,7 +351,7 @@ where
     let res = if flevel == vlevel {
         match operator {
             CBDDOp::Forall => apply_and(manager, d, t.borrowed(), e.borrowed())?,
-            CBDDOp::Exist => not_owned(apply_and(manager, d, not(&*t), not(&*e))?),
+            CBDDOp::Exist => not_owned(apply_and(manager, d, not(&t), not(&e))?),
             CBDDOp::Unique => {
                 apply_bin::<M, { CBDDOp::Xor as u8 }>(manager, d, t.borrowed(), e.borrowed())?
             }
@@ -390,7 +392,7 @@ where
         self.0
     }
 
-    fn init_depth<'id>(manager: &F::Manager<'id>) -> u32 {
+    fn init_depth(manager: &F::Manager<'_>) -> u32 {
         let n = manager.current_num_threads();
         if n > 1 {
             (4096 * n).ilog2()

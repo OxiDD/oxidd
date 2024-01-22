@@ -13,6 +13,12 @@
 
 #![warn(missing_docs)]
 #![deny(unsafe_op_in_unsafe_fn)]
+#![allow(clippy::double_must_use)]
+// Explicitly writing out `'id` lifetimes possibly makes some code easier to
+// read.
+#![allow(clippy::needless_lifetimes)]
+// `match` syntax may be easier to read
+#![allow(clippy::manual_map)]
 
 use std::borrow::Borrow;
 use std::hash::Hash;
@@ -233,7 +239,7 @@ pub trait InnerNode<E: Edge>: Sized + Eq + Hash + DropWith<E> {
     ///
     /// Panics if the node does not have an `n`-th child.
     ///
-    /// # SAFETY
+    /// # Safety
     ///
     /// The caller must have exclusive access to the node. In the first place,
     /// this is granted by acquiring an exclusive manager lock
@@ -274,7 +280,7 @@ pub type AtomicLevelNo = std::sync::atomic::AtomicU32;
 /// particular, concurrent calls to [`Self::level()`] and [`Self::set_level()`]
 /// must not lead to data races.
 ///
-/// # SAFETY
+/// # Safety
 ///
 /// 1. A node in a [`LevelView`] with level number L has level number L (i.e.
 ///    `self.level()` returns L).
@@ -297,7 +303,7 @@ pub unsafe trait HasLevel {
 
     /// Set the node's level
     ///
-    /// # SAFETY
+    /// # Safety
     ///
     /// This method may break SAFETY invariant 1 of the [`HasLevel`] trait: A
     /// node in a [`LevelView`] with level number L has level number L (i.e.
@@ -374,8 +380,10 @@ impl<T: Eq + Default + Countable> Tag for T {}
 /// This is mainly intended to be implemented on `enum`s. In most cases, you can
 /// simply derive it.
 ///
-/// SAFETY: [`Countable::as_usize()`] and [`Countable::from_usize()`] must form
-/// a bijection between the values of type `Self` and `0..=MAX_VALUE`, more
+/// # Safety
+///
+/// [`Countable::as_usize()`] and [`Countable::from_usize()`] must form a
+/// bijection between the values of type `Self` and `0..=MAX_VALUE`, more
 /// formally: For all `t: Self` it must hold that
 /// `Self::from_usize(t.as_usize()) == t`.
 /// For all `u: usize` such that `t.as_usize() == u` for some `t: Self`,
@@ -408,9 +416,7 @@ unsafe impl Countable for () {
     }
 
     #[inline]
-    fn from_usize(_value: usize) -> Self {
-        ()
-    }
+    fn from_usize(_value: usize) -> Self {}
 }
 
 // SAFETY: There is a bijection for all values of type `bool` and `0..=1`.
@@ -438,10 +444,7 @@ pub enum Node<'a, M: Manager + 'a> {
 
 impl<'a, M: Manager + 'a> Clone for Node<'a, M> {
     fn clone(&self) -> Self {
-        match self {
-            Self::Inner(n) => Self::Inner(n),
-            Self::Terminal(t) => Self::Terminal(*t),
-        }
+        *self
     }
 }
 impl<'a, M: Manager + 'a> Copy for Node<'a, M> {}
@@ -453,7 +456,8 @@ impl<'a, M: Manager> Node<'a, M> {
     pub fn ref_count(self) -> usize {
         match self {
             Node::Inner(node) => node.ref_count(),
-            Node::Terminal(_) => usize::MAX, // TODO: should we support concrete reference counts for terminals?
+            Node::Terminal(_) => usize::MAX, /* TODO: should we support concrete reference counts
+                                              * for terminals? */
         }
     }
 }
@@ -585,7 +589,7 @@ impl<'a, M: Manager> Node<'a, M> {
 /// levels and variables but implicitly update the function representations
 /// accordingly.
 ///
-/// # SAFETY
+/// # Safety
 ///
 /// The implementation must ensure that every inner node only refers to nodes
 /// stored in this manager.
@@ -732,7 +736,7 @@ pub unsafe trait Manager: Sized {
 
 /// View of a single level in the manager
 ///
-/// # SAFETY
+/// # Safety
 ///
 /// Each level view is associated with a [`Manager`] M and a [`LevelNo`] L. The
 /// level view must ensure that all contained nodes and their descendants are
@@ -757,7 +761,14 @@ pub unsafe trait LevelView<E: Edge, N: InnerNode<E>> {
     #[must_use]
     fn len(&self) -> usize;
 
+    /// Returns `true` iff this level contains nodes
+    #[must_use]
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Get the level number of this level
+    #[must_use]
     fn level_no(&self) -> LevelNo;
 
     /// Reserve space for `additional` nodes on this level
@@ -796,21 +807,25 @@ pub unsafe trait LevelView<E: Edge, N: InnerNode<E>> {
 
     /// Perform garbage collection on this level
     ///
-    /// SAFETY: Must be called from inside the closure passed to
-    /// [`Manager::reorder()`].
+    /// # Safety
+    ///
+    /// Must be called from inside the closure passed to [`Manager::reorder()`].
     unsafe fn gc(&mut self);
 
     /// Remove `node` from (this level of) the manager
     ///
     /// Returns whether the value was present at this level.
     ///
-    /// SAFETY: Must be called from inside the closure passed to
-    /// [`Manager::reorder()`].
+    /// # Safety
+    ///
+    /// Must be called from inside the closure passed to [`Manager::reorder()`].
     unsafe fn remove(&mut self, node: &N) -> bool;
 
     /// Move all nodes from this level to the other level and vice versa.
     ///
-    /// SAFETY: This method does not necessarily change the level returned by
+    /// # Safety
+    ///
+    /// This method does not necessarily change the level returned by
     /// [`HasLevel::level()`] for the nodes at this or the `other` level. The
     /// caller must ensure a consistent state using calls to
     /// [`HasLevel::set_level()`]. (Be aware of exception safety!)
@@ -877,7 +892,9 @@ pub trait ApplyCache<M: Manager, O: Copy>: DropWith<M::Edge> {
 
     /// Post-process a garbage collection
     ///
-    /// SAFETY: This method needs to be called at most once after a call to
+    /// # Safety
+    ///
+    /// This method needs to be called at most once after a call to
     /// [`Self::pre_gc()`] and the subsequent reordering.
     unsafe fn post_gc(&self, manager: &M);
 }

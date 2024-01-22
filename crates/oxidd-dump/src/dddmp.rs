@@ -157,30 +157,30 @@ impl DumpHeader {
                     };
                 }
                 b".dd" => header.dd = String::from_utf8_lossy(value).to_string(),
-                b".nnodes" => header.nnodes = parse_single_usize(&value, line_no)?,
-                b".nvars" => header.nvars = parse_single_u32(&value, line_no)?,
-                b".nsuppvars" => nsuppvars = parse_single_u32(&value, line_no)?,
+                b".nnodes" => header.nnodes = parse_single_usize(value, line_no)?,
+                b".nvars" => header.nvars = parse_single_u32(value, line_no)?,
+                b".nsuppvars" => nsuppvars = parse_single_u32(value, line_no)?,
                 b".suppvarnames" => {
-                    header.suppvarnames = parse_str_list(&value, header.nvars as usize);
+                    header.suppvarnames = parse_str_list(value, header.nvars as usize);
                 }
                 b".orderedvarnames" => {
-                    header.orderedvarnames = parse_str_list(&value, header.nvars as usize);
+                    header.orderedvarnames = parse_str_list(value, header.nvars as usize);
                 }
                 b".ids" => {
-                    header.ids = parse_u32_list(&value, nsuppvars as usize, line_no)?;
+                    header.ids = parse_u32_list(value, nsuppvars as usize, line_no)?;
                 }
                 b".permids" => {
-                    header.permids = parse_u32_list(&value, nsuppvars as usize, line_no)?;
+                    header.permids = parse_u32_list(value, nsuppvars as usize, line_no)?;
                 }
                 b".auxids" => {
-                    header.auxids = parse_u32_list(&value, nsuppvars as usize, line_no)?;
+                    header.auxids = parse_u32_list(value, nsuppvars as usize, line_no)?;
                 }
-                b".nroots" => nroots = parse_single_usize(&value, line_no)?,
+                b".nroots" => nroots = parse_single_usize(value, line_no)?,
                 b".rootids" => {
                     header.rootids.clear();
-                    parse_edge_list(&value, &mut header.rootids, line_no)?;
+                    parse_edge_list(value, &mut header.rootids, line_no)?;
                 }
-                b".rootnames" => header.rootnames = parse_str_list(&value, nroots),
+                b".rootnames" => header.rootnames = parse_str_list(value, nroots),
                 b".nodes" => break,
                 _ => {
                     return err(format!(
@@ -481,6 +481,7 @@ impl<T: AsciiDisplay> fmt::Display for Ascii<&T> {
 ///
 /// `is_complemented` is a function that returns whether an edge is
 /// complemented.
+#[allow(clippy::too_many_arguments)] // FIXME: use a builder pattern
 pub fn export<'id, F: Function>(
     mut file: impl io::Write,
     manager: &F::Manager<'id>,
@@ -540,11 +541,11 @@ where
     ) where
         M::InnerNode: HasLevel,
     {
-        match manager.get_node(&*e) {
+        match manager.get_node(&e) {
             Node::Inner(node) => {
                 let (_, map) = &mut node_map[node.level() as usize];
                 // Map to 0 -> we assign the indexes below
-                let res = map.insert(&*e.with_tag(Default::default()), 0);
+                let res = map.insert(&e.with_tag(Default::default()), 0);
                 if res.is_none() {
                     for e in node.children() {
                         rec_add_map::<M>(manager, node_map, terminal_map, e);
@@ -552,7 +553,7 @@ where
                 }
             }
             Node::Terminal(_) => {
-                terminal_map.insert(&*e.with_tag(Default::default()), 0);
+                terminal_map.insert(&e.with_tag(Default::default()), 0);
             }
         }
     }
@@ -653,10 +654,10 @@ where
         let idx = match manager.get_node(e) {
             Node::Inner(node) => {
                 let (_, map) = &node_map[node.level() as usize];
-                *map.get(&*e.with_tag(Default::default())).unwrap() as isize
+                *map.get(&e.with_tag(Default::default())).unwrap() as isize
             }
             Node::Terminal(_) => {
-                *terminal_map.get(&*e.with_tag(Default::default())).unwrap() as isize
+                *terminal_map.get(&e.with_tag(Default::default())).unwrap() as isize
             }
         };
         if is_complemented(e) {
@@ -669,7 +670,7 @@ where
         let idx = match manager.get_node(e) {
             Node::Inner(node) => {
                 let (_, map) = &node_map[node.level() as usize];
-                *map.get(&*e.with_tag(Default::default())).unwrap()
+                *map.get(&e.with_tag(Default::default())).unwrap()
             }
             Node::Terminal(_) => {
                 if manager.num_terminals() == 1 {
@@ -727,7 +728,8 @@ where
         // inserted/removed. To be sure, we assert that this assumption holds.
         assert_eq!(exported_nodes + 1, node_id);
         if ascii {
-            // <Node-index> [<Var-extra-info>] <Var-internal-index> <Then-index> <Else-index>
+            // <Node-index> [<Var-extra-info>] <Var-internal-index> <Then-index>
+            // <Else-index>
             let node = manager.get_node(edge);
             let desc = Ascii(node.unwrap_terminal());
             writeln!(file, "{node_id} {desc} 0 0")?;
@@ -743,18 +745,19 @@ where
             assert_eq!(exported_nodes + 1, node_id);
             let node = manager.get_node(e).unwrap_inner();
             if ascii {
-                // <Node-index> [<Var-extra-info>] <Var-internal-index> <Then-index> <Else-index>
+                // <Node-index> [<Var-extra-info>] <Var-internal-index> <Then-index>
+                // <Else-index>
                 write!(file, "{node_id} {var_idx}")?;
                 for child in node.children() {
-                    write!(file, " {}", idx(&*child))?;
+                    write!(file, " {}", idx(&child))?;
                 }
                 writeln!(file)?;
             } else {
                 let mut iter = node.children();
                 let t = iter.next().unwrap();
-                let t_lvl = manager.get_node(&*t).level();
+                let t_lvl = manager.get_node(&t).level();
                 let e = iter.next().unwrap();
-                let e_lvl = manager.get_node(&*e).level();
+                let e_lvl = manager.get_node(&e).level();
                 debug_assert!(iter.next().is_none());
 
                 let mut var_code = Code::AbsoluteID;
@@ -770,13 +773,13 @@ where
                     }
                 }
 
-                let (t_code, t_idx) = bin_idx(&*t, node_id);
-                let (e_code, e_idx) = bin_idx(&*e, node_id);
+                let (t_code, t_idx) = bin_idx(&t, node_id);
+                let (e_code, e_idx) = bin_idx(&e, node_id);
 
-                debug_assert!(!is_complemented(&*t));
+                debug_assert!(!is_complemented(&t));
                 write_escaped(
                     &mut file,
-                    &[node_code(var_code, t_code, is_complemented(&*e), e_code)],
+                    &[node_code(var_code, t_code, is_complemented(&e), e_code)],
                 )?;
                 if var_code == Code::AbsoluteID || var_code == Code::RelativeID {
                     encode_7bit(&mut file, var_idx as usize)?;
@@ -1040,7 +1043,7 @@ where
             };
             manager.get_terminal(terminal)
         } else {
-            let (_, var_id) = parse_u32(&var_id, line_no)?;
+            let (_, var_id) = parse_u32(var_id, line_no)?;
             let Some(&level) = suppvar_level_map.get(var_id as usize) else {
                 return err(format!("variable out of range (line {line_no})"));
             };

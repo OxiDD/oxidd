@@ -4,6 +4,7 @@
 //! ## Feature flags
 #![doc = document_features::document_features!()]
 #![deny(unsafe_op_in_unsafe_fn)]
+#![allow(clippy::upper_case_acronyms)]
 
 #[cfg(not(any(feature = "manager-index", feature = "manager-pointer")))]
 std::compile_error!(
@@ -51,11 +52,12 @@ pub trait RawFunction {
 
     /// Convert `raw` into `Self`
     ///
-    /// SAFETY: `raw` and `index` must have been obtained via
-    /// [`Self::into_raw()`]. This function does not change any reference
-    /// counters, so calling this function multiple times for the same
-    /// pointer may lead to use after free bugs depending on the usage of
-    /// the returned `Self`.
+    /// # Safety
+    ///
+    /// `raw` and `index` must have been obtained via [`Self::into_raw()`]. This
+    /// function does not change any reference counters, so calling this
+    /// function multiple times for the same pointer may lead to use after free
+    /// bugs depending on the usage of the returned `Self`.
     unsafe fn from_raw(ptr: *const std::ffi::c_void, index: u32) -> Self;
 }
 
@@ -70,10 +72,12 @@ pub trait RawManagerRef {
 
     /// Convert `raw` into a `Self`
     ///
-    /// SAFETY: `raw` must have been obtained via [`Self::into_raw()`]. This
-    /// function does not change any reference counters, so calling this
-    /// function multiple times for the same pointer may lead to use after
-    /// free bugs depending on the usage of the returned manager reference.
+    /// # Safety
+    ///
+    /// `raw` must have been obtained via [`Self::into_raw()`]. This function
+    /// does not change any reference counters, so calling this function
+    /// multiple times for the same pointer may lead to use after free bugs
+    /// depending on the usage of the returned manager reference.
     unsafe fn from_raw(raw: *const std::ffi::c_void) -> Self;
 }
 

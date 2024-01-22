@@ -39,7 +39,7 @@ where
         return apply_rec_st::apply_not(manager, f);
     }
     stat!(call BDDOp::Not);
-    let node = match manager.get_node(&*f) {
+    let node = match manager.get_node(&f) {
         Node::Inner(node) => node,
         Node::Terminal(t) => return Ok(manager.get_terminal(!*t.borrow()).unwrap()),
     };
@@ -95,7 +95,7 @@ where
         return apply_rec_st::apply_bin::<M, OP>(manager, f, g);
     }
     stat!(call OP);
-    let (operator, op1, op2) = match terminal_bin::<M, OP>(manager, &*f, &*g) {
+    let (operator, op1, op2) = match terminal_bin::<M, OP>(manager, &f, &g) {
         Operation::Binary(o, op1, op2) => (o, op1, op2),
         Operation::Not(f) => {
             return apply_not(manager, depth - 1, f);
@@ -113,8 +113,8 @@ where
         return Ok(h);
     }
 
-    let fnode = manager.get_node(&*f).unwrap_inner();
-    let gnode = manager.get_node(&*g).unwrap_inner();
+    let fnode = manager.get_node(&f).unwrap_inner();
+    let gnode = manager.get_node(&g).unwrap_inner();
     let flevel = fnode.level();
     let glevel = gnode.level();
     let level = std::cmp::min(flevel, glevel);
@@ -176,16 +176,16 @@ where
     stat!(call BDDOp::Ite);
 
     // Terminal cases
-    if &*g == &*h {
-        return Ok(manager.clone_edge(&*g));
+    if g == h {
+        return Ok(manager.clone_edge(&g));
     }
-    let fnode = match manager.get_node(&*f) {
+    let fnode = match manager.get_node(&f) {
         Node::Inner(n) => n,
         Node::Terminal(t) => {
             return Ok(manager.clone_edge(&*if *t.borrow() == True { g } else { h }))
         }
     };
-    let (gnode, hnode) = match (manager.get_node(&*g), manager.get_node(&*h)) {
+    let (gnode, hnode) = match (manager.get_node(&g), manager.get_node(&h)) {
         (Node::Inner(gn), Node::Inner(hn)) => (gn, hn),
         (Node::Terminal(t), Node::Inner(_)) => {
             return if *t.borrow() == True {
@@ -205,7 +205,7 @@ where
             return match (*gt.borrow(), *ht.borrow()) {
                 (False, False) => Ok(manager.get_terminal(False).unwrap()),
                 (False, True) => apply_not(manager, depth, f),
-                (True, False) => Ok(manager.clone_edge(&*f)),
+                (True, False) => Ok(manager.clone_edge(&f)),
                 (True, True) => Ok(manager.get_terminal(True).unwrap()),
             };
         }
@@ -290,18 +290,18 @@ where
 
     stat!(call operator);
     // Terminal cases
-    let fnode = match manager.get_node(&*f) {
+    let fnode = match manager.get_node(&f) {
         Node::Inner(n) => n,
-        Node::Terminal(_) => return Ok(manager.clone_edge(&*f)),
+        Node::Terminal(_) => return Ok(manager.clone_edge(&f)),
     };
     let flevel = fnode.level();
 
     // We can ignore all variables above the top-most variable. Removing them
     // before querying the apply cache should increase the hit ratio by a lot.
     let vars = crate::set_pop(manager, vars, flevel);
-    let vlevel = match manager.get_node(&*vars) {
+    let vlevel = match manager.get_node(&vars) {
         Node::Inner(n) => n.level(),
-        Node::Terminal(_) => return Ok(manager.clone_edge(&*f)),
+        Node::Terminal(_) => return Ok(manager.clone_edge(&f)),
     };
     debug_assert!(flevel <= vlevel);
     let vars = vars.borrowed();
@@ -368,7 +368,7 @@ where
         self.0
     }
 
-    fn init_depth<'id>(manager: &F::Manager<'id>) -> u32 {
+    fn init_depth(manager: &F::Manager<'_>) -> u32 {
         let n = manager.current_num_threads();
         if n > 1 {
             (4096 * n).ilog2()

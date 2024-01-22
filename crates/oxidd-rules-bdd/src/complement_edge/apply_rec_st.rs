@@ -45,8 +45,8 @@ where
 {
     stat!(call OP);
     let (op, f, fnode, g, gnode) = if OP == CBDDOp::And as u8 {
-        match terminal_and(manager, &*f, &*g) {
-            NodesOrDone::Nodes(fnode, gnode) if &*f < &*g => {
+        match terminal_and(manager, &f, &g) {
+            NodesOrDone::Nodes(fnode, gnode) if f < g => {
                 (CBDDOp::And, f.borrowed(), fnode, g.borrowed(), gnode)
             }
             // `And` is commutative, hence we swap `f` and `g` in the apply
@@ -59,8 +59,8 @@ where
         }
     } else {
         assert_eq!(OP, CBDDOp::Xor as u8);
-        match terminal_xor(manager, &*f, &*g) {
-            NodesOrDone::Nodes(fnode, gnode) if &*f < &*g => {
+        match terminal_xor(manager, &f, &g) {
+            NodesOrDone::Nodes(fnode, gnode) if f < g => {
                 (CBDDOp::Xor, f.borrowed(), fnode, g.borrowed(), gnode)
             }
             NodesOrDone::Nodes(fnode, gnode) => {
@@ -137,35 +137,35 @@ where
     // Terminal cases
     let gu = g.with_tag(EdgeTag::None); // untagged
     let hu = h.with_tag(EdgeTag::None);
-    if &*gu == &*hu {
+    if gu == hu {
         return Ok(if g.tag() == h.tag() {
-            manager.clone_edge(&*g)
+            manager.clone_edge(&g)
         } else {
             not_owned(apply_bin::<M, { CBDDOp::Xor as u8 }>(manager, f, g)?) // f ↔ g
         });
     }
     let fu = f.with_tag(EdgeTag::None);
-    if &*fu == &*gu {
+    if fu == gu {
         return if f.tag() == g.tag() {
             Ok(not_owned(apply_and(manager, not(&f), not(&h))?)) // f ∨ h
         } else {
             apply_and(manager, not(&f), h) // f < h
         };
     }
-    if &*fu == &*hu {
+    if fu == hu {
         return if f.tag() == h.tag() {
             apply_and(manager, f, g)
         } else {
             Ok(not_owned(apply_and(manager, not(&f), g)?)) // f → g
         };
     }
-    let fnode = match manager.get_node(&*f) {
+    let fnode = match manager.get_node(&f) {
         Node::Inner(n) => n,
         Node::Terminal(_) => {
             return Ok(manager.clone_edge(&*if f.tag() == EdgeTag::None { g } else { h }))
         }
     };
-    let (gnode, hnode) = match (manager.get_node(&*g), manager.get_node(&*h)) {
+    let (gnode, hnode) = match (manager.get_node(&g), manager.get_node(&h)) {
         (Node::Inner(gn), Node::Inner(hn)) => (gn, hn),
         (Node::Terminal(_), Node::Inner(_)) => {
             return if g.tag() == EdgeTag::None {
@@ -251,18 +251,18 @@ where
 
     stat!(call operator);
     // Terminal cases
-    let fnode = match manager.get_node(&*f) {
+    let fnode = match manager.get_node(&f) {
         Node::Inner(n) => n,
-        Node::Terminal(_) => return Ok(manager.clone_edge(&*f)),
+        Node::Terminal(_) => return Ok(manager.clone_edge(&f)),
     };
     let flevel = fnode.level();
 
     // We can ignore all variables above the top-most variable. Removing them
     // before querying the apply cache should increase the hit ratio by a lot.
     let vars = crate::set_pop(manager, vars, flevel);
-    let vlevel = match manager.get_node(&*vars) {
+    let vlevel = match manager.get_node(&vars) {
         Node::Inner(n) => n.level(),
-        Node::Terminal(_) => return Ok(manager.clone_edge(&*f)),
+        Node::Terminal(_) => return Ok(manager.clone_edge(&f)),
     };
     debug_assert!(flevel <= vlevel);
     let vars = vars.borrowed();
@@ -285,7 +285,7 @@ where
     let res = if flevel == vlevel {
         match operator {
             CBDDOp::Forall => apply_and(manager, t.borrowed(), e.borrowed())?,
-            CBDDOp::Exist => not_owned(apply_and(manager, not(&*t), not(&*e))?),
+            CBDDOp::Exist => not_owned(apply_and(manager, not(&t), not(&e))?),
             CBDDOp::Unique => {
                 apply_bin::<M, { CBDDOp::Xor as u8 }>(manager, t.borrowed(), e.borrowed())?
             }
@@ -458,7 +458,7 @@ where
         where
             M: Manager<EdgeTag = EdgeTag, Terminal = CBDDTerminal>,
         {
-            let node = match manager.get_node(&*e) {
+            let node = match manager.get_node(&e) {
                 Node::Inner(node) => node,
                 Node::Terminal(_) => return terminal_val.clone(),
             };
@@ -504,7 +504,7 @@ where
             S: BuildHasher,
         {
             let tag = e.tag();
-            let node = match manager.get_node(&*e) {
+            let node = match manager.get_node(&e) {
                 Node::Inner(node) => node,
                 Node::Terminal(_) if tag == EdgeTag::None => return terminal_val.clone(),
                 Node::Terminal(_) => return N::from(0u32),
@@ -557,16 +557,16 @@ where
         ) where
             M::InnerNode: HasLevel,
         {
-            let Node::Inner(node) = manager.get_node(&*edge) else {
+            let Node::Inner(node) = manager.get_node(&edge) else {
                 return;
             };
             let (t, e) = collect_cofactors(edge.tag(), node);
-            let c = if manager.get_node(&*t).is_any_terminal() && t.tag() == EdgeTag::Complemented {
+            let c = if manager.get_node(&t).is_any_terminal() && t.tag() == EdgeTag::Complemented {
                 false
-            } else if manager.get_node(&*e).is_any_terminal() && e.tag() == EdgeTag::Complemented {
+            } else if manager.get_node(&e).is_any_terminal() && e.tag() == EdgeTag::Complemented {
                 true
             } else {
-                choice(manager, &*edge)
+                choice(manager, &edge)
             };
             cube[node.level() as usize] = OptBool::from(c);
             inner(manager, if c { t } else { e }, cube, choice);
@@ -619,7 +619,7 @@ where
             M::InnerNode: HasLevel,
         {
             let complement = complement ^ (edge.tag() == EdgeTag::Complemented);
-            match manager.get_node(&*edge) {
+            match manager.get_node(&edge) {
                 Node::Inner(node) => {
                     let edge = node.child((!vals[node.level() as usize]) as usize);
                     inner(manager, edge, complement, vals)

@@ -53,7 +53,7 @@ where
     };
     stat!(call op);
 
-    let Node::Inner(node) = manager.get_node(&*f) else {
+    let Node::Inner(node) = manager.get_node(&f) else {
         return Ok(manager.get_terminal(ZBDDTerminal::Empty).unwrap());
     };
     let level = node.level();
@@ -65,7 +65,7 @@ where
                 let (lo, hi) = collect_children(node);
                 return reduce_borrowed(manager, level, hi, manager.clone_edge(&lo), op);
             }
-            return Ok(manager.clone_edge(&*node.child(VAL as usize)));
+            return Ok(manager.clone_edge(&node.child(VAL as usize)));
         }
         Ordering::Greater => {
             return Ok(manager.get_terminal(ZBDDTerminal::Empty).unwrap());
@@ -114,15 +114,15 @@ where
     use ZBDDOp::Union;
     stat!(call Union);
     let empty = EdgeDropGuard::new(manager, manager.get_terminal(ZBDDTerminal::Empty).unwrap());
-    if &*f == &*g || &*g == &*empty {
-        return Ok(manager.clone_edge(&*f));
+    if f == g || *g == *empty {
+        return Ok(manager.clone_edge(&f));
     }
-    if &*f == &*empty {
-        return Ok(manager.clone_edge(&*g));
+    if *f == *empty {
+        return Ok(manager.clone_edge(&g));
     }
 
     // Union is commutative, make the set `{f, g}` unique
-    let (f, g) = if &*f > &*g { (g, f) } else { (f, g) };
+    let (f, g) = if f > g { (g, f) } else { (f, g) };
 
     // Query apply cache
     stat!(cache_query Union);
@@ -134,8 +134,8 @@ where
         return Ok(h);
     }
 
-    let fnode = manager.get_node(&*f);
-    let gnode = manager.get_node(&*g);
+    let fnode = manager.get_node(&f);
+    let gnode = manager.get_node(&g);
     let flevel = fnode.level();
     let glevel = gnode.level();
 
@@ -179,16 +179,16 @@ where
 {
     use ZBDDOp::Intsec;
     stat!(call Intsec);
-    if &*f == &*g {
-        return Ok(manager.clone_edge(&*f));
+    if f == g {
+        return Ok(manager.clone_edge(&f));
     }
     let empty = EdgeDropGuard::new(manager, manager.get_terminal(ZBDDTerminal::Empty).unwrap());
-    if &*f == &*empty || &*g == &*empty {
+    if *f == *empty || *g == *empty {
         return Ok(empty.into_edge());
     }
 
     // Intersection is commutative, make the set `{f, g}` unique
-    let (f, g) = if &*f > &*g { (g, f) } else { (f, g) };
+    let (f, g) = if f > g { (g, f) } else { (f, g) };
 
     // Query apply cache
     stat!(cache_query Intsec);
@@ -200,8 +200,8 @@ where
         return Ok(h);
     }
 
-    let fnode = manager.get_node(&*f);
-    let gnode = manager.get_node(&*g);
+    let fnode = manager.get_node(&f);
+    let gnode = manager.get_node(&g);
     let flevel = fnode.level();
     let glevel = gnode.level();
 
@@ -245,11 +245,11 @@ where
     use ZBDDOp::Diff;
     stat!(call Diff);
     let empty = EdgeDropGuard::new(manager, manager.get_terminal(ZBDDTerminal::Empty).unwrap());
-    if &*f == &*g || &*f == &*empty {
+    if f == g || *f == *empty {
         return Ok(empty.into_edge());
     }
-    if &*g == &*empty {
-        return Ok(manager.clone_edge(&*f));
+    if *g == *empty {
+        return Ok(manager.clone_edge(&f));
     }
 
     // Query apply cache
@@ -262,8 +262,8 @@ where
         return Ok(h);
     }
 
-    let fnode = manager.get_node(&*f);
-    let gnode = manager.get_node(&*g);
+    let fnode = manager.get_node(&f);
+    let gnode = manager.get_node(&g);
     let flevel = fnode.level();
     let glevel = gnode.level();
 
@@ -308,18 +308,18 @@ where
 
     stat!(call SymmDiff);
     let empty = EdgeDropGuard::new(manager, manager.get_terminal(ZBDDTerminal::Empty).unwrap());
-    if &*f == &*g {
+    if f == g {
         return Ok(empty.into_edge());
     }
-    if &*f == &*empty {
-        return Ok(manager.clone_edge(&*g));
+    if *f == *empty {
+        return Ok(manager.clone_edge(&g));
     }
-    if &*g == &*empty {
-        return Ok(manager.clone_edge(&*f));
+    if *g == *empty {
+        return Ok(manager.clone_edge(&f));
     }
 
     // Symmetric difference is commutative, make the set `{f, g}` unique
-    let (f, g) = if &*f > &*g { (g, f) } else { (f, g) };
+    let (f, g) = if f > g { (g, f) } else { (f, g) };
 
     // Query apply cache
     stat!(cache_query SymmDiff);
@@ -331,8 +331,8 @@ where
         return Ok(h);
     }
 
-    let fnode = manager.get_node(&*f);
-    let gnode = manager.get_node(&*g);
+    let fnode = manager.get_node(&f);
+    let gnode = manager.get_node(&g);
     let flevel = fnode.level();
     let glevel = gnode.level();
 
@@ -382,30 +382,30 @@ where
     stat!(call Ite);
 
     // Terminal cases
-    if &*g == &*h {
-        return Ok(manager.clone_edge(&*g));
+    if g == h {
+        return Ok(manager.clone_edge(&g));
     }
-    if &*f == &*g {
+    if f == g {
         return apply_union(manager, f, h);
     }
-    if &*f == &*h {
+    if f == h {
         return apply_intsec(manager, f, g);
     }
 
-    let fnode = manager.get_node(&*f);
+    let fnode = manager.get_node(&f);
     let flevel = fnode.level();
     if fnode.is_terminal(&Empty) {
-        return Ok(manager.clone_edge(&*h));
+        return Ok(manager.clone_edge(&h));
     }
 
-    let gnode = manager.get_node(&*g);
+    let gnode = manager.get_node(&g);
     let glevel = gnode.level();
     if gnode.is_terminal(&Empty) {
         // f < h = h \ f
         return apply_diff(manager, h, f);
     }
 
-    let hnode = manager.get_node(&*h);
+    let hnode = manager.get_node(&h);
     let hlevel = hnode.level();
     if hnode.is_terminal(&Empty) {
         return apply_intsec(manager, f, g);
@@ -414,13 +414,13 @@ where
     let ghlevel = std::cmp::min(glevel, hlevel);
     let level = std::cmp::min(flevel, ghlevel);
     let tautology = manager.zbdd_cache().tautology(level);
-    if &*f == &*tautology {
-        return Ok(manager.clone_edge(&*g));
+    if *f == *tautology {
+        return Ok(manager.clone_edge(&g));
     }
-    if &*g == &*tautology {
+    if *g == *tautology {
         return apply_union(manager, f, h);
     }
-    // if &*h == &*tautology { f → g }; we cannot handle this properly
+    // if *h == *tautology { f → g }; we cannot handle this properly
 
     // Query apply cache
     stat!(cache_query Ite);
@@ -654,7 +654,7 @@ where
         rhs: &<Self::Manager<'id> as Manager>::Edge,
     ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
         let and = Self::and_edge(manager, lhs, rhs)?;
-        Self::not_edge(manager, &*EdgeDropGuard::new(manager, and))
+        Self::not_edge(manager, &EdgeDropGuard::new(manager, and))
     }
     fn nor_edge<'id>(
         manager: &Self::Manager<'id>,
@@ -662,7 +662,7 @@ where
         rhs: &<Self::Manager<'id> as Manager>::Edge,
     ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
         let or = Self::or_edge(manager, lhs, rhs)?;
-        Self::not_edge(manager, &*EdgeDropGuard::new(manager, or))
+        Self::not_edge(manager, &EdgeDropGuard::new(manager, or))
     }
     fn xor_edge<'id>(
         manager: &Self::Manager<'id>,
@@ -677,7 +677,7 @@ where
         rhs: &<Self::Manager<'id> as Manager>::Edge,
     ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
         let xor = Self::xor_edge(manager, lhs, rhs)?;
-        Self::not_edge(manager, &*EdgeDropGuard::new(manager, xor))
+        Self::not_edge(manager, &EdgeDropGuard::new(manager, xor))
     }
     fn imp_edge<'id>(
         manager: &Self::Manager<'id>,
@@ -716,7 +716,7 @@ where
             N: SatCountNumber,
             S: BuildHasher,
         {
-            match manager.get_node(&*e) {
+            match manager.get_node(&e) {
                 Node::Inner(node) => {
                     let node_id = e.node_id();
                     if let Some(n) = cache.get(&node_id) {
@@ -759,19 +759,19 @@ where
         ) where
             M::InnerNode: HasLevel,
         {
-            let Node::Inner(node) = manager.get_node(&*edge) else {
+            let Node::Inner(node) = manager.get_node(&edge) else {
                 return;
             };
             let (hi, lo) = collect_children(node);
-            let (val, next_edge) = if &*hi == &*lo {
+            let (val, next_edge) = if hi == lo {
                 (OptBool::None, hi)
             } else {
-                let c = if manager.get_node(&*hi).is_terminal(&ZBDDTerminal::Empty) {
+                let c = if manager.get_node(&hi).is_terminal(&ZBDDTerminal::Empty) {
                     false
-                } else if manager.get_node(&*lo).is_terminal(&ZBDDTerminal::Empty) {
+                } else if manager.get_node(&lo).is_terminal(&ZBDDTerminal::Empty) {
                     true
                 } else {
-                    choice(manager, &*edge)
+                    choice(manager, &edge)
                 };
                 (OptBool::from(c), if c { hi } else { lo })
             };
@@ -827,7 +827,7 @@ where
             M: Manager<Terminal = ZBDDTerminal>,
             M::InnerNode: HasLevel,
         {
-            match manager.get_node(&*edge) {
+            match manager.get_node(&edge) {
                 Node::Inner(node) => {
                     let level = node.level() as usize;
                     let edge = node.child((!vals[level]) as usize);

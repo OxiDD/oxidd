@@ -74,6 +74,11 @@ impl DummyEdge {
         Arc::strong_count(&self.0)
     }
 }
+impl Default for DummyEdge {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Edge for DummyEdge {
     type Tag = ();
@@ -89,9 +94,7 @@ impl Edge for DummyEdge {
     fn with_tag_owned(self, _tag: ()) -> Self {
         self
     }
-    fn tag(&self) -> () {
-        ()
-    }
+    fn tag(&self) -> Self::Tag {}
 
     fn node_id(&self) -> NodeID {
         Arc::as_ptr(&self.0) as usize
@@ -299,7 +302,7 @@ impl InnerNode<DummyEdge> for DummyNode {
         true
     }
 
-    fn children<'a>(&'a self) -> Self::ChildrenIter<'a> {
+    fn children(&self) -> Self::ChildrenIter<'_> {
         std::iter::empty()
     }
 

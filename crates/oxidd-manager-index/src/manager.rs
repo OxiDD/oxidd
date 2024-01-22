@@ -343,8 +343,10 @@ impl<'id, N: NodeBase, ET: Tag> Edge<'id, N, ET> {
 
     /// Get an edge from a terminal ID
     ///
-    /// SAFETY: `id` must be a terminal ID, i.e. `id < TERMINALS`, and the
-    /// caller must update the reference count for the terminal accordingly.
+    /// # Safety
+    ///
+    /// `id` must be a terminal ID, i.e. `id < TERMINALS`, and the caller must
+    /// update the reference count for the terminal accordingly.
     #[inline(always)]
     pub unsafe fn from_terminal_id(id: u32) -> Self {
         Self(id, PhantomData)
@@ -363,7 +365,7 @@ impl<'id, N, ET> Eq for Edge<'id, N, ET> {}
 impl<'id, N, ET> PartialOrd for Edge<'id, N, ET> {
     #[inline(always)]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.0.partial_cmp(&other.0)
+        Some(self.0.cmp(&other.0))
     }
 }
 
@@ -438,9 +440,17 @@ impl<'id, N: NodeBase, const TERMINALS: usize> SlotSlice<'id, N, TERMINALS> {
     // Create a new slot slice for up to `capacity` nodes
     fn new_boxed(capacity: u32) -> Box<Self> {
         let mut vec: Vec<UnsafeCell<Slot<N>>> = Vec::with_capacity(capacity as usize);
+
         // SAFETY: The new length is equal to the capacity. All elements are
-        // "initialized" as `uninit`.
-        unsafe { vec.set_len(capacity as usize) };
+        // "initialized" as `Slot::uninit`.
+        //
+        // Clippy's `uninit_vec` lint is a bit too strict here. `Slot`s are
+        // somewhat like `MaybeUninit`, but Clippy wants `MaybeUninit`.
+        #[allow(clippy::uninit_vec)]
+        unsafe {
+            vec.set_len(capacity as usize)
+        };
+
         let boxed = vec.into_boxed_slice();
         // SAFETY: `SlotSlice` has `repr(transparent)` and thus the same
         // representation as `[UnsafeCell<Slot<N>>]`.
@@ -467,9 +477,9 @@ impl<'id, N: NodeBase, const TERMINALS: usize> SlotSlice<'id, N, TERMINALS> {
         debug_assert!(id - TERMINALS < self.slots.len());
         // SAFETY:
         // - Indices derived from edges pointing to inner nodes are in bounds
-        // - If an edge points to an inner node, the node's `Slot` is immutable
-        //   and a properly initialized node
-        unsafe { &*(*self.slots.get_unchecked(id - TERMINALS).get()).node }
+        // - If an edge points to an inner node, the node's `Slot` is immutable and a
+        //   properly initialized node
+        unsafe { &(*self.slots.get_unchecked(id - TERMINALS).get()).node }
     }
 
     /// SAFETY: `edge` must be untagged and reference an inner node
@@ -477,7 +487,7 @@ impl<'id, N: NodeBase, const TERMINALS: usize> SlotSlice<'id, N, TERMINALS> {
     unsafe fn inner_node_unchecked<ET: Tag>(&self, edge: &Edge<'id, N, ET>) -> &N {
         // SAFETY: If an edge points to an inner node, the node's `Slot` is
         // immutable and a properly initialized node.
-        unsafe { &*(*self.slot_pointer_unchecked(edge)).node }
+        unsafe { &(*self.slot_pointer_unchecked(edge)).node }
     }
 
     /// SAFETY: `edge` must be untagged and reference an inner node
@@ -769,7 +779,7 @@ where
         let id = edge.node_id();
         if id >= TERMINALS {
             // inner node
-            self.inner_nodes.inner_node(&edge).retain();
+            self.inner_nodes.inner_node(edge).retain();
         } else {
             // SAFETY: `id` is a valid terminal ID
             unsafe { self.terminal_manager.retain(id) };
@@ -1132,7 +1142,7 @@ where
         nodes: &'a SlotSlice<'id, N, TERMINALS>,
         node: &'a N,
     ) -> impl Fn(&Edge<'id, N, ET>) -> bool + 'a {
-        move |edge| unsafe { nodes.inner_node_unchecked(&edge) == node }
+        move |edge| unsafe { nodes.inner_node_unchecked(edge) == node }
     }
 
     /// Reserve space for `additional` nodes on this level
@@ -1213,9 +1223,8 @@ where
             Ok(slot) => {
                 drop(node);
                 // SAFETY:
-                // - `slot` was returned by `find_or_find_insert_slot`. We have
-                //    exclusive access to the hash table and did not modify it
-                //    in between.
+                // - `slot` was returned by `find_or_find_insert_slot`. We have exclusive access
+                //   to the hash table and did not modify it in between.
                 // - All edges in the table are untagged and refer to inner nodes.
                 Ok(unsafe { nodes.clone_edge_unchecked(self.0.get_at_slot_unchecked(slot)) })
             }
@@ -1767,10 +1776,12 @@ impl<
 
     /// Convert `raw` into a `ManagerRef`
     ///
-    /// SAFETY: `raw` must have been obtained via [`Self::into_raw()`]. This
-    /// function does not change any reference counters, so calling this
-    /// function multiple times for the same pointer may lead to use after free
-    /// bugs depending on the usage of the returned `ManagerRef`.
+    /// # Safety
+    ///
+    /// `raw` must have been obtained via [`Self::into_raw()`]. This function
+    /// does not change any reference counters, so calling this function
+    /// multiple times for the same pointer may lead to use after free bugs
+    /// depending on the usage of the returned `ManagerRef`.
     #[inline(always)]
     pub unsafe fn from_raw(raw: *const std::ffi::c_void) -> Self {
         // SAFETY: Invariants are upheld by the caller.
@@ -1880,7 +1891,7 @@ impl<
         F: for<'id> FnOnce(&Self::Manager<'id>) -> T,
     {
         let local_guard = self.0.prepare_local_state();
-        let res = f(&*self.0.manager.read());
+        let res = f(&self.0.manager.read());
         drop(local_guard);
         res
     }
@@ -1890,7 +1901,7 @@ impl<
         F: for<'id> FnOnce(&mut Self::Manager<'id>) -> T,
     {
         let local_guard = self.0.prepare_local_state();
-        let res = f(&mut *self.0.manager.write());
+        let res = f(&mut self.0.manager.write());
         drop(local_guard);
         res
     }
@@ -2059,11 +2070,12 @@ impl<
 
     /// Convert `ptr` and `edge_val` into a `Function`
     ///
-    /// SAFETY: `raw` and `edge_val` must have been obtained via
-    /// [`Self::into_raw()`]. This function does not change any reference
-    /// counters, so calling this function multiple times for the same pointer
-    /// may lead to use after free bugs depending on the usage of the returned
-    /// `Function`.
+    /// # Safety
+    ///
+    /// `raw` and `edge_val` must have been obtained via [`Self::into_raw()`].
+    /// This function does not change any reference counters, so calling this
+    /// function multiple times for the same pointer may lead to use after free
+    /// bugs depending on the usage of the returned `Function`.
     #[inline(always)]
     pub unsafe fn from_raw(ptr: *const std::ffi::c_void, edge_val: u32) -> Self {
         // SAFETY: Invariants are upheld by the caller.
@@ -2261,7 +2273,7 @@ unsafe impl<
         ) -> T,
     {
         let local_guard = self.store.0.prepare_local_state();
-        let res = f(&*self.store.0.manager.read(), &self.edge);
+        let res = f(&self.store.0.manager.read(), &self.edge);
         drop(local_guard);
         res
     }
@@ -2274,7 +2286,7 @@ unsafe impl<
         ) -> T,
     {
         let local_guard = self.store.0.prepare_local_state();
-        let res = f(&mut *self.store.0.manager.write(), &self.edge);
+        let res = f(&mut self.store.0.manager.write(), &self.edge);
         drop(local_guard);
         res
     }
@@ -2286,27 +2298,10 @@ unsafe impl<
 ///
 /// Since nodes are stored in an array, we can use a single bit vector. This
 /// reduces space consumption dramatically and increases the performance.
+#[derive(Default, Clone)]
 pub struct NodeSet {
     len: usize,
     data: BitVec,
-}
-
-impl Default for NodeSet {
-    fn default() -> Self {
-        Self {
-            len: 0,
-            data: Default::default(),
-        }
-    }
-}
-
-impl Clone for NodeSet {
-    fn clone(&self) -> Self {
-        Self {
-            len: self.len,
-            data: self.data.clone(),
-        }
-    }
 }
 
 impl PartialEq for NodeSet {

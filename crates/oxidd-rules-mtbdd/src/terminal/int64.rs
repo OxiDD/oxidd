@@ -186,12 +186,10 @@ impl Div for Int64 {
         match (self, rhs) {
             (Num(lhs), Num(rhs)) => {
                 if rhs == 0 {
-                    if lhs > 0 {
-                        PlusInf
-                    } else if lhs < 0 {
-                        MinusInf
-                    } else {
-                        NaN
+                    match lhs.cmp(&0) {
+                        Ordering::Less => MinusInf,
+                        Ordering::Equal => NaN,
+                        Ordering::Greater => PlusInf,
                     }
                 } else if lhs == i64::MIN && rhs == -1 {
                     PlusInf

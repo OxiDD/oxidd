@@ -95,10 +95,12 @@ pub struct Drain<'a, T, S: Status = usize> {
 /// meaningfully address a table that is larger than the number of `Status` hash
 /// values. This is why we have [`Self::check_capacity()`].
 ///
-/// SAFETY: All valid status values are either [`Status::FREE`], a
-/// [`Status::TOMBSTONE`] or a hash value. [`Status::from_hash()`] must always
-/// return a hash value, and [`Status::is_hash()`] must return `true` if and
-/// only if the given `Status` is indeed a hash value.
+/// # Safety
+///
+/// All valid status values are either [`Status::FREE`], a [`Status::TOMBSTONE`]
+/// or a hash value. [`Status::from_hash()`] must always return a hash value,
+/// and [`Status::is_hash()`] must return `true` if and only if the given
+/// `Status` is indeed a hash value.
 pub unsafe trait Status: Copy + Eq {
     /// Marker for the slot being free
     const FREE: Self;
@@ -291,6 +293,11 @@ impl<T, S: Status, A: Clone + Allocator> RawTable<T, S, A> {
         self.len
     }
 
+    /// Returns `true` iff no elements are stored in the table
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
     /// Get the capacity (excluding spare slots)
     #[inline]
     pub fn capacity(&self) -> usize {
@@ -420,7 +427,9 @@ impl<T, S: Status, A: Clone + Allocator> RawTable<T, S, A> {
 
     /// Returns `true` iff there is an entry at `slot`
     ///
-    /// SAFETY: `slot` must be less than `self.slots()`
+    /// # Safety
+    ///
+    /// `slot` must be less than `self.slots()`
     #[inline(always)]
     pub unsafe fn is_slot_occupied_unchecked(&self, slot: usize) -> bool {
         debug_assert!(slot < self.data.len());
@@ -522,8 +531,10 @@ impl<T, S: Status, A: Clone + Allocator> RawTable<T, S, A> {
 
     /// Get a reference to the entry at `slot`
     ///
-    /// SAFETY: `slot` must be the index of an occupied slot. This is the case
-    /// if `slot` has been returned by [`RawTable::find()`] or
+    /// # Safety
+    ///
+    /// `slot` must be the index of an occupied slot. This is the case if `slot`
+    /// has been returned by [`RawTable::find()`] or
     /// [`RawTable::find_or_find_insert_slot()`] in the `Ok` case, and no
     /// modifications happened in between.
     #[inline]
@@ -536,8 +547,10 @@ impl<T, S: Status, A: Clone + Allocator> RawTable<T, S, A> {
 
     /// Get a mutable reference to the entry entry at `slot`
     ///
-    /// SAFETY: `slot` must be the index of an occupied slot. This is the case
-    /// if `slot` has been returned by [`RawTable::find()`] or
+    /// # Safety
+    ///
+    /// `slot` must be the index of an occupied slot. This is the case if `slot`
+    /// has been returned by [`RawTable::find()`] or
     /// [`RawTable::find_or_find_insert_slot()`] in the `Ok` case, and no
     /// modifications happened in between.
     #[inline]
@@ -553,9 +566,11 @@ impl<T, S: Status, A: Clone + Allocator> RawTable<T, S, A> {
     /// `hash` is the hash value of `val`. Returns a mutable reference to the
     /// inserted value.
     ///
-    /// SAFETY: `slot` must be the index of an empty slot. This is the case
-    /// if `slot` has been returned by [`RawTable::find_or_find_insert_slot()`]
-    /// in the `Err` case, and no modifications happened in between.
+    /// # Safety
+    ///
+    /// `slot` must be the index of an empty slot. This is the case if `slot`
+    /// has been returned by [`RawTable::find_or_find_insert_slot()`] in the
+    /// `Err` case, and no modifications happened in between.
     #[inline]
     pub unsafe fn insert_in_slot_unchecked(&mut self, hash: u64, slot: usize, val: T) -> &mut T {
         debug_assert!(!self.data[slot].status.is_hash(), "slot is occupied");
@@ -588,8 +603,10 @@ impl<T, S: Status, A: Clone + Allocator> RawTable<T, S, A> {
     ///
     /// Returns the entry value.
     ///
-    /// SAFETY: `slot` must be the index of an occupied slot. This is the case
-    /// if `slot` has been returned by [`RawTable::find()`] or
+    /// # Safety
+    ///
+    /// `slot` must be the index of an occupied slot. This is the case if `slot`
+    /// has been returned by [`RawTable::find()`] or
     /// [`RawTable::find_or_find_insert_slot()`] in the `Ok` case, and no
     /// modifications happened in between.
     #[inline]

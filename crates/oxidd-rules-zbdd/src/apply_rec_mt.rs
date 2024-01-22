@@ -52,7 +52,7 @@ where
     };
     stat!(call op);
 
-    let Node::Inner(node) = manager.get_node(&*f) else {
+    let Node::Inner(node) = manager.get_node(&f) else {
         return Ok(manager.get_terminal(ZBDDTerminal::Empty).unwrap());
     };
     let level = node.level();
@@ -64,7 +64,7 @@ where
                 let (lo, hi) = collect_children(node);
                 return reduce_borrowed(manager, level, hi, manager.clone_edge(&lo), op);
             }
-            return Ok(manager.clone_edge(&*node.child(VAL as usize)));
+            return Ok(manager.clone_edge(&node.child(VAL as usize)));
         }
         Ordering::Greater => {
             return Ok(manager.get_terminal(ZBDDTerminal::Empty).unwrap());
@@ -123,15 +123,15 @@ where
 
     stat!(call Union);
     let empty = EdgeDropGuard::new(manager, manager.get_terminal(ZBDDTerminal::Empty).unwrap());
-    if &*f == &*g || &*g == &*empty {
+    if f == g || *g == *empty {
         return Ok(manager.clone_edge(&*f));
     }
-    if &*f == &*empty {
+    if *f == *empty {
         return Ok(manager.clone_edge(&*g));
     }
 
     // Union is commutative, make the set `{f, g}` unique
-    let (f, g) = if &*f > &*g { (g, f) } else { (f, g) };
+    let (f, g) = if f > g { (g, f) } else { (f, g) };
 
     // Query apply cache
     stat!(cache_query Union);
@@ -204,16 +204,16 @@ where
     }
 
     stat!(call Intsec);
-    if &*f == &*g {
+    if f == g {
         return Ok(manager.clone_edge(&*f));
     }
     let empty = EdgeDropGuard::new(manager, manager.get_terminal(ZBDDTerminal::Empty).unwrap());
-    if &*f == &*empty || &*g == &*empty {
+    if *f == *empty || *g == *empty {
         return Ok(empty.into_edge());
     }
 
     // Intersection is commutative, make the set `{f, g}` unique
-    let (f, g) = if &*f > &*g { (g, f) } else { (f, g) };
+    let (f, g) = if f > g { (g, f) } else { (f, g) };
 
     // Query apply cache
     stat!(cache_query Intsec);
@@ -286,10 +286,10 @@ where
 
     stat!(call Diff);
     let empty = EdgeDropGuard::new(manager, manager.get_terminal(ZBDDTerminal::Empty).unwrap());
-    if &*f == &*g || &*f == &*empty {
+    if f == g || *f == *empty {
         return Ok(empty.into_edge());
     }
-    if &*g == &*empty {
+    if *g == *empty {
         return Ok(manager.clone_edge(&*f));
     }
 
@@ -364,18 +364,18 @@ where
 
     stat!(call SymmDiff);
     let empty = EdgeDropGuard::new(manager, manager.get_terminal(ZBDDTerminal::Empty).unwrap());
-    if &*f == &*g {
+    if f == g {
         return Ok(empty.into_edge());
     }
-    if &*f == &*empty {
+    if *f == *empty {
         return Ok(manager.clone_edge(&*g));
     }
-    if &*g == &*empty {
+    if *g == *empty {
         return Ok(manager.clone_edge(&*f));
     }
 
     // Symmetric difference is commutative, make the set `{f, g}` unique
-    let (f, g) = if &*f > &*g { (g, f) } else { (f, g) };
+    let (f, g) = if f > g { (g, f) } else { (f, g) };
 
     // Query apply cache
     stat!(cache_query SymmDiff);
@@ -454,13 +454,13 @@ where
     stat!(call Ite);
 
     // Terminal cases
-    if &*g == &*h {
+    if g == h {
         return Ok(manager.clone_edge(&*g));
     }
-    if &*f == &*g {
+    if f == g {
         return apply_union(manager, depth, f, h);
     }
-    if &*f == &*h {
+    if f == h {
         return apply_intsec(manager, depth, f, g);
     }
 
@@ -486,10 +486,10 @@ where
     let ghlevel = std::cmp::min(glevel, hlevel);
     let level = std::cmp::min(flevel, ghlevel);
     let tautology = manager.zbdd_cache().tautology(level);
-    if &*f == &*tautology {
+    if *f == *tautology {
         return Ok(manager.clone_edge(&*g));
     }
-    if &*g == &*tautology {
+    if *g == *tautology {
         return apply_union(manager, depth, f, h);
     }
     // if &*h == &*tautology { f → g }; we cannot handle this properly
@@ -601,7 +601,7 @@ where
         self.0
     }
 
-    fn init_depth<'id>(manager: &F::Manager<'id>) -> u32 {
+    fn init_depth(manager: &F::Manager<'_>) -> u32 {
         let n = manager.current_num_threads();
         if n > 1 {
             (4096 * n).ilog2()

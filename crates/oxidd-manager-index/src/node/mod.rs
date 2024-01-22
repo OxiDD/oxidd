@@ -5,7 +5,8 @@ pub mod fixed_arity;
 /// Base traits to be satisfied by inner nodes for oxidd-manager. This does not
 /// include the [`InnerNode`][oxidd_core::InnerNode] trait.
 ///
-/// SAFETY:
+/// # Safety
+///
 /// - The reference counter must be initialized to 2.
 /// - [`Self::retain()`] must increment the counter by 1
 /// - [`Self::release()`] must decrement the counter by 1 with (at least)
@@ -29,7 +30,9 @@ pub unsafe trait NodeBase: Eq + std::hash::Hash {
     /// A call to this function only modifies the counter value and never drops
     /// `self`.
     ///
-    /// SAFETY: The caller must give up ownership of one reference to `self`.
+    /// # Safety
+    ///
+    /// The caller must give up ownership of one reference to `self`.
     unsafe fn release(&self) -> usize;
 
     /// Atomically load the current reference count with the given `order`

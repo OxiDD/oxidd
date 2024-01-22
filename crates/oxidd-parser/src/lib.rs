@@ -20,6 +20,7 @@
 #![doc = document_features::document_features!()]
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
+#![allow(clippy::type_complexity)]
 
 use std::fmt;
 use std::num::NonZeroU32;

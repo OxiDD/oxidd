@@ -4,6 +4,8 @@
 //! ## Feature flags
 #![doc = document_features::document_features!()]
 #![forbid(unsafe_code)]
+// `'id` lifetimes may make the code easier to understand
+#![allow(clippy::needless_lifetimes)]
 
 use std::fmt;
 use std::hash::Hash;
@@ -92,12 +94,12 @@ where
     M: Manager<Terminal = ZBDDTerminal>,
 {
     let _ = op;
-    if manager.get_node(&*hi).is_terminal(&ZBDDTerminal::Empty) {
+    if manager.get_node(&hi).is_terminal(&ZBDDTerminal::Empty) {
         stat!(reduced op);
         return Ok(lo);
     }
     ReducedOrNew::New(
-        M::InnerNode::new(level, [manager.clone_edge(&*hi), lo]),
+        M::InnerNode::new(level, [manager.clone_edge(&hi), lo]),
         Default::default(),
     )
     .then_insert(manager, level)
@@ -149,7 +151,8 @@ impl fmt::Display for ZBDDTerminal {
     }
 }
 
-// --- ZBDD Cache ---------------------------------------------------------------
+// --- ZBDD Cache
+// ---------------------------------------------------------------
 
 pub struct ZBDDCache<E> {
     tautologies: Vec<E>,
@@ -188,11 +191,11 @@ impl<E: Edge> ZBDDCache<E> {
 
     /// Rebuild the `ZBDDCache` of `manager`
     ///
-    /// The logical semantics of ZBDD nodes is dependent on the set of variables.
-    /// The [`oxidd_core::function::BooleanFunction`] implementation for
-    /// [`ZBDDSet`] assumes that this set of variables is the set containing all
-    /// variables. So if we add a new variable/level to the diagram, the cache
-    /// needs to be rebuilt.
+    /// The logical semantics of ZBDD nodes is dependent on the set of
+    /// variables. The [`oxidd_core::function::BooleanFunction`]
+    /// implementation for [`ZBDDSet`] assumes that this set of variables is
+    /// the set containing all variables. So if we add a new variable/level
+    /// to the diagram, the cache needs to be rebuilt.
     /// [`ZBDDSet::new_var()`][oxidd_core::function::BooleanFunction::new_var()]
     /// and
     /// [`ZBDDSet::new_singleton()`][`oxidd_core::function::BooleanVecSet::new_singleton()`]
@@ -240,6 +243,12 @@ impl<E: Edge> ZBDDCache<E> {
         debug_assert!(len > 0, "Cache is empty. Maybe you forgot to rebuild it?");
         let rev_idx = std::cmp::min(len - 1, level);
         &self.tautologies[(len - 1 - rev_idx) as usize]
+    }
+}
+
+impl<E: Edge> Default for ZBDDCache<E> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
