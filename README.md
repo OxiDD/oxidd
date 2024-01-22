@@ -7,7 +7,7 @@ OxiDD is a highly modular decision diagram framework written in Rust. The most p
 
 - **Several kinds of (reduced ordered) decision diagrams** are already implemented:
     - Binary decision diagrams (BDDs)
-    - BDDs with complement edges (BDDCs)
+    - BDDs with complement edges (CBDDs)
     - Zero-suppressed BDDs (ZBDDs, aka ZDDs/ZSDDs)
     - Multi-terminal BDDs (MTBDDs, aka ADDs)
     - Ternary decision diagrams (TDDs)
