@@ -33,7 +33,7 @@ use crate::NodeID;
 /// this lock accordingly. In a sequential implementation, a
 /// [`RefCell`][std::cell::RefCell] or the like may be used instead of lock.
 ///
-/// # SAFETY
+/// # Safety
 ///
 /// An implementation must ensure that the "[`Edge`][crate::Edge] part" of the
 /// function points to a node that is stored in the manager referenced  by the

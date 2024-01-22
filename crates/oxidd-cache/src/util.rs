@@ -9,7 +9,11 @@ pub struct RawMutex(AtomicBool);
 
 #[cfg(not(feature = "parking_lot"))]
 unsafe impl parking_lot::lock_api::RawMutex for RawMutex {
+    // Regarding the lint: the intent here is not to modify the `AtomicBool` in
+    // a const context but to create the `RawMutex` in a const context.
+    #[allow(clippy::declare_interior_mutable_const)]
     const INIT: Self = Self(AtomicBool::new(false));
+
     type GuardMarker = parking_lot::lock_api::GuardNoSend;
 
     #[inline]

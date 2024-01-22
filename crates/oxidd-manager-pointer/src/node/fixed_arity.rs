@@ -61,7 +61,7 @@ impl<'id, ET: Tag, const TAG_BITS: u32, const ARITY: usize> PartialEq
     #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
         // SAFETY: we have shared access to the node
-        unsafe { &*self.children.get() == &*other.children.get() }
+        unsafe { *self.children.get() == *other.children.get() }
     }
 }
 impl<'id, ET: Tag, const TAG_BITS: u32, const ARITY: usize> Eq
@@ -124,8 +124,8 @@ impl<'id, ET: Tag, const TAG_BITS: u32, const ARITY: usize>
 
         // SAFETY:
         // - all elements are initialized
-        // - we effectively move out of `children`; the old `children` are not
-        //   dropped since they are `MaybeUninit`
+        // - we effectively move out of `children`; the old `children` are not dropped
+        //   since they are `MaybeUninit`
         //
         // TODO: replace this by `MaybeUninit::transpose()` /
         // `MaybeUninit::array_assume_init()` once stable
@@ -147,7 +147,7 @@ impl<'id, ET: Tag, const TAG_BITS: u32, const ARITY: usize>
     }
 
     #[inline(always)]
-    fn children<'a>(&'a self) -> Self::ChildrenIter<'a> {
+    fn children(&self) -> Self::ChildrenIter<'_> {
         // SAFETY: we have shared access to the node
         BorrowedEdgeIter::from(unsafe { &*self.children.get() }.iter())
     }

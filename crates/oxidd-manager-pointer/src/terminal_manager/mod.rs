@@ -11,8 +11,10 @@ pub use r#static::*;
 
 /// Manager for terminal nodes
 ///
-/// SAFETY: [`TerminalManager::new_in()`] must properly initialize the given
-/// slot and return a reference to the initialized slot.
+/// # Safety
+///
+/// [`TerminalManager::new_in()`] must properly initialize the given slot and
+/// return a reference to the initialized slot.
 pub unsafe trait TerminalManager<
     'id,
     InnerNode,
@@ -33,17 +35,26 @@ pub unsafe trait TerminalManager<
 
     /// Create a new `TerminalManager` in the given `slot`
     ///
-    /// SAFETY: `slot` is valid for writes and properly aligned. When returning
-    /// from this function, the location referenced by `slot` is initialized.
-    /// With respect to Stacked / Tree borrows, `slot` is tagged as the root of
-    /// the allocation.
+    /// # Safety
+    ///
+    /// `slot` is valid for writes and properly aligned. When returning from
+    /// this function, the location referenced by `slot` is initialized. With
+    /// respect to Stacked / Tree borrows, `slot` is tagged as the root of the
+    /// allocation.
     unsafe fn new_in(slot: *mut Self);
 
     /// Get a pointer to the terminal store
     fn terminal_manager(edge: &Edge<'id, InnerNode, EdgeTag, TAG_BITS>) -> NonNull<Self>;
 
     /// Get the number of currently stored terminals
+    #[must_use]
     fn len(&self) -> usize;
+
+    /// Returns `true` iff currently no terminals are stored
+    #[must_use]
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 
     /// Dereference the given `edge`
     fn deref_edge(
@@ -62,9 +73,11 @@ pub unsafe trait TerminalManager<
     /// Add a terminal to this manager (if it does not already exist) and return
     /// an [`Edge`] pointing to it
     ///
-    /// SAFETY: `this` is valid for reads, properly aligned and initialized.
-    /// With respect to Stacked / Tree Borrows, `this` is tagged as the root of
-    /// the allocation.
+    /// # Safety
+    ///
+    /// `this` is valid for reads, properly aligned and initialized. With
+    /// respect to Stacked / Tree Borrows, `this` is tagged as the root of the
+    /// allocation.
     unsafe fn get(
         this: *const Self,
         terminal: Self::TerminalNode,
@@ -72,9 +85,11 @@ pub unsafe trait TerminalManager<
 
     /// Iterate over all terminals
     ///
-    /// SAFETY: `this` is valid for reads, properly aligned and initialized
-    /// during `'a`. With respect to Stacked / Tree Borrows, `this` is tagged as
-    /// the root of the allocation.
+    /// # Safety
+    ///
+    /// `this` is valid for reads, properly aligned and initialized during `'a`.
+    /// With respect to Stacked / Tree Borrows, `this` is tagged as the root of
+    /// the allocation.
     unsafe fn iter<'a>(this: *const Self) -> Self::Iterator<'a>
     where
         Self: 'a;

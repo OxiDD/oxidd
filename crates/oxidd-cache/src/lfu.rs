@@ -245,7 +245,8 @@ impl<M: Manager, O: Copy + Eq, const ARITY: usize, const SIZE: usize> Bucket<M, 
 
     /// Find the edge for the given operator and operands.
     ///
-    /// We return an `Edge` and not a `&E::Weak` because of lifetime restrictions.
+    /// We return an `Edge` and not a `&E::Weak` because of lifetime
+    /// restrictions.
     #[inline]
     fn find_edge(
         &mut self,

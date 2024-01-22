@@ -29,6 +29,7 @@ pub use edge_hash_map::EdgeHashMap;
 ///
 /// `Borrowed<'a, H>` always has the same representation as `H`.
 #[repr(transparent)]
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub struct Borrowed<'a, H>(ManuallyDrop<H>, PhantomData<&'a H>);
 
 impl<'a, H> Borrowed<'a, H> {
@@ -45,9 +46,11 @@ impl<'a, H> Borrowed<'a, H> {
 
     /// Convert a borrowed handle into the underlying [`ManuallyDrop`] handle
     ///
-    /// SAFETY: The caller must ensure that the resources referenced by the
-    /// handle remain valid during its usage. Furthermore the returned handle
-    /// must not be dropped.
+    /// # Safety
+    ///
+    /// The caller must ensure that the resources referenced by the handle
+    /// remain valid during its usage. Furthermore the returned handle must not
+    /// be dropped.
     #[inline]
     pub unsafe fn into_inner(this: Self) -> ManuallyDrop<H> {
         this.0
@@ -162,13 +165,13 @@ impl<'a, M: Manager> Deref for EdgeDropGuard<'a, M> {
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        &*self.edge
+        &self.edge
     }
 }
 impl<'a, M: Manager> DerefMut for EdgeDropGuard<'a, M> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut *self.edge
+        &mut self.edge
     }
 }
 
@@ -255,13 +258,13 @@ impl<'a, M: Manager> Deref for InnerNodeDropGuard<'a, M> {
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        &*self.node
+        &self.node
     }
 }
 impl<'a, M: Manager> DerefMut for InnerNodeDropGuard<'a, M> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut *self.node
+        &mut self.node
     }
 }
 
@@ -309,6 +312,12 @@ pub trait NodeSet<E>: Clone + Default + Eq {
     #[must_use]
     fn len(&self) -> usize;
 
+    /// Returns `true` iff there are no nodes in the set
+    #[must_use]
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Add a node (the node to which edge points) to the set
     ///
     /// Returns `true` if the element was added (i.e. not previously present).
@@ -326,7 +335,7 @@ pub trait NodeSet<E>: Clone + Default + Eq {
 impl<E: Edge, S: Clone + Default + BuildHasher> NodeSet<E> for HashSet<NodeID, S> {
     #[inline]
     fn len(&self) -> usize {
-        HashSet::len(&self)
+        HashSet::len(self)
     }
     #[inline]
     fn insert(&mut self, edge: &E) -> bool {
@@ -344,7 +353,7 @@ impl<E: Edge, S: Clone + Default + BuildHasher> NodeSet<E> for HashSet<NodeID, S
 impl<E: Edge> NodeSet<E> for BTreeSet<NodeID> {
     #[inline]
     fn len(&self) -> usize {
-        BTreeSet::len(&self)
+        BTreeSet::len(self)
     }
     #[inline]
     fn insert(&mut self, edge: &E) -> bool {

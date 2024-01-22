@@ -4,6 +4,9 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 #![warn(missing_docs)]
+// We use const assertions for checking configurations and need to make sure
+// that they are evaluated
+#![allow(clippy::let_unit_value)]
 
 use std::alloc;
 use std::hash::Hash;
@@ -25,7 +28,11 @@ use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 use crossbeam_utils::CachePadded;
 use parking_lot::Mutex;
 
-/// SAFETY: The reference counter must be initialized to 1 (or a larger value,
+/// Atomically reference counted value
+///
+/// # Safety
+///
+/// The reference counter must be initialized to 1 (or a larger value,
 /// be aware of potential memory leaks in this case). `retain()` must increment
 /// the counter by 1 with [`Relaxed`] order, `release()` must decrement the
 /// counter by 1 with [`Release`] order. An implementation must not modify the
@@ -45,7 +52,9 @@ pub unsafe trait AtomicRefCounted {
     /// A call to this function only modifies the counter value and never drops
     /// `self`.
     ///
-    /// SAFETY: The caller must give up ownership of one reference to `self`.
+    /// # Safety
+    ///
+    /// The caller must give up ownership of one reference to `self`.
     unsafe fn release(&self) -> usize;
 
     /// Read the current reference count (with [`Relaxed`] order)
@@ -197,7 +206,9 @@ impl<I, D, const PAGE_SIZE: usize> ArcSlab<I, D, PAGE_SIZE> {
 
     /// Create a new `ArcSlab` and initialize the `data` field using `init_data`
     ///
-    /// SAFETY: Calling `init_data` must initialize the provided location.
+    /// # Safety
+    ///
+    /// Calling `init_data` must initialize the provided location.
     /// `init_data` may assume that `*mut D` is valid for writes and properly
     /// aligned (hence it is safe to call [`std::ptr::write()`] for that
     /// location). With respect to aliasing models such as Stacked Borrows or
@@ -243,6 +254,7 @@ impl<I, D, const PAGE_SIZE: usize> ArcSlab<I, D, PAGE_SIZE> {
     }
 
     /// Create a new ArcSlab with the given data
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(data: D) -> ArcSlabRef<I, D, PAGE_SIZE> {
         // SAFETY: writing to `slot` is safe, we initialize the slot
         unsafe { Self::new_with(|slot| std::ptr::write(slot, data)) }
@@ -288,15 +300,17 @@ impl<I, D, const PAGE_SIZE: usize> ArcSlab<I, D, PAGE_SIZE> {
     /// Decrease the counter of external references and drop the `ArcSlab` if
     /// the reference count reaches 0
     ///
-    /// SAFETY: For every call to `release()` except one, there has to be a
-    /// distinct preceeding call to `retain()`. `this` needs to be valid. The
-    /// `ArcSlab` must not be used after the last calls to `release()`.
+    /// # Safety
+    ///
+    /// For every call to `release()` except one, there has to be a distinct
+    /// preceeding call to `retain()`. `this` needs to be valid. The `ArcSlab`
+    /// must not be used after the last calls to `release()`.
     pub unsafe fn release(this: NonNull<Self>) {
         // Inspired by the `Arc` implementation from the Rustonomicon.
         //
         // We need release ordering here: Every other access to `rc` in this
         // thread, in particular increments, happen before the decrement. This
-        // means that if we read `1` below, no other thread can have a
+        // means that if we read `1` below, no other thread can have an
         // `ArcSlabRef` and this is the last one in the current thread.
 
         // SAFETY: `this` is reference counted
@@ -316,7 +330,7 @@ impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> ArcSlab<I, D, PAGE_SIZE> {
     /// Get a free slot
     #[must_use]
     #[inline]
-    pub fn add_item<'a>(&'a self, item: I) -> IntHandle<'a, I, D, PAGE_SIZE> {
+    pub fn add_item(&self, item: I) -> IntHandle<'_, I, D, PAGE_SIZE> {
         let slot = self.int.pages.lock().get_slot();
         self.int.items.fetch_add(1, Relaxed);
         let item = Slot {
@@ -457,7 +471,7 @@ impl<I, D, const PAGE_SIZE: usize> Page<I, D, PAGE_SIZE> {
         // a page).
         let count = unsafe {
             (raw_ptr as *mut u8)
-                .offset(PAGE_SIZE as isize)
+                .add(PAGE_SIZE)
                 .offset_from(first_slot as *mut u8)
         } / size_of::<Slot<I>>() as isize;
         let mut slot = first_slot;
@@ -512,7 +526,7 @@ impl<I, D, const PAGE_SIZE: usize> Page<I, D, PAGE_SIZE> {
         // SAFETY: The slot pointer is valid, `page_list.free_slot` always
         // contains a valid pointer.
         unsafe { slot.as_mut().next_free = page_list.free_slot.as_ptr() };
-        page_list.free_slot = NonNull::from(slot);
+        page_list.free_slot = slot;
     }
 
     /// Deallocate a `Page` and all its predecessors
@@ -545,7 +559,7 @@ impl<I: AtomicRefCounted> Slot<I> {
     ///
     /// SAFETY: The slot must be non-empty
     #[inline]
-    unsafe fn retain<D>(this: NonNull<Self>) {
+    unsafe fn retain(this: NonNull<Self>) {
         // SAFETY: The slot is non-empty
         let item = unsafe { &this.as_ref().item };
         item.retain();
@@ -635,7 +649,9 @@ impl<I, D, const PAGE_SIZE: usize> ArcSlabRef<I, D, PAGE_SIZE> {
 
     /// Construct an `ArcSlabRef` from a raw pointer
     ///
-    /// SAFETY: The pointer must have been obtained from
+    /// # Safety
+    ///
+    /// The pointer must have been obtained from
     /// [`ArcSlabRef::<I, D, PAGE_SIZE>::into_raw()`] (`I`, `D` and `PAGE_SIZE`
     /// must match). This function does not change any reference counters, so
     /// calling this function multiple times for the same pointer may lead to
@@ -689,7 +705,7 @@ impl<I, D, const PAGE_SIZE: usize> Hash for ArcSlabRef<I, D, PAGE_SIZE> {
 
 impl<I, D, const PAGE_SIZE: usize> PartialOrd for ArcSlabRef<I, D, PAGE_SIZE> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.0.partial_cmp(&other.0)
+        Some(self.0.cmp(&other.0))
     }
 }
 
@@ -760,7 +776,9 @@ impl<'a, I: AtomicRefCounted, D, const PAGE_SIZE: usize> IntHandle<'a, I, D, PAG
 
     /// Construct an `IntHandle` from a raw pointer
     ///
-    /// SAFETY: The pointer must have been obtained from
+    /// # Safety
+    ///
+    /// The pointer must have been obtained from
     /// [`IntHandle::<I, D, PAGE_SIZE>::into_raw()`] (`I`, `D` and `PAGE_SIZE`
     /// must match). Furthermore, the caller must ensure that the [`ArcSlab`]
     /// outlives the created `IntHandle`.
@@ -775,7 +793,7 @@ impl<'a, I: AtomicRefCounted, D, const PAGE_SIZE: usize> IntHandle<'a, I, D, PAG
 impl<'a, I: AtomicRefCounted, D, const PAGE_SIZE: usize> Clone for IntHandle<'a, I, D, PAGE_SIZE> {
     #[inline]
     fn clone(&self) -> Self {
-        unsafe { Slot::retain::<D>(self.0) };
+        unsafe { Slot::retain(self.0) };
         Self(self.0, PhantomData)
     }
 }
@@ -812,7 +830,7 @@ impl<'a, I: AtomicRefCounted, D, const PAGE_SIZE: usize> PartialOrd
 {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.0.partial_cmp(&other.0)
+        Some(self.0.cmp(&other.0))
     }
 }
 impl<'a, I: AtomicRefCounted, D, const PAGE_SIZE: usize> Ord for IntHandle<'a, I, D, PAGE_SIZE> {
@@ -902,7 +920,9 @@ impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> ExtHandle<I, D, PAGE_SIZE> 
 
     /// Construct an `ExtHandle` from a raw pointer
     ///
-    /// SAFETY: The pointer must have been obtained from
+    /// # Safety
+    ///
+    /// The pointer must have been obtained from
     /// [`ExtHandle::<I, D, PAGE_SIZE>::into_raw()`] (`I`, `D` and `PAGE_SIZE`
     /// must match).
     #[inline]
@@ -928,7 +948,7 @@ impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> Clone for ExtHandle<I, D, P
     #[inline]
     fn clone(&self) -> Self {
         // SAFETY: the slot is occupied
-        unsafe { Slot::retain::<D>(self.0) };
+        unsafe { Slot::retain(self.0) };
         Self::slab(self).retain();
         Self(self.0, PhantomData)
     }
@@ -966,7 +986,7 @@ impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> Eq for ExtHandle<I, D, PAGE
 impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> PartialOrd for ExtHandle<I, D, PAGE_SIZE> {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.0.partial_cmp(&other.0)
+        Some(self.0.cmp(&other.0))
     }
 }
 impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> Ord for ExtHandle<I, D, PAGE_SIZE> {

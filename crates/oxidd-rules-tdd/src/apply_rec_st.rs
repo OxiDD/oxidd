@@ -24,7 +24,7 @@ where
     M::InnerNode: HasLevel,
 {
     stat!(call TDDOp::Not);
-    let node = match manager.get_node(&*f) {
+    let node = match manager.get_node(&f) {
         Node::Inner(node) => node,
         Node::Terminal(t) => return Ok(manager.get_terminal(!*t.borrow()).unwrap()),
     };
@@ -76,7 +76,7 @@ where
     M::InnerNode: HasLevel,
 {
     stat!(call OP);
-    let (operator, op1, op2) = match terminal_bin::<M, OP>(manager, &*f, &*g) {
+    let (operator, op1, op2) = match terminal_bin::<M, OP>(manager, &f, &g) {
         Operation::Binary(o, op1, op2) => (o, op1, op2),
         Operation::Not(f) => {
             return apply_not(manager, f);
@@ -94,8 +94,8 @@ where
         return Ok(h);
     }
 
-    let fnode = manager.get_node(&*f);
-    let gnode = manager.get_node(&*g);
+    let fnode = manager.get_node(&f);
+    let gnode = manager.get_node(&g);
     let flevel = fnode.level();
     let glevel = gnode.level();
     let level = std::cmp::min(flevel, glevel);
@@ -147,29 +147,27 @@ where
     stat!(call TDDOp::Ite);
 
     // Terminal cases
-    if &*g == &*h {
-        return Ok(manager.clone_edge(&*g));
+    if g == h {
+        return Ok(manager.clone_edge(&g));
     }
-    if &*f == &*g {
+    if f == g {
         return apply_bin::<M, { TDDOp::Or as u8 }>(manager, f, h);
     }
-    if &*f == &*h {
+    if f == h {
         return apply_bin::<M, { TDDOp::And as u8 }>(manager, f, g);
     }
-    let fnode = manager.get_node(&*f);
-    let gnode = manager.get_node(&*g);
-    let hnode = manager.get_node(&*h);
+    let fnode = manager.get_node(&f);
+    let gnode = manager.get_node(&g);
+    let hnode = manager.get_node(&h);
     if let Node::Terminal(t) = fnode {
         let t = *t.borrow();
         if t != Unknown {
             return Ok(manager.clone_edge(&*if t == True { g } else { h }));
-        } else {
-            if gnode.is_any_terminal() && hnode.is_any_terminal() {
-                return Ok(manager.get_terminal(Unknown).unwrap());
-            }
+        } else if gnode.is_any_terminal() && hnode.is_any_terminal() {
+            return Ok(manager.get_terminal(Unknown).unwrap());
         }
     }
-    match (manager.get_node(&*g), manager.get_node(&*h)) {
+    match (manager.get_node(&g), manager.get_node(&h)) {
         (Node::Terminal(t), Node::Inner(_)) => match *t.borrow() {
             True => return apply_bin::<M, { TDDOp::Or as u8 }>(manager, f, h),
             Unknown => {}
@@ -183,7 +181,7 @@ where
         (Node::Terminal(gt), Node::Terminal(ht)) => {
             match (*gt.borrow(), *ht.borrow()) {
                 (False, True) => return apply_not(manager, f),
-                (True, False) => return Ok(manager.clone_edge(&*f)),
+                (True, False) => return Ok(manager.clone_edge(&f)),
                 _ => {}
             };
         }

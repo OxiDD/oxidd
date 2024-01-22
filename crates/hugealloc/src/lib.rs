@@ -59,7 +59,9 @@ impl HugeAlloc {
         }
 
         let ptr = if is_large(size) {
-            let Ok(layout) = layout.align_to(LARGE) else { return Err(AllocError) };
+            let Ok(layout) = layout.align_to(LARGE) else {
+                return Err(AllocError);
+            };
 
             // SAFETY: `layout` has non-zero size
             let ptr = if zeroed {
@@ -126,7 +128,9 @@ impl HugeAlloc {
             // equal to `new_size`. The alignment stays the same. We can assume
             // that the memory was allocated by this allocator.
             let raw_ptr = unsafe { realloc(ptr.as_ptr(), old_layout, new_size) };
-            let Some(ptr) = NonNull::new(raw_ptr) else { return Err(AllocError) };
+            let Some(ptr) = NonNull::new(raw_ptr) else {
+                return Err(AllocError);
+            };
             if zeroed {
                 // SAFETY: The range is valid for writes, the pointer is
                 // properly aligned.
@@ -138,10 +142,11 @@ impl HugeAlloc {
         }
 
         let new_ptr = self.alloc_impl(new_layout, zeroed)?;
-        // SAFETY: because `new_layout.size()` must be greater than or equal to `old_size`,
-        // both the old and new memory allocation are valid for reads and writes for `old_size`
-        // bytes. Also, because the old allocation wasn't yet deallocated, it cannot overlap
-        // `new_ptr`. Thus, the call to `copy_nonoverlapping` is safe. The safety contract
+        // SAFETY: because `new_layout.size()` must be greater than or equal to
+        // `old_size`, both the old and new memory allocation are valid for
+        // reads and writes for `old_size` bytes. Also, because the old
+        // allocation wasn't yet deallocated, it cannot overlap `new_ptr`. Thus,
+        // the call to `copy_nonoverlapping` is safe. The safety contract
         // for `dealloc` must be upheld by the caller.
         unsafe {
             core::ptr::copy_nonoverlapping(ptr.as_ptr(), new_ptr.as_ptr().cast(), old_size);
@@ -235,7 +240,9 @@ unsafe impl Allocator for HugeAlloc {
             // the same. We can assume that the memory was allocated by this
             // allocator.
             let raw_ptr = unsafe { realloc(ptr.as_ptr(), old_layout, new_size) };
-            let Some(ptr) = NonNull::new(raw_ptr) else { return Err(AllocError) };
+            let Some(ptr) = NonNull::new(raw_ptr) else {
+                return Err(AllocError);
+            };
             // SAFETY: `ptr` is non-null
             return Ok(unsafe {
                 NonNull::new_unchecked(core::ptr::slice_from_raw_parts_mut(ptr.as_ptr(), new_size))
@@ -243,10 +250,11 @@ unsafe impl Allocator for HugeAlloc {
         }
 
         let new_ptr = self.allocate(new_layout)?;
-        // SAFETY: because `new_size` must be smaller than or equal to `old_layout.size()`,
-        // both the old and new memory allocation are valid for reads and writes for `new_size`
-        // bytes. Also, because the old allocation wasn't yet deallocated, it cannot overlap
-        // `new_ptr`. Thus, the call to `copy_nonoverlapping` is safe. The safety contract
+        // SAFETY: because `new_size` must be smaller than or equal to
+        // `old_layout.size()`, both the old and new memory allocation are valid
+        // for reads and writes for `new_size` bytes. Also, because the old
+        // allocation wasn't yet deallocated, it cannot overlap `new_ptr`. Thus,
+        // the call to `copy_nonoverlapping` is safe. The safety contract
         // for `dealloc` must be upheld by the caller.
         unsafe {
             core::ptr::copy_nonoverlapping(ptr.as_ptr(), new_ptr.as_ptr().cast(), new_size);

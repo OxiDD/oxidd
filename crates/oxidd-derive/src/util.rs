@@ -38,5 +38,5 @@ pub fn is_repr_u8(tokens: proc_macro2::TokenStream) -> bool {
     let Some(proc_macro2::TokenTree::Ident(i)) = iter.next() else {
         return false;
     };
-    iter.next().is_none() && i.to_string() == "u8"
+    iter.next().is_none() && i == "u8"
 }

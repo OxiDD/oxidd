@@ -20,7 +20,7 @@ use oxidd::RawManagerRef;
 use crate::oxidd_assignment_t;
 
 /// cbindgen:ignore
-const SET_UNWRAP_MSG: &'static str = "the given set is invalid";
+const SET_UNWRAP_MSG: &str = "the given set is invalid";
 
 /// Reference to a manager of a zero-suppressed decision diagram (ZBDD)
 #[derive(Copy, Clone)]
@@ -79,7 +79,7 @@ impl From<AllocResult<ZBDDSet>> for oxidd_zbdd_t {
 }
 
 unsafe fn op1(f: oxidd_zbdd_t, op: impl FnOnce(&ZBDDSet) -> AllocResult<ZBDDSet>) -> oxidd_zbdd_t {
-    f.get().and_then(|f| op(&*f)).into()
+    f.get().and_then(|f| op(&f)).into()
 }
 
 unsafe fn op2(
@@ -87,7 +87,7 @@ unsafe fn op2(
     rhs: oxidd_zbdd_t,
     op: impl FnOnce(&ZBDDSet, &ZBDDSet) -> AllocResult<ZBDDSet>,
 ) -> oxidd_zbdd_t {
-    lhs.get().and_then(|lhs| op(&*lhs, &*rhs.get()?)).into()
+    lhs.get().and_then(|lhs| op(&lhs, &*rhs.get()?)).into()
 }
 
 unsafe fn op3(
@@ -97,7 +97,7 @@ unsafe fn op3(
     op: impl FnOnce(&ZBDDSet, &ZBDDSet, &ZBDDSet) -> AllocResult<ZBDDSet>,
 ) -> oxidd_zbdd_t {
     f1.get()
-        .and_then(|f1| op(&*f1, &*f2.get()?, &*f3.get()?))
+        .and_then(|f1| op(&f1, &*f2.get()?, &*f3.get()?))
         .into()
 }
 

@@ -3,6 +3,8 @@
 //! ## Feature flags
 #![doc = document_features::document_features!()]
 #![forbid(unsafe_code)]
+// `'id` lifetimes may make the code easier to understand
+#![allow(clippy::needless_lifetimes)]
 
 use std::borrow::Borrow;
 use std::fmt;

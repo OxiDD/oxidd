@@ -22,6 +22,7 @@ use nom::{Err, IResult};
 use crate::util::{context_loc, fail, fail_with_contexts, line_span, trim_end, word, word_span};
 use crate::{ClauseOrderNode, ParseOptions, Problem, Prop, Var, VarOrder};
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Format {
     CNF,
@@ -96,7 +97,7 @@ where
             });
         }
 
-        return fail(word_span(input), "expected '[' or a clause number");
+        fail(word_span(input), "expected '[' or a clause number")
     }
 
     let mut order = Vec::new();
@@ -669,11 +670,11 @@ mod tests {
 
     // CNF var
     fn cv(v: i32) -> (Var, bool) {
-        (Var::new(v.abs() as u32).unwrap(), v < 0)
+        (Var::new(v.unsigned_abs()).unwrap(), v < 0)
     }
     // SAT var
     fn sv(v: i32) -> Prop {
-        Prop::Lit(Var::new(v.abs() as u32).unwrap(), v < 0)
+        Prop::Lit(Var::new(v.unsigned_abs()).unwrap(), v < 0)
     }
 
     const OPTS_NO_ORDER: ParseOptions = ParseOptions { orders: false };

@@ -20,7 +20,7 @@ use oxidd::RawManagerRef;
 use crate::oxidd_assignment_t;
 
 /// cbindgen:ignore
-const FUNC_UNWRAP_MSG: &'static str = "the given function is invalid";
+const FUNC_UNWRAP_MSG: &str = "the given function is invalid";
 
 /// Reference to a manager of a binary decision diagram with complement edges
 /// (CBDD)
@@ -87,7 +87,7 @@ unsafe fn op1(
     f: oxidd_cbdd_t,
     op: impl FnOnce(&CBDDFunction) -> AllocResult<CBDDFunction>,
 ) -> oxidd_cbdd_t {
-    f.get().and_then(|f| op(&*f)).into()
+    f.get().and_then(|f| op(&f)).into()
 }
 
 unsafe fn op2(
@@ -95,7 +95,7 @@ unsafe fn op2(
     rhs: oxidd_cbdd_t,
     op: impl FnOnce(&CBDDFunction, &CBDDFunction) -> AllocResult<CBDDFunction>,
 ) -> oxidd_cbdd_t {
-    lhs.get().and_then(|lhs| op(&*lhs, &*rhs.get()?)).into()
+    lhs.get().and_then(|lhs| op(&lhs, &*rhs.get()?)).into()
 }
 
 unsafe fn op3(
@@ -105,7 +105,7 @@ unsafe fn op3(
     op: impl FnOnce(&CBDDFunction, &CBDDFunction, &CBDDFunction) -> AllocResult<CBDDFunction>,
 ) -> oxidd_cbdd_t {
     f1.get()
-        .and_then(|f1| op(&*f1, &*f2.get()?, &*f3.get()?))
+        .and_then(|f1| op(&f1, &*f2.get()?, &*f3.get()?))
         .into()
 }
 

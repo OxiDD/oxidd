@@ -34,7 +34,7 @@ where
     M::InnerNode: HasLevel,
 {
     stat!(call BDDOp::Not);
-    let node = match manager.get_node(&*f) {
+    let node = match manager.get_node(&f) {
         Node::Inner(node) => node,
         Node::Terminal(t) => return Ok(manager.get_terminal(!*t.borrow()).unwrap()),
     };
@@ -78,7 +78,7 @@ where
     M::InnerNode: HasLevel,
 {
     stat!(call OP);
-    let (operator, op1, op2) = match terminal_bin::<M, OP>(manager, &*f, &*g) {
+    let (operator, op1, op2) = match terminal_bin::<M, OP>(manager, &f, &g) {
         Operation::Binary(o, op1, op2) => (o, op1, op2),
         Operation::Not(f) => {
             return apply_not(manager, f);
@@ -96,8 +96,8 @@ where
         return Ok(h);
     }
 
-    let fnode = manager.get_node(&*f).unwrap_inner();
-    let gnode = manager.get_node(&*g).unwrap_inner();
+    let fnode = manager.get_node(&f).unwrap_inner();
+    let gnode = manager.get_node(&g).unwrap_inner();
     let flevel = fnode.level();
     let glevel = gnode.level();
     let level = std::cmp::min(flevel, glevel);
@@ -141,22 +141,22 @@ where
     stat!(call BDDOp::Ite);
 
     // Terminal cases
-    if &*g == &*h {
-        return Ok(manager.clone_edge(&*g));
+    if g == h {
+        return Ok(manager.clone_edge(&g));
     }
-    if &*f == &*g {
+    if f == g {
         return apply_bin::<M, { BDDOp::Or as u8 }>(manager, f, h);
     }
-    if &*f == &*h {
+    if f == h {
         return apply_bin::<M, { BDDOp::And as u8 }>(manager, f, g);
     }
-    let fnode = match manager.get_node(&*f) {
+    let fnode = match manager.get_node(&f) {
         Node::Inner(n) => n,
         Node::Terminal(t) => {
             return Ok(manager.clone_edge(&*if *t.borrow() == True { g } else { h }))
         }
     };
-    let (gnode, hnode) = match (manager.get_node(&*g), manager.get_node(&*h)) {
+    let (gnode, hnode) = match (manager.get_node(&g), manager.get_node(&h)) {
         (Node::Inner(gn), Node::Inner(hn)) => (gn, hn),
         (Node::Terminal(t), Node::Inner(_)) => {
             return match t.borrow() {
@@ -173,8 +173,8 @@ where
         (Node::Terminal(gt), Node::Terminal(_ht)) => {
             debug_assert_ne!(gt.borrow(), _ht.borrow()); // g == h is handled above
             return match gt.borrow() {
-                False => apply_not(manager, f),      // if f { ⊥ } else { ⊤ }
-                True => Ok(manager.clone_edge(&*f)), // if f { ⊤ } else { ⊥ }
+                False => apply_not(manager, f),     // if f { ⊥ } else { ⊤ }
+                True => Ok(manager.clone_edge(&f)), // if f { ⊤ } else { ⊥ }
             };
         }
     };
@@ -247,18 +247,18 @@ where
 
     stat!(call operator);
     // Terminal cases
-    let fnode = match manager.get_node(&*f) {
+    let fnode = match manager.get_node(&f) {
         Node::Inner(n) => n,
-        Node::Terminal(_) => return Ok(manager.clone_edge(&*f)),
+        Node::Terminal(_) => return Ok(manager.clone_edge(&f)),
     };
     let flevel = fnode.level();
 
     // We can ignore all variables above the top-most variable. Removing them
     // before querying the apply cache should increase the hit ratio by a lot.
     let vars = crate::set_pop(manager, vars, flevel);
-    let vlevel = match manager.get_node(&*vars) {
+    let vlevel = match manager.get_node(&vars) {
         Node::Inner(n) => n.level(),
-        Node::Terminal(_) => return Ok(manager.clone_edge(&*f)),
+        Node::Terminal(_) => return Ok(manager.clone_edge(&f)),
     };
     debug_assert!(flevel <= vlevel);
     let vars = vars.borrowed();
@@ -435,7 +435,7 @@ where
             terminal_val: &N,
             cache: &mut HashMap<NodeID, N, S>,
         ) -> N {
-            let node = match manager.get_node(&*e) {
+            let node = match manager.get_node(&e) {
                 Node::Inner(node) => node,
                 Node::Terminal(t) => {
                     return if *t.borrow() == BDDTerminal::True {
@@ -480,16 +480,16 @@ where
         ) where
             M::InnerNode: HasLevel,
         {
-            let Node::Inner(node) = manager.get_node(&*edge) else {
+            let Node::Inner(node) = manager.get_node(&edge) else {
                 return;
             };
             let (t, e) = collect_children(node);
-            let c = if manager.get_node(&*t).is_terminal(&BDDTerminal::False) {
+            let c = if manager.get_node(&t).is_terminal(&BDDTerminal::False) {
                 false
-            } else if manager.get_node(&*e).is_terminal(&BDDTerminal::False) {
+            } else if manager.get_node(&e).is_terminal(&BDDTerminal::False) {
                 true
             } else {
-                choice(manager, &*edge)
+                choice(manager, &edge)
             };
             cube[node.level() as usize] = OptBool::from(c);
             inner(manager, if c { t } else { e }, cube, choice);
@@ -543,7 +543,7 @@ where
             M: Manager<Terminal = BDDTerminal>,
             M::InnerNode: HasLevel,
         {
-            match manager.get_node(&*edge) {
+            match manager.get_node(&edge) {
                 Node::Inner(node) => {
                     let edge = node.child((!vals[node.level() as usize]) as usize);
                     inner(manager, edge, vals)

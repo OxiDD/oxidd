@@ -1,4 +1,5 @@
 #![allow(non_camel_case_types)]
+#![allow(clippy::forget_non_drop)]
 
 // These modules are not `pub` because they are not intended to be used from
 // Rust code.

@@ -271,7 +271,7 @@ where
     TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
     MD: DropWith<Edge<'id, N, ET, TAG_BITS>>,
 {
-    unsafe fn init_in<'a>(slot: *mut Self, data: MD, threads: u32) {
+    unsafe fn init_in(slot: *mut Self, data: MD, threads: u32) {
         let workers = rayon::ThreadPoolBuilder::new()
             .num_threads(threads as usize)
             .thread_name(|i| format!("oxidd mp {i}"))
@@ -435,6 +435,25 @@ impl<'id, N: NodeBase, ET: Tag, const TAG_BITS: u32> Edge<'id, N, ET, TAG_BITS> 
         self.0
     }
 
+    /// Create an edge from a raw pointer
+    ///
+    /// This method does neither modify the pointer nor change reference
+    /// counters in any way. The user is responsible for pointer tagging etc.
+    /// Hence, using this method is dangerous. Still, it is required by
+    /// `TerminalManager` implementations.
+    ///
+    /// # Safety
+    ///
+    /// `ptr` must be tagged accordingly.
+    ///
+    /// If the pointer is tagged as referring to an inner node, then it must
+    /// actually point to an inner node stored in the manager associated with
+    /// the `'id` brand. Furthermore, the caller must have ownership of one
+    /// reference (in terms of the reference count).
+    ///
+    /// If the pointer is tagged as referring to a terminal node, then the
+    /// the pointer must be valid as defined by the `TerminalManager`
+    /// implementation of the manager associated with the `'id` brand.
     #[inline(always)]
     pub unsafe fn from_ptr(ptr: NonNull<()>) -> Self {
         Self(ptr, PhantomData)
@@ -448,7 +467,9 @@ impl<'id, N: NodeBase, ET: Tag, const TAG_BITS: u32> Edge<'id, N, ET, TAG_BITS> 
 
     /// Get the inner node referenced by this edge
     ///
-    /// SAFETY: `self` must be untagged and point to an inner node
+    /// # Safety
+    ///
+    /// `self` must be untagged and point to an inner node
     #[inline]
     unsafe fn inner_node_unchecked(&self) -> &N {
         debug_assert_eq!(self.addr() & Self::ALL_TAG_MASK, 0);
@@ -482,8 +503,8 @@ impl<'id, N: NodeBase, ET: Tag, const TAG_BITS: u32> Edge<'id, N, ET, TAG_BITS> 
     ///
     /// SAFETY:
     /// - `self` must be untagged and point to an inner node
-    /// - `TM`, `R`, `MD` and `PAGE_SIZE` must be the
-    ///   types/values this edge has been created with
+    /// - `TM`, `R`, `MD` and `PAGE_SIZE` must be the types/values this edge has
+    ///   been created with
     #[inline]
     unsafe fn drop_from_unique_table<TM, R, MD, const PAGE_SIZE: usize>(self)
     where
@@ -542,7 +563,8 @@ impl<'id, N: NodeBase, ET: Tag, const TAG_BITS: u32> Edge<'id, N, ET, TAG_BITS> 
     fn retag_ptr(&self, tag: ET) -> NonNull<()> {
         let tag_val = tag.as_usize();
         debug_assert!(tag_val <= ET::MAX_VALUE);
-        // Note that we assert `ET::MAX_VALUE <= Self::TAG_MASK` during the computation of `Self::TAG_MASK`
+        // Note that we assert `ET::MAX_VALUE <= Self::TAG_MASK` during the computation
+        // of `Self::TAG_MASK`
         let ptr = sptr::Strict::map_addr(self.0.as_ptr(), |p| (p & !Self::TAG_MASK) | tag_val);
         // SAFETY: even an untagged pointer is non-null
         unsafe { NonNull::new_unchecked(ptr) }
@@ -875,7 +897,7 @@ impl<'id, N, ET, const TAG_BITS: u32> Eq for Edge<'id, N, ET, TAG_BITS> {}
 
 impl<'id, N, ET, const TAG_BITS: u32> PartialOrd for Edge<'id, N, ET, TAG_BITS> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.0.partial_cmp(&other.0)
+        Some(self.0.cmp(&other.0))
     }
 }
 
@@ -1061,9 +1083,8 @@ where
                     }
                 });
                 // SAFETY:
-                // - `slot` was returned by `find_or_find_insert_slot`. We have
-                //    exclusive access to the hash table and did not modify it
-                //    in between.
+                // - `slot` was returned by `find_or_find_insert_slot`. We have exclusive access
+                //   to the hash table and did not modify it in between.
                 // - All edges in the table are untagged and refer to inner nodes.
                 Ok(unsafe { self.0.get_at_slot_unchecked(slot).clone_inner_unchecked() })
             }
@@ -1463,9 +1484,7 @@ impl<const PAGE_SIZE: usize, const TAG_BITS: u32> NodeSet<PAGE_SIZE, TAG_BITS> {
     const NODES_PER_PAGE: usize = PAGE_SIZE >> (TAG_BITS + 1);
 
     #[inline]
-    fn page_offset<'id, InnerNode, ET>(
-        edge: &Edge<'id, InnerNode, ET, TAG_BITS>,
-    ) -> (usize, usize) {
+    fn page_offset<InnerNode, ET>(edge: &Edge<'_, InnerNode, ET, TAG_BITS>) -> (usize, usize) {
         let node_id = sptr::Strict::addr(edge.0.as_ptr()) >> TAG_BITS;
         let page = node_id / Self::NODES_PER_PAGE;
         let offset = node_id % Self::NODES_PER_PAGE;
@@ -1582,10 +1601,12 @@ impl<
 
     /// Convert `raw` into a `ManagerRef`
     ///
-    /// SAFETY: `raw` must have been obtained via [`Self::into_raw()`]. This
-    /// function does not change any reference counters, so calling this
-    /// function multiple times for the same pointer may lead to use after free
-    /// bugs depending on the usage of the returned `ManagerRef`.
+    /// # Safety
+    ///
+    /// `raw` must have been obtained via [`Self::into_raw()`]. This function
+    /// does not change any reference counters, so calling this function
+    /// multiple times for the same pointer may lead to use after free bugs
+    /// depending on the usage of the returned `ManagerRef`.
     #[inline(always)]
     pub unsafe fn from_raw(raw: *const std::ffi::c_void) -> Self {
         let ptr = NonNull::new(raw as *mut _).expect("expected a non-null pointer");
@@ -1696,7 +1717,7 @@ impl<
 {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.0.partial_cmp(&other.0)
+        Some(self.0.cmp(&other.0))
     }
 }
 
@@ -1839,10 +1860,12 @@ impl<
 
     /// Convert `raw` into a `Function`
     ///
-    /// SAFETY: `raw` must have been obtained via [`Self::into_raw()`]. This
-    /// function does not change any reference counters, so calling this
-    /// function multiple times for the same pointer may lead to use after free
-    /// bugs depending on the usage of the returned `Function`.
+    /// # Safety
+    ///
+    /// `raw` must have been obtained via [`Self::into_raw()`]. This function
+    /// does not change any reference counters, so calling this function
+    /// multiple times for the same pointer may lead to use after free bugs
+    /// depending on the usage of the returned `Function`.
     #[inline(always)]
     pub unsafe fn from_raw(raw: *const std::ffi::c_void) -> Self {
         let ptr = NonNull::new(raw as *mut ()).expect("expected a non-null pointer");
@@ -1939,7 +1962,7 @@ impl<
 {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.0.partial_cmp(&other.0)
+        Some(self.0.cmp(&other.0))
     }
 }
 impl<

@@ -23,7 +23,9 @@ use oxidd_core::ReducedOrNew;
 
 /// Swap the level given by `upper_no` with the level directly below.
 ///
-/// SAFTEY: Must be called from inside the closure of
+/// # Safety
+///
+/// Must be called from inside the closure of
 /// [`manager.reorder()`][Manager::reorder]. `manager` must be derived from a
 /// `&mut M` reference. This function may modify nodes at the level of
 /// `upper_no` and `upper_no + 1` (i.e. the level below). There must not be any
@@ -428,7 +430,7 @@ impl std::fmt::Debug for MinSegTree {
             for entry in &self.0[i..2 * i] {
                 write!(f, " {}/{}", entry.delta, entry.min)?;
             }
-            i = 2 * i;
+            i *= 2;
         }
         write!(f, "\n}}")
     }

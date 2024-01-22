@@ -206,7 +206,7 @@ where
         let state = self.state.lock();
         let len = state.unique_table.len();
         DynamicTerminalIterator {
-            store: &*self.store,
+            store: &self.store,
             state,
             next_slot: 0,
             len,

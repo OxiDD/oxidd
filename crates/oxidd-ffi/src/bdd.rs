@@ -20,7 +20,7 @@ use oxidd::RawManagerRef;
 use crate::oxidd_assignment_t;
 
 /// cbindgen:ignore
-const FUNC_UNWRAP_MSG: &'static str = "the given function is invalid";
+const FUNC_UNWRAP_MSG: &str = "the given function is invalid";
 
 /// Reference to a manager of a simple binary decision diagram (BDD)
 #[derive(Copy, Clone)]
@@ -82,7 +82,7 @@ unsafe fn op1(
     f: oxidd_bdd_t,
     op: impl FnOnce(&BDDFunction) -> AllocResult<BDDFunction>,
 ) -> oxidd_bdd_t {
-    f.get().and_then(|f| op(&*f)).into()
+    f.get().and_then(|f| op(&f)).into()
 }
 
 unsafe fn op2(
@@ -90,7 +90,7 @@ unsafe fn op2(
     rhs: oxidd_bdd_t,
     op: impl FnOnce(&BDDFunction, &BDDFunction) -> AllocResult<BDDFunction>,
 ) -> oxidd_bdd_t {
-    lhs.get().and_then(|lhs| op(&*lhs, &*rhs.get()?)).into()
+    lhs.get().and_then(|lhs| op(&lhs, &*rhs.get()?)).into()
 }
 
 unsafe fn op3(
@@ -100,7 +100,7 @@ unsafe fn op3(
     op: impl FnOnce(&BDDFunction, &BDDFunction, &BDDFunction) -> AllocResult<BDDFunction>,
 ) -> oxidd_bdd_t {
     f1.get()
-        .and_then(|f1| op(&*f1, &*f2.get()?, &*f3.get()?))
+        .and_then(|f1| op(&f1, &*f2.get()?, &*f3.get()?))
         .into()
 }
 

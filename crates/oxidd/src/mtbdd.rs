@@ -68,7 +68,8 @@ mod index {
     //#[cfg(not(feature = "multi-threading"))]
     type FunctionInner<T> = oxidd_rules_mtbdd::MTBDDFunction<<MTBDD<T> as DD>::Function>;
     //#[cfg(feature = "multi-threading")]
-    //type FunctionInner<T> = oxidd_rules_mtbdd::MTBDDFunctionMT<<MTBDD<T> as DD>::Function>;
+    //type FunctionInner<T> = oxidd_rules_mtbdd::MTBDDFunctionMT<<MTBDD<T> as
+    // DD>::Function>;
 
     #[derive(
         Clone, PartialEq, Eq, Hash, oxidd_derive::Function, oxidd_derive::PseudoBooleanFunction,
@@ -78,7 +79,7 @@ mod index {
 
     impl<T: NumberBase + Send + Sync> PartialOrd for MTBDDFunction<T> {
         fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-            self.0.partial_cmp(&other.0)
+            Some(self.0.cmp(&other.0))
         }
     }
     impl<T: NumberBase + Send + Sync> Ord for MTBDDFunction<T> {

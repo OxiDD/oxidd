@@ -45,21 +45,34 @@ pub trait TerminalManager<'id, N, ET, const TERMINALS: usize>: Sized {
     fn with_capacity(capacity: u32) -> Self;
 
     /// Get the number of currently stored terminals
+    #[must_use]
     fn len(&self) -> usize;
+
+    /// Returns `true` iff currently no terminals are stored
+    #[must_use]
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 
     /// Get the terminal for `id`
     ///
-    /// SAFETY: `id` must be a valid terminal node ID for this terminal manager.
+    /// # Safety
+    ///
+    /// `id` must be a valid terminal node ID for this terminal manager.
     unsafe fn get_terminal(&self, id: usize) -> Self::TerminalNodeRef<'_>;
 
     /// Increment the reference counter of the terminal `id`
     ///
-    /// SAFETY: `id` must be a valid terminal node ID for this terminal manager.
+    /// # Safety
+    ///
+    /// `id` must be a valid terminal node ID for this terminal manager.
     unsafe fn retain(&self, id: usize);
 
     /// Decrement the reference counter of the terminal `id`
     ///
-    /// SAFETY: `id` must be a valid terminal node ID for this terminal manager.
+    /// # Safety
+    ///
+    /// `id` must be a valid terminal node ID for this terminal manager.
     unsafe fn release(&self, id: usize);
 
     /// Add a terminal to this manager (if it does not already exist) and return

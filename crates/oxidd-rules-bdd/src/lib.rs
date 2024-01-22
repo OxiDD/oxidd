@@ -4,6 +4,8 @@
 #![doc = document_features::document_features!()]
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
+// `'id` lifetimes may make the code easier to understand
+#![allow(clippy::needless_lifetimes)]
 
 use oxidd_core::HasLevel;
 use oxidd_core::InnerNode;
@@ -28,7 +30,7 @@ fn set_pop<'a, M: Manager>(
 where
     M::InnerNode: HasLevel,
 {
-    match manager.get_node(&*set) {
+    match manager.get_node(&set) {
         oxidd_core::Node::Inner(n) => {
             if n.level() >= until {
                 set
