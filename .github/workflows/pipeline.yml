@@ -1,0 +1,49 @@
+name: Pipeline
+
+# spell-checker:ignore dtolnay
+
+on:
+  push:
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint:
+    name: Lint
+
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: nightly
+        components: clippy, rustfmt
+    - name: Install Just
+      run: sudo snap install --edge --classic just
+    - name: Install cSpell
+      run: npm install --prefix=target/cspell -g cspell
+    - name: Lint
+      run: just lint
+      
+  test:
+    name: Test
+    
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        toolchain: ['stable', 'nightly']
+
+    steps:
+    - uses: actions/checkout@v3
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ matrix.toolchain }}
+    - name: Build
+      run: cargo build --verbose
+    - name: Run Tests
+      run: cargo test --verbose
