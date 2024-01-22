@@ -1,0 +1,16 @@
+{
+  "folders": [
+    {
+      "name": "OxiDD",
+      "path": "."
+    },
+    {
+      "name": "OxiDD Book",
+      "path": "./doc/book",
+    }
+  ],
+  "settings": {
+    "rust-analyzer.rustfmt.extraArgs": ["+nightly"],
+    "rust-analyzer.check.command": "clippy"
+  }
+}
