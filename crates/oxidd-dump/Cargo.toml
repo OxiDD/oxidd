@@ -5,7 +5,6 @@ edition = "2021"
 description = "Dump OxiDD decision diagrams to file"
 license = "MIT OR Apache-2.0"
 
-
 [dependencies]
 oxidd-core = { path = "../oxidd-core" }
 

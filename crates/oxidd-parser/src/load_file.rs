@@ -1,5 +1,7 @@
 //! Convenience functions etc. to load a [`Problem`] from file
 
+// spell-checker:ignore termcolor
+
 use std::fmt;
 use std::path::Path;
 
@@ -85,7 +87,7 @@ impl<I, S: ToString> FromExternalError<I, S> for ParserReport<I> {
 /// warnings to `writer`
 ///
 /// `file_id` is an identifier for the file used for error reporting. `config`
-/// configures how diagnostrics are rendered.
+/// configures how diagnostics are rendered.
 ///
 /// If you simply want to parse a file with error reporting to stderr, you are
 /// probably looking for [`load_file()`].

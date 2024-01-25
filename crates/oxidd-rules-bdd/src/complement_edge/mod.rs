@@ -21,6 +21,8 @@ use oxidd_dump::dddmp::AsciiDisplay;
 
 use crate::stat;
 
+// spell-checker:ignore fnode,gnode
+
 #[cfg(feature = "multi-threading")]
 mod apply_rec_mt;
 mod apply_rec_st;

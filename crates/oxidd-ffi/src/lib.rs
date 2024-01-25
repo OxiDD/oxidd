@@ -20,7 +20,7 @@ pub struct oxidd_assignment_t {
 
 /// Free the given assignment
 ///
-/// To uphold Rust's invariants, all values in the assinment must be 0, 1, or
+/// To uphold Rust's invariants, all values in the assignment must be 0, 1, or
 /// -1.
 #[no_mangle]
 #[doc(hidden)]

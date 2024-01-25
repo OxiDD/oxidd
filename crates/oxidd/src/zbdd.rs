@@ -106,7 +106,7 @@ pub fn new_manager(
     apply_cache_capacity: usize,
     threads: u32,
 ) -> ZBDDManagerRef {
-    let mref = {
+    let manager_ref = {
         cfg_if::cfg_if! {
             if #[cfg(feature = "manager-pointer")] {
                 pointer::ZBDDManagerRef::new_manager(inner_node_capacity, apply_cache_capacity, threads)
@@ -117,8 +117,8 @@ pub fn new_manager(
             }
         }
     };
-    mref.with_manager_exclusive(|manager| ::oxidd_rules_zbdd::ZBDDCache::rebuild(manager));
-    mref
+    manager_ref.with_manager_exclusive(|manager| ::oxidd_rules_zbdd::ZBDDCache::rebuild(manager));
+    manager_ref
 }
 
 /// Print statistics to stderr

@@ -27,6 +27,9 @@ use oxidd_dump::dot::DotStyle;
 
 use super::*;
 
+// spell-checker:ignore fnode,gnode,hnode,flevel,glevel,hlevel,ghlevel
+// spell-checker:ignore hitask,symm
+
 /// Recursively compute the subset with `var` set to `VAL`, or change `var` if
 /// `VAL == -1`
 fn subset<M, const VAL: i8>(
@@ -104,7 +107,7 @@ where
     Ok(h)
 }
 
-/// Recusively apply the union operator to `f` and `g`
+/// Recursively apply the union operator to `f` and `g`
 fn apply_union<M>(
     manager: &M,
     depth: u32,
@@ -186,7 +189,7 @@ where
     Ok(h)
 }
 
-/// Recusively apply the intersection operator to `f` and `g`
+/// Recursively apply the intersection operator to `f` and `g`
 fn apply_intsec<M>(
     manager: &M,
     depth: u32,
@@ -267,7 +270,7 @@ where
     Ok(h)
 }
 
-/// Recusively apply the intersection operator to `f` and `g`
+/// Recursively apply the intersection operator to `f` and `g`
 fn apply_diff<M>(
     manager: &M,
     depth: u32,
@@ -345,7 +348,7 @@ where
     Ok(h)
 }
 
-/// Recusively apply the symmetric difference operator to `f` and `g`
+/// Recursively apply the symmetric difference operator to `f` and `g`
 fn apply_symm_diff<M>(
     manager: &M,
     depth: u32,

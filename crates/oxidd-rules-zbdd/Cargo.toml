@@ -23,7 +23,7 @@ document-features = "0.2"
 [features]
 default = []
 
-## Enable multi-threaded apply implemenations
+## Enable multi-threaded apply implementations
 multi-threading = []
 
 ## Enable statistics generation

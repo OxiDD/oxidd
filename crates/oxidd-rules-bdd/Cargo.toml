@@ -29,7 +29,7 @@ simple = []
 ## Enable the complement edge BDD implementation
 complement-edge = []
 
-## Enable multi-threaded apply implemenations
+## Enable multi-threaded apply implementations
 multi-threading = []
 
 ## Enable statistics generation

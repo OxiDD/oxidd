@@ -789,7 +789,7 @@ impl<'a, T, S: Status> Iterator for Iter<'a, T, S> {
             let next = self.iter.next();
             debug_assert!(next.is_some());
             // SAFETY: The remaining part of the slice has at least `self.len`
-            // elements by invairant
+            // elements by invariant
             let slot = unsafe { next.unwrap_unchecked() };
             if slot.status.is_hash() {
                 self.len -= 1;
@@ -829,7 +829,7 @@ impl<'a, T, S: Status> Iterator for IterMut<'a, T, S> {
             let next = self.iter.next();
             debug_assert!(next.is_some());
             // SAFETY: The remaining part of the slice has at least `self.len`
-            // elements by invairant
+            // elements by invariant
             let slot = unsafe { next.unwrap_unchecked() };
             if slot.status.is_hash() {
                 self.len -= 1;
@@ -869,7 +869,7 @@ impl<T, S: Status, A: Allocator> Iterator for IntoIter<T, S, A> {
             let next = self.iter.next();
             debug_assert!(next.is_some());
             // SAFETY: The remaining part of the vector has at least `self.len`
-            // elements by invairant
+            // elements by invariant
             let slot = unsafe { next.unwrap_unchecked() };
             if slot.status.is_hash() {
                 self.len -= 1;
@@ -901,7 +901,7 @@ impl<T, S: Status, A: Allocator> Drop for IntoIter<T, S, A> {
             let next = self.iter.next();
             debug_assert!(next.is_some());
             // SAFETY: The remaining part of the vector has at least `self.len`
-            // elements by invairant
+            // elements by invariant
             let mut slot = unsafe { next.unwrap_unchecked() };
             if slot.status.is_hash() {
                 self.len -= 1;
@@ -928,7 +928,7 @@ impl<'a, T, S: Status> Iterator for Drain<'a, T, S> {
             let next = self.iter.next();
             debug_assert!(next.is_some());
             // SAFETY: The remaining part of the slice has at least `self.len`
-            // elements by invairant
+            // elements by invariant
             let slot = unsafe { next.unwrap_unchecked() };
             let status = slot.status;
             slot.status = S::FREE;
@@ -963,7 +963,7 @@ impl<'a, T, S: Status> Drop for Drain<'a, T, S> {
             let next = self.iter.next();
             debug_assert!(next.is_some());
             // SAFETY: The remaining part of the slice has at least `self.len`
-            // elements by invairant
+            // elements by invariant
             let slot = unsafe { next.unwrap_unchecked() };
             let status = slot.status;
             slot.status = S::FREE;

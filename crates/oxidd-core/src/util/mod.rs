@@ -22,7 +22,7 @@ pub use edge_hash_map::EdgeHashMap;
 /// update the reference counters accordingly. However, if we want to have
 /// multiple instances of the same handle without changing the reference
 /// counters, we can use shared references. This works as long as one does not
-/// attpemt to change the handle's tag. In this case, we need ownership of the
+/// attempt to change the handle's tag. In this case, we need ownership of the
 /// handle with the different tag, but need to restrict its lifetime to the one
 /// of the original handle. Furthermore, we *must not* drop the new handle. This
 /// is exactly, what this data structure provides.
@@ -75,7 +75,7 @@ impl<'a, E: Edge> Borrowed<'a, E> {
     #[inline]
     pub fn edge_with_tag(self, tag: E::Tag) -> Self {
         // We must not drop `edge`. This would happen if `Edge::with_tag_owned`
-        // paniced (which it definitely shouldn't, but …). Dropping the edge
+        // panicked (which it definitely shouldn't, but …). Dropping the edge
         // itself shouldn't immediately lead to undefined behavior, but we need
         // to make sure that the owned edge is not dropped as well, so we abort
         // in this case.

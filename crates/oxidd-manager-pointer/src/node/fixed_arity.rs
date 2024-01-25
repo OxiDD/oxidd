@@ -154,7 +154,7 @@ impl<'id, ET: Tag, const TAG_BITS: u32, const ARITY: usize>
 
     #[inline(always)]
     fn child(&self, n: usize) -> Borrowed<manager::Edge<'id, Self, ET, TAG_BITS>> {
-        // SAFETY: we have shared acces to the node
+        // SAFETY: we have shared access to the node
         let children = unsafe { &*self.children.get() };
         children[n].borrowed()
     }

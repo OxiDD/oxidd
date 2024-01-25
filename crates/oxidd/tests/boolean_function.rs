@@ -14,6 +14,8 @@ use oxidd::BooleanVecSet;
 use oxidd::Function;
 use oxidd::ManagerRef;
 
+// spell-checker:ignore nvars,mref
+
 /// Propositional logic formula
 #[derive(Clone, PartialEq, Eq, Debug)]
 enum Prop {

@@ -86,7 +86,7 @@ pub unsafe trait Function: Clone + Ord + Hash {
 
     /// Obtain a shared manager reference as well as the underlying edge
     ///
-    /// Locking behavior: aquires a shared manager lock.
+    /// Locking behavior: acquires a shared manager lock.
     ///
     /// # Example
     ///
@@ -107,7 +107,7 @@ pub unsafe trait Function: Clone + Ord + Hash {
 
     /// Obtain an exclusive manager reference as well as the underlying edge
     ///
-    /// Locking behavior: aquires an exclusive manager lock.
+    /// Locking behavior: acquires an exclusive manager lock.
     ///
     /// # Example
     ///
@@ -416,10 +416,11 @@ pub trait BooleanFunction: Function {
     /// Count the number of satisfying assignments, assuming `vars` input
     /// variables
     ///
-    /// The `cache` can be used to speed up multiple model countings for
-    /// functions in the same decision diagram. Note however that the results
-    /// may be incorrect if variables are reordered in between. The caller may
-    /// hold a shared manager lock ([`Function::with_manager_shared()`] or
+    /// The `cache` can be used to speed up multiple model counting operations
+    /// for functions in the same decision diagram. Note however that the
+    /// results may be incorrect if variables are reordered in between. The
+    /// caller may hold a shared manager lock
+    /// ([`Function::with_manager_shared()`] or
     /// [`ManagerRef::with_manager_shared()`][crate::ManagerRef::with_manager_shared])
     /// to avoid this. Furthermore, `vars` must be equal for all calls with the
     /// same cache. If the model counts of just one function are of interest,
@@ -510,11 +511,11 @@ pub trait BooleanFunction: Function {
 
 /// Quantification extension for [`BooleanFunction`]
 pub trait BooleanFunctionQuant: BooleanFunction {
-    /// Compute the universial quantification over `vars`
+    /// Compute the universal quantification over `vars`
     ///
     /// `vars` is a set of variables, which in turn is just the conjunction of
-    /// the variables. This operation removes all occurences of the variables
-    /// by universial quantification. Universial quantification of a boolean
+    /// the variables. This operation removes all occurrences of the variables
+    /// by universal quantification. Universal quantification of a boolean
     /// function `f(…, x, …)` over a single variable `x` is
     /// `f(…, 0, …) ∧ f(…, 1, …)`.
     ///
@@ -531,7 +532,7 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     /// Compute the existential quantification over `vars`
     ///
     /// `vars` is a set of variables, which in turn is just the conjunction of
-    /// the variables. This operation removes all occurences of the variables
+    /// the variables. This operation removes all occurrences of the variables
     /// by existential quantification. Existential quantification of a boolean
     /// function `f(…, x, …)` over a single variable `x` is
     /// `f(…, 0, …) ∨ f(…, 1, …)`.
@@ -549,7 +550,7 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     /// Compute the unique quantification over `vars`
     ///
     /// `vars` is a set of variables, which in turn is just the conjunction of
-    /// the variables. This operation removes all occurences of the variables
+    /// the variables. This operation removes all occurrences of the variables
     /// by unique quantification. Unique quantification of a boolean function
     /// `f(…, x, …)` over a single variable `x` is `f(…, 0, …) ⊕ f(…, 1, …)`.
     ///
@@ -563,7 +564,7 @@ pub trait BooleanFunctionQuant: BooleanFunction {
         })
     }
 
-    /// Compute the universial quantification of `root` over `vars`, edge
+    /// Compute the universal quantification of `root` over `vars`, edge
     /// version
     ///
     /// See [`Self::forall()`] for more details.
@@ -776,7 +777,7 @@ pub trait BooleanVecSet: Function {
 /// [`zero()`][Self::zero], [`one()`][Self::one], and [`nan()`][Self::nan] are
 /// implemented as functions because depending on the number underlying type,
 /// it can be hard/impossible to obtain a `const` for these values.
-/// This trait also includes basic arithmetic methods. This is to avoid cloining
+/// This trait also includes basic arithmetic methods. This is to avoid cloning
 /// of big integers. We could also require `&Self: Add<&Self, Output = Self>`
 /// etc., but this would lead to ugly trait bounds.
 ///

@@ -441,15 +441,15 @@ impl std::fmt::Debug for MinSegTree {
 fn bubble_sort(seq: &mut [LevelNo], mut swap: impl FnMut(LevelNo)) {
     let mut n = seq.len();
     while n > 1 {
-        let mut newn = 0;
+        let mut new_n = 0;
         for i in 1..n {
             if seq[i - 1] > seq[i] {
                 seq.swap(i - 1, i);
                 swap((i - 1) as LevelNo);
-                newn = i;
+                new_n = i;
             }
         }
-        n = newn;
+        n = new_n;
     }
 }
 

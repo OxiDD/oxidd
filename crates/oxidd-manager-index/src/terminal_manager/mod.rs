@@ -13,7 +13,7 @@ pub use r#static::*;
 /// Manager for terminal nodes
 ///
 /// Several methods of this trait require valid terminal node IDs. All [`Edge`]s
-/// referncing terminal nodes "contain" valid terminal node IDs. These IDs can
+/// referencing terminal nodes "contain" valid terminal node IDs. These IDs can
 /// be derived from the edges by stripping the tags (which is an implementation
 /// detail of the `manager` module). `Edge`s referencing terminal nodes are
 /// created by the [`get_edge()`][TerminalManager::get_edge()] and

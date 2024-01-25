@@ -25,6 +25,8 @@ use oxidd_core::ReducedOrNew;
 use oxidd_derive::Countable;
 use oxidd_dump::dddmp::AsciiDisplay;
 
+// spell-checker:ignore symm
+
 #[cfg(feature = "multi-threading")]
 mod apply_rec_mt;
 mod apply_rec_st;
@@ -151,8 +153,7 @@ impl fmt::Display for ZBDDTerminal {
     }
 }
 
-// --- ZBDD Cache
-// ---------------------------------------------------------------
+// --- ZBDD Cache --------------------------------------------------------------
 
 pub struct ZBDDCache<E> {
     tautologies: Vec<E>,
@@ -206,10 +207,10 @@ impl<E: Edge> ZBDDCache<E> {
         // We cannot have both `&mut Self` and `&M`, because we need a `&mut M`
         // to obtain a `&mut Self` using `HasZBDDCache::zbdd_cache_mut()`.
 
-        let mut tautos = std::mem::take(&mut manager.zbdd_cache_mut().tautologies);
+        let mut tautologies = std::mem::take(&mut manager.zbdd_cache_mut().tautologies);
 
         // Clear the cache
-        for e in tautos.drain(..) {
+        for e in tautologies.drain(..) {
             manager.drop_edge(e);
         }
 
@@ -218,20 +219,20 @@ impl<E: Edge> ZBDDCache<E> {
         // Storing the edge for `ZBDDTerminal::Base` as well enables us to return
         // `&E` instead of `E` in `Self::tautology()`, so we don't need as many
         // clone/drop operations.
-        tautos.reserve(1 + manager.num_levels() as usize);
-        tautos.push(manager.get_terminal(ZBDDTerminal::Base).unwrap());
+        tautologies.reserve(1 + manager.num_levels() as usize);
+        tautologies.push(manager.get_terminal(ZBDDTerminal::Base).unwrap());
         for mut view in manager.levels().rev() {
             let level = view.level_no();
-            let hi = manager.clone_edge(tautos.last().unwrap());
+            let hi = manager.clone_edge(tautologies.last().unwrap());
             let lo = manager.clone_edge(&hi);
             let Ok(edge) = view.get_or_insert(M::InnerNode::new(level, [hi, lo])) else {
                 eprintln!("Out of memory");
                 std::process::abort();
             };
-            tautos.push(edge);
+            tautologies.push(edge);
         }
 
-        manager.zbdd_cache_mut().tautologies = tautos;
+        manager.zbdd_cache_mut().tautologies = tautologies;
     }
 
     /// Get the tautology for the set of variables at `level` and below
@@ -318,7 +319,7 @@ where
 /// and `lo`'s levels. If one of these conditions is violated, the result is
 /// unspecified. Ideally the method panics.
 ///
-/// The set sementics of this new node is `lo ∪ {x ∪ {var} | x ∈ hi}`, the
+/// The set semantics of this new node is `lo ∪ {x ∪ {var} | x ∈ hi}`, the
 /// logical equivalent is `lo ∨ (var ∧ hi|ₓ₌₀)`.
 pub fn make_node<M>(manager: &M, var: &M::Edge, hi: M::Edge, lo: M::Edge) -> AllocResult<M::Edge>
 where
@@ -399,6 +400,7 @@ impl StatCounters {
     };
 
     fn print(counters: &[Self], labels: &[&str]) {
+        // spell-checker:ignore ctrs
         for (ctrs, op) in counters.iter().zip(labels) {
             let calls = ctrs.calls.swap(0, std::sync::atomic::Ordering::Relaxed);
             let cache_queries = ctrs

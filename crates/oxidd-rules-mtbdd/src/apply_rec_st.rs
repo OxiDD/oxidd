@@ -15,6 +15,8 @@ use oxidd_dump::dot::DotStyle;
 
 use super::*;
 
+// spell-checker:ignore fnode,gnode,flevel,glevel
+
 /// Recursively apply the binary operator `OP` to `f` and `g`
 ///
 /// We use a `const` parameter `OP` to have specialized version of this function

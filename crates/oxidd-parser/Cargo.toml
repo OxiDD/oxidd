@@ -5,6 +5,7 @@ edition = "2021"
 description = "Parsers for logic file formats"
 license = "MIT OR Apache-2.0"
 
+# spell-checker:ignore codespan
 
 [dependencies]
 # parser combinator

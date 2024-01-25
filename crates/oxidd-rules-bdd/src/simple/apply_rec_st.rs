@@ -27,6 +27,8 @@ use oxidd_dump::dot::DotStyle;
 
 use super::*;
 
+// spell-checker:ignore fnode,gnode,hnode,flevel,glevel,hlevel,vlevel
+
 /// Recursively apply the 'not' operator to `f`
 pub(super) fn apply_not<M>(manager: &M, f: Borrowed<M::Edge>) -> AllocResult<M::Edge>
 where
@@ -528,31 +530,31 @@ where
         edge: &'a <Self::Manager<'id> as Manager>::Edge,
         env: impl IntoIterator<Item = (&'a <Self::Manager<'id> as Manager>::Edge, bool)>,
     ) -> bool {
-        let mut vals = BitVec::new();
-        vals.resize(manager.num_levels() as usize, false);
+        let mut values = BitVec::new();
+        values.resize(manager.num_levels() as usize, false);
         for (edge, val) in env {
             let node = manager
                 .get_node(edge)
                 .expect_inner("edges in `env` must refer to inner nodes");
-            vals.set(node.level() as usize, val);
+            values.set(node.level() as usize, val);
         }
 
         #[inline] // this function is tail-recursive
-        fn inner<M>(manager: &M, edge: Borrowed<M::Edge>, vals: BitVec) -> bool
+        fn inner<M>(manager: &M, edge: Borrowed<M::Edge>, values: BitVec) -> bool
         where
             M: Manager<Terminal = BDDTerminal>,
             M::InnerNode: HasLevel,
         {
             match manager.get_node(&edge) {
                 Node::Inner(node) => {
-                    let edge = node.child((!vals[node.level() as usize]) as usize);
-                    inner(manager, edge, vals)
+                    let edge = node.child((!values[node.level() as usize]) as usize);
+                    inner(manager, edge, values)
                 }
                 Node::Terminal(t) => *t.borrow() == BDDTerminal::True,
             }
         }
 
-        inner(manager, edge.borrowed(), vals)
+        inner(manager, edge.borrowed(), values)
     }
 }
 

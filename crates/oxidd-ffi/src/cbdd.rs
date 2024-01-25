@@ -352,11 +352,11 @@ pub unsafe extern "C" fn oxidd_cbdd_ite(
     op3(cond, then_case, else_case, CBDDFunction::ite)
 }
 
-/// Compute the CBDD for the universial quantification of `f` over `vars`
+/// Compute the CBDD for the universal quantification of `f` over `vars`
 ///
 /// `vars` is a set of variables, which in turn is just the conjunction of the
-/// variables. This operation removes all occurences of the variables universal
-/// quantification. Universial quantification of a boolean function `f(…, x, …)`
+/// variables. This operation removes all occurrences of the variables universal
+/// quantification. Universal quantification of a boolean function `f(…, x, …)`
 /// over a single variable `x` is `f(…, 0, …) ∧ f(…, 1, …)`.
 ///
 /// This function does not decrement the reference counters of its arguments.
@@ -372,7 +372,7 @@ pub unsafe extern "C" fn oxidd_cbdd_forall(f: oxidd_cbdd_t, var: oxidd_cbdd_t) -
 /// Compute the CBDD for the existential quantification of `f` over `vars`
 ///
 /// `vars` is a set of variables, which in turn is just the conjunction of the
-/// variables. This operation removes all occurences of the variables by
+/// variables. This operation removes all occurrences of the variables by
 /// existential quantification. Existential quantification of a boolean function
 /// `f(…, x, …)` over a single variable `x` is `f(…, 0, …) ∧ f(…, 1, …)`.
 ///
@@ -389,7 +389,7 @@ pub unsafe extern "C" fn oxidd_cbdd_exist(f: oxidd_cbdd_t, var: oxidd_cbdd_t) ->
 /// Compute the CBDD for the unique quantification of `f` over `vars`
 ///
 /// `vars` is a set of variables, which in turn is just the conjunction of the
-/// variables. This operation removes all occurences of the variables by
+/// variables. This operation removes all occurrences of the variables by
 /// unique quantification. Unique quantification of a boolean function
 /// `f(…, x, …)` over a single variable `x` is `f(…, 0, …) ∧ f(…, 1, …)`.
 ///

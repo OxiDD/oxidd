@@ -3,6 +3,8 @@
 //!
 //! [spec]: https://www21.in.tum.de/~lammich/2015_SS_Seminar_SAT/resources/dimacs-cnf.pdf
 
+// spell-checker:ignore multispace
+
 use std::num::NonZeroUsize;
 
 use bitvec::vec::BitVec;
@@ -21,6 +23,8 @@ use nom::{Err, IResult};
 
 use crate::util::{context_loc, fail, fail_with_contexts, line_span, trim_end, word, word_span};
 use crate::{ClauseOrderNode, ParseOptions, Problem, Prop, Var, VarOrder};
+
+// spell-checker:ignore SATX,SATEX
 
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -75,7 +79,7 @@ where
             if inserted.len() < n.get() {
                 inserted.resize(n.get(), false);
             } else if inserted[n.get() - 1] {
-                return fail(span, "second occurence of clause in order");
+                return fail(span, "second occurrence of clause in order");
             }
             order.push(ClauseOrderNode::Clause(n));
             inserted.set(n.get() - 1, true);
@@ -214,7 +218,7 @@ where
         if parse_orders {
             // var order
             let mut inserted: BitVec = BitVec::new();
-            let mut vorder = Vec::new();
+            let mut var_order = Vec::new();
             let mut max_var_span = [].as_slice();
             let mut names: FxHashSet<&[u8]> = Default::default();
             // clause order
@@ -250,16 +254,16 @@ where
                         let i = num_vars - 1;
                         if num_vars > inserted.len() {
                             inserted.resize(num_vars, false);
-                            vorder.reserve(num_vars - vorder.len());
+                            var_order.reserve(num_vars - var_order.len());
                             max_var_span = var_span;
                         } else if inserted[i] {
-                            return fail(var_span, "second occurence of variable in order");
+                            return fail(var_span, "second occurrence of variable in order");
                         }
                         inserted.set(i, true);
                         if !names.insert(name) {
-                            return fail(name, "second occurence of variable name");
+                            return fail(name, "second occurrence of variable name");
                         }
-                        vorder.push((var, String::from_utf8_lossy(name).to_string()));
+                        var_order.push((var, String::from_utf8_lossy(name).to_string()));
                     } else {
                         return fail(var_span, "variable number must be greater than 0");
                     }
@@ -271,7 +275,7 @@ where
                 }
             }
 
-            if inserted.len() != vorder.len() {
+            if inserted.len() != var_order.len() {
                 return fail_with_contexts([
                     (input, "expected another variable order line"),
                     (max_var_span, "note: maximal variable number given here"),
@@ -279,7 +283,7 @@ where
             }
 
             let (next_input, (format, num_vars, num_clauses)) = problem_line(input)?;
-            if !vorder.is_empty() && num_vars.1 as usize != vorder.len() {
+            if !var_order.is_empty() && num_vars.1 as usize != var_order.len() {
                 return fail_with_contexts([
                     (num_vars.0, "number of variables does not match"),
                     (max_var_span, "note: maximal variable number given here"),
@@ -301,7 +305,7 @@ where
             }
             Ok((
                 next_input,
-                (format.1, num_vars.1, num_clauses.1, vorder, corder),
+                (format.1, num_vars.1, num_clauses.1, var_order, corder),
             ))
         } else {
             let (input, (format, num_vars, num_clauses)) =
@@ -642,12 +646,12 @@ where
 {
     let parse_var_order = options.orders;
     move |input| {
-        let (input, (format, num_vars, num_clauses, vorder, corder)) =
+        let (input, (format, num_vars, num_clauses, var_order, corder)) =
             preamble(parse_var_order)(input)?;
         match format {
-            Format::CNF => cnf::parse(num_vars, num_clauses, vorder, corder)(input),
+            Format::CNF => cnf::parse(num_vars, num_clauses, var_order, corder)(input),
             Format::SAT { xor, eq } => {
-                let (input, res) = sat::parse(num_vars, vorder, xor, eq)(input)?;
+                let (input, res) = sat::parse(num_vars, var_order, xor, eq)(input)?;
                 let (input, _) = context(
                     "expected end of file (SAT files may only contain a single formula)",
                     preceded(multispace0, eof),

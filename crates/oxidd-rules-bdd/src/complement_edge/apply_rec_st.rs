@@ -27,6 +27,8 @@ use oxidd_dump::dot::DotStyle;
 
 use super::*;
 
+// spell-checker:ignore fnode,gnode,hnode,flevel,glevel,hlevel,vlevel
+
 /// Recursively apply the binary operator `OP` to `f` and `g`
 ///
 /// We use a `const` parameter `OP` to have specialized version of this function
@@ -490,8 +492,8 @@ where
             n
         }
 
-        // This function does not use the identity `|f| = nvars - |f'|` to avoid
-        // rounding issues
+        // This function does not use the identity `|f| = num_vars - |f'|` to
+        // avoid rounding issues
         fn inner_floating<M, N, S>(
             manager: &M,
             e: Borrowed<M::Edge>,
@@ -603,17 +605,17 @@ where
         edge: &'a <Self::Manager<'id> as Manager>::Edge,
         env: impl IntoIterator<Item = (&'a <Self::Manager<'id> as Manager>::Edge, bool)>,
     ) -> bool {
-        let mut vals = BitVec::new();
-        vals.resize(manager.num_levels() as usize, false);
+        let mut values = BitVec::new();
+        values.resize(manager.num_levels() as usize, false);
         for (edge, val) in env {
             let node = manager
                 .get_node(edge)
                 .expect_inner("edges in `env` must refer to inner nodes");
-            vals.set(node.level() as usize, val);
+            values.set(node.level() as usize, val);
         }
 
         #[inline] // this function is tail-recursive
-        fn inner<M>(manager: &M, edge: Borrowed<M::Edge>, complement: bool, vals: BitVec) -> bool
+        fn inner<M>(manager: &M, edge: Borrowed<M::Edge>, complement: bool, values: BitVec) -> bool
         where
             M: Manager<EdgeTag = EdgeTag>,
             M::InnerNode: HasLevel,
@@ -621,14 +623,14 @@ where
             let complement = complement ^ (edge.tag() == EdgeTag::Complemented);
             match manager.get_node(&edge) {
                 Node::Inner(node) => {
-                    let edge = node.child((!vals[node.level() as usize]) as usize);
-                    inner(manager, edge, complement, vals)
+                    let edge = node.child((!values[node.level() as usize]) as usize);
+                    inner(manager, edge, complement, values)
                 }
                 Node::Terminal(_) => !complement,
             }
         }
 
-        inner(manager, edge.borrowed(), false, vals)
+        inner(manager, edge.borrowed(), false, values)
     }
 }
 
