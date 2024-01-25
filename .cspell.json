@@ -10,7 +10,7 @@
     "/build/",
     "/doc/book/book/",
     "/target/",
-    "/.project-words.txt",
+    "*.lock",
     "*.svg",
     "/LICENSE-APACHE",
     "/LICENSE-MIT",

@@ -15,7 +15,7 @@ parking_lot = "0.12"
 # document feature flags
 document-features = "0.2"
 
-# allocation with madvise for huge pages
+# allocation with madvise for hugepages
 hugealloc = { path = "../hugealloc", optional = true }
 allocator-api2 = { version = "0.2", optional = true }
 

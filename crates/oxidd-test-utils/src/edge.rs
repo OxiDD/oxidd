@@ -344,6 +344,7 @@ macro_rules! assert_ref_counts {
         assert_ref_counts!($edge = $count);
         assert_ref_counts!($($edges),+ = $count);
     };
+    // spell-checker:ignore edgess
     ($($edges:ident),+ = $count:literal; $($($edgess:ident),+ = $counts:literal);+) => {
         assert_ref_counts!($($edges),+ = $count);
         assert_ref_counts!($($($edgess),+ = $counts);+);

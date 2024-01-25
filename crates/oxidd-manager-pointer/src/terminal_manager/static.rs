@@ -49,7 +49,7 @@ impl<
     /// Bit indicating whether an edge points to a terminal or an inner node
     const TERMINAL_BIT: u32 = TAG_BITS;
 
-    /// Least signifiacnt bit of the value
+    /// Least significant bit of the value
     const VAL_LSB: u32 = TAG_BITS + 1;
 
     const ASSERT_SUFFICIENT_ALIGN: () = {

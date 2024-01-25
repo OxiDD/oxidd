@@ -5,7 +5,6 @@ edition = "2021"
 description = "Hugepage-aware allocator"
 license = "MIT OR Apache-2.0"
 
-
 [dependencies]
 allocator-api2 = { version = "0.2", default-features = false }
 

@@ -64,7 +64,7 @@ impl<M: Manager, O, H, const ARITY: usize, const BUCKET_SIZE: usize> Drop
 struct Bucket<M: Manager, O, const ARITY: usize, const SIZE: usize> {
     start: u8,
     len: u8,
-    /// Invairant: All entries from `start` to `(start + len) % SIZE` are
+    /// Invariant: All entries from `start` to `(start + len) % SIZE` are
     /// initialized.
     entries: [MaybeUninit<Entry<M, O, ARITY>>; SIZE],
 }

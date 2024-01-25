@@ -24,6 +24,11 @@ use oxidd_core::LevelNo;
 use oxidd_core::Manager;
 use oxidd_core::Node;
 
+// spell-checker:ignore varinfo,suppvar,suppvars,suppvarnames
+// spell-checker:ignore ordervar,orderedvarnames
+// spell-checker:ignore permid,permids,auxids,rootids,rootnames
+// spell-checker:ignore nnodes,nvars,nsuppvars,nroots
+
 type FxBuildHasher = std::hash::BuildHasherDefault<rustc_hash::FxHasher>;
 
 /// Encoding of the variable ID and then/else edges in binary format
@@ -377,7 +382,7 @@ impl DumpHeader {
     /// [`DumpHeader::num_support_vars()`] elements.
     ///
     /// Corresponds to the DDDMP `.auxids` field.
-    pub fn auxliary_var_ids(&self) -> &[u32] {
+    pub fn auxiliary_var_ids(&self) -> &[u32] {
         &self.auxids
     }
 
@@ -717,8 +722,8 @@ where
     writeln!(file, ".nodes")?;
 
     #[inline]
-    const fn node_code(var: Code, t: Code, ecompl: bool, e: Code) -> u8 {
-        (var as u8) << 5 | (t as u8) << 3 | (ecompl as u8) << 2 | e as u8
+    const fn node_code(var: Code, t: Code, e_complement: bool, e: Code) -> u8 {
+        (var as u8) << 5 | (t as u8) << 3 | (e_complement as u8) << 2 | e as u8
     }
 
     let mut exported_nodes = 0;
@@ -801,7 +806,7 @@ where
     Ok(())
 }
 
-/// 7-bit encode an integer and write it (esacped) via `writer`
+/// 7-bit encode an integer and write it (escaped) via `writer`
 fn encode_7bit(writer: impl io::Write, mut value: usize) -> io::Result<()> {
     let mut buf = [0u8; (usize::BITS as usize + 8 - 1) / 7];
     let mut idx = buf.len() - 1;
@@ -1144,7 +1149,7 @@ where
         let node_code = read_unescape(&mut input)?;
         let var_code = Code::from((node_code >> 5) & 0b11);
         let t_code = Code::from((node_code >> 3) & 0b11);
-        let e_compl = ((node_code >> 2) & 0b1) != 0;
+        let e_complement = ((node_code >> 2) & 0b1) != 0;
         let e_code = Code::from(node_code & 0b11);
 
         let vid = match var_code {
@@ -1160,7 +1165,7 @@ where
         let t_level = manager.get_node(&t).level();
         let e = manager.clone_edge(&nodes[idx(&mut input, node_id, e_code)?]);
         let e_level = manager.get_node(&e).level();
-        let e = if e_compl {
+        let e = if e_complement {
             match complement(manager, e) {
                 Ok(e) => e,
                 Err(OutOfMemory) => {
@@ -1515,6 +1520,8 @@ mod test {
         Ok(())
     }
 
+    // spell-checker:disable
+
     #[test]
     fn test_trim_start() {
         assert_eq!(trim_start(b""), b"");
@@ -1707,4 +1714,6 @@ mod test {
 
         Ok(())
     }
+
+    // spell-checker:enable
 }

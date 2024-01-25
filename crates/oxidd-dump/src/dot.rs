@@ -125,7 +125,7 @@ where
             let id = edge.node_id();
             let node = manager
                 .get_node(edge)
-                .expect_inner("unique tables should not include termial nodes");
+                .expect_inner("unique tables should not include terminal nodes");
             let rc = node.ref_count();
             let level = node.level();
 
@@ -187,6 +187,7 @@ where
         for level in 0..levels.len() {
             write!(file, "l{level:x} -> ")?;
         }
+        // spell-checker:ignore invis
         writeln!(file, "l{TERMINAL_LEVEL:x} [style=invis];")?;
     }
 

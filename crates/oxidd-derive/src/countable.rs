@@ -46,7 +46,7 @@ pub fn derive_countable(input: syn::DeriveInput) -> TokenStream {
 
             let max_value = num_variants - 1;
 
-            // SAFETY of the genreated code:
+            // SAFETY of the generated code:
             //
             // We forbid explicit discriminants, and since we have `repr(u8)`
             // and no fields, values of `Self` are simply `u8`s in range

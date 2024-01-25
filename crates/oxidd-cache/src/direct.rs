@@ -44,7 +44,7 @@ struct Entry<M: Manager, O, const ARITY: usize> {
     arity: UnsafeCell<u8>,
     /// Operator of the key. Initialized if `arity != 0`.
     operator: UnsafeCell<MaybeUninit<O>>,
-    /// Oprands of the key. The first `arity` elements are initialized.
+    /// Operands of the key. The first `arity` elements are initialized.
     operands: UnsafeCell<[MaybeUninit<M::Edge>; ARITY]>,
     /// Initialized if `arity != 0`
     value: UnsafeCell<MaybeUninit<M::Edge>>,

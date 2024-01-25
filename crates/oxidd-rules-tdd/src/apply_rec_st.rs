@@ -17,6 +17,8 @@ use oxidd_dump::dot::DotStyle;
 
 use super::*;
 
+// spell-checker:ignore fnode,gnode,hnode,flevel,glevel,hlevel,ghlevel
+
 /// Recursively apply the 'not' operator to `f`
 pub(super) fn apply_not<M>(manager: &M, f: Borrowed<M::Edge>) -> AllocResult<M::Edge>
 where

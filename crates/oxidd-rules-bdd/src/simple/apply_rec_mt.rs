@@ -25,9 +25,11 @@ use oxidd_dump::dot::DotStyle;
 
 use super::*;
 
+// spell-checker:ignore fnode,gnode,hnode,flevel,glevel,hlevel,vlevel
+
 /// Recursively apply the 'not' operator to `f`
 ///
-/// `depth` is decremented for each recusive call. If it reaches 0, this
+/// `depth` is decremented for each recursive call. If it reaches 0, this
 /// function simply calls [`apply_not_rec()`].
 fn apply_not<M>(manager: &M, depth: u32, f: Borrowed<M::Edge>) -> AllocResult<M::Edge>
 where
@@ -75,7 +77,7 @@ where
 
 /// Recursively apply the binary operator `OP` to `f` and `g`
 ///
-/// `depth` is decremented for each recusive call. If it reaches 0, this
+/// `depth` is decremented for each recursive call. If it reaches 0, this
 /// function simply calls [`apply_bin_rec()`].
 ///
 /// We use a `const` parameter `OP` to have specialized version of this function
@@ -155,7 +157,7 @@ where
 
 /// Recursively apply the if-then-else operator (`if f { g } else { h }`)
 ///
-/// `depth` is decremented for each recusive call. If it reaches 0, this
+/// `depth` is decremented for each recursive call. If it reaches 0, this
 /// function simply calls [`apply_ite_rec()`].
 fn apply_ite<M>(
     manager: &M,

@@ -14,6 +14,8 @@ use oxidd_core::util::DropWith;
 use oxidd_core::ApplyCache;
 use oxidd_core::Manager;
 
+// spell-checker:ignore freqs
+
 #[cfg(feature = "hugealloc")]
 type Box<T> = allocator_api2::boxed::Box<T, hugealloc::HugeAlloc>;
 #[cfg(feature = "hugealloc")]
@@ -63,7 +65,7 @@ impl<M: Manager, O, H, const ARITY: usize, const BUCKET_SIZE: usize> Drop
 /// hash
 struct Bucket<M: Manager, O, const ARITY: usize, const SIZE: usize> {
     num_entries: u8,
-    // Invairant: all entries up to num_entries are initialized.
+    // Invariant: all entries up to num_entries are initialized.
     entries: [MaybeUninit<Entry<M, O, ARITY>>; SIZE],
 }
 

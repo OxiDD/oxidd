@@ -36,6 +36,8 @@ use oxidd_parser::Prop;
 use oxidd_parser::Var;
 use rustc_hash::FxHashMap;
 
+// spell-checker:ignore mref,subsec,funcs,dotfile,dmpfile
+
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Cli {

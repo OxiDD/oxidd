@@ -303,7 +303,7 @@ impl<I, D, const PAGE_SIZE: usize> ArcSlab<I, D, PAGE_SIZE> {
     /// # Safety
     ///
     /// For every call to `release()` except one, there has to be a distinct
-    /// preceeding call to `retain()`. `this` needs to be valid. The `ArcSlab`
+    /// preceding call to `retain()`. `this` needs to be valid. The `ArcSlab`
     /// must not be used after the last calls to `release()`.
     pub unsafe fn release(this: NonNull<Self>) {
         // Inspired by the `Arc` implementation from the Rustonomicon.
@@ -443,6 +443,7 @@ impl<I, D, const PAGE_SIZE: usize> Page<I, D, PAGE_SIZE> {
         #[cfg(all(not(miri), target_os = "linux"))]
         if PAGE_SIZE >= 2 * 1024 * 1024 {
             unsafe {
+                // spell-checker:ignore rustix
                 let _ = rustix::mm::madvise(
                     raw_ptr as *mut std::ffi::c_void,
                     PAGE_SIZE,
@@ -570,7 +571,7 @@ impl<I: AtomicRefCounted> Slot<I> {
     /// SAFETY: `this` must be a valid slot pointer, the slot must be non-empty
     /// and there must not be any further accesses to `this` (if it was the last
     /// reference). For every call to this function, there must have been a
-    /// preceeding call to `retain()`, or an initial count.
+    /// preceding call to `retain()`, or an initial count.
     #[inline]
     unsafe fn release<D, const PAGE_SIZE: usize>(this: NonNull<Self>, f: impl FnOnce(I)) {
         // SAFETY:
@@ -599,7 +600,7 @@ impl<I: AtomicRefCounted> Slot<I> {
     /// SAFETY: `this` must be a valid slot pointer, the slot must be non-empty
     /// and there must not be any further accesses to `this` (if it was the last
     /// reference). For every call to this function, there must have been a
-    /// preceeding call to `retain()`, or an initial count.
+    /// preceding call to `retain()`, or an initial count.
     unsafe fn release_move<D, const PAGE_SIZE: usize>(mut this: NonNull<Self>) -> Option<I> {
         // SAFETY:
         // - `this.as_ref()`: `this` is valid

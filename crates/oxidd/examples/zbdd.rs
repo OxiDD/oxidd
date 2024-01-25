@@ -12,8 +12,8 @@ use oxidd_dump::dot::dump_all;
 use rustc_hash::FxHasher;
 
 fn main() {
-    let mref = oxidd::zbdd::new_manager(1024, 1024, 1);
-    let (a, b, c) = mref.with_manager_exclusive(|manager| {
+    let manager_ref = oxidd::zbdd::new_manager(1024, 1024, 1);
+    let (a, b, c) = manager_ref.with_manager_exclusive(|manager| {
         (
             ZBDDSet::new_singleton(manager).unwrap(),
             ZBDDSet::new_singleton(manager).unwrap(),
@@ -21,7 +21,7 @@ fn main() {
         )
     });
 
-    mref.with_manager_shared(|manager| {
+    manager_ref.with_manager_shared(|manager| {
         let n1 = ZBDDSet::from_edge(
             manager,
             oxidd::zbdd::make_node(
@@ -61,8 +61,8 @@ fn main() {
 
         assert!(abc.intsec(&ZBDDSet::t(manager)).unwrap() == abc);
 
-        let compl_a = ZBDDSet::t(manager).diff(&a).unwrap();
-        assert!(compl_a.sat_count(3, &mut count_cache).0 == (1 << 3) - 1);
+        let complement_a = ZBDDSet::t(manager).diff(&a).unwrap();
+        assert!(complement_a.sat_count(3, &mut count_cache).0 == (1 << 3) - 1);
 
         let func_a = ZBDDSet::from_edge(
             manager,
@@ -81,7 +81,7 @@ fn main() {
                 (&n2, "n2"),
                 (&ab, "ab"),
                 (&abc, "abc"),
-                (&compl_a, "compl a"),
+                (&complement_a, "complement a"),
                 (&func_a, "func a"),
                 (&not_a, "¬a"),
                 (&not_not_a, "¬¬a"),

@@ -65,6 +65,7 @@ impl StatCounters {
     };
 
     fn print(counters: &[Self], labels: &[&str]) {
+        // spell-checker:ignore ctrs
         for (ctrs, op) in counters.iter().zip(labels) {
             let calls = ctrs.calls.swap(0, std::sync::atomic::Ordering::Relaxed);
             let cache_queries = ctrs

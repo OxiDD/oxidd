@@ -47,14 +47,14 @@ pub trait ManagerRef: Clone {
 
     /// Obtain a shared manager reference
     ///
-    /// Locking behavior: aquires a shared manager lock.
+    /// Locking behavior: acquires a shared manager lock.
     fn with_manager_shared<F, T>(&self, f: F) -> T
     where
         F: for<'id> FnOnce(&Self::Manager<'id>) -> T;
 
     /// Obtain an exclusive manager reference
     ///
-    /// Locking behavior: aquires an exclusive manager lock.
+    /// Locking behavior: acquires an exclusive manager lock.
     fn with_manager_exclusive<F, T>(&self, f: F) -> T
     where
         F: for<'id> FnOnce(&mut Self::Manager<'id>) -> T;
@@ -116,7 +116,7 @@ pub trait DiagramRules<E: Edge, N: InnerNode<E>, T> {
     /// }
     /// ```
     ///
-    /// Note that we assume no complemented edges, hence the cofator iterator
+    /// Note that we assume no complemented edges, hence the cofactor iterator
     /// is just `node.children()`.
     ///
     /// The implementation assumes that there are no panics, otherwise it would
@@ -157,7 +157,7 @@ impl<E: Edge, N: InnerNode<E>> ReducedOrNew<E, N> {
     /// it is `New`, otherwise return the `Reduced` edge.
     ///
     /// `level` must agree with the level used for creating the node, and must
-    /// be strictly above (i.e. less than) the childrens' levels.
+    /// be strictly above (i.e. less than) the children's levels.
     #[must_use]
     #[inline(always)]
     pub fn then_insert<M>(self, manager: &M, level: LevelNo) -> AllocResult<E>
@@ -289,7 +289,7 @@ pub type AtomicLevelNo = std::sync::atomic::AtomicU32;
 ///
 /// These conditions are crucial to enable concurrent level swaps as part of
 /// reordering (see the `oxidd-reorder` crate): The algorithm iterates over the
-/// nodes at the upper level and needs to know wheter a node is part of the
+/// nodes at the upper level and needs to know whether a node is part of the
 /// level directly below it. The procedure only has access to nodes at these two
 /// levels, hence it must rely on the level information for SAFETY.
 ///

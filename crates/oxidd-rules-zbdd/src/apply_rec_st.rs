@@ -33,6 +33,9 @@ use oxidd_dump::dot::DotStyle;
 
 use super::*;
 
+// spell-checker:ignore fnode,gnode,hnode,flevel,glevel,hlevel,ghlevel
+// spell-checker:ignore symm
+
 /// Recursively compute the subset with `var` set to `VAL`, or change `var` if
 /// `VAL == -1`
 pub(super) fn subset<M, const VAL: i8>(
@@ -101,7 +104,7 @@ where
     Ok(h)
 }
 
-/// Recusively apply the union operator to `f` and `g`
+/// Recursively apply the union operator to `f` and `g`
 pub(super) fn apply_union<M>(
     manager: &M,
     f: Borrowed<M::Edge>,
@@ -167,7 +170,7 @@ where
     Ok(h)
 }
 
-/// Recusively apply the intersection operator to `f` and `g`
+/// Recursively apply the intersection operator to `f` and `g`
 pub(super) fn apply_intsec<M>(
     manager: &M,
     f: Borrowed<M::Edge>,
@@ -232,7 +235,7 @@ where
     Ok(h)
 }
 
-/// Recusively apply the difference operator to `f` and `g`
+/// Recursively apply the difference operator to `f` and `g`
 pub(super) fn apply_diff<M>(
     manager: &M,
     f: Borrowed<M::Edge>,
@@ -294,7 +297,7 @@ where
     Ok(h)
 }
 
-/// Recusively apply the symmetric difference operator to `f` and `g`
+/// Recursively apply the symmetric difference operator to `f` and `g`
 pub(super) fn apply_symm_diff<M>(
     manager: &M,
     f: Borrowed<M::Edge>,
@@ -812,17 +815,17 @@ where
         edge: &'a <Self::Manager<'id> as Manager>::Edge,
         env: impl IntoIterator<Item = (&'a <Self::Manager<'id> as Manager>::Edge, bool)>,
     ) -> bool {
-        let mut vals = BitVec::new();
-        vals.resize(manager.num_levels() as usize, false);
+        let mut values = BitVec::new();
+        values.resize(manager.num_levels() as usize, false);
         for (edge, val) in env {
             let node = manager
                 .get_node(edge)
                 .expect_inner("edges in `env` must refer to inner nodes");
-            vals.set(node.level() as usize, val);
+            values.set(node.level() as usize, val);
         }
 
         #[inline] // this function is tail-recursive
-        fn inner<M>(manager: &M, edge: Borrowed<M::Edge>, mut vals: BitVec) -> Option<BitVec>
+        fn inner<M>(manager: &M, edge: Borrowed<M::Edge>, mut values: BitVec) -> Option<BitVec>
         where
             M: Manager<Terminal = ZBDDTerminal>,
             M::InnerNode: HasLevel,
@@ -830,17 +833,17 @@ where
             match manager.get_node(&edge) {
                 Node::Inner(node) => {
                     let level = node.level() as usize;
-                    let edge = node.child((!vals[level]) as usize);
-                    vals.set(level, false);
-                    inner(manager, edge, vals)
+                    let edge = node.child((!values[level]) as usize);
+                    values.set(level, false);
+                    inner(manager, edge, values)
                 }
-                Node::Terminal(t) if *t.borrow() == ZBDDTerminal::Base => Some(vals),
+                Node::Terminal(t) if *t.borrow() == ZBDDTerminal::Base => Some(values),
                 Node::Terminal(_) => None,
             }
         }
 
-        if let Some(vals) = inner(manager, edge.borrowed(), vals) {
-            BitSlice::not_any(&vals)
+        if let Some(values) = inner(manager, edge.borrowed(), values) {
+            BitSlice::not_any(&values)
         } else {
             false
         }

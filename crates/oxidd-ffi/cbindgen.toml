@@ -1,3 +1,5 @@
+# spell-checker:ignore autogen,myvariant,Zunpretty
+
 # The language to output bindings in
 #
 # possible values: "C", "C++", "Cython"
@@ -246,7 +248,7 @@ aligned_n = "ALIGNED"
 #prefix = "START_FUNC"
 
 # An optional postfix to put after any function declaration
-# default: no postix added
+# default: no postfix added
 #postfix = "END_FUNC"
 
 # How to format function arguments
@@ -311,7 +313,7 @@ sort_by = "None"
 
 [struct]
 # A rule to use to rename struct field names. The renaming assumes the input is
-# the Rust standard snake_case, however it acccepts all the different rename_args
+# the Rust standard snake_case, however it accepts all the different rename_args
 # inputs. This means many options here are no-ops or redundant.
 #
 # possible values (that actually do something):
@@ -403,7 +405,7 @@ rename_variants = "None"
 # Whether an extra "sentinel" enum variant should be added to all generated enums.
 # Firefox uses this for their IPC serialization library.
 #
-# WARNING: if the sentinel is ever passed into Rust, behaviour will be Undefined.
+# WARNING: if the sentinel is ever passed into Rust, behavior will be Undefined.
 # Rust does not know about this value, and will assume it cannot happen.
 #
 # default: false
@@ -455,7 +457,7 @@ must_use = "MUST_USE_ENUM"
 # automatically derive the correct constructors and destructors for those types.
 #
 # Care should be taken with this option, as Rust and C++ cannot
-# properly interoperate with eachother's notions of destructors. Also, this may
+# properly interoperate with each others' notions of destructors. Also, this may
 # change the ABI for the type. Either your destructor-full enums must live
 # exclusively within C++, or they must only be passed by-reference between
 # C++ and Rust.
@@ -509,7 +511,7 @@ sort_by = "None"
 [macro_expansion]
 # Whether bindings should be generated for instances of the bitflags! macro.
 # default: false
-bitflags = true
+bitflags = false
 
 
 # Options for how your Rust library should be parsed

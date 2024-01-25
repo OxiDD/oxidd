@@ -677,7 +677,7 @@ where
     /// Edges from the unique table are untagged and point to inner nodes, so
     /// we need less case distinctions. Furthermore, we assume that the node's
     /// children are still present in the unique table (waiting for their
-    /// revival or to be garbage collected), so we just decrement the childrens'
+    /// revival or to be garbage collected), so we just decrement the children's
     /// reference counters. There is a debug assertion that checks this
     /// assumption.
     ///
@@ -1987,6 +1987,7 @@ pub fn new_manager<
     });
     drop(manager);
 
+    // spell-checker:ignore mref
     let gc_mref: ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS> = ManagerRef(arc.clone());
     std::thread::Builder::new()
         .name("oxidd mi gc".to_string())

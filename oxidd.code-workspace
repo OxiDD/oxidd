@@ -10,7 +10,9 @@
     }
   ],
   "settings": {
-    "rust-analyzer.rustfmt.extraArgs": ["+nightly"],
+    "rust-analyzer.rustfmt.extraArgs": [
+      "+nightly"
+    ],
     "rust-analyzer.check.command": "clippy"
   }
 }

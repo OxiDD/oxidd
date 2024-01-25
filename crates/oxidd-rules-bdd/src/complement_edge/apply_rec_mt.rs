@@ -25,9 +25,11 @@ use oxidd_dump::dot::DotStyle;
 
 use super::*;
 
+// spell-checker:ignore fnode,gnode,hnode,flevel,glevel,hlevel,vlevel
+
 /// Recursively apply the binary operator `OP` to `f` and `g`
 ///
-/// `depth` is decremented for each recusive call. If it reaches 0, this
+/// `depth` is decremented for each recursive call. If it reaches 0, this
 /// function simply calls [`apply_rec_st::apply_bin()`].
 ///
 /// We use a `const` parameter `OP` to have specialized version of this function
@@ -147,7 +149,7 @@ where
 /// Recursively apply the if-then-else operator (`if f { g } else { h }`),
 /// multi-threaded version
 ///
-/// `depth` is decremented for each recusive call. If it reaches 0, this
+/// `depth` is decremented for each recursive call. If it reaches 0, this
 /// function simply calls [`apply_rec_st::apply_ite()`].
 fn apply_ite<M>(
     manager: &M,
@@ -280,7 +282,7 @@ where
 /// `Q` is one of `CBDDOp::Forall`, `CBDDOp::Exist`, and `CBDDOp::Forall` as
 /// `u8`.
 ///
-/// `depth` is decremented for each recusive call. If it reaches 0, this
+/// `depth` is decremented for each recursive call. If it reaches 0, this
 /// function simply calls [`apply_rec_st::quant()`].
 fn quant<M, const Q: u8>(
     manager: &M,

@@ -5,7 +5,6 @@ edition = "2021"
 description = "Slab, but with reference counted items"
 license = "MIT OR Apache-2.0"
 
-
 [dependencies]
 
 # strict provenance polyfill
