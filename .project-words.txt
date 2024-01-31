@@ -12,6 +12,7 @@ cassert
 cbindgen
 cdylib
 cfgs
+clangd
 clippy
 codegen
 cofactor
@@ -73,6 +74,7 @@ rustc
 rustfmt
 rustix
 Rustonomicon
+rustup
 rwlock
 satisfiability
 segtree
