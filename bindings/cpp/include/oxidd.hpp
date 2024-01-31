@@ -2,6 +2,6 @@
 
 #pragma once
 
+#include <oxidd-bcdd.hpp>
 #include <oxidd-bdd.hpp>
-#include <oxidd-cbdd.hpp>
 #include <oxidd-zbdd.hpp>

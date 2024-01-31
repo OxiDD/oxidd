@@ -25,7 +25,7 @@ class assignment {
   assignment(capi::oxidd_assignment_t a) : _assignment(a) {}
   assignment(assignment &other) = delete; // use as_vector() to copy
   friend class bdd_function;
-  friend class cbdd_function;
+  friend class bcdd_function;
   friend class zbdd_set;
 
 public:
