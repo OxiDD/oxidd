@@ -42,7 +42,7 @@ use rustc_hash::FxHashMap;
 #[command(author, version, about, long_about = None)]
 struct Cli {
     /// The decision diagram type
-    #[arg(value_enum, short = 't', long, default_value_t = DDType::CBDD)]
+    #[arg(value_enum, short = 't', long, default_value_t = DDType::BCDD)]
     dd_type: DDType,
 
     /// Number of inner nodes to reserve memory for
@@ -111,7 +111,7 @@ enum DDType {
     /// Binary decision diagram
     BDD,
     /// Binary decision diagram with complement edges
-    CBDD,
+    BCDD,
     /// Zero-suppressed decision diagram
     ZBDD,
 }
@@ -625,13 +625,13 @@ fn main() {
                 oxidd::bdd::new_manager(inner_node_capacity, cli.apply_cache_capacity, cli.threads);
             bool_dd_main::<oxidd::bdd::BDDFunction>(&cli, mref);
         }
-        DDType::CBDD => {
-            let mref = oxidd::cbdd::new_manager(
+        DDType::BCDD => {
+            let mref = oxidd::bcdd::new_manager(
                 inner_node_capacity,
                 cli.apply_cache_capacity,
                 cli.threads,
             );
-            bool_dd_main::<oxidd::cbdd::CBDDFunction>(&cli, mref);
+            bool_dd_main::<oxidd::bcdd::BCDDFunction>(&cli, mref);
         }
         DDType::ZBDD => todo!(),
     }

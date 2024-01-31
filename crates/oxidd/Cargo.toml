@@ -33,7 +33,7 @@ document-features = "0.2"
 default = [
   "manager-index",
   "bdd",
-  "cbdd",
+  "bcdd",
   "mtbdd",
   "zbdd",
   "multi-threading",
@@ -44,7 +44,7 @@ default = [
 bdd = ["dep:oxidd-rules-bdd", "oxidd-rules-bdd/simple"]
 
 ## Enable the complement edge BDD implementation
-cbdd = ["dep:oxidd-rules-bdd", "oxidd-rules-bdd/complement-edge"]
+bcdd = ["dep:oxidd-rules-bdd", "oxidd-rules-bdd/complement-edge"]
 
 ## Enable the MTBDD implementation
 mtbdd = ["dep:oxidd-rules-mtbdd"]
@@ -68,11 +68,11 @@ multi-threading = [
 ## This implementation is generally faster than the pointer-based
 ## implementation, but is more restricted: There is no possibility to reserve
 ## space for more nodes after the initial allocation and the total number of
-## nodes is limited to 2³² nodes for BDDs/ZBDDs, or 2³¹ nodes for CBDDs.
+## nodes is limited to 2³² nodes for BDDs/ZBDDs, or 2³¹ nodes for BCDDs.
 manager-index = ["dep:oxidd-manager-index"]
 
 ## Use the pointer-based manager implementation (suitable for BDDs/ZBDDs with
-## more than 2³² nodes, or CBDDs with more than 2³¹ nodes)
+## more than 2³² nodes, or BCDDs with more than 2³¹ nodes)
 ##
 ## If both `manager-index` and `manager-pointer` are specified, the
 ## pointer-based implementation will be used.

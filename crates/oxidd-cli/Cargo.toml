@@ -7,7 +7,7 @@ license = "MIT OR Apache-2.0"
 
 
 [dependencies]
-oxidd = { path = "../oxidd", features = ["bdd", "cbdd"], default-features = false }
+oxidd = { path = "../oxidd", features = ["bdd", "bcdd"], default-features = false }
 oxidd-core = { path = "../oxidd-core" }
 oxidd-dump = { path = "../oxidd-dump" }
 oxidd-reorder = { path = "../oxidd-reorder" }
@@ -38,11 +38,11 @@ multi-threading = ["oxidd/multi-threading"]
 ## This implementation is generally faster than the pointer-based
 ## implementation, but is more restricted: There is no possibility to reserve
 ## space for more nodes after the initial allocation and the total number of
-## nodes is limited to 2³² nodes for BDDs/ZBDDs, or 2³¹ nodes for CBDDs.
+## nodes is limited to 2³² nodes for BDDs/ZBDDs, or 2³¹ nodes for BCDDs.
 manager-index = ["oxidd/manager-index"]
 
 ## Use the pointer-based manager implementation (suitable for BDDs/ZBDDs with
-## more than 2³² nodes, or CBDDs with more than 2³¹ nodes)
+## more than 2³² nodes, or BCDDs with more than 2³¹ nodes)
 ##
 ## If both `manager-index` and `manager-pointer` are specified, the
 ## pointer-based implementation will be used.

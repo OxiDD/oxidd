@@ -5,8 +5,8 @@
 use std::fmt;
 use std::fmt::Write;
 
+use oxidd::bcdd::BCDDFunction;
 use oxidd::bdd::BDDFunction;
-use oxidd::cbdd::CBDDFunction;
 use oxidd::zbdd::ZBDDSet;
 use oxidd::AllocResult;
 use oxidd::BooleanFunction;
@@ -320,9 +320,9 @@ fn bdd_test_simple_formulas() {
 }
 
 #[test]
-fn cbdd_test_simple_formulas() {
-    let mref = oxidd::cbdd::new_manager(65536, 1024, 2);
-    test_simple_formulas::<CBDDFunction>(&mref);
+fn bcdd_test_simple_formulas() {
+    let mref = oxidd::bcdd::new_manager(65536, 1024, 2);
+    test_simple_formulas::<BCDDFunction>(&mref);
 }
 
 #[test]
@@ -359,13 +359,13 @@ fn bdd_test_depth3_3vars() {
 
 #[cfg(not(miri))]
 #[test]
-fn cbdd_test_depth3_3vars() {
-    let mref = oxidd::cbdd::new_manager(65536, 1024, 2);
+fn bcdd_test_depth3_3vars() {
+    let mref = oxidd::bcdd::new_manager(65536, 1024, 2);
     let vars = mref.with_manager_exclusive(|manager| {
         [
-            CBDDFunction::new_var(manager).unwrap(),
-            CBDDFunction::new_var(manager).unwrap(),
-            CBDDFunction::new_var(manager).unwrap(),
+            BCDDFunction::new_var(manager).unwrap(),
+            BCDDFunction::new_var(manager).unwrap(),
+            BCDDFunction::new_var(manager).unwrap(),
         ]
     });
     test_depth3_3vars(&mref, &vars, &vars);

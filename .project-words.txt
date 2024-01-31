@@ -2,13 +2,13 @@ alloc
 arcslab
 arity
 arrayvec
+BCDD
 BDD
 binop
 bitflags
 bitvec
 capi
 cassert
-CBDD
 cbindgen
 cdylib
 cfgs

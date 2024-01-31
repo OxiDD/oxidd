@@ -42,31 +42,31 @@ pub(super) fn apply_bin<M, const OP: u8>(
     g: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<EdgeTag = EdgeTag, Terminal = CBDDTerminal> + HasApplyCache<M, Operator = CBDDOp>,
+    M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal> + HasApplyCache<M, Operator = BCDDOp>,
     M::InnerNode: HasLevel,
 {
     stat!(call OP);
-    let (op, f, fnode, g, gnode) = if OP == CBDDOp::And as u8 {
+    let (op, f, fnode, g, gnode) = if OP == BCDDOp::And as u8 {
         match terminal_and(manager, &f, &g) {
             NodesOrDone::Nodes(fnode, gnode) if f < g => {
-                (CBDDOp::And, f.borrowed(), fnode, g.borrowed(), gnode)
+                (BCDDOp::And, f.borrowed(), fnode, g.borrowed(), gnode)
             }
             // `And` is commutative, hence we swap `f` and `g` in the apply
             // cache key if `f > g` to have a unique representation of the set
             // `{f, g}`.
             NodesOrDone::Nodes(fnode, gnode) => {
-                (CBDDOp::And, g.borrowed(), gnode, f.borrowed(), fnode)
+                (BCDDOp::And, g.borrowed(), gnode, f.borrowed(), fnode)
             }
             NodesOrDone::Done(h) => return Ok(h),
         }
     } else {
-        assert_eq!(OP, CBDDOp::Xor as u8);
+        assert_eq!(OP, BCDDOp::Xor as u8);
         match terminal_xor(manager, &f, &g) {
             NodesOrDone::Nodes(fnode, gnode) if f < g => {
-                (CBDDOp::Xor, f.borrowed(), fnode, g.borrowed(), gnode)
+                (BCDDOp::Xor, f.borrowed(), fnode, g.borrowed(), gnode)
             }
             NodesOrDone::Nodes(fnode, gnode) => {
-                (CBDDOp::Xor, g.borrowed(), gnode, f.borrowed(), fnode)
+                (BCDDOp::Xor, g.borrowed(), gnode, f.borrowed(), fnode)
             }
             NodesOrDone::Done(h) => {
                 return Ok(h);
@@ -113,14 +113,14 @@ where
     Ok(h)
 }
 
-/// Shorthand for `apply_bin_rec::<M, { CBDDOp::And as u8 }>(manager, f, g)`
+/// Shorthand for `apply_bin_rec::<M, { BCDDOp::And as u8 }>(manager, f, g)`
 #[inline(always)]
 fn apply_and<M>(manager: &M, f: Borrowed<M::Edge>, g: Borrowed<M::Edge>) -> AllocResult<M::Edge>
 where
-    M: Manager<EdgeTag = EdgeTag, Terminal = CBDDTerminal> + HasApplyCache<M, Operator = CBDDOp>,
+    M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal> + HasApplyCache<M, Operator = BCDDOp>,
     M::InnerNode: HasLevel,
 {
-    apply_bin::<M, { CBDDOp::And as u8 }>(manager, f, g)
+    apply_bin::<M, { BCDDOp::And as u8 }>(manager, f, g)
 }
 
 /// Recursively apply the if-then-else operator (`if f { g } else { h }`)
@@ -131,10 +131,10 @@ pub(super) fn apply_ite<M>(
     h: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<EdgeTag = EdgeTag, Terminal = CBDDTerminal> + HasApplyCache<M, Operator = CBDDOp>,
+    M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal> + HasApplyCache<M, Operator = BCDDOp>,
     M::InnerNode: HasLevel,
 {
-    stat!(call CBDDOp::Ite);
+    stat!(call BCDDOp::Ite);
 
     // Terminal cases
     let gu = g.with_tag(EdgeTag::None); // untagged
@@ -143,7 +143,7 @@ where
         return Ok(if g.tag() == h.tag() {
             manager.clone_edge(&g)
         } else {
-            not_owned(apply_bin::<M, { CBDDOp::Xor as u8 }>(manager, f, g)?) // f ↔ g
+            not_owned(apply_bin::<M, { BCDDOp::Xor as u8 }>(manager, f, g)?) // f ↔ g
         });
     }
     let fu = f.with_tag(EdgeTag::None);
@@ -187,13 +187,13 @@ where
     };
 
     // Query apply cache
-    stat!(cache_query CBDDOp::Ite);
+    stat!(cache_query BCDDOp::Ite);
     if let Some(res) = manager.apply_cache().get(
         manager,
-        CBDDOp::Ite,
+        BCDDOp::Ite,
         &[f.borrowed(), g.borrowed(), h.borrowed()],
     ) {
-        stat!(cache_hit CBDDOp::Ite);
+        stat!(cache_hit BCDDOp::Ite);
         return Ok(res);
     }
 
@@ -222,18 +222,18 @@ where
 
     let t = EdgeDropGuard::new(manager, apply_ite(manager, f0, g0, h0)?);
     let e = EdgeDropGuard::new(manager, apply_ite(manager, f1, g1, h1)?);
-    let res = reduce(manager, level, t.into_edge(), e.into_edge(), CBDDOp::Ite)?;
+    let res = reduce(manager, level, t.into_edge(), e.into_edge(), BCDDOp::Ite)?;
 
     manager
         .apply_cache()
-        .add(manager, CBDDOp::Ite, &[f, g, h], res.borrowed());
+        .add(manager, BCDDOp::Ite, &[f, g, h], res.borrowed());
 
     Ok(res)
 }
 
 /// Compute the quantification `Q` over `vars`
 ///
-/// `Q` is one of `CBDDOp::Forall`, `CBDDOp::Exist`, and `CBDDOp::Forall` as
+/// `Q` is one of `BCDDOp::Forall`, `BCDDOp::Exist`, and `BCDDOp::Forall` as
 /// `u8`.
 pub(super) fn quant<M, const Q: u8>(
     manager: &M,
@@ -241,13 +241,13 @@ pub(super) fn quant<M, const Q: u8>(
     vars: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = CBDDTerminal, EdgeTag = EdgeTag> + HasApplyCache<M, Operator = CBDDOp>,
+    M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag> + HasApplyCache<M, Operator = BCDDOp>,
     M::InnerNode: HasLevel,
 {
     let operator = match () {
-        _ if Q == CBDDOp::Forall as u8 => CBDDOp::Forall,
-        _ if Q == CBDDOp::Exist as u8 => CBDDOp::Exist,
-        _ if Q == CBDDOp::Unique as u8 => CBDDOp::Unique,
+        _ if Q == BCDDOp::Forall as u8 => BCDDOp::Forall,
+        _ if Q == BCDDOp::Exist as u8 => BCDDOp::Exist,
+        _ if Q == BCDDOp::Unique as u8 => BCDDOp::Unique,
         _ => unreachable!("invalid quantifier"),
     };
 
@@ -286,10 +286,10 @@ where
 
     let res = if flevel == vlevel {
         match operator {
-            CBDDOp::Forall => apply_and(manager, t.borrowed(), e.borrowed())?,
-            CBDDOp::Exist => not_owned(apply_and(manager, not(&t), not(&e))?),
-            CBDDOp::Unique => {
-                apply_bin::<M, { CBDDOp::Xor as u8 }>(manager, t.borrowed(), e.borrowed())?
+            BCDDOp::Forall => apply_and(manager, t.borrowed(), e.borrowed())?,
+            BCDDOp::Exist => not_owned(apply_and(manager, not(&t), not(&e))?),
+            BCDDOp::Unique => {
+                apply_bin::<M, { BCDDOp::Xor as u8 }>(manager, t.borrowed(), e.borrowed())?
             }
             _ => unreachable!(),
         }
@@ -309,16 +309,16 @@ where
 /// Boolean function backed by a complement edge binary decision diagram
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Function, Debug)]
 #[repr(transparent)]
-pub struct CBDDFunction<F: Function>(F);
+pub struct BCDDFunction<F: Function>(F);
 
-impl<F: Function> From<F> for CBDDFunction<F> {
+impl<F: Function> From<F> for BCDDFunction<F> {
     #[inline(always)]
     fn from(value: F) -> Self {
-        CBDDFunction(value)
+        BCDDFunction(value)
     }
 }
 
-impl<F: Function> CBDDFunction<F> {
+impl<F: Function> BCDDFunction<F> {
     /// Convert `self` into the underlying [`Function`]
     #[inline(always)]
     pub fn into_inner(self) -> F {
@@ -326,10 +326,10 @@ impl<F: Function> CBDDFunction<F> {
     }
 }
 
-impl<F: Function> BooleanFunction for CBDDFunction<F>
+impl<F: Function> BooleanFunction for BCDDFunction<F>
 where
     for<'id> F::Manager<'id>:
-        Manager<Terminal = CBDDTerminal, EdgeTag = EdgeTag> + HasCBDDOpApplyCache<F::Manager<'id>>,
+        Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag> + HasBCDDOpApplyCache<F::Manager<'id>>,
     for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
 {
     #[inline]
@@ -402,7 +402,7 @@ where
         lhs: &<Self::Manager<'id> as Manager>::Edge,
         rhs: &<Self::Manager<'id> as Manager>::Edge,
     ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
-        apply_bin::<_, { CBDDOp::Xor as u8 }>(manager, lhs.borrowed(), rhs.borrowed())
+        apply_bin::<_, { BCDDOp::Xor as u8 }>(manager, lhs.borrowed(), rhs.borrowed())
     }
     #[inline]
     fn equiv_edge<'id>(
@@ -458,7 +458,7 @@ where
             cache: &mut HashMap<NodeID, N, S>,
         ) -> N
         where
-            M: Manager<EdgeTag = EdgeTag, Terminal = CBDDTerminal>,
+            M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal>,
         {
             let node = match manager.get_node(&e) {
                 Node::Inner(node) => node,
@@ -501,7 +501,7 @@ where
             cache: &mut HashMap<NodeID, N, S>,
         ) -> N
         where
-            M: Manager<EdgeTag = EdgeTag, Terminal = CBDDTerminal>,
+            M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal>,
             N: SatCountNumber,
             S: BuildHasher,
         {
@@ -634,10 +634,10 @@ where
     }
 }
 
-impl<F: Function> BooleanFunctionQuant for CBDDFunction<F>
+impl<F: Function> BooleanFunctionQuant for BCDDFunction<F>
 where
     for<'id> F::Manager<'id>:
-        Manager<Terminal = CBDDTerminal, EdgeTag = EdgeTag> + HasCBDDOpApplyCache<F::Manager<'id>>,
+        Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag> + HasBCDDOpApplyCache<F::Manager<'id>>,
     for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
 {
     #[inline]
@@ -646,7 +646,7 @@ where
         root: &<Self::Manager<'id> as Manager>::Edge,
         vars: &<Self::Manager<'id> as Manager>::Edge,
     ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
-        quant::<_, { CBDDOp::Forall as u8 }>(manager, root.borrowed(), vars.borrowed())
+        quant::<_, { BCDDOp::Forall as u8 }>(manager, root.borrowed(), vars.borrowed())
     }
 
     #[inline]
@@ -655,7 +655,7 @@ where
         root: &<Self::Manager<'id> as Manager>::Edge,
         vars: &<Self::Manager<'id> as Manager>::Edge,
     ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
-        quant::<_, { CBDDOp::Exist as u8 }>(manager, root.borrowed(), vars.borrowed())
+        quant::<_, { BCDDOp::Exist as u8 }>(manager, root.borrowed(), vars.borrowed())
     }
 
     #[inline]
@@ -664,8 +664,8 @@ where
         root: &<Self::Manager<'id> as Manager>::Edge,
         vars: &<Self::Manager<'id> as Manager>::Edge,
     ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
-        quant::<_, { CBDDOp::Unique as u8 }>(manager, root.borrowed(), vars.borrowed())
+        quant::<_, { BCDDOp::Unique as u8 }>(manager, root.borrowed(), vars.borrowed())
     }
 }
 
-impl<F: Function, T: Tag> DotStyle<T> for CBDDFunction<F> {}
+impl<F: Function, T: Tag> DotStyle<T> for BCDDFunction<F> {}

@@ -69,9 +69,9 @@ fn not<E: Edge<Tag = EdgeTag>>(e: &E) -> Borrowed<E> {
 // --- Reduction Rules ---------------------------------------------------------
 
 /// [`DiagramRules`] for complement edge binary decision diagrams
-pub struct CBDDRules;
+pub struct BCDDRules;
 
-impl<E: Edge<Tag = EdgeTag>, N: InnerNode<E>> DiagramRules<E, N, CBDDTerminal> for CBDDRules {
+impl<E: Edge<Tag = EdgeTag>, N: InnerNode<E>> DiagramRules<E, N, BCDDTerminal> for BCDDRules {
     type Cofactors<'a> = Cofactors<'a, E, N::ChildrenIter<'a>> where N: 'a, E: 'a;
 
     #[inline]
@@ -168,7 +168,7 @@ fn collect_cofactors<E: Edge<Tag = EdgeTag>, N: InnerNode<E>>(
     node: &N,
 ) -> (Borrowed<E>, Borrowed<E>) {
     debug_assert_eq!(N::ARITY, 2);
-    let mut it = CBDDRules::cofactors(tag, node);
+    let mut it = BCDDRules::cofactors(tag, node);
     let f0 = it.next().unwrap();
     let f1 = it.next().unwrap();
     debug_assert!(it.next().is_none());
@@ -181,12 +181,12 @@ fn reduce<M>(
     level: LevelNo,
     t: M::Edge,
     e: M::Edge,
-    _op: CBDDOp,
+    _op: BCDDOp,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = CBDDTerminal, EdgeTag = EdgeTag>,
+    M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag>,
 {
-    let tmp = <CBDDRules as DiagramRules<_, _, _>>::reduce(manager, level, [t, e]);
+    let tmp = <BCDDRules as DiagramRules<_, _, _>>::reduce(manager, level, [t, e]);
     if let ReducedOrNew::Reduced(..) = &tmp {
         stat!(reduced _op);
     }
@@ -197,23 +197,23 @@ where
 
 /// Terminal nodes in complement edge binary decision diagrams
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Countable, Debug)]
-pub struct CBDDTerminal;
+pub struct BCDDTerminal;
 
-impl std::str::FromStr for CBDDTerminal {
+impl std::str::FromStr for BCDDTerminal {
     type Err = Infallible;
 
     fn from_str(_s: &str) -> Result<Self, Self::Err> {
-        Ok(CBDDTerminal)
+        Ok(BCDDTerminal)
     }
 }
 
-impl AsciiDisplay for CBDDTerminal {
+impl AsciiDisplay for BCDDTerminal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         f.write_str("T")
     }
 }
 
-impl fmt::Display for CBDDTerminal {
+impl fmt::Display for BCDDTerminal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("⊤")
     }
@@ -221,11 +221,11 @@ impl fmt::Display for CBDDTerminal {
 
 #[inline]
 #[must_use]
-fn get_terminal<M: Manager<EdgeTag = EdgeTag, Terminal = CBDDTerminal>>(
+fn get_terminal<M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal>>(
     manager: &M,
     val: bool,
 ) -> M::Edge {
-    let t = manager.get_terminal(CBDDTerminal).unwrap();
+    let t = manager.get_terminal(BCDDTerminal).unwrap();
     if val {
         t
     } else {
@@ -242,7 +242,7 @@ fn terminal_and<'a, M>(
     g: &'a M::Edge,
 ) -> NodesOrDone<'a, M::Edge, M::InnerNode>
 where
-    M: Manager<EdgeTag = EdgeTag, Terminal = CBDDTerminal>,
+    M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal>,
 {
     use EdgeTag::*;
     use Node::*;
@@ -281,7 +281,7 @@ fn terminal_xor<'a, M>(
     g: &'a M::Edge,
 ) -> NodesOrDone<'a, M::Edge, M::InnerNode>
 where
-    M: Manager<EdgeTag = EdgeTag, Terminal = CBDDTerminal>,
+    M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal>,
 {
     use EdgeTag::*;
     use Node::*;
@@ -314,7 +314,7 @@ where
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[repr(u8)]
 #[allow(missing_docs)]
-pub enum CBDDOp {
+pub enum BCDDOp {
     And,
     Xor,
 
@@ -351,9 +351,9 @@ pub fn print_stats() {
 // --- Function Interface ------------------------------------------------------
 
 /// Workaround for https://github.com/rust-lang/rust/issues/49601
-trait HasCBDDOpApplyCache<M: Manager>: HasApplyCache<M, Operator = CBDDOp> {}
-impl<M: Manager + HasApplyCache<M, Operator = CBDDOp>> HasCBDDOpApplyCache<M> for M {}
+trait HasBCDDOpApplyCache<M: Manager>: HasApplyCache<M, Operator = BCDDOp> {}
+impl<M: Manager + HasApplyCache<M, Operator = BCDDOp>> HasBCDDOpApplyCache<M> for M {}
 
 #[cfg(feature = "multi-threading")]
-pub use apply_rec_mt::CBDDFunctionMT;
-pub use apply_rec_st::CBDDFunction;
+pub use apply_rec_mt::BCDDFunctionMT;
+pub use apply_rec_st::BCDDFunction;

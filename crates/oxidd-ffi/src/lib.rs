@@ -3,8 +3,8 @@
 
 // These modules are not `pub` because they are not intended to be used from
 // Rust code.
+mod bcdd;
 mod bdd;
-mod cbdd;
 mod zbdd;
 
 /// Boolean assignment

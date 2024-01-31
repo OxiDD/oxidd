@@ -30,10 +30,10 @@ pub use oxidd_core::NodeID;
 
 pub mod util;
 
+#[cfg(feature = "bcdd")]
+pub mod bcdd;
 #[cfg(feature = "bdd")]
 pub mod bdd;
-#[cfg(feature = "cbdd")]
-pub mod cbdd;
 #[cfg(feature = "mtbdd")]
 pub mod mtbdd;
 #[cfg(feature = "tdd")]
