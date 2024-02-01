@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <oxidd-utils.hpp>
+#include <oxidd/utils.hpp>
 
 namespace oxidd {
 
