@@ -10,18 +10,22 @@ use oxidd::bdd::BDDFunction;
 use oxidd::zbdd::ZBDDSet;
 use oxidd::AllocResult;
 use oxidd::BooleanFunction;
+use oxidd::BooleanFunctionQuant;
 use oxidd::BooleanVecSet;
 use oxidd::Function;
 use oxidd::ManagerRef;
 
 // spell-checker:ignore nvars,mref
 
+type Var = u32;
+type VarSet = u32;
+
 /// Propositional logic formula
 #[derive(Clone, PartialEq, Eq, Debug)]
 enum Prop {
     False,
     True,
-    Var(u32),
+    Var(Var),
     Not(Box<Prop>),
     And(Box<Prop>, Box<Prop>),
     Or(Box<Prop>, Box<Prop>),
@@ -32,6 +36,11 @@ enum Prop {
     Imp(Box<Prop>, Box<Prop>),
     ImpStrict(Box<Prop>, Box<Prop>),
     Ite(Box<Prop>, Box<Prop>, Box<Prop>),
+    /// Restrict(positive, negative, f)
+    Restrict(VarSet, VarSet, Box<Prop>),
+    Exists(VarSet, Box<Prop>),
+    Forall(VarSet, Box<Prop>),
+    Unique(VarSet, Box<Prop>),
 }
 
 impl From<bool> for Prop {
@@ -61,6 +70,12 @@ impl fmt::Display for Prop {
             Imp(p, q) => write!(f, "({p} → {q})"),
             ImpStrict(p, q) => write!(f, "({p} < {q})"),
             Ite(p, q, r) => write!(f, "ite({p}, {q}, {r})"),
+            Restrict(positive, negative, p) => {
+                write!(f, "({p}|{positive:b},{negative:b})")
+            }
+            Exists(vars, p) => write!(f, "∃ {vars:b}. {p}"),
+            Forall(vars, p) => write!(f, "∀ {vars:b}. {p}"),
+            Unique(vars, p) => write!(f, "U {vars:b}. {p}"),
         }
     }
 }
@@ -120,26 +135,96 @@ impl Prop {
                     e.eval(env)
                 }
             }
+            Restrict(positive, negative, p) => p.eval((env | positive) & !negative),
+            Exists(vars, p) => p.eval(env | vars) || p.eval(env & !vars),
+            Forall(vars, p) => p.eval(env | vars) && p.eval(env & !vars),
+            Unique(vars, p) => p.eval(env | vars) ^ p.eval(env & !vars),
         }
     }
 
     fn cons<B: BooleanFunction>(&self, manager: &B::ManagerRef, vars: &[B]) -> AllocResult<B> {
+        use Prop::*;
         match self {
-            Prop::False => Ok(manager.with_manager_shared(|m| B::f(m))),
-            Prop::True => Ok(manager.with_manager_shared(|m| B::t(m))),
-            Prop::Var(i) => Ok(vars[*i as usize].clone()),
-            Prop::Not(p) => p.cons(manager, vars)?.not(),
-            Prop::And(p, q) => p.cons(manager, vars)?.and(&q.cons(manager, vars)?),
-            Prop::Or(p, q) => p.cons(manager, vars)?.or(&q.cons(manager, vars)?),
-            Prop::Xor(p, q) => p.cons(manager, vars)?.xor(&q.cons(manager, vars)?),
-            Prop::Equiv(p, q) => p.cons(manager, vars)?.equiv(&q.cons(manager, vars)?),
-            Prop::Nand(p, q) => p.cons(manager, vars)?.nand(&q.cons(manager, vars)?),
-            Prop::Nor(p, q) => p.cons(manager, vars)?.nor(&q.cons(manager, vars)?),
-            Prop::Imp(p, q) => p.cons(manager, vars)?.imp(&q.cons(manager, vars)?),
-            Prop::ImpStrict(p, q) => p.cons(manager, vars)?.imp_strict(&q.cons(manager, vars)?),
-            Prop::Ite(i, t, e) => i
+            False => Ok(manager.with_manager_shared(|m| B::f(m))),
+            True => Ok(manager.with_manager_shared(|m| B::t(m))),
+            Var(i) => Ok(vars[*i as usize].clone()),
+            Not(p) => p.cons(manager, vars)?.not(),
+            And(p, q) => p.cons(manager, vars)?.and(&q.cons(manager, vars)?),
+            Or(p, q) => p.cons(manager, vars)?.or(&q.cons(manager, vars)?),
+            Xor(p, q) => p.cons(manager, vars)?.xor(&q.cons(manager, vars)?),
+            Equiv(p, q) => p.cons(manager, vars)?.equiv(&q.cons(manager, vars)?),
+            Nand(p, q) => p.cons(manager, vars)?.nand(&q.cons(manager, vars)?),
+            Nor(p, q) => p.cons(manager, vars)?.nor(&q.cons(manager, vars)?),
+            Imp(p, q) => p.cons(manager, vars)?.imp(&q.cons(manager, vars)?),
+            ImpStrict(p, q) => p.cons(manager, vars)?.imp_strict(&q.cons(manager, vars)?),
+            Ite(i, t, e) => i
                 .cons(manager, vars)?
                 .ite(&t.cons(manager, vars)?, &e.cons(manager, vars)?),
+            Restrict(..) | Exists(..) | Forall(..) | Unique(..) => {
+                panic!("cons cannot construct quantification formulas, use `cons_q()` instead")
+            }
+        }
+    }
+
+    fn cons_q<B: BooleanFunctionQuant>(
+        &self,
+        manager: &B::ManagerRef,
+        vars: &[B],
+    ) -> AllocResult<B> {
+        use Prop::*;
+        match self {
+            False => Ok(manager.with_manager_shared(|m| B::f(m))),
+            True => Ok(manager.with_manager_shared(|m| B::t(m))),
+            Var(i) => Ok(vars[*i as usize].clone()),
+            Not(p) => p.cons_q(manager, vars)?.not(),
+            And(p, q) => p.cons_q(manager, vars)?.and(&q.cons_q(manager, vars)?),
+            Or(p, q) => p.cons_q(manager, vars)?.or(&q.cons_q(manager, vars)?),
+            Xor(p, q) => p.cons_q(manager, vars)?.xor(&q.cons_q(manager, vars)?),
+            Equiv(p, q) => p.cons_q(manager, vars)?.equiv(&q.cons_q(manager, vars)?),
+            Nand(p, q) => p.cons_q(manager, vars)?.nand(&q.cons_q(manager, vars)?),
+            Nor(p, q) => p.cons_q(manager, vars)?.nor(&q.cons_q(manager, vars)?),
+            Imp(p, q) => p.cons_q(manager, vars)?.imp(&q.cons_q(manager, vars)?),
+            ImpStrict(p, q) => p
+                .cons_q(manager, vars)?
+                .imp_strict(&q.cons_q(manager, vars)?),
+            Ite(i, t, e) => i
+                .cons_q(manager, vars)?
+                .ite(&t.cons_q(manager, vars)?, &e.cons_q(manager, vars)?),
+            Restrict(mut pos, mut neg, p) => {
+                debug_assert_eq!(pos & neg, 0);
+                let prop = p.cons_q(manager, vars)?;
+                let mut v_dd = manager.with_manager_shared(|m| B::t(m));
+                let mut i = 0;
+                while pos | neg != 0 {
+                    if pos & 1 != 0 {
+                        v_dd = v_dd.and(&vars[i])?;
+                    } else if neg & 1 != 0 {
+                        v_dd = v_dd.and(&vars[i].not()?)?;
+                    }
+                    i += 1;
+                    pos >>= 1;
+                    neg >>= 1;
+                }
+                prop.restrict(&v_dd)
+            }
+            Exists(mut v, p) | Forall(mut v, p) | Unique(mut v, p) => {
+                let prop = p.cons_q(manager, vars)?;
+                let mut v_dd = manager.with_manager_shared(|m| B::t(m));
+                let mut i = 0;
+                while v != 0 {
+                    if v & 1 != 0 {
+                        v_dd = v_dd.and(&vars[i])?;
+                    }
+                    i += 1;
+                    v >>= 1;
+                }
+                match self {
+                    Exists(..) => prop.exist(&v_dd),
+                    Forall(..) => prop.forall(&v_dd),
+                    Unique(..) => prop.unique(&v_dd),
+                    _ => unreachable!(),
+                }
+            }
         }
     }
 
@@ -179,12 +264,48 @@ impl Prop {
         }
     }
 
+    fn build_and_check_quant<B: BooleanFunctionQuant>(
+        &self,
+        manager: &B::ManagerRef,
+        vars: &[B],
+        var_roots: &[B],
+    ) -> Result<(), Error<&Self>> {
+        assert!(vars.len() == var_roots.len());
+        assert!(
+            vars.len() < 31,
+            "Too many variables for exhaustive checking"
+        );
+        let end = 1u32 << vars.len();
+        let f = self.cons_q(manager, vars).expect("out of memory");
+        let mut diffs = Vec::new();
+        for env in 0..end {
+            let expected = self.eval(env);
+            let actual = f.eval((0..var_roots.len()).map(|i| (&var_roots[i], env & (1 << i) != 0)));
+            if expected != actual {
+                diffs.push(Diff {
+                    expected,
+                    actual,
+                    env,
+                })
+            }
+        }
+        if diffs.is_empty() {
+            Ok(())
+        } else {
+            Err(Error {
+                formula: self,
+                nvars: vars.len() as u32,
+                diffs,
+            })
+        }
+    }
+
     /// This method is used to enumerate all propositional formulas with depth
     /// `<= depth` and up to `nvars` variables. If you start with `Prop::False`,
     /// and repeatedly call this method, you will enumerate all such formulas.
     /// Returns `false` iff this if the last formula. In this case the formula
     /// is left unchanged.
-    fn next(&mut self, depth: u32, nvars: u32) -> bool {
+    fn next<const QUANT: bool>(&mut self, depth: u32, nvars: u32) -> bool {
         use Prop::*;
         match self {
             False => {
@@ -215,64 +336,109 @@ impl Prop {
             }
 
             Not(p) => {
-                if !p.next(depth - 1, nvars) {
+                if !p.next::<QUANT>(depth - 1, nvars) {
                     *self = And(Box::new(False), Box::new(False));
                 }
                 true
             }
             And(p, q) => {
-                if !p.next(depth - 1, nvars) && !q.next(depth - 1, nvars) {
+                if !p.next::<QUANT>(depth - 1, nvars) && !q.next::<QUANT>(depth - 1, nvars) {
                     *self = Or(Box::new(False), Box::new(False));
                 }
                 true
             }
             Or(p, q) => {
-                if !p.next(depth - 1, nvars) && !q.next(depth - 1, nvars) {
+                if !p.next::<QUANT>(depth - 1, nvars) && !q.next::<QUANT>(depth - 1, nvars) {
                     *self = Xor(Box::new(False), Box::new(False));
                 }
                 true
             }
             Xor(p, q) => {
-                if !p.next(depth - 1, nvars) && !q.next(depth - 1, nvars) {
+                if !p.next::<QUANT>(depth - 1, nvars) && !q.next::<QUANT>(depth - 1, nvars) {
                     *self = Equiv(Box::new(False), Box::new(False));
                 }
                 true
             }
             Equiv(p, q) => {
-                if !p.next(depth - 1, nvars) && !q.next(depth - 1, nvars) {
+                if !p.next::<QUANT>(depth - 1, nvars) && !q.next::<QUANT>(depth - 1, nvars) {
                     *self = Nand(Box::new(False), Box::new(False));
                 }
                 true
             }
             Nand(p, q) => {
-                if !p.next(depth - 1, nvars) && !q.next(depth - 1, nvars) {
+                if !p.next::<QUANT>(depth - 1, nvars) && !q.next::<QUANT>(depth - 1, nvars) {
                     *self = Nor(Box::new(False), Box::new(False));
                 }
                 true
             }
             Nor(p, q) => {
-                if !p.next(depth - 1, nvars) && !q.next(depth - 1, nvars) {
+                if !p.next::<QUANT>(depth - 1, nvars) && !q.next::<QUANT>(depth - 1, nvars) {
                     *self = Imp(Box::new(False), Box::new(False));
                 }
                 true
             }
             Imp(p, q) => {
-                if !p.next(depth - 1, nvars) && !q.next(depth - 1, nvars) {
+                if !p.next::<QUANT>(depth - 1, nvars) && !q.next::<QUANT>(depth - 1, nvars) {
                     *self = ImpStrict(Box::new(False), Box::new(False));
                 }
                 true
             }
             ImpStrict(p, q) => {
-                if !p.next(depth - 1, nvars) && !q.next(depth - 1, nvars) {
+                if !p.next::<QUANT>(depth - 1, nvars) && !q.next::<QUANT>(depth - 1, nvars) {
                     *self = Ite(Box::new(False), Box::new(False), Box::new(False));
                 }
                 true
             }
             Ite(i, t, e) => {
-                if !i.next(depth - 1, nvars)
-                    && !t.next(depth - 1, nvars)
-                    && !e.next(depth - 1, nvars)
+                if !i.next::<QUANT>(depth - 1, nvars)
+                    && !t.next::<QUANT>(depth - 1, nvars)
+                    && !e.next::<QUANT>(depth - 1, nvars)
                 {
+                    if QUANT {
+                        *self = Restrict(0, 0, Box::new(False));
+                    } else {
+                        return false;
+                    }
+                }
+                true
+            }
+            Restrict(positive, negative, p) => {
+                if *positive + 1 < (1 << nvars) {
+                    *positive += 1;
+                    loop {
+                        let both = *positive & *negative;
+                        if both == 0 {
+                            break;
+                        }
+                        *positive += 1 << both.trailing_zeros()
+                    }
+                } else if *negative + 1 < (1 << nvars) {
+                    *negative += 1;
+                } else if !p.next::<QUANT>(depth - 1, nvars) {
+                    *self = Exists(0, Box::new(False))
+                }
+                true
+            }
+            Exists(v, p) => {
+                if *v + 1 < (1 << nvars) {
+                    *v += 1;
+                } else if !p.next::<QUANT>(depth - 1, nvars) {
+                    *self = Forall(0, Box::new(False))
+                }
+                true
+            }
+            Forall(v, p) => {
+                if *v + 1 < (1 << nvars) {
+                    *v += 1;
+                } else if !p.next::<QUANT>(depth - 1, nvars) {
+                    *self = Unique(0, Box::new(False))
+                }
+                true
+            }
+            Unique(v, p) => {
+                if *v + 1 < (1 << nvars) {
+                    *v += 1;
+                } else if !p.next::<QUANT>(depth - 1, nvars) {
                     return false;
                 }
                 true
@@ -337,7 +503,23 @@ fn test_depth3_3vars<B: BooleanFunction>(manager: &B::ManagerRef, vars: &[B], va
     loop {
         f.build_and_check(manager, vars, var_roots).unwrap();
 
-        if !f.next(3, 3) {
+        if !f.next::<false>(3, 3) {
+            break;
+        }
+    }
+}
+
+fn test_depth3_3vars_quant<B: BooleanFunctionQuant>(
+    manager: &B::ManagerRef,
+    vars: &[B],
+    var_roots: &[B],
+) {
+    assert_eq!(vars.len(), 3);
+    let mut f = Prop::False;
+    loop {
+        f.build_and_check_quant(manager, vars, var_roots).unwrap();
+
+        if !f.next::<false>(3, 3) {
             break;
         }
     }
@@ -354,7 +536,7 @@ fn bdd_test_depth3_3vars() {
             BDDFunction::new_var(manager).unwrap(),
         ]
     });
-    test_depth3_3vars(&mref, &vars, &vars);
+    test_depth3_3vars_quant(&mref, &vars, &vars);
 }
 
 #[cfg(not(miri))]
@@ -368,7 +550,7 @@ fn bcdd_test_depth3_3vars() {
             BCDDFunction::new_var(manager).unwrap(),
         ]
     });
-    test_depth3_3vars(&mref, &vars, &vars);
+    test_depth3_3vars_quant(&mref, &vars, &vars);
 }
 
 #[cfg(not(miri))]

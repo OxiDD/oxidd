@@ -25,7 +25,7 @@ use oxidd_dump::dot::DotStyle;
 
 use super::*;
 
-// spell-checker:ignore fnode,gnode,hnode,flevel,glevel,hlevel,vlevel
+// spell-checker:ignore fnode,gnode,hnode,vnode,flevel,glevel,hlevel,vlevel
 
 /// Recursively apply the binary operator `OP` to `f` and `g`
 ///
@@ -94,12 +94,12 @@ where
     let level = std::cmp::min(flevel, glevel);
 
     // Collect cofactors of all top-most nodes
-    let (f0, f1) = if flevel == level {
+    let (ft, fe) = if flevel == level {
         collect_cofactors(f.tag(), fnode)
     } else {
         (f.borrowed(), f.borrowed())
     };
-    let (g0, g1) = if glevel == level {
+    let (gt, ge) = if glevel == level {
         collect_cofactors(g.tag(), gnode)
     } else {
         (g.borrowed(), g.borrowed())
@@ -108,11 +108,11 @@ where
     let d = depth - 1;
     let (t, e) = manager.join(
         || {
-            let t = apply_bin::<M, OP>(manager, d, f0, g0)?;
+            let t = apply_bin::<M, OP>(manager, d, ft, gt)?;
             Ok(EdgeDropGuard::new(manager, t))
         },
         || {
-            let e = apply_bin::<M, OP>(manager, d, f1, g1)?;
+            let e = apply_bin::<M, OP>(manager, d, fe, ge)?;
             Ok(EdgeDropGuard::new(manager, e))
         },
     );
@@ -240,17 +240,17 @@ where
     let level = std::cmp::min(std::cmp::min(flevel, glevel), hlevel);
 
     // Collect cofactors of all top-most nodes
-    let (f0, f1) = if flevel == level {
+    let (ft, fe) = if flevel == level {
         collect_cofactors(f.tag(), fnode)
     } else {
         (f.borrowed(), f.borrowed())
     };
-    let (g0, g1) = if glevel == level {
+    let (gt, ge) = if glevel == level {
         collect_cofactors(g.tag(), gnode)
     } else {
         (g.borrowed(), g.borrowed())
     };
-    let (h0, h1) = if hlevel == level {
+    let (ht, he) = if hlevel == level {
         collect_cofactors(h.tag(), hnode)
     } else {
         (h.borrowed(), h.borrowed())
@@ -259,11 +259,11 @@ where
     let d = depth - 1;
     let (t, e) = manager.join(
         || {
-            let t = apply_ite(manager, d, f0, g0, h0)?;
+            let t = apply_ite(manager, d, ft, gt, ht)?;
             Ok(EdgeDropGuard::new(manager, t))
         },
         || {
-            let e = apply_ite(manager, d, f1, g1, h1)?;
+            let e = apply_ite(manager, d, fe, ge, he)?;
             Ok(EdgeDropGuard::new(manager, e))
         },
     );
@@ -275,6 +275,95 @@ where
         .add(manager, BCDDOp::Ite, &[f, g, h], res.borrowed());
 
     Ok(res)
+}
+
+pub(super) fn restrict<M>(
+    manager: &M,
+    depth: u32,
+    f: Borrowed<M::Edge>,
+    vars: Borrowed<M::Edge>,
+) -> AllocResult<M::Edge>
+where
+    M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag>
+        + HasApplyCache<M, Operator = BCDDOp>
+        + WorkerManager,
+    M::InnerNode: HasLevel,
+    M::Edge: Send + Sync,
+{
+    if depth == 0 {
+        return apply_rec_st::restrict(manager, f, vars);
+    }
+    stat!(call BCDDOp::Restrict);
+
+    let (Node::Inner(fnode), Node::Inner(vnode)) = (manager.get_node(&f), manager.get_node(&vars))
+    else {
+        return Ok(manager.clone_edge(&f));
+    };
+
+    let inner_res = {
+        let f_neg = f.tag() == EdgeTag::Complemented;
+        let flevel = fnode.level();
+        let vars_neg = vars.tag() == EdgeTag::Complemented;
+        apply_rec_st::restrict_inner(manager, f, f_neg, fnode, flevel, vars, vars_neg, vnode)
+    };
+    match inner_res {
+        apply_rec_st::RestrictInnerResult::Done(result) => Ok(result),
+        apply_rec_st::RestrictInnerResult::Rec {
+            vars,
+            f,
+            f_neg,
+            fnode,
+        } => {
+            // f above top-most restrict variable
+            let f_untagged = f.with_tag(EdgeTag::None);
+
+            // Query apply cache
+            stat!(cache_query BCDDOp::Restrict);
+            if let Some(res) = manager.apply_cache().get(
+                manager,
+                BCDDOp::Restrict,
+                &[f_untagged.borrowed(), vars.borrowed()],
+            ) {
+                stat!(cache_hit BCDDOp::Restrict);
+                return Ok(res);
+            }
+
+            let d = depth - 1;
+            let (ft, fe) = (fnode.child(0), fnode.child(1));
+            let (t, e) = manager.join(
+                || {
+                    let t = restrict(manager, d, ft, vars.borrowed())?;
+                    Ok(EdgeDropGuard::new(manager, t))
+                },
+                || {
+                    let e = restrict(manager, d, fe, vars.borrowed())?;
+                    Ok(EdgeDropGuard::new(manager, e))
+                },
+            );
+            let (t, e) = (t?, e?);
+
+            let result = reduce(
+                manager,
+                fnode.level(),
+                t.into_edge(),
+                e.into_edge(),
+                BCDDOp::Restrict,
+            )?;
+
+            manager.apply_cache().add(
+                manager,
+                BCDDOp::Restrict,
+                &[f_untagged, vars],
+                result.borrowed(),
+            );
+
+            Ok(result.with_tag_owned(if f_neg {
+                EdgeTag::Complemented
+            } else {
+                EdgeTag::None
+            }))
+        }
+    }
 }
 
 /// Compute the quantification `Q` over `vars`
@@ -337,14 +426,14 @@ where
     }
 
     let d = depth - 1;
-    let (f0, f1) = collect_cofactors(f.tag(), fnode);
+    let (ft, fe) = collect_cofactors(f.tag(), fnode);
     let (t, e) = manager.join(
         || {
-            let t = quant::<M, Q>(manager, d, f0, vars.borrowed())?;
+            let t = quant::<M, Q>(manager, d, ft, vars.borrowed())?;
             Ok(EdgeDropGuard::new(manager, t))
         },
         || {
-            let e = quant::<M, Q>(manager, d, f1, vars.borrowed())?;
+            let e = quant::<M, Q>(manager, d, fe, vars.borrowed())?;
             Ok(EdgeDropGuard::new(manager, e))
         },
     );
@@ -570,6 +659,16 @@ where
     for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
     for<'id> <F::Manager<'id> as Manager>::Edge: Send + Sync,
 {
+    #[inline]
+    fn restrict_edge<'id>(
+        manager: &Self::Manager<'id>,
+        root: &<Self::Manager<'id> as Manager>::Edge,
+        vars: &<Self::Manager<'id> as Manager>::Edge,
+    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        let d = Self::init_depth(manager);
+        restrict(manager, d, root.borrowed(), vars.borrowed())
+    }
+
     #[inline]
     fn forall_edge<'id>(
         manager: &Self::Manager<'id>,
