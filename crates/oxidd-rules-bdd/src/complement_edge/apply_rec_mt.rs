@@ -625,7 +625,7 @@ where
         vars: LevelNo,
         cache: &mut HashMap<NodeID, N, S>,
     ) -> N {
-        BCDDFunction::sat_count_edge(manager, edge, vars, cache)
+        BCDDFunction::<F>::sat_count_edge(manager, edge, vars, cache)
     }
 
     #[inline]
@@ -638,7 +638,7 @@ where
     where
         I: ExactSizeIterator<Item = &'a <Self::Manager<'id> as Manager>::Edge>,
     {
-        BCDDFunction::pick_cube_edge(manager, edge, order, choice)
+        BCDDFunction::<F>::pick_cube_edge(manager, edge, order, choice)
     }
 
     #[inline]
@@ -647,7 +647,7 @@ where
         edge: &'a <Self::Manager<'id> as Manager>::Edge,
         env: impl IntoIterator<Item = (&'a <Self::Manager<'id> as Manager>::Edge, bool)>,
     ) -> bool {
-        BCDDFunction::eval_edge(manager, edge, env)
+        BCDDFunction::<F>::eval_edge(manager, edge, env)
     }
 }
 

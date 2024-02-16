@@ -1,17 +1,4 @@
-use std::hash::Hash;
-use std::hash::Hasher;
 use std::marker::PhantomData;
-
-use oxidd_core::Manager;
-
-pub trait ApplyCacheCons {
-    type T<M: Manager, O: Ord + Copy + Hash>: oxidd_core::ApplyCache<M, O>;
-}
-
-pub struct DMApplyCacheCons<H: Hasher + Default, const ARITY: usize>(PhantomData<H>);
-impl<H: Hasher + Default, const ARITY: usize> ApplyCacheCons for DMApplyCacheCons<H, ARITY> {
-    type T<M: Manager, O: Ord + Copy + Hash> = oxidd_cache::direct::DMApplyCache<M, O, H>;
-}
 
 pub trait DD {
     type Function: oxidd_core::function::Function;
