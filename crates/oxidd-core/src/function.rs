@@ -511,6 +511,22 @@ pub trait BooleanFunction: Function {
 
 /// Quantification extension for [`BooleanFunction`]
 pub trait BooleanFunctionQuant: BooleanFunction {
+    /// Restrict a set of `vars` to constant values
+    ///
+    /// `vars` conceptually is a partial assignment, represented as the
+    /// conjunction of positive or negative literals, depending on whether the
+    /// variable should be mapped to true or false.
+    ///
+    /// Locking behavior: acquires a shared manager lock.
+    ///
+    /// Panics if `self` and `vars` don't belong to the same manager.
+    fn restrict(&self, vars: &Self) -> AllocResult<Self> {
+        self.with_manager_shared(|manager, root| {
+            let e = Self::restrict_edge(manager, root, vars.as_edge(manager))?;
+            Ok(Self::from_edge(manager, e))
+        })
+    }
+
     /// Compute the universal quantification over `vars`
     ///
     /// `vars` is a set of variables, which in turn is just the conjunction of
@@ -521,7 +537,7 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     ///
     /// Locking behavior: acquires a shared manager lock.
     ///
-    /// Panics if `self` and `rhs` don't belong to the same manager.
+    /// Panics if `self` and `vars` don't belong to the same manager.
     fn forall(&self, vars: &Self) -> AllocResult<Self> {
         self.with_manager_shared(|manager, root| {
             let e = Self::forall_edge(manager, root, vars.as_edge(manager))?;
@@ -539,7 +555,7 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     ///
     /// Locking behavior: acquires a shared manager lock.
     ///
-    /// Panics if `self` and `rhs` don't belong to the same manager.
+    /// Panics if `self` and `vars` don't belong to the same manager.
     fn exist(&self, vars: &Self) -> AllocResult<Self> {
         self.with_manager_shared(|manager, root| {
             let e = Self::exist_edge(manager, root, vars.as_edge(manager))?;
@@ -556,13 +572,23 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     ///
     /// Locking behavior: acquires a shared manager lock.
     ///
-    /// Panics if `self` and `rhs` don't belong to the same manager.
+    /// Panics if `self` and `vars` don't belong to the same manager.
     fn unique(&self, vars: &Self) -> AllocResult<Self> {
         self.with_manager_shared(|manager, root| {
             let e = Self::unique_edge(manager, root, vars.as_edge(manager))?;
             Ok(Self::from_edge(manager, e))
         })
     }
+
+    /// Restrict a set of `vars` to constant values, edge version
+    ///
+    /// See [`Self::restrict()`] for more details.
+    #[must_use]
+    fn restrict_edge<'id>(
+        manager: &Self::Manager<'id>,
+        root: &<Self::Manager<'id> as Manager>::Edge,
+        vars: &<Self::Manager<'id> as Manager>::Edge,
+    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge>;
 
     /// Compute the universal quantification of `root` over `vars`, edge
     /// version

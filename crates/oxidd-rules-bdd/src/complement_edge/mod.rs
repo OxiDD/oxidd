@@ -160,7 +160,8 @@ impl<'a, E: Edge<Tag = EdgeTag>, I: ExactSizeIterator<Item = Borrowed<'a, E>>> E
     }
 }
 
-/// Collect the two cofactors of a binary node
+/// Collect the two cofactors `(then, else)` assuming that the incoming edge is
+/// tagged as `tag`
 #[inline]
 #[must_use]
 fn collect_cofactors<E: Edge<Tag = EdgeTag>, N: InnerNode<E>>(
@@ -169,12 +170,13 @@ fn collect_cofactors<E: Edge<Tag = EdgeTag>, N: InnerNode<E>>(
 ) -> (Borrowed<E>, Borrowed<E>) {
     debug_assert_eq!(N::ARITY, 2);
     let mut it = BCDDRules::cofactors(tag, node);
-    let f0 = it.next().unwrap();
-    let f1 = it.next().unwrap();
+    let ft = it.next().unwrap();
+    let fe = it.next().unwrap();
     debug_assert!(it.next().is_none());
-    (f0, f1)
+    (ft, fe)
 }
 
+/// Apply the reduction rules, creating a node in `manager` if necessary
 #[inline(always)]
 fn reduce<M>(
     manager: &M,
@@ -321,6 +323,7 @@ pub enum BCDDOp {
     /// If-then-else
     Ite,
 
+    Restrict,
     /// Forall quantification
     Forall,
     /// Existential quantification
@@ -335,7 +338,7 @@ enum NodesOrDone<'a, E, N> {
 }
 
 #[cfg(feature = "statistics")]
-static STAT_COUNTERS: [crate::StatCounters; 6] = [crate::StatCounters::INIT; 6];
+static STAT_COUNTERS: [crate::StatCounters; 7] = [crate::StatCounters::INIT; 7];
 
 #[cfg(feature = "statistics")]
 /// Print statistics to stderr
@@ -344,7 +347,7 @@ pub fn print_stats() {
     // FIXME: we should auto generate the labels
     crate::StatCounters::print(
         &STAT_COUNTERS,
-        &["And", "Xor", "Ite", "Forall", "Exist", "Unique"],
+        &["And", "Xor", "Ite", "Restrict", "Forall", "Exist", "Unique"],
     );
 }
 

@@ -178,7 +178,7 @@ pub unsafe extern "C" fn oxidd_bdd_num_inner_nodes(manager: oxidd_bdd_manager_t)
 /// Get a fresh variable, i.e. a function that is true if and only if the
 /// variable is true. This adds a new level to a decision diagram.
 ///
-/// This function does not decrement the reference counters of its argument.
+/// This function does not change the reference counters of its argument.
 ///
 /// Locking behavior: acquires an exclusive manager lock.
 ///
@@ -192,7 +192,7 @@ pub unsafe extern "C" fn oxidd_bdd_new_var(manager: oxidd_bdd_manager_t) -> oxid
 
 /// Get the constant false BDD function `⊥`
 ///
-/// This function does not decrement the reference counters of its argument.
+/// This function does not change the reference counters of its argument.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -206,7 +206,7 @@ pub unsafe extern "C" fn oxidd_bdd_false(manager: oxidd_bdd_manager_t) -> oxidd_
 
 /// Get the constant true BDD function `⊤`
 ///
-/// This function does not decrement the reference counters of its argument.
+/// This function does not change the reference counters of its argument.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -220,7 +220,7 @@ pub unsafe extern "C" fn oxidd_bdd_true(manager: oxidd_bdd_manager_t) -> oxidd_b
 
 /// Compute the BDD for the negation `¬f`
 ///
-/// This function does not decrement the reference counters of its argument.
+/// This function does not change the reference counters of its argument.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -232,7 +232,7 @@ pub unsafe extern "C" fn oxidd_bdd_not(f: oxidd_bdd_t) -> oxidd_bdd_t {
 
 /// Compute the BDD for the conjunction `lhs ∧ rhs`
 ///
-/// This function does not decrement the reference counters of its arguments.
+/// This function does not change the reference counters of its arguments.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -244,7 +244,7 @@ pub unsafe extern "C" fn oxidd_bdd_and(lhs: oxidd_bdd_t, rhs: oxidd_bdd_t) -> ox
 
 /// Compute the BDD for the disjunction `lhs ∨ rhs`
 ///
-/// This function does not decrement the reference counters of its arguments.
+/// This function does not change the reference counters of its arguments.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -256,7 +256,7 @@ pub unsafe extern "C" fn oxidd_bdd_or(lhs: oxidd_bdd_t, rhs: oxidd_bdd_t) -> oxi
 
 /// Compute the BDD for the negated conjunction `lhs ⊼ rhs`
 ///
-/// This function does not decrement the reference counters of its arguments.
+/// This function does not change the reference counters of its arguments.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -268,7 +268,7 @@ pub unsafe extern "C" fn oxidd_bdd_nand(lhs: oxidd_bdd_t, rhs: oxidd_bdd_t) -> o
 
 /// Compute the BDD for the negated disjunction `lhs ⊽ rhs`
 ///
-/// This function does not decrement the reference counters of its arguments.
+/// This function does not change the reference counters of its arguments.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -280,7 +280,7 @@ pub unsafe extern "C" fn oxidd_bdd_nor(lhs: oxidd_bdd_t, rhs: oxidd_bdd_t) -> ox
 
 /// Compute the BDD for the exclusive disjunction `lhs ⊕ rhs`
 ///
-/// This function does not decrement the reference counters of its arguments.
+/// This function does not change the reference counters of its arguments.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -292,7 +292,7 @@ pub unsafe extern "C" fn oxidd_bdd_xor(lhs: oxidd_bdd_t, rhs: oxidd_bdd_t) -> ox
 
 /// Compute the BDD for the equivalence `lhs ↔ rhs`
 ///
-/// This function does not decrement the reference counters of its arguments.
+/// This function does not change the reference counters of its arguments.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -304,7 +304,7 @@ pub unsafe extern "C" fn oxidd_bdd_equiv(lhs: oxidd_bdd_t, rhs: oxidd_bdd_t) -> 
 
 /// Compute the BDD for the implication `lhs → rhs` (or `self ≤ rhs`)
 ///
-/// This function does not decrement the reference counters of its arguments.
+/// This function does not change the reference counters of its arguments.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -316,7 +316,7 @@ pub unsafe extern "C" fn oxidd_bdd_imp(lhs: oxidd_bdd_t, rhs: oxidd_bdd_t) -> ox
 
 /// Compute the BDD for the strict implication `lhs < rhs`
 ///
-/// This function does not decrement the reference counters of its arguments.
+/// This function does not change the reference counters of its arguments.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -328,7 +328,7 @@ pub unsafe extern "C" fn oxidd_bdd_imp_strict(lhs: oxidd_bdd_t, rhs: oxidd_bdd_t
 
 /// Compute the BDD for the conditional `cond ? then_case : else_case`
 ///
-/// This function does not decrement the reference counters of its arguments.
+/// This function does not change the reference counters of its arguments.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -342,60 +342,77 @@ pub unsafe extern "C" fn oxidd_bdd_ite(
     op3(cond, then_case, else_case, BDDFunction::ite)
 }
 
-/// Compute the BDD for the universal quantification of `f` over `vars`
+/// Compute the BDD for `f` with its variables restricted to constant values
+/// according to `vars`
 ///
-/// `vars` is a set of variables, which in turn is just the conjunction of the
-/// variables. This operation removes all occurrences of the variables universal
-/// quantification. Universal quantification of a boolean function `f(…, x, …)`
-/// over a single variable `x` is `f(…, 0, …) ∧ f(…, 1, …)`.
+/// `vars` conceptually is a partial assignment, represented as the conjunction
+/// of positive or negative literals, depending on whether the variable should
+/// be mapped to true or false.
 ///
-/// This function does not decrement the reference counters of its arguments.
+/// This function does not change the reference counters of its arguments.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
 /// @returns  The BDD function with its own reference count
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bdd_forall(f: oxidd_bdd_t, var: oxidd_bdd_t) -> oxidd_bdd_t {
-    op2(f, var, BDDFunction::forall)
+pub unsafe extern "C" fn oxidd_bdd_restrict(f: oxidd_bdd_t, vars: oxidd_bdd_t) -> oxidd_bdd_t {
+    op2(f, vars, BDDFunction::restrict)
+}
+
+/// Compute the BDD for the universal quantification of `f` over `vars`
+///
+/// `vars` is a set of variables, which in turn is just the conjunction of the
+/// variables. This operation removes all occurrences of the variables universal
+/// quantification. Universal quantification of a Boolean function `f(…, x, …)`
+/// over a single variable `x` is `f(…, 0, …) ∧ f(…, 1, …)`.
+///
+/// This function does not change the reference counters of its arguments.
+///
+/// Locking behavior: acquires a shared manager lock.
+///
+/// @returns  The BDD function with its own reference count
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_forall(f: oxidd_bdd_t, vars: oxidd_bdd_t) -> oxidd_bdd_t {
+    op2(f, vars, BDDFunction::forall)
 }
 
 /// Compute the BDD for the existential quantification of `f` over `vars`
 ///
 /// `vars` is a set of variables, which in turn is just the conjunction of the
 /// variables. This operation removes all occurrences of the variables by
-/// existential quantification. Existential quantification of a boolean function
+/// existential quantification. Existential quantification of a Boolean function
 /// `f(…, x, …)` over a single variable `x` is `f(…, 0, …) ∧ f(…, 1, …)`.
 ///
-/// This function does not decrement the reference counters of its arguments.
+/// This function does not change the reference counters of its arguments.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
 /// @returns  The BDD function with its own reference count
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bdd_exist(f: oxidd_bdd_t, var: oxidd_bdd_t) -> oxidd_bdd_t {
-    op2(f, var, BDDFunction::exist)
+pub unsafe extern "C" fn oxidd_bdd_exist(f: oxidd_bdd_t, vars: oxidd_bdd_t) -> oxidd_bdd_t {
+    op2(f, vars, BDDFunction::exist)
 }
 
 /// Compute the BDD for the unique quantification of `f` over `vars`
 ///
 /// `vars` is a set of variables, which in turn is just the conjunction of the
 /// variables. This operation removes all occurrences of the variables by
-/// unique quantification. Unique quantification of a boolean function
+/// unique quantification. Unique quantification of a Boolean function
 /// `f(…, x, …)` over a single variable `x` is `f(…, 0, …) ∧ f(…, 1, …)`.
 ///
-/// This function does not decrement the reference counters of its arguments.
+/// This function does not change the reference counters of its arguments.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
 /// @returns  The BDD function with its own reference count
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bdd_unique(f: oxidd_bdd_t, var: oxidd_bdd_t) -> oxidd_bdd_t {
-    op2(f, var, BDDFunction::unique)
+pub unsafe extern "C" fn oxidd_bdd_unique(f: oxidd_bdd_t, vars: oxidd_bdd_t) -> oxidd_bdd_t {
+    op2(f, vars, BDDFunction::unique)
 }
 
 /// Count nodes in `f`
 ///
-/// This function does not decrement the reference counters of its argument.
+/// This function does not change the reference counters of its argument.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -407,7 +424,7 @@ pub unsafe extern "C" fn oxidd_bdd_node_count(f: oxidd_bdd_t) -> usize {
 
 /// Count the number of satisfying assignments, assuming `vars` input variables
 ///
-/// This function does not decrement the reference counters of its argument.
+/// This function does not change the reference counters of its argument.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -423,7 +440,7 @@ pub unsafe extern "C" fn oxidd_bdd_sat_count_uint64(f: oxidd_bdd_t, vars: oxidd_
 
 /// Count the number of satisfying assignments, assuming `vars` input variables
 ///
-/// This function does not decrement the reference counters of its argument.
+/// This function does not change the reference counters of its argument.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -438,7 +455,7 @@ pub unsafe extern "C" fn oxidd_bdd_sat_count_double(f: oxidd_bdd_t, vars: oxidd_
 
 /// Pick a satisfying assignment
 ///
-/// This function does not decrement the reference counters of its argument.
+/// This function does not change the reference counters of its argument.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///

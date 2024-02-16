@@ -39,15 +39,15 @@ impl<E: Edge, N: InnerNode<E>> DiagramRules<E, N, BDDTerminal> for BDDRules {
         children: impl IntoIterator<Item = E>,
     ) -> ReducedOrNew<E, N> {
         let mut it = children.into_iter();
-        let f0 = it.next().unwrap();
-        let f1 = it.next().unwrap();
+        let f_then = it.next().unwrap();
+        let f_else = it.next().unwrap();
         debug_assert!(it.next().is_none());
 
-        if f0 == f1 {
-            manager.drop_edge(f1);
-            ReducedOrNew::Reduced(f0)
+        if f_then == f_else {
+            manager.drop_edge(f_else);
+            ReducedOrNew::Reduced(f_then)
         } else {
-            ReducedOrNew::New(N::new(level, [f0, f1]), Default::default())
+            ReducedOrNew::New(N::new(level, [f_then, f_else]), Default::default())
         }
     }
 
@@ -58,6 +58,7 @@ impl<E: Edge, N: InnerNode<E>> DiagramRules<E, N, BDDTerminal> for BDDRules {
     }
 }
 
+/// Apply the reduction rules, creating a node in `manager` if necessary
 #[inline(always)]
 fn reduce<M>(
     manager: &M,
@@ -154,6 +155,7 @@ pub enum BDDOp {
     /// If-then-else
     Ite,
 
+    Restrict,
     /// Forall quantification
     Forall,
     /// Existential quantification
@@ -169,7 +171,7 @@ enum Operation<'a, E: 'a + Edge> {
 }
 
 #[cfg(feature = "statistics")]
-static STAT_COUNTERS: [crate::StatCounters; 13] = [crate::StatCounters::INIT; 13];
+static STAT_COUNTERS: [crate::StatCounters; 14] = [crate::StatCounters::INIT; 14];
 
 #[cfg(feature = "statistics")]
 /// Print statistics to stderr
@@ -189,6 +191,7 @@ pub fn print_stats() {
             "Imp",
             "ImpStrict",
             "Ite",
+            "Restrict",
             "Forall",
             "Exist",
             "Unique",
@@ -202,10 +205,10 @@ pub fn print_stats() {
 fn collect_children<E: Edge, N: InnerNode<E>>(node: &N) -> (Borrowed<E>, Borrowed<E>) {
     debug_assert_eq!(N::ARITY, 2);
     let mut it = node.children();
-    let f0 = it.next().unwrap();
-    let f1 = it.next().unwrap();
+    let f_then = it.next().unwrap();
+    let f_else = it.next().unwrap();
     debug_assert!(it.next().is_none());
-    (f0, f1)
+    (f_then, f_else)
 }
 
 /// Terminal case for binary operators

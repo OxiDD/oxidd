@@ -452,7 +452,12 @@ pub fn derive_boolean_function_quant(input: syn::DeriveInput) -> TokenStream {
     derive_function_trait(
         input,
         "BooleanFunctionQuant",
-        &[Binary("forall"), Binary("exist"), Binary("unique")],
+        &[
+            Binary("restrict"),
+            Binary("forall"),
+            Binary("exist"),
+            Binary("unique"),
+        ],
         |_| TokenStream::new(),
     )
 }
