@@ -835,7 +835,7 @@ where
         vars: LevelNo,
         cache: &mut HashMap<NodeID, N, S>,
     ) -> N {
-        ZBDDSet::sat_count_edge(manager, edge, vars, cache)
+        ZBDDSet::<F>::sat_count_edge(manager, edge, vars, cache)
     }
 
     #[inline]
@@ -848,7 +848,7 @@ where
     where
         I: ExactSizeIterator<Item = &'a <Self::Manager<'id> as Manager>::Edge>,
     {
-        ZBDDSet::pick_cube_edge(manager, edge, order, choice)
+        ZBDDSet::<F>::pick_cube_edge(manager, edge, order, choice)
     }
 
     #[inline]
@@ -857,7 +857,7 @@ where
         edge: &'a <Self::Manager<'id> as Manager>::Edge,
         env: impl IntoIterator<Item = (&'a <Self::Manager<'id> as Manager>::Edge, bool)>,
     ) -> bool {
-        ZBDDSet::eval_edge(manager, edge, env)
+        ZBDDSet::<F>::eval_edge(manager, edge, env)
     }
 }
 
