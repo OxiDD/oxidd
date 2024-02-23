@@ -14,5 +14,6 @@ lint:
 
 # Install development tools
 install:
+    @mkdir -p target
     cargo install mdbook x-launcher
     npm install --prefix=target/cspell -g cspell

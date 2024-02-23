@@ -11,6 +11,7 @@ capi
 cassert
 cbindgen
 cdylib
+cffi
 cfgs
 clippy
 codegen
@@ -51,6 +52,7 @@ isize
 Köhl
 levelized
 madvise
+maturin
 mdbook
 memchr
 Miri

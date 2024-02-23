@@ -4,3 +4,5 @@
 /.cspellcache
 
 *.dot
+
+__pycache__/

@@ -1,0 +1,18 @@
+[project]
+name = "oxidd"
+version = "0.1.0"
+description = "Decision Diagrams"
+requires-python = ">=3.8"
+keywords = ["Decision Diagrams", "BDD", "ZBDD", "ZDD"]
+
+dependencies = ["cffi>=1.0"]
+
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[tool.maturin]
+python-source = "bindings/python"
+manifest-path = "crates/oxidd-ffi/Cargo.toml"
+bindings = "cffi"
+compatibility = "linux"

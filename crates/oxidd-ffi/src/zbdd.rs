@@ -26,13 +26,13 @@ const SET_UNWRAP_MSG: &str = "the given set is invalid";
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct oxidd_zbdd_manager_t {
-    __p: *const std::ffi::c_void,
+    _p: *const std::ffi::c_void,
 }
 
 impl oxidd_zbdd_manager_t {
     unsafe fn get(self) -> ManuallyDrop<ZBDDManagerRef> {
-        assert!(!self.__p.is_null(), "the given manager is invalid");
-        ManuallyDrop::new(ZBDDManagerRef::from_raw(self.__p))
+        assert!(!self._p.is_null(), "the given manager is invalid");
+        ManuallyDrop::new(ZBDDManagerRef::from_raw(self._p))
     }
 }
 
@@ -42,24 +42,24 @@ impl oxidd_zbdd_manager_t {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct oxidd_zbdd_t {
-    __p: *const std::ffi::c_void,
-    __i: u32,
+    _p: *const std::ffi::c_void,
+    _i: u32,
 }
 
 impl oxidd_zbdd_t {
     unsafe fn get(self) -> AllocResult<ManuallyDrop<ZBDDSet>> {
-        if self.__p.is_null() {
+        if self._p.is_null() {
             Err(OutOfMemory)
         } else {
-            Ok(ManuallyDrop::new(ZBDDSet::from_raw(self.__p, self.__i)))
+            Ok(ManuallyDrop::new(ZBDDSet::from_raw(self._p, self._i)))
         }
     }
 }
 
 impl From<ZBDDSet> for oxidd_zbdd_t {
     fn from(value: ZBDDSet) -> Self {
-        let (__p, __i) = value.into_raw();
-        Self { __p, __i }
+        let (_p, _i) = value.into_raw();
+        Self { _p, _i }
     }
 }
 
@@ -67,12 +67,12 @@ impl From<AllocResult<ZBDDSet>> for oxidd_zbdd_t {
     fn from(value: AllocResult<ZBDDSet>) -> Self {
         match value {
             Ok(f) => {
-                let (__p, __i) = f.into_raw();
-                Self { __p, __i }
+                let (_p, _i) = f.into_raw();
+                Self { _p, _i }
             }
             Err(_) => Self {
-                __p: std::ptr::null(),
-                __i: 0,
+                _p: std::ptr::null(),
+                _i: 0,
             },
         }
     }
@@ -122,8 +122,7 @@ pub extern "C" fn oxidd_zbdd_manager_new(
     threads: u32,
 ) -> oxidd_zbdd_manager_t {
     oxidd_zbdd_manager_t {
-        __p: oxidd::zbdd::new_manager(inner_node_capacity, apply_cache_capacity, threads)
-            .into_raw(),
+        _p: oxidd::zbdd::new_manager(inner_node_capacity, apply_cache_capacity, threads).into_raw(),
     }
 }
 
@@ -141,7 +140,7 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_ref(
 /// Decrement the manager reference counter
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_zbdd_manager_unref(manager: oxidd_zbdd_manager_t) {
-    drop(ZBDDManagerRef::from_raw(manager.__p));
+    drop(ZBDDManagerRef::from_raw(manager._p));
 }
 
 /// Increment the reference counter of the given ZBDD node
@@ -156,7 +155,7 @@ pub unsafe extern "C" fn oxidd_zbdd_ref(f: oxidd_zbdd_t) -> oxidd_zbdd_t {
 /// Decrement the reference count of the given ZBDD node
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_zbdd_unref(f: oxidd_zbdd_t) {
-    drop(ZBDDSet::from_raw(f.__p, f.__i));
+    drop(ZBDDSet::from_raw(f._p, f._i));
 }
 
 /// Get the number of inner nodes currently stored in `manager`
