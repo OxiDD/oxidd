@@ -8,6 +8,7 @@ use bitvec::vec::BitVec;
 use oxidd_core::function::BooleanFunction;
 use oxidd_core::function::BooleanFunctionQuant;
 use oxidd_core::function::Function;
+use oxidd_core::util::AllocResult;
 use oxidd_core::util::Borrowed;
 use oxidd_core::util::EdgeDropGuard;
 use oxidd_core::util::OptBool;
@@ -25,7 +26,17 @@ use oxidd_core::Tag;
 use oxidd_derive::Function;
 use oxidd_dump::dot::DotStyle;
 
-use super::*;
+use crate::stat;
+
+use super::collect_cofactors;
+use super::get_terminal;
+use super::not;
+use super::not_owned;
+use super::reduce;
+use super::BCDDOp;
+use super::BCDDTerminal;
+use super::EdgeTag;
+use super::NodesOrDone;
 
 // spell-checker:ignore fnode,gnode,hnode,vnode,flevel,glevel,hlevel,vlevel
 
@@ -47,7 +58,7 @@ where
 {
     stat!(call OP);
     let (op, f, fnode, g, gnode) = if OP == BCDDOp::And as u8 {
-        match terminal_and(manager, &f, &g) {
+        match super::terminal_and(manager, &f, &g) {
             NodesOrDone::Nodes(fnode, gnode) if f < g => {
                 (BCDDOp::And, f.borrowed(), fnode, g.borrowed(), gnode)
             }
@@ -61,7 +72,7 @@ where
         }
     } else {
         assert_eq!(OP, BCDDOp::Xor as u8);
-        match terminal_xor(manager, &f, &g) {
+        match super::terminal_xor(manager, &f, &g) {
             NodesOrDone::Nodes(fnode, gnode) if f < g => {
                 (BCDDOp::Xor, f.borrowed(), fnode, g.borrowed(), gnode)
             }
@@ -555,8 +566,8 @@ impl<F: Function> BCDDFunction<F> {
 
 impl<F: Function> BooleanFunction for BCDDFunction<F>
 where
-    for<'id> F::Manager<'id>:
-        Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag> + HasBCDDOpApplyCache<F::Manager<'id>>,
+    for<'id> F::Manager<'id>: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag>
+        + super::HasBCDDOpApplyCache<F::Manager<'id>>,
     for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
 {
     #[inline]
@@ -863,8 +874,8 @@ where
 
 impl<F: Function> BooleanFunctionQuant for BCDDFunction<F>
 where
-    for<'id> F::Manager<'id>:
-        Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag> + HasBCDDOpApplyCache<F::Manager<'id>>,
+    for<'id> F::Manager<'id>: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag>
+        + super::HasBCDDOpApplyCache<F::Manager<'id>>,
     for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
 {
     #[inline]

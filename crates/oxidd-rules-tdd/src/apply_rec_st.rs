@@ -1,7 +1,10 @@
 //! Recursive single-threaded apply algorithms
 
+use std::borrow::Borrow;
+
 use oxidd_core::function::Function;
 use oxidd_core::function::TVLFunction;
+use oxidd_core::util::AllocResult;
 use oxidd_core::util::Borrowed;
 use oxidd_core::util::EdgeDropGuard;
 use oxidd_core::ApplyCache;
@@ -15,7 +18,13 @@ use oxidd_core::Tag;
 use oxidd_derive::Function;
 use oxidd_dump::dot::DotStyle;
 
-use super::*;
+use super::collect_children;
+use super::reduce;
+use super::stat;
+use super::terminal_bin;
+use super::Operation;
+use super::TDDOp;
+use super::TDDTerminal;
 
 // spell-checker:ignore fnode,gnode,hnode,flevel,glevel,hlevel,ghlevel
 
@@ -267,7 +276,8 @@ impl<F: Function> TDDFunction<F> {
 
 impl<F: Function> TVLFunction for TDDFunction<F>
 where
-    for<'id> F::Manager<'id>: Manager<Terminal = TDDTerminal> + HasTDDOpApplyCache<F::Manager<'id>>,
+    for<'id> F::Manager<'id>:
+        Manager<Terminal = TDDTerminal> + super::HasTDDOpApplyCache<F::Manager<'id>>,
     for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
 {
     #[inline]

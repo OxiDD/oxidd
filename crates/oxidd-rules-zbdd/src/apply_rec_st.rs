@@ -13,6 +13,7 @@ use bitvec::vec::BitVec;
 use oxidd_core::function::BooleanFunction;
 use oxidd_core::function::BooleanVecSet;
 use oxidd_core::function::Function;
+use oxidd_core::util::AllocResult;
 use oxidd_core::util::Borrowed;
 use oxidd_core::util::EdgeDropGuard;
 use oxidd_core::util::OptBool;
@@ -31,7 +32,15 @@ use oxidd_core::Tag;
 use oxidd_derive::Function;
 use oxidd_dump::dot::DotStyle;
 
-use super::*;
+use super::collect_children;
+use super::reduce;
+use super::reduce_borrowed;
+use super::singleton_level;
+use super::stat;
+use super::HasZBDDCache;
+use super::ZBDDCache;
+use super::ZBDDOp;
+use super::ZBDDTerminal;
 
 // spell-checker:ignore fnode,gnode,hnode,flevel,glevel,hlevel,ghlevel
 // spell-checker:ignore symm
@@ -511,7 +520,7 @@ impl<F: Function> ZBDDSet<F> {
 impl<F: Function> BooleanVecSet for ZBDDSet<F>
 where
     for<'id> F::Manager<'id>: Manager<Terminal = ZBDDTerminal>
-        + HasZBDDOpApplyCache<F::Manager<'id>>
+        + super::HasZBDDOpApplyCache<F::Manager<'id>>
         + HasZBDDCache<<F::Manager<'id> as Manager>::Edge>,
     for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
 {
@@ -595,7 +604,7 @@ where
 impl<F: Function> BooleanFunction for ZBDDSet<F>
 where
     for<'id> F::Manager<'id>: Manager<Terminal = ZBDDTerminal>
-        + HasZBDDOpApplyCache<F::Manager<'id>>
+        + super::HasZBDDOpApplyCache<F::Manager<'id>>
         + HasZBDDCache<<F::Manager<'id> as Manager>::Edge>,
     for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
 {
