@@ -7,6 +7,7 @@ use std::hash::Hash;
 use oxidd_core::function::BooleanFunction;
 use oxidd_core::function::BooleanVecSet;
 use oxidd_core::function::Function;
+use oxidd_core::util::AllocResult;
 use oxidd_core::util::Borrowed;
 use oxidd_core::util::EdgeDropGuard;
 use oxidd_core::util::OptBool;
@@ -25,7 +26,16 @@ use oxidd_core::Tag;
 use oxidd_derive::Function;
 use oxidd_dump::dot::DotStyle;
 
-use super::*;
+use super::apply_rec_st;
+use super::collect_children;
+use super::reduce;
+use super::reduce_borrowed;
+use super::singleton_level;
+use super::stat;
+use super::HasZBDDCache;
+use super::ZBDDCache;
+use super::ZBDDOp;
+use super::ZBDDTerminal;
 
 // spell-checker:ignore fnode,gnode,hnode,flevel,glevel,hlevel,ghlevel
 // spell-checker:ignore hitask,symm
@@ -617,8 +627,8 @@ where
 impl<F: Function> BooleanVecSet for ZBDDSetMT<F>
 where
     for<'id> F::Manager<'id>: Manager<Terminal = ZBDDTerminal>
-        + HasZBDDOpApplyCache<F::Manager<'id>>
-        + HasZBDDCache<<F::Manager<'id> as Manager>::Edge>
+        + super::HasZBDDOpApplyCache<F::Manager<'id>>
+        + super::HasZBDDCache<<F::Manager<'id> as Manager>::Edge>
         + WorkerManager,
     for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
     for<'id> <F::Manager<'id> as Manager>::Edge: Send + Sync,
@@ -709,8 +719,8 @@ where
 impl<F: Function> BooleanFunction for ZBDDSetMT<F>
 where
     for<'id> F::Manager<'id>: Manager<Terminal = ZBDDTerminal>
-        + HasZBDDOpApplyCache<F::Manager<'id>>
-        + HasZBDDCache<<F::Manager<'id> as Manager>::Edge>
+        + super::HasZBDDOpApplyCache<F::Manager<'id>>
+        + super::HasZBDDCache<<F::Manager<'id> as Manager>::Edge>
         + WorkerManager,
     for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
     for<'id> <F::Manager<'id> as Manager>::Edge: Send + Sync,
@@ -835,7 +845,7 @@ where
         vars: LevelNo,
         cache: &mut HashMap<NodeID, N, S>,
     ) -> N {
-        ZBDDSet::<F>::sat_count_edge(manager, edge, vars, cache)
+        apply_rec_st::ZBDDSet::<F>::sat_count_edge(manager, edge, vars, cache)
     }
 
     #[inline]
@@ -848,7 +858,7 @@ where
     where
         I: ExactSizeIterator<Item = &'a <Self::Manager<'id> as Manager>::Edge>,
     {
-        ZBDDSet::<F>::pick_cube_edge(manager, edge, order, choice)
+        apply_rec_st::ZBDDSet::<F>::pick_cube_edge(manager, edge, order, choice)
     }
 
     #[inline]
@@ -857,7 +867,7 @@ where
         edge: &'a <Self::Manager<'id> as Manager>::Edge,
         env: impl IntoIterator<Item = (&'a <Self::Manager<'id> as Manager>::Edge, bool)>,
     ) -> bool {
-        ZBDDSet::<F>::eval_edge(manager, edge, env)
+        apply_rec_st::ZBDDSet::<F>::eval_edge(manager, edge, env)
     }
 }
 

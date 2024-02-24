@@ -1,10 +1,12 @@
 //! Recursive, multi-threaded apply algorithms
 
+use std::borrow::Borrow;
 use std::collections::HashMap;
 
 use oxidd_core::function::BooleanFunction;
 use oxidd_core::function::BooleanFunctionQuant;
 use oxidd_core::function::Function;
+use oxidd_core::util::AllocResult;
 use oxidd_core::util::Borrowed;
 use oxidd_core::util::EdgeDropGuard;
 use oxidd_core::util::OptBool;
@@ -23,7 +25,14 @@ use oxidd_core::WorkerManager;
 use oxidd_derive::Function;
 use oxidd_dump::dot::DotStyle;
 
-use super::*;
+use crate::stat;
+
+use super::apply_rec_st;
+use super::collect_children;
+use super::reduce;
+use super::BDDOp;
+use super::BDDTerminal;
+use super::Operation;
 
 // spell-checker:ignore fnode,gnode,hnode,vnode,flevel,glevel,hlevel,vlevel
 
@@ -97,7 +106,7 @@ where
         return apply_rec_st::apply_bin::<M, OP>(manager, f, g);
     }
     stat!(call OP);
-    let (operator, op1, op2) = match terminal_bin::<M, OP>(manager, &f, &g) {
+    let (operator, op1, op2) = match super::terminal_bin::<M, OP>(manager, &f, &g) {
         Operation::Binary(o, op1, op2) => (o, op1, op2),
         Operation::Not(f) => {
             return apply_not(manager, depth - 1, f);
@@ -450,8 +459,9 @@ where
 
 impl<F: Function> BooleanFunction for BDDFunctionMT<F>
 where
-    for<'id> F::Manager<'id>:
-        Manager<Terminal = BDDTerminal> + HasBDDOpApplyCache<F::Manager<'id>> + WorkerManager,
+    for<'id> F::Manager<'id>: Manager<Terminal = BDDTerminal>
+        + super::HasBDDOpApplyCache<F::Manager<'id>>
+        + WorkerManager,
     for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
     for<'id> <F::Manager<'id> as Manager>::Edge: Send + Sync,
 {
@@ -608,7 +618,7 @@ where
         vars: LevelNo,
         cache: &mut HashMap<NodeID, N, S>,
     ) -> N {
-        BDDFunction::<F>::sat_count_edge(manager, edge, vars, cache)
+        apply_rec_st::BDDFunction::<F>::sat_count_edge(manager, edge, vars, cache)
     }
 
     #[inline]
@@ -621,7 +631,7 @@ where
     where
         I: ExactSizeIterator<Item = &'a <Self::Manager<'id> as Manager>::Edge>,
     {
-        BDDFunction::<F>::pick_cube_edge(manager, edge, order, choice)
+        apply_rec_st::BDDFunction::<F>::pick_cube_edge(manager, edge, order, choice)
     }
 
     #[inline]
@@ -630,14 +640,15 @@ where
         edge: &'a <Self::Manager<'id> as Manager>::Edge,
         env: impl IntoIterator<Item = (&'a <Self::Manager<'id> as Manager>::Edge, bool)>,
     ) -> bool {
-        BDDFunction::<F>::eval_edge(manager, edge, env)
+        apply_rec_st::BDDFunction::<F>::eval_edge(manager, edge, env)
     }
 }
 
 impl<F: Function> BooleanFunctionQuant for BDDFunctionMT<F>
 where
-    for<'id> F::Manager<'id>:
-        Manager<Terminal = BDDTerminal> + HasBDDOpApplyCache<F::Manager<'id>> + WorkerManager,
+    for<'id> F::Manager<'id>: Manager<Terminal = BDDTerminal>
+        + super::HasBDDOpApplyCache<F::Manager<'id>>
+        + WorkerManager,
     for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
     for<'id> <F::Manager<'id> as Manager>::Edge: Send + Sync,
 {

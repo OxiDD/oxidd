@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use oxidd_core::function::BooleanFunction;
 use oxidd_core::function::BooleanFunctionQuant;
 use oxidd_core::function::Function;
+use oxidd_core::util::AllocResult;
 use oxidd_core::util::Borrowed;
 use oxidd_core::util::EdgeDropGuard;
 use oxidd_core::util::OptBool;
@@ -23,7 +24,18 @@ use oxidd_core::WorkerManager;
 use oxidd_derive::Function;
 use oxidd_dump::dot::DotStyle;
 
-use super::*;
+use crate::stat;
+
+use super::apply_rec_st;
+use super::collect_cofactors;
+use super::get_terminal;
+use super::not;
+use super::not_owned;
+use super::reduce;
+use super::BCDDOp;
+use super::BCDDTerminal;
+use super::EdgeTag;
+use super::NodesOrDone;
 
 // spell-checker:ignore fnode,gnode,hnode,vnode,flevel,glevel,hlevel,vlevel
 
@@ -52,7 +64,7 @@ where
     }
     stat!(call OP);
     let (op, f, fnode, g, gnode) = if OP == BCDDOp::And as u8 {
-        match terminal_and(manager, &f, &g) {
+        match super::terminal_and(manager, &f, &g) {
             NodesOrDone::Nodes(fnode, gnode) if f < g => {
                 (BCDDOp::And, f.borrowed(), fnode, g.borrowed(), gnode)
             }
@@ -66,7 +78,7 @@ where
         }
     } else {
         assert_eq!(OP, BCDDOp::Xor as u8);
-        match terminal_xor(manager, &f, &g) {
+        match super::terminal_xor(manager, &f, &g) {
             NodesOrDone::Nodes(fnode, gnode) if f < g => {
                 (BCDDOp::Xor, f.borrowed(), fnode, g.borrowed(), gnode)
             }
@@ -496,7 +508,7 @@ where
 impl<F: Function> BooleanFunction for BCDDFunctionMT<F>
 where
     for<'id> F::Manager<'id>: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag>
-        + HasBCDDOpApplyCache<F::Manager<'id>>
+        + super::HasBCDDOpApplyCache<F::Manager<'id>>
         + WorkerManager,
     for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
     for<'id> <F::Manager<'id> as Manager>::Edge: Send + Sync,
@@ -625,7 +637,7 @@ where
         vars: LevelNo,
         cache: &mut HashMap<NodeID, N, S>,
     ) -> N {
-        BCDDFunction::<F>::sat_count_edge(manager, edge, vars, cache)
+        apply_rec_st::BCDDFunction::<F>::sat_count_edge(manager, edge, vars, cache)
     }
 
     #[inline]
@@ -638,7 +650,7 @@ where
     where
         I: ExactSizeIterator<Item = &'a <Self::Manager<'id> as Manager>::Edge>,
     {
-        BCDDFunction::<F>::pick_cube_edge(manager, edge, order, choice)
+        apply_rec_st::BCDDFunction::<F>::pick_cube_edge(manager, edge, order, choice)
     }
 
     #[inline]
@@ -647,14 +659,14 @@ where
         edge: &'a <Self::Manager<'id> as Manager>::Edge,
         env: impl IntoIterator<Item = (&'a <Self::Manager<'id> as Manager>::Edge, bool)>,
     ) -> bool {
-        BCDDFunction::<F>::eval_edge(manager, edge, env)
+        apply_rec_st::BCDDFunction::<F>::eval_edge(manager, edge, env)
     }
 }
 
 impl<F: Function> BooleanFunctionQuant for BCDDFunctionMT<F>
 where
     for<'id> F::Manager<'id>: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag>
-        + HasBCDDOpApplyCache<F::Manager<'id>>
+        + super::HasBCDDOpApplyCache<F::Manager<'id>>
         + WorkerManager,
     for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
     for<'id> <F::Manager<'id> as Manager>::Edge: Send + Sync,
