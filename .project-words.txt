@@ -52,7 +52,6 @@ isize
 Köhl
 levelized
 madvise
-maturin
 mdbook
 memchr
 Miri
@@ -79,6 +78,7 @@ rwlock
 satisfiability
 segtree
 serde
+setuptools
 smallvec
 spinlock
 spinlocks

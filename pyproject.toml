@@ -4,15 +4,44 @@ version = "0.1.0"
 description = "Decision Diagrams"
 requires-python = ">=3.8"
 keywords = ["Decision Diagrams", "BDD", "ZBDD", "ZDD"]
+authors = [{ name = "Nils Husung", email = "husung@cs.uni-saarland.de" }]
+maintainers = [{ name = "Nils Husung", email = "husung@cs.uni-saarland.de" }]
 
-dependencies = ["cffi>=1.0"]
+
+dependencies = ["cffi ~= 1.12", "typing-extensions ~= 4.0"]
+
+# see https://pypi.org/classifiers/
+classifiers = [
+  "Development Status :: 4 - Beta",
+
+  "License :: OSI Approved :: MIT License",
+  "License :: OSI Approved :: Apache Software License",
+
+  "Programming Language :: C",
+  "Programming Language :: C++",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Rust",
+
+  "Topic :: Scientific/Engineering",
+
+  "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://oxidd.net"
+Repository = "https://github.com/OxiDD/oxidd"
+Issues = "https://github.com/OxiDD/oxidd/issues"
 
 [build-system]
-requires = ["maturin>=1.0,<2.0"]
-build-backend = "maturin"
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
 
-[tool.maturin]
-python-source = "bindings/python"
-manifest-path = "crates/oxidd-ffi/Cargo.toml"
-bindings = "cffi"
-compatibility = "linux"
+[tool.setuptools]
+packages = ["oxidd"]
+package-dir = { "" = "bindings/python" }

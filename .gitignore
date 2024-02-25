@@ -6,3 +6,4 @@
 *.dot
 
 __pycache__/
+*.so
