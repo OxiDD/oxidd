@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, NoReturn
 from cffi import FFI
 from enum import Enum
 from os import environ
@@ -19,6 +19,11 @@ liboxidd_ffi_a = target_dir / profile / "liboxidd_ffi.a"
 include_dir.mkdir(parents=True, exist_ok=True)
 
 
+def fatal(msg: str) -> NoReturn:
+    print(msg, file=sys.stderr)
+    exit(1)
+
+
 class BuildMode(Enum):
     STATIC = 0
     SHARED_SYSTEM = 1
@@ -36,11 +41,9 @@ class BuildMode(Enum):
             return BuildMode.SHARED_SYSTEM
         if s == "shared-dev":
             return BuildMode.SHARED_DEV
-        print(
+        fatal(
             f"Error: unknown build mode '{s}', supported values for {key} are `static`, `shared-system`, and `shared-dev`.",
-            file=sys.stderr,
         )
-        exit(1)
 
 
 build_mode = BuildMode.from_env()
@@ -49,8 +52,7 @@ build_mode = BuildMode.from_env()
 def which(bin: str) -> str:
     res = shutil.which(bin)
     if res is None:
-        print(f"Error: could not find {bin}", file=sys.stderr)
-        exit(1)
+        fatal(f"Error: could not find {bin}")
     return res
 
 
@@ -60,8 +62,7 @@ cbindgen_bin = which("cbindgen")
 def run(*args: str):
     res = subprocess.run(args, cwd=repo_dir)
     if res.returncode != 0:
-        print(f"Error: {shlex.join(args)} failed", file=sys.stderr)
-        exit(1)
+        fatal(f"Error: {shlex.join(args)} failed")
 
 
 if build_mode != BuildMode.SHARED_SYSTEM:
@@ -93,11 +94,9 @@ def read_cdefs(header: Path) -> str:
                     while True:
                         line = next(lines, None)
                         if line is None:
-                            print(
+                            fatal(
                                 f"Error parsing {header}: reached end of file while searching for #endif",
-                                file=sys.stderr,
                             )
-                            exit(1)
                         if line.startswith("#endif"):
                             break
                 continue
