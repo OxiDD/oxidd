@@ -45,3 +45,7 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools]
 packages = ["oxidd"]
 package-dir = { "" = "bindings/python" }
+
+[tool.pyright]
+include = ["bindings/python"]
+pythonVersion = "3.8"

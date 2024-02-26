@@ -1,3 +1,4 @@
+from typing import List
 from cffi import FFI
 from enum import Enum
 from os import environ
@@ -106,11 +107,11 @@ def read_cdefs(header: Path) -> str:
 
 cdefs = read_cdefs(oxidd_h)
 
-include_dirs: list[str] = []
-libraries: list[str] = []
-library_dirs: list[str] = []
-runtime_library_dirs: list[str] = []
-extra_link_args: list[str] = []
+include_dirs: List[str] = []
+libraries: List[str] = []
+library_dirs: List[str] = []
+runtime_library_dirs: List[str] = []
+extra_link_args: List[str] = []
 if build_mode == BuildMode.STATIC:
     include_dirs = [str(include_dir)]
     extra_link_args = [str(liboxidd_ffi_a)]

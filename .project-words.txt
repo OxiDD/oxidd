@@ -69,6 +69,7 @@ pointee
 postprocess
 ptrdiff
 pycache
+pyright
 RAII
 realloc
 repr

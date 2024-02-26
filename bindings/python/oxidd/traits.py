@@ -1,4 +1,5 @@
-from typing import Protocol, Self, TypeVar
+from typing import Protocol, TypeVar
+from typing_extensions import Self
 
 __all__ = ["Manager", "BooleanFunction"]
 

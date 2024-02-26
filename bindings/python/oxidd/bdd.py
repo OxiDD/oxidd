@@ -1,6 +1,7 @@
-from typing import Self, Any, override
+from typing import Any
+from typing_extensions import Self, override
 
-from _oxidd import lib, ffi
+from _oxidd import lib
 from . import traits
 
 __all__ = ["BDDManager", "BDDFunction"]
