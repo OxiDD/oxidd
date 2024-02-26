@@ -49,3 +49,4 @@ package-dir = { "" = "bindings/python" }
 [tool.pyright]
 include = ["bindings/python"]
 pythonVersion = "3.8"
+typeCheckingMode = "standard"
