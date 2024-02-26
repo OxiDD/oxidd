@@ -13,6 +13,7 @@ cbindgen
 cdylib
 cffi
 cfgs
+CFLAGS
 clippy
 codegen
 cofactor
@@ -51,6 +52,7 @@ intsec
 isize
 Köhl
 levelized
+liboxidd
 madvise
 mdbook
 memchr
@@ -66,10 +68,12 @@ OxiDD
 pointee
 postprocess
 ptrdiff
+pycache
 RAII
 realloc
 repr
 retag
+rpath
 rustc
 rustfmt
 rustix

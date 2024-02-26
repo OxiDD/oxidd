@@ -1,3 +1,5 @@
+<!-- spell-checker:ignore PYFFI -->
+
 To start developing, create a virtual environment and run:
 
   pip install --editable .
