@@ -1,6 +1,7 @@
 from typing import TypeVar
+
 from oxidd.bdd import BDDManager
-from oxidd.traits import BooleanFunctionManager, BooleanFunction
+from oxidd.traits import BooleanFunction, BooleanFunctionManager
 
 mgr = BDDManager.new(1024, 1024, 1)
 

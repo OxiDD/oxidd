@@ -11,7 +11,7 @@ import setuptools.command.build_ext
 from cffi import FFI
 from setuptools import Distribution, Extension
 
-# spell-checker:ignore advapi,cdef,cdefs,liboxidd,PYFFI,msvc,ntdll,userenv
+# spell-checker:ignore cdef,cdefs,liboxidd,PYFFI
 
 repo_dir = Path(__file__).parent.parent.parent
 target_dir = repo_dir / "target"
