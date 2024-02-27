@@ -8,6 +8,8 @@ import shutil
 import subprocess
 import sys
 
+from setuptools import Distribution, Extension
+
 # spell-checker:ignore cdef,cdefs,liboxidd,PYFFI
 
 repo_dir = Path(__file__).parent.parent.parent
@@ -15,7 +17,26 @@ target_dir = repo_dir / "target"
 include_dir = target_dir / "include"
 oxidd_h = include_dir / "oxidd.h"
 profile = "release"
-liboxidd_ffi_a = target_dir / profile / "liboxidd_ffi.a"
+
+def get_compiler():
+    """ Returns an instance of the build_ext compiler to do variant detection """
+
+    build_ext = Distribution().get_command_obj("build_ext")
+    build_ext.finalize_options()
+    # register an extension to ensure a compiler is created
+    build_ext.extensions = [Extension("ignored", ["ignored.c"])]
+    # disable building fake extensions
+    build_ext.build_extensions = lambda: None
+    # run to populate self.compiler
+    build_ext.run()
+    return build_ext.compiler
+
+if get_compiler().compiler_type == "msvc":
+    liboxidd_ffi_a = target_dir / profile / "oxidd_ffi.lib"
+else:
+    liboxidd_ffi_a = target_dir / profile / "liboxidd_ffi.a"
+
+
 include_dir.mkdir(parents=True, exist_ok=True)
 
 
@@ -25,6 +46,9 @@ def fatal(msg: str) -> NoReturn:
 
 
 class BuildMode(Enum):
+    """ We identify three different build 'modes'. STATIC builds and links oxidd
+    as a static library, SHARED_DEV builds and links oxidd as a dynamic library,
+    and finally SHARED_SYSTEM links a system wide installed oxidd as shared library. """
     STATIC = 0
     SHARED_SYSTEM = 1
     SHARED_DEV = 2
@@ -60,7 +84,8 @@ cbindgen_bin = which("cbindgen")
 
 
 def run(*args: str):
-    res = subprocess.run(args, cwd=repo_dir)
+    """ Runs the script and checks the return code """
+    res = subprocess.run(args, cwd=repo_dir, check=False)
     if res.returncode != 0:
         fatal(f"Error: {shlex.join(args)} failed")
 
@@ -78,8 +103,8 @@ run(
     str(repo_dir / "crates" / "oxidd-ffi"),
 )
 
-
 def read_cdefs(header: Path) -> str:
+    """ Removes C macros and include directives from the include header since cffi cannot deal with them. """
     res = ""
     with header.open("r") as f:
         lines = iter(f)
@@ -111,11 +136,18 @@ libraries: List[str] = []
 library_dirs: List[str] = []
 runtime_library_dirs: List[str] = []
 extra_link_args: List[str] = []
+
 if build_mode == BuildMode.STATIC:
     include_dirs = [str(include_dir)]
+
     extra_link_args = [str(liboxidd_ffi_a)]
+    if get_compiler().compiler_type == "msvc":
+        # TODO: This should be derived from 'cargo rustc -q -- --print=native-static-libs', but without the windows.lib and without duplicates?
+        libraries = ["kernel32", "advapi32", "bcrypt", "ntdll", "userenv", "ws2_32", "msvcrt"]
+
 elif build_mode == BuildMode.SHARED_SYSTEM:
     libraries = ["oxidd"]
+
 elif build_mode == BuildMode.SHARED_DEV:
     include_dirs = [str(include_dir)]
     libraries = ["oxidd_ffi"]
