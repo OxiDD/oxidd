@@ -46,9 +46,7 @@ def fatal(msg: str) -> NoReturn:
 
 
 class BuildMode(Enum):
-    """ We identify three different build 'modes'. STATIC builds and links oxidd
-    as a static library, SHARED_DEV builds and links oxidd as a dynamic library,
-    and finally SHARED_SYSTEM links a system wide installed oxidd as shared library. """
+    """ These are the build modes explained in DEVELOPING.md """
     STATIC = 0
     SHARED_SYSTEM = 1
     SHARED_DEV = 2
