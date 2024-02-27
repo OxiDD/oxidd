@@ -10,7 +10,7 @@ import sys
 
 from setuptools import Distribution, Extension
 
-# spell-checker:ignore advapi,cdef,cdefs,liboxidd,PYFFI,msvc,userenv
+# spell-checker:ignore advapi,cdef,cdefs,liboxidd,PYFFI,msvc,ntdll,userenv
 
 repo_dir = Path(__file__).parent.parent.parent
 target_dir = repo_dir / "target"
