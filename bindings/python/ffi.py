@@ -1,48 +1,15 @@
+import os
 import shlex
 import shutil
 import subprocess
 import sys
 from enum import Enum
-from os import environ
 from pathlib import Path
 from typing import Dict, List, NoReturn
 
-import setuptools.command.build_ext
 from cffi import FFI
-from setuptools import Distribution, Extension
 
 # spell-checker:ignore cdef,cdefs,liboxidd,PYFFI
-
-repo_dir = Path(__file__).parent.parent.parent
-target_dir = repo_dir / "target"
-include_dir = target_dir / "include"
-oxidd_h = include_dir / "oxidd.h"
-profile = "release"
-
-
-def get_compiler() -> str:
-    """Returns an instance of the `build_ext` compiler to do variant detection"""
-
-    build_ext = Distribution().get_command_obj("build_ext")
-    assert isinstance(build_ext, setuptools.command.build_ext.build_ext)
-    build_ext.finalize_options()
-    # register an extension to ensure a compiler is created
-    build_ext.extensions = [Extension("ignored", ["ignored.c"])]
-    # disable building fake extensions
-    build_ext.build_extensions = lambda: None
-    # run to populate self.compiler
-    build_ext.run()
-    return build_ext.compiler.compiler_type
-
-
-compiler = get_compiler()
-
-liboxidd_ffi_a = (
-    target_dir / profile / ("oxidd_ffi.lib" if compiler == "msvc" else "liboxidd_ffi.a")
-)
-
-
-include_dir.mkdir(parents=True, exist_ok=True)
 
 
 def fatal(msg: str) -> NoReturn:
@@ -50,32 +17,77 @@ def fatal(msg: str) -> NoReturn:
     exit(1)
 
 
-class BuildMode(Enum):
-    """These are the build modes explained in DEVELOPING.md"""
+if os.name != "posix" and os.name != "nt":
+    fatal("Error: only Unix and Windows systems are currently supported")
+
+repo_dir = Path(__file__).parent.parent.parent
+target_dir = repo_dir / "target"
+include_dir = target_dir / "include"
+oxidd_h = include_dir / "oxidd.h"
+profile = "release"
+lib_dir = target_dir / profile
+
+include_dir.mkdir(parents=True, exist_ok=True)
+
+
+class LinkMode(Enum):
+    """Modes to build OxiDD, set via the environment variable OXIDD_PYFFI_LINK_MODE"""
 
     STATIC = 0
+    """
+    Statically link against `liboxidd_ffi.a` or `oxidd_ffi.lib` in the
+    `target/<profile>` directory.
+
+    This is the mode we will be using for shipping via PyPI since we do not need
+    to mess around with the RPath (which does not exist on Windows anyway). It
+    is also the default mode on Windows.
+    """
+
     SHARED_SYSTEM = 1
+    """
+    Dynamically link against a system-installed `liboxidd.so`, `liboxidd.dylib`,
+    or `oxidd.dll`, respectively.
+
+    This mode is useful for packaging in, e.g., Linux distributions. With this
+    mode, we do not need to ship the main OxiDD library in both packages,
+    `liboxidd` and `python3-oxidd`. We can furthermore decouple updates of the
+    two packages.
+    """
+
     SHARED_DEV = 2
+    """
+    Dynamically link against `liboxidd_ffi.so`, `liboxidd_ffi.dylib`, or
+    `oxidd_ffi.dll` in the `target/<profile>` directory.
+
+    This mode is the default for developing on Unix systems. When tuning
+    heuristics for instance, a simple `cargo build --release` suffices, no
+    `pip install --editable .` is required before re-running the Python script.
+    On Windows, setting this mode up requires extra work, since there is no
+    RPath like on Unix systems.
+    """
 
     @staticmethod
-    def from_env() -> "BuildMode":
-        key = "OXIDD_PYFFI_BUILD_MODE"
-        s = environ.get(key, None)
+    def from_env() -> "LinkMode":
+        key = "OXIDD_PYFFI_LINK_MODE"
+        s = os.environ.get(key, None)
         if s is None:
-            return BuildMode.SHARED_DEV
+            # Since Windows does not have an RPath, static linking yields the
+            # better developer experience.
+            return LinkMode.SHARED_DEV if os.name != "nt" else LinkMode.STATIC
+        s = s.lower()
         if s == "static":
-            return BuildMode.STATIC
+            return LinkMode.STATIC
         if s == "shared-system":
-            return BuildMode.SHARED_SYSTEM
+            return LinkMode.SHARED_SYSTEM
         if s == "shared-dev":
-            return BuildMode.SHARED_DEV
+            return LinkMode.SHARED_DEV
         fatal(
             f"Error: unknown build mode '{s}', supported values for {key} are "
             "`static`, `shared-system`, and `shared-dev`.",
         )
 
 
-build_mode = BuildMode.from_env()
+build_mode = LinkMode.from_env()
 
 
 def which(bin: str) -> str:
@@ -95,7 +107,7 @@ def run(*args: str):
         fatal(f"Error: {shlex.join(args)} failed")
 
 
-if build_mode != BuildMode.SHARED_SYSTEM:
+if build_mode != LinkMode.SHARED_SYSTEM:
     cargo_bin = which("cargo")
     print("building crates/oxidd-ffi ...")
     run(cargo_bin, "build", f"--profile={profile}", "--package=oxidd-ffi")
@@ -146,33 +158,42 @@ flags: Dict[str, List[str]] = {
     "libraries": []  # for `+=` (MSVC)
 }
 
-if build_mode == BuildMode.STATIC:
+if build_mode == LinkMode.STATIC:
     flags["include_dirs"] = [str(include_dir)]
-    flags["extra_link_args"] = [str(liboxidd_ffi_a)]
-elif build_mode == BuildMode.SHARED_SYSTEM:
-    flags["libraries"] = ["oxidd"]
-elif build_mode == BuildMode.SHARED_DEV:
+
+    if os.name == "posix":
+        flags["extra_link_args"] = [str(lib_dir / "liboxidd_ffi.a")]
+    elif os.name == "nt":
+        # TODO: This should be derived from
+        #       `cargo rustc -q -- --print=native-static-libs`, but without the
+        #       `windows.lib` and without duplicates?
+        # spell-checker:ignore advapi,ntdll,userenv
+        flags["libraries"] += [
+            "kernel32",
+            "advapi32",
+            "bcrypt",
+            "ntdll",
+            "userenv",
+            "ws2_32",
+            "msvcrt",
+        ]
+        flags["extra_link_args"] = [str(lib_dir / "oxidd_ffi.lib")]
+elif build_mode == LinkMode.SHARED_SYSTEM:
+    if os.name == "posix":
+        flags["libraries"] = ["oxidd"]
+    elif os.name == "nt":
+        flags["libraries"] = ["oxidd.dll"]
+elif build_mode == LinkMode.SHARED_DEV:
     flags["include_dirs"] = [str(include_dir)]
-    flags["libraries"] = ["oxidd_ffi"]
-    flags["runtime_library_dirs"] = flags["library_dirs"] = [str(target_dir / profile)]
+    flags["library_dirs"] = [str(lib_dir)]
+    if os.name == "posix":
+        flags["libraries"] = ["oxidd_ffi"]
+        flags["runtime_library_dirs"] = flags["library_dirs"]
+    elif os.name == "nt":
+        flags["libraries"] = ["oxidd_ffi.dll"]
+        # There is no RPath on Windows :(
 
-if compiler == "msvc":
-    # TODO: This should be derived from
-    #       `cargo rustc -q -- --print=native-static-libs`, but without the
-    #       `windows.lib` and without duplicates?
-    # spell-checker:ignore advapi,ntdll,userenv
-    flags["libraries"] += [
-        "kernel32",
-        "advapi32",
-        "bcrypt",
-        "ntdll",
-        "userenv",
-        "ws2_32",
-        "msvcrt",
-    ]
-    flags["runtime_library_dirs"] = []
-
-flags["extra_compile_args"] = ["/O2" if compiler == "msvc" else "-O2"]
+flags["extra_compile_args"] = ["-O2" if os.name != "nt" else "/O2"]
 
 
 ffi = FFI()
