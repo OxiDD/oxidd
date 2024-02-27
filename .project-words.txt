@@ -50,6 +50,7 @@ impls
 intptr
 intsec
 isize
+isort
 Köhl
 levelized
 liboxidd
@@ -58,6 +59,7 @@ mdbook
 memchr
 Miri
 mmap
+MSVC
 MTBDD
 NAND
 nanos
@@ -69,7 +71,10 @@ pointee
 postprocess
 ptrdiff
 pycache
+pycodestyle
+Pyflakes
 pyright
+pyupgrade
 RAII
 realloc
 repr
