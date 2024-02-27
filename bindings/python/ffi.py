@@ -142,7 +142,9 @@ def read_cdefs(header: Path) -> str:
 
 cdefs = read_cdefs(oxidd_h)
 
-flags: Dict[str, List[str]] = {}
+flags: Dict[str, List[str]] = {
+    "libraries": []  # for `+=` (MSVC)
+}
 
 if build_mode == BuildMode.STATIC:
     flags["include_dirs"] = [str(include_dir)]
