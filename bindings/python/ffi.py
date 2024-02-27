@@ -168,6 +168,8 @@ if compiler == "msvc":
         "ws2_32",
         "msvcrt",
     ]
+    flags["runtime_library_dirs"] = []
+
 flags["extra_compile_args"] = ["/O2" if compiler == "msvc" else "-O2"]
 
 
