@@ -17,6 +17,189 @@ use oxidd::ManagerRef;
 
 // spell-checker:ignore nvars,mref
 
+#[test]
+fn bdd_node_count() {
+    let mref = oxidd::bdd::new_manager(1024, 128, 2);
+
+    let (x0, x1, ff, tt) = mref.with_manager_exclusive(|manager| {
+        (
+            BDDFunction::new_var(manager).unwrap(),
+            BDDFunction::new_var(manager).unwrap(),
+            BDDFunction::f(manager),
+            BDDFunction::t(manager),
+        )
+    });
+
+    assert_eq!(ff.node_count(), 1);
+    assert_eq!(tt.node_count(), 1);
+
+    assert_eq!(x0.node_count(), 3);
+    assert_eq!(x1.node_count(), 3);
+
+    let g = x0.and(&x1).unwrap().not().unwrap();
+    assert_eq!(g.node_count(), 4);
+}
+
+#[test]
+fn bcdd_node_count() {
+    let mref = oxidd::bcdd::new_manager(1024, 128, 2);
+
+    let (x0, x1, ff, tt) = mref.with_manager_exclusive(|manager| {
+        (
+            BCDDFunction::new_var(manager).unwrap(),
+            BCDDFunction::new_var(manager).unwrap(),
+            BCDDFunction::f(manager),
+            BCDDFunction::t(manager),
+        )
+    });
+
+    assert_eq!(ff.node_count(), 1);
+    assert_eq!(tt.node_count(), 1);
+
+    assert_eq!(x0.node_count(), 2);
+    assert_eq!(x1.node_count(), 2);
+
+    let g = x0.and(&x1).unwrap().not().unwrap();
+    assert_eq!(g.node_count(), 3);
+}
+
+// TODO: move this test to its own module?
+#[test]
+fn zbdd_node_count() {
+    let mref = oxidd::zbdd::new_manager(1024, 128, 2);
+
+    let (x0, x1, ee, bb) = mref.with_manager_exclusive(|manager| {
+        (
+            ZBDDSet::new_singleton(manager).unwrap(),
+            ZBDDSet::new_singleton(manager).unwrap(),
+            ZBDDSet::empty(manager),
+            ZBDDSet::base(manager),
+        )
+    });
+
+    assert_eq!(ee.node_count(), 1);
+    assert_eq!(bb.node_count(), 1);
+
+    assert_eq!(x0.node_count(), 3);
+    assert_eq!(x1.node_count(), 3);
+
+    let p = x0.union(&x1).unwrap();
+    assert_eq!(p.node_count(), 4);
+}
+
+#[test]
+fn bdd_cofactors() {
+    let mref = oxidd::bdd::new_manager(1024, 128, 2);
+
+    let (x0, x1, ff, tt) = mref.with_manager_exclusive(|manager| {
+        (
+            BDDFunction::new_var(manager).unwrap(),
+            BDDFunction::new_var(manager).unwrap(),
+            BDDFunction::f(manager),
+            BDDFunction::t(manager),
+        )
+    });
+    let g = x0.and(&x1).unwrap().not().unwrap();
+
+    assert!(ff.cofactors().is_none());
+    assert!(ff.cofactor_true().is_none());
+    assert!(ff.cofactor_false().is_none());
+    assert!(tt.cofactors().is_none());
+    assert!(tt.cofactor_true().is_none());
+    assert!(tt.cofactor_false().is_none());
+
+    for v in [&x0, &x1] {
+        assert_eq!(v.node_count(), 3);
+
+        let (vt, vf) = v.cofactors().unwrap();
+        assert!(vt == v.cofactor_true().unwrap());
+        assert!(vf == v.cofactor_false().unwrap());
+
+        assert!(vt == tt);
+        assert!(vf == ff);
+    }
+
+    let (gt, gf) = g.cofactors().unwrap();
+    assert!(gt == g.cofactor_true().unwrap());
+    assert!(gf == g.cofactor_false().unwrap());
+    assert!(gt == x1.not().unwrap());
+    assert!(gf == tt);
+}
+
+#[test]
+fn bcdd_cofactors() {
+    let mref = oxidd::bcdd::new_manager(1024, 128, 2);
+
+    let (x0, x1, ff, tt) = mref.with_manager_exclusive(|manager| {
+        (
+            BCDDFunction::new_var(manager).unwrap(),
+            BCDDFunction::new_var(manager).unwrap(),
+            BCDDFunction::f(manager),
+            BCDDFunction::t(manager),
+        )
+    });
+    let g = x0.and(&x1).unwrap().not().unwrap();
+
+    assert!(ff.cofactors().is_none());
+    assert!(ff.cofactor_true().is_none());
+    assert!(ff.cofactor_false().is_none());
+    assert!(tt.cofactors().is_none());
+    assert!(tt.cofactor_true().is_none());
+    assert!(tt.cofactor_false().is_none());
+
+    for v in [&x0, &x1] {
+        let (vt, vf) = v.cofactors().unwrap();
+        assert!(vt == v.cofactor_true().unwrap());
+        assert!(vf == v.cofactor_false().unwrap());
+
+        assert!(vt == tt);
+        assert!(vf == ff);
+    }
+
+    let (gt, gf) = g.cofactors().unwrap();
+    assert!(gt == g.cofactor_true().unwrap());
+    assert!(gf == g.cofactor_false().unwrap());
+    assert!(gt == x1.not().unwrap());
+    assert!(gf == tt);
+}
+
+#[test]
+fn zbdd_cofactors() {
+    let mref = oxidd::zbdd::new_manager(1024, 128, 2);
+
+    let (x0, x1, ee, bb) = mref.with_manager_exclusive(|manager| {
+        (
+            ZBDDSet::new_singleton(manager).unwrap(),
+            ZBDDSet::new_singleton(manager).unwrap(),
+            ZBDDSet::empty(manager),
+            ZBDDSet::base(manager),
+        )
+    });
+    let g = x0.union(&x1).unwrap();
+
+    assert!(ee.cofactors().is_none());
+    assert!(ee.cofactor_true().is_none());
+    assert!(ee.cofactor_false().is_none());
+    assert!(bb.cofactors().is_none());
+    assert!(bb.cofactor_true().is_none());
+    assert!(bb.cofactor_false().is_none());
+
+    for v in [&x0, &x1] {
+        let (vt, vf) = v.cofactors().unwrap();
+        assert!(vt == v.cofactor_true().unwrap());
+        assert!(vf == v.cofactor_false().unwrap());
+
+        assert!(vt == bb);
+        assert!(vf == ee);
+    }
+
+    let (gt, gf) = g.cofactors().unwrap();
+    assert!(gt == g.cofactor_true().unwrap());
+    assert!(gf == g.cofactor_false().unwrap());
+    assert!(gt == bb);
+    assert!(gf == x1);
+}
+
 type Var = u32;
 type VarSet = u32;
 
@@ -193,6 +376,8 @@ impl Prop {
             Restrict(mut pos, mut neg, p) => {
                 debug_assert_eq!(pos & neg, 0);
                 let prop = p.cons_q(manager, vars)?;
+                // Convert the positive (`pos`) and negative (`neg`) literals
+                // into a decision diagram (`v_dd`)
                 let mut v_dd = manager.with_manager_shared(|m| B::t(m));
                 let mut i = 0;
                 while pos | neg != 0 {
@@ -209,6 +394,7 @@ impl Prop {
             }
             Exists(mut v, p) | Forall(mut v, p) | Unique(mut v, p) => {
                 let prop = p.cons_q(manager, vars)?;
+                // Construct `v` as decision diagram (`v_dd`)
                 let mut v_dd = manager.with_manager_shared(|m| B::t(m));
                 let mut i = 0;
                 while v != 0 {
@@ -218,6 +404,7 @@ impl Prop {
                     i += 1;
                     v >>= 1;
                 }
+                // Perform the quantification
                 match self {
                     Exists(..) => prop.exist(&v_dd),
                     Forall(..) => prop.forall(&v_dd),
@@ -305,6 +492,9 @@ impl Prop {
     /// and repeatedly call this method, you will enumerate all such formulas.
     /// Returns `false` iff this if the last formula. In this case the formula
     /// is left unchanged.
+    ///
+    /// If `QUANT` is set to `true`, this will also enumerate operators defined
+    /// in the [`BooleanFunctionQuant`] trait.
     fn next<const QUANT: bool>(&mut self, depth: u32, nvars: u32) -> bool {
         use Prop::*;
         match self {
@@ -404,6 +594,9 @@ impl Prop {
             }
             Restrict(positive, negative, p) => {
                 if *positive + 1 < (1 << nvars) {
+                    // Given `negative`, compute the next `positive` such that
+                    // both don't share any bits, i.e., we don't assign both
+                    // true and false to a variable.
                     *positive += 1;
                     loop {
                         let both = *positive & *negative;
@@ -413,6 +606,7 @@ impl Prop {
                         *positive += 1 << both.trailing_zeros()
                     }
                 } else if *negative + 1 < (1 << nvars) {
+                    *positive = 0;
                     *negative += 1;
                 } else if !p.next::<QUANT>(depth - 1, nvars) {
                     *self = Exists(0, Box::new(False))

@@ -311,7 +311,7 @@ fn derive_function_trait(
 
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     // Note: We don't add any trait bounds like `Self: Function`. Adding those
-    // does not seem to work well for the way we instantiate MTBDDs (i.e.
+    // does not seem to work well for the way we instantiate MTBDDs (i.e.,
     // `Function`s that are generic over the terminal type).
 
     let manager_ty = quote!(<Self as ::oxidd_core::function::Function>::Manager<'__id>);
@@ -364,10 +364,39 @@ pub fn derive_boolean_function(input: syn::DeriveInput) -> TokenStream {
                 edge_ty,
                 struct_field,
             } = ctx;
-            let field = struct_field.ident;
-            let inner = struct_field.ty;
+            let field = &struct_field.ident;
+            let inner = &struct_field.ty;
+
+            let from_ff = struct_field.gen_from_inner(quote!(ff));
+            let from_ft = struct_field.gen_from_inner(quote!(ft));
 
             quote! {
+                #[inline]
+                fn cofactors(&self) -> ::std::option::Option<(Self, Self)> {
+                    let (ft, ff) = <#inner as #trait_path>::cofactors(&self.#field)?;
+                    ::std::option::Option::Some((#from_ft, #from_ff))
+                }
+                #[inline]
+                fn cofactor_true(&self) -> ::std::option::Option<Self> {
+                    let ft = <#inner as #trait_path>::cofactor_true(&self.#field)?;
+                    ::std::option::Option::Some(#from_ft)
+                }
+                #[inline]
+                fn cofactor_false(&self) -> ::std::option::Option<Self> {
+                    let ff = <#inner as #trait_path>::cofactor_false(&self.#field)?;
+                    ::std::option::Option::Some(#from_ff)
+                }
+                #[inline]
+                fn cofactors_edge<'__a, '__id>(
+                    manager: &'__a #manager_ty,
+                    f: &'__a #edge_ty,
+                ) -> Option<(
+                    ::oxidd_core::util::Borrowed<'__a, #edge_ty>,
+                    ::oxidd_core::util::Borrowed<'__a, #edge_ty>,
+                )> {
+                    <#inner as #trait_path>::cofactors_edge(manager, f)
+                }
+
                 #[inline]
                 fn satisfiable(&self) -> bool {
                     <#inner as #trait_path>::satisfiable(&self.#field)

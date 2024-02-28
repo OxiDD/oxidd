@@ -4,10 +4,13 @@ use std::collections::HashMap;
 use std::hash::Hash;
 
 use crate::util::AllocResult;
+use crate::util::Borrowed;
 use crate::util::EdgeDropGuard;
 use crate::util::NodeSet;
 use crate::util::OptBool;
 use crate::util::SatCountNumber;
+use crate::DiagramRules;
+use crate::Edge;
 use crate::InnerNode;
 use crate::LevelNo;
 use crate::Manager;
@@ -18,9 +21,9 @@ use crate::NodeID;
 /// Function in a decision diagram
 ///
 /// A function is some kind of external reference to a node as opposed to
-/// [`Edge`][crate::Edge]s, which are diagram internal. A function also includes
-/// a reference to the diagram's manager. So one may view a function as an
-/// [`Edge`][crate::Edge] plus a [`ManagerRef`].
+/// [`Edge`]s, which are diagram internal. A function also includes a reference
+/// to the diagram's manager. So one may view a function as an [`Edge`] plus a
+/// [`ManagerRef`].
 ///
 /// Functions are what the library's user mostly works with. There may be
 /// subtraits such as `BooleanFunction` in the `oxidd-rules-bdd` crate which
@@ -35,8 +38,8 @@ use crate::NodeID;
 ///
 /// # Safety
 ///
-/// An implementation must ensure that the "[`Edge`][crate::Edge] part" of the
-/// function points to a node that is stored in the manager referenced  by the
+/// An implementation must ensure that the "[`Edge`] part" of the function
+/// points to a node that is stored in the manager referenced  by the
 /// "[`ManagerRef`] part" of the function. All functions of this trait must
 /// maintain this link accordingly. In particular, [`Self::as_edge()`] and
 /// [`Self::into_edge()`] must panic as specified there.
@@ -45,8 +48,8 @@ pub unsafe trait Function: Clone + Ord + Hash {
     ///
     /// This type is generic over a lifetime `'id` to permit the "lifetime
     /// trick" used e.g. in [`GhostCell`][GhostCell]: The idea is to make the
-    /// [`Manager`], [`Edge`][crate::Edge] and [`InnerNode`] types
-    /// [invariant][variance] over `'id`. Any call to one of the
+    /// [`Manager`], [`Edge`] and [`InnerNode`] types [invariant][variance] over
+    /// `'id`. Any call to one of the
     /// [`with_manager_shared()`][Function::with_manager_shared] /
     /// [`with_manager_exclusive()`][Function::with_manager_exclusive] functions
     /// of the [`Function`] or [`ManagerRef`] trait, which "generate" a fresh
@@ -71,6 +74,15 @@ pub unsafe trait Function: Clone + Ord + Hash {
         manager: &Self::Manager<'id>,
         edge: <Self::Manager<'id> as Manager>::Edge,
     ) -> Self;
+
+    /// Create a new function from a manager reference and an edge reference
+    #[inline(always)]
+    fn from_edge_ref<'id>(
+        manager: &Self::Manager<'id>,
+        edge: &<Self::Manager<'id> as Manager>::Edge,
+    ) -> Self {
+        Self::from_edge(manager, manager.clone_edge(edge))
+    }
 
     /// Converts this function into the underlying edge (as reference), checking
     /// that it belongs to the given `manager`
@@ -127,7 +139,7 @@ pub unsafe trait Function: Clone + Ord + Hash {
     where
         F: for<'id> FnOnce(&mut Self::Manager<'id>, &<Self::Manager<'id> as Manager>::Edge) -> T;
 
-    /// Count the number of nodes in this function
+    /// Count the number of nodes in this function, including terminal nodes
     ///
     /// Locking behavior: acquires a shared manager lock.
     fn node_count(&self) -> usize {
@@ -167,6 +179,71 @@ pub trait BooleanFunction: Function {
     /// Get a fresh variable, i.e. a function that is true if and only if the
     /// variable is true. This adds a new level to a decision diagram.
     fn new_var<'id>(manager: &mut Self::Manager<'id>) -> AllocResult<Self>;
+
+    /// Get the cofactors `(f_true, f_false)` of `self`
+    ///
+    /// Let f(x₀, …, xₙ) be represented by `self`, where x₀ is (currently) the
+    /// top-most variable. Then f<sub>true</sub>(x₁, …, xₙ) = f(⊤, x₁, …, xₙ)
+    /// and f<sub>false</sub>(x₁, …, xₙ) = f(⊥, x₁, …, xₙ).
+    ///
+    /// Note that the domain of f is 𝔹ⁿ⁺¹ while the domain of f<sub>true</sub>
+    /// and f<sub>false</sub> is 𝔹ⁿ. This is irrelevant in case of BDDs and
+    /// BCDDs, but not for ZBDDs: For instance, g(x₀) = x₀ and g'(x₀, x₁) = x₀
+    /// have the same representation as BDDs or BCDDs, but different
+    /// representations as ZBDDs.
+    ///
+    /// Structurally, the cofactors are simply the children in case of BDDs and
+    /// ZBDDs. (For BCDDs, the edge tags are adjusted accordingly.) On these
+    /// representations, runtime is thus in O(1).
+    ///
+    /// Returns `None` iff `self` references a terminal node. If you only need
+    /// `f_true` or `f_false`, [`Self::cofactor_true`] or
+    /// [`Self::cofactor_false`] are slightly more efficient.
+    ///
+    /// Locking behavior: acquires a shared manager lock.
+    fn cofactors(&self) -> Option<(Self, Self)> {
+        self.with_manager_shared(|manager, f| {
+            let (ft, ff) = Self::cofactors_edge(manager, f)?;
+            Some((
+                Self::from_edge_ref(manager, &ft),
+                Self::from_edge_ref(manager, &ff),
+            ))
+        })
+    }
+
+    /// Get the cofactor `f_true` of `self`
+    ///
+    /// This method is slightly more efficient than [`Self::cofactors`] in case
+    /// `f_false` is not needed.
+    ///
+    /// For a more detailed description, see [`Self::cofactors`].
+    ///
+    /// Returns `None` iff `self` references a terminal node.
+    ///
+    /// Locking behavior: acquires a shared manager lock.
+    fn cofactor_true(&self) -> Option<Self> {
+        self.with_manager_shared(|manager, f| {
+            let (ft, _) = Self::cofactors_edge(manager, f)?;
+            Some(Self::from_edge_ref(manager, &ft))
+        })
+    }
+
+    /// Get the cofactor `f_false` of `self`
+    ///
+    /// This method is slightly more efficient than [`Self::cofactors`] in case
+    /// `f_true` is not needed.
+    ///
+    /// For a more detailed description, see [`Self::cofactors`].
+    ///
+    /// Returns `None` iff `self` references a terminal node.
+    ///
+    /// Locking behavior: acquires a shared manager lock.
+    fn cofactor_false(&self) -> Option<Self> {
+        self.with_manager_shared(|manager, f| {
+            let (_, ff) = Self::cofactors_edge(manager, f)?;
+            Some(Self::from_edge_ref(manager, &ff))
+        })
+    }
 
     /// Compute the negation `¬self`
     ///
@@ -279,6 +356,33 @@ pub trait BooleanFunction: Function {
     fn f_edge<'id>(manager: &Self::Manager<'id>) -> <Self::Manager<'id> as Manager>::Edge;
     /// Get the always true function `⊤` as edge
     fn t_edge<'id>(manager: &Self::Manager<'id>) -> <Self::Manager<'id> as Manager>::Edge;
+
+    /// Get the cofactors `(f_true, f_false)` of `f`, edge version
+    ///
+    /// Returns `None` iff `f` references a terminal node. For more details on
+    /// the semantics of `f_true` and `f_false`, see [`Self::cofactors`].
+    ///
+    /// Implementation note: The default implementation assumes that
+    /// [cofactor 0][DiagramRules::cofactor] corresponds to `f_true` and
+    /// [cofactor 1][DiagramRules::cofactor] corresponds to `f_false`.
+    #[inline]
+    #[allow(clippy::type_complexity)]
+    fn cofactors_edge<'a, 'id>(
+        manager: &'a Self::Manager<'id>,
+        f: &'a <Self::Manager<'id> as Manager>::Edge,
+    ) -> Option<(
+        Borrowed<'a, <Self::Manager<'id> as Manager>::Edge>,
+        Borrowed<'a, <Self::Manager<'id> as Manager>::Edge>,
+    )> {
+        if let Node::Inner(n) = manager.get_node(f) {
+            let tag = f.tag();
+            let cofactor =
+                <<Self::Manager<'id> as Manager>::Rules as DiagramRules<_, _, _>>::cofactor;
+            Some((cofactor(tag, n, 0), cofactor(tag, n, 1)))
+        } else {
+            None
+        }
+    }
 
     /// Compute the negation `¬edge`, edge version
     #[must_use]

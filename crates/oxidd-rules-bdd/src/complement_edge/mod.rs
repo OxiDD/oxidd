@@ -114,6 +114,17 @@ impl<E: Edge<Tag = EdgeTag>, N: InnerNode<E>> DiagramRules<E, N, BCDDTerminal> f
             phantom: PhantomData,
         }
     }
+
+    #[inline]
+    fn cofactor(tag: E::Tag, node: &N, n: usize) -> Borrowed<E> {
+        let e = node.child(n);
+        if tag == EdgeTag::None {
+            e
+        } else {
+            let e_tag = e.tag();
+            e.edge_with_tag(!e_tag)
+        }
+    }
 }
 
 /// Iterator over the cofactors of a node in a complement edge BDD

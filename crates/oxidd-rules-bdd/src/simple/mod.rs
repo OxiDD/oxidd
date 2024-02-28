@@ -56,6 +56,11 @@ impl<E: Edge, N: InnerNode<E>> DiagramRules<E, N, BDDTerminal> for BDDRules {
     fn cofactors(_tag: E::Tag, node: &N) -> Self::Cofactors<'_> {
         node.children()
     }
+
+    #[inline(always)]
+    fn cofactor(_tag: E::Tag, node: &N, n: usize) -> Borrowed<E> {
+        node.child(n)
+    }
 }
 
 /// Apply the reduction rules, creating a node in `manager` if necessary
