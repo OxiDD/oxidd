@@ -8,7 +8,7 @@ fmt:
 
 # Lint code
 lint:
-    cargo clippy
+    cargo +nightly clippy
     cargo +nightly fmt --check
     ./target/cspell/bin/cspell --quiet --unique --gitignore --dot --cache '**'
 
