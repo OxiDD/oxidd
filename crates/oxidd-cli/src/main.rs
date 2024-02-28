@@ -372,9 +372,9 @@ where
     });
 }
 
-fn bool_dd_main<B: BooleanFunction>(cli: &Cli, mref: B::ManagerRef)
+fn bool_dd_main<B>(cli: &Cli, mref: B::ManagerRef)
 where
-    B: Send + 'static,
+    B: BooleanFunction + Send + 'static,
     B::ManagerRef: Send + 'static,
     for<'id> B: dot::DotStyle<<B::Manager<'id> as Manager>::EdgeTag>,
     for<'id> B::Manager<'id>: WorkerManager + HasApplyCache<B::Manager<'id>>,

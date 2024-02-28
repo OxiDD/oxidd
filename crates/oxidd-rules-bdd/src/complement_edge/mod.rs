@@ -294,13 +294,13 @@ where
     let fu = f.with_tag(None);
     let gu = g.with_tag(None);
     if *fu == *gu {
-        return Done(get_terminal(manager, !(ft == gt)));
+        return Done(get_terminal(manager, ft != gt));
     }
     let (h, tag) = match (manager.get_node(f), manager.get_node(g)) {
         (Inner(fnode), Inner(gnode)) => return Nodes(fnode, gnode),
         (Inner(_), Terminal(_)) => (f, gt),
         (Terminal(_), Inner(_)) => (g, ft),
-        (Terminal(_), Terminal(_)) => return Done(get_terminal(manager, !(ft == gt))),
+        (Terminal(_), Terminal(_)) => return Done(get_terminal(manager, ft != gt)),
     };
     let h = manager.clone_edge(h);
     if tag == Complemented {
