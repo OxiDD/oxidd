@@ -52,6 +52,21 @@ impl std::ops::Not for EdgeTag {
     }
 }
 
+impl std::ops::BitXor for EdgeTag {
+    type Output = EdgeTag;
+
+    #[inline]
+    fn bitxor(self, rhs: Self) -> EdgeTag {
+        use EdgeTag::*;
+        match (self, rhs) {
+            (None, None) => None,
+            (None, Complemented) => Complemented,
+            (Complemented, None) => Complemented,
+            (Complemented, Complemented) => None,
+        }
+    }
+}
+
 #[inline]
 #[must_use]
 fn not_owned<E: Edge<Tag = EdgeTag>>(e: E) -> E {

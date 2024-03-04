@@ -205,7 +205,8 @@ where
         return if f.tag() == h.tag() {
             apply_and(manager, depth, f, g)
         } else {
-            Ok(not_owned(apply_and(manager, depth, not(&f), g)?)) // f → g
+            // f → g = ¬f ∨ g = ¬(f ∧ ¬g)
+            Ok(not_owned(apply_and(manager, depth, f, not(&g))?))
         };
     }
     let fnode = match manager.get_node(&f) {
@@ -328,16 +329,22 @@ where
         } => {
             // f above top-most restrict variable
             let f_untagged = f.with_tag(EdgeTag::None);
+            let f_tag = if f_neg {
+                EdgeTag::Complemented
+            } else {
+                EdgeTag::None
+            };
 
             // Query apply cache
             stat!(cache_query BCDDOp::Restrict);
-            if let Some(res) = manager.apply_cache().get(
+            if let Some(result) = manager.apply_cache().get(
                 manager,
                 BCDDOp::Restrict,
                 &[f_untagged.borrowed(), vars.borrowed()],
             ) {
                 stat!(cache_hit BCDDOp::Restrict);
-                return Ok(res);
+                let result_tag = result.tag();
+                return Ok(result.with_tag_owned(result_tag ^ f_tag));
             }
 
             let d = depth - 1;
@@ -369,18 +376,15 @@ where
                 result.borrowed(),
             );
 
-            Ok(result.with_tag_owned(if f_neg {
-                EdgeTag::Complemented
-            } else {
-                EdgeTag::None
-            }))
+            let result_tag = result.tag();
+            Ok(result.with_tag_owned(result_tag ^ f_tag))
         }
     }
 }
 
 /// Compute the quantification `Q` over `vars`
 ///
-/// `Q` is one of `BCDDOp::Forall`, `BCDDOp::Exist`, and `BCDDOp::Forall` as
+/// `Q` is one of `BCDDOp::Forall`, `BCDDOp::Exist`, or `BCDDOp::Forall` as
 /// `u8`.
 ///
 /// `depth` is decremented for each recursive call. If it reaches 0, this
@@ -412,17 +416,39 @@ where
     // Terminal cases
     let fnode = match manager.get_node(&f) {
         Node::Inner(n) => n,
-        Node::Terminal(_) => return Ok(manager.clone_edge(&f)),
+        Node::Terminal(_) => {
+            return Ok(
+                if operator != BCDDOp::Unique || manager.get_node(&vars).is_any_terminal() {
+                    manager.clone_edge(&f)
+                } else {
+                    // ∃! x. ⊤ ≡ ⊤ ⊕ ⊤ ≡ ⊥
+                    get_terminal(manager, false)
+                },
+            );
+        }
     };
     let flevel = fnode.level();
 
-    // We can ignore all variables above the top-most variable. Removing them
-    // before querying the apply cache should increase the hit ratio by a lot.
-    let vars = crate::set_pop(manager, vars, flevel);
-    let vlevel = match manager.get_node(&vars) {
-        Node::Inner(n) => n.level(),
+    let vars = if operator != BCDDOp::Unique {
+        // We can ignore all variables above the top-most variable. Removing
+        // them before querying the apply cache should increase the hit ratio by
+        // a lot.
+        crate::set_pop(manager, vars, flevel)
+    } else {
+        // No need to pop variables here, if the variable is above `fnode`,
+        // i.e., does not occur in `f`, then the result is `f ⊕ f ≡ ⊥`. We
+        // handle this below.
+        vars
+    };
+    let vnode = match manager.get_node(&vars) {
+        Node::Inner(n) => n,
         Node::Terminal(_) => return Ok(manager.clone_edge(&f)),
     };
+    let vlevel = vnode.level();
+    if operator == BCDDOp::Unique && vlevel < flevel {
+        // `vnode` above `fnode`, i.e., the variable does not occur in `f` (see above)
+        return Ok(get_terminal(manager, false));
+    }
     debug_assert!(flevel <= vlevel);
     let vars = vars.borrowed();
 
@@ -439,13 +465,18 @@ where
 
     let d = depth - 1;
     let (ft, fe) = collect_cofactors(f.tag(), fnode);
+    let vt = if vlevel == flevel {
+        vnode.child(0)
+    } else {
+        vars.borrowed()
+    };
     let (t, e) = manager.join(
         || {
-            let t = quant::<M, Q>(manager, d, ft, vars.borrowed())?;
+            let t = quant::<M, Q>(manager, d, ft, vt.borrowed())?;
             Ok(EdgeDropGuard::new(manager, t))
         },
         || {
-            let e = quant::<M, Q>(manager, d, fe, vars.borrowed())?;
+            let e = quant::<M, Q>(manager, d, fe, vt.borrowed())?;
             Ok(EdgeDropGuard::new(manager, e))
         },
     );

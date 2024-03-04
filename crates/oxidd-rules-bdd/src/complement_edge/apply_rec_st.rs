@@ -169,7 +169,8 @@ where
         return if f.tag() == h.tag() {
             apply_and(manager, f, g)
         } else {
-            Ok(not_owned(apply_and(manager, not(&f), g)?)) // f → g
+            // f → g = ¬f ∨ g = ¬(f ∧ ¬g)
+            Ok(not_owned(apply_and(manager, f, not(&g))?))
         };
     }
     let fnode = match manager.get_node(&f) {
@@ -283,7 +284,11 @@ where
     if vlevel > flevel {
         // f above vars
         return RestrictInnerResult::Rec {
-            vars,
+            vars: vars.edge_with_tag(if vars_neg {
+                EdgeTag::Complemented
+            } else {
+                EdgeTag::None
+            }),
             f,
             f_neg,
             fnode,
@@ -319,7 +324,8 @@ where
                 // shape ¬x ∧ φ
                 let ve = vnode.child(1);
                 if let Node::Inner(n) = manager.get_node(&ve) {
-                    let vars_neg = ve.tag() == EdgeTag::Complemented;
+                    // `vars` is currently negated, hence `!=`
+                    let vars_neg = ve.tag() != EdgeTag::Complemented;
                     return restrict_inner(manager, f, f_neg, fnode, flevel, ve, vars_neg, n);
                 }
                 // shape ¬x
@@ -330,6 +336,7 @@ where
                 );
                 // shape x
             }
+            // `vars` is a single variable above `f` ⇒ return `f`
             break 'ret_f (f, f_neg);
         }
 
@@ -373,9 +380,11 @@ where
             let f = fnode.child(1);
             let ve = vnode.child(1);
             if let Node::Inner(n) = manager.get_node(&ve) {
-                let vars_neg = ve.tag() == EdgeTag::Complemented;
+                // `vars` is currently negated, hence `!=`
+                let vars_neg = ve.tag() != EdgeTag::Complemented;
                 (f, ve, vars_neg, n)
             } else {
+                // shape `¬x` ⇒ return
                 let f_neg = f_neg ^ (f.tag() == EdgeTag::Complemented);
                 break 'ret_f (f, f_neg);
             }
@@ -428,16 +437,22 @@ where
         } => {
             // f above top-most restrict variable
             let f_untagged = f.with_tag(EdgeTag::None);
+            let f_tag = if f_neg {
+                EdgeTag::Complemented
+            } else {
+                EdgeTag::None
+            };
 
             // Query apply cache
             stat!(cache_query BCDDOp::Restrict);
-            if let Some(res) = manager.apply_cache().get(
+            if let Some(result) = manager.apply_cache().get(
                 manager,
                 BCDDOp::Restrict,
                 &[f_untagged.borrowed(), vars.borrowed()],
             ) {
                 stat!(cache_hit BCDDOp::Restrict);
-                return Ok(res);
+                let result_tag = result.tag();
+                return Ok(result.with_tag_owned(result_tag ^ f_tag));
             }
 
             let t =
@@ -460,18 +475,15 @@ where
                 result.borrowed(),
             );
 
-            Ok(result.with_tag_owned(if f_neg {
-                EdgeTag::Complemented
-            } else {
-                EdgeTag::None
-            }))
+            let result_tag = result.tag();
+            Ok(result.with_tag_owned(result_tag ^ f_tag))
         }
     }
 }
 
 /// Compute the quantification `Q` over `vars`
 ///
-/// `Q` is one of `BCDDOp::Forall`, `BCDDOp::Exist`, and `BCDDOp::Forall` as
+/// `Q` is one of `BCDDOp::Forall`, `BCDDOp::Exist`, or `BCDDOp::Forall` as
 /// `u8`.
 pub(super) fn quant<M, const Q: u8>(
     manager: &M,
@@ -493,17 +505,38 @@ where
     // Terminal cases
     let fnode = match manager.get_node(&f) {
         Node::Inner(n) => n,
-        Node::Terminal(_) => return Ok(manager.clone_edge(&f)),
+        Node::Terminal(_) => {
+            return Ok(
+                if operator != BCDDOp::Unique || manager.get_node(&vars).is_any_terminal() {
+                    manager.clone_edge(&f)
+                } else {
+                    get_terminal(manager, false)
+                },
+            );
+        }
     };
     let flevel = fnode.level();
 
-    // We can ignore all variables above the top-most variable. Removing them
-    // before querying the apply cache should increase the hit ratio by a lot.
-    let vars = crate::set_pop(manager, vars, flevel);
-    let vlevel = match manager.get_node(&vars) {
-        Node::Inner(n) => n.level(),
+    let vars = if operator != BCDDOp::Unique {
+        // We can ignore all variables above the top-most variable. Removing
+        // them before querying the apply cache should increase the hit ratio by
+        // a lot.
+        crate::set_pop(manager, vars, flevel)
+    } else {
+        // No need to pop variables here, if the variable is above `fnode`,
+        // i.e., does not occur in `f`, then the result is `f ⊕ f ≡ ⊥`. We
+        // handle this below.
+        vars
+    };
+    let vnode = match manager.get_node(&vars) {
+        Node::Inner(n) => n,
         Node::Terminal(_) => return Ok(manager.clone_edge(&f)),
     };
+    let vlevel = vnode.level();
+    if operator == BCDDOp::Unique && vlevel < flevel {
+        // `vnode` above `fnode`, i.e., the variable does not occur in `f` (see above)
+        return Ok(get_terminal(manager, false));
+    }
     debug_assert!(flevel <= vlevel);
     let vars = vars.borrowed();
 
@@ -519,8 +552,13 @@ where
     }
 
     let (ft, fe) = collect_cofactors(f.tag(), fnode);
-    let t = EdgeDropGuard::new(manager, quant::<M, Q>(manager, ft, vars.borrowed())?);
-    let e = EdgeDropGuard::new(manager, quant::<M, Q>(manager, fe, vars.borrowed())?);
+    let vt = if vlevel == flevel {
+        vnode.child(0)
+    } else {
+        vars.borrowed()
+    };
+    let t = EdgeDropGuard::new(manager, quant::<M, Q>(manager, ft, vt.borrowed())?);
+    let e = EdgeDropGuard::new(manager, quant::<M, Q>(manager, fe, vt.borrowed())?);
 
     let res = if flevel == vlevel {
         match operator {

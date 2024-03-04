@@ -522,7 +522,7 @@ where
         Ordering::Greater => {
             debug_assert!(hlevel < flevel || glevel < flevel);
             if glevel < hlevel {
-                let glo = fnode.unwrap_inner().child(1);
+                let glo = gnode.unwrap_inner().child(1);
                 apply_ite(manager, depth, f.borrowed(), glo.borrowed(), h.borrowed())
             } else {
                 let (hi, hlo) = collect_children(hnode.unwrap_inner());
@@ -532,7 +532,7 @@ where
                     g.borrowed()
                 };
                 let lo = apply_ite(manager, depth, f.borrowed(), g, hlo)?;
-                reduce_borrowed(manager, hlevel, hi, lo, Ite)
+                reduce_borrowed(manager, level, hi, lo, Ite)
             }
         }
         Ordering::Less => {
@@ -578,7 +578,7 @@ where
                 },
             );
             let (hi, lo) = (hi?, lo?);
-            reduce(manager, hlevel, hi.into_edge(), lo.into_edge(), Ite)
+            reduce(manager, level, hi.into_edge(), lo.into_edge(), Ite)
         }
     }?;
 

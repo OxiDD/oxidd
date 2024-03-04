@@ -371,19 +371,38 @@ where
     // Terminal cases
     let fnode = match manager.get_node(&f) {
         Node::Inner(n) => n,
-        Node::Terminal(_) => return Ok(manager.clone_edge(&f)),
+        Node::Terminal(_) => {
+            return if operator != BDDOp::Unique || manager.get_node(&vars).is_any_terminal() {
+                Ok(manager.clone_edge(&f))
+            } else {
+                // ∃! x. ⊤ ≡ ⊤ ⊕ ⊤ ≡ ⊥
+                manager.get_terminal(BDDTerminal::False)
+            };
+        }
     };
     let flevel = fnode.level();
 
-    // We can ignore all variables above the top-most variable. Removing them
-    // before querying the apply cache should increase the hit ratio by a lot.
-    let vars = crate::set_pop(manager, vars, flevel);
-    let vlevel = match manager.get_node(&vars) {
-        Node::Inner(n) => n.level(),
+    let vars = if operator != BDDOp::Unique {
+        // We can ignore all variables above the top-most variable. Removing
+        // them before querying the apply cache should increase the hit ratio by
+        // a lot.
+        crate::set_pop(manager, vars, flevel)
+    } else {
+        // No need to pop variables here, if the variable is above `fnode`,
+        // i.e., does not occur in `f`, then the result is `f ⊕ f ≡ ⊥`. We
+        // handle this below.
+        vars
+    };
+    let vnode = match manager.get_node(&vars) {
+        Node::Inner(n) => n,
         Node::Terminal(_) => return Ok(manager.clone_edge(&f)),
     };
+    let vlevel = vnode.level();
+    if operator == BDDOp::Unique && vlevel < flevel {
+        // `vnode` above `fnode`, i.e., the variable does not occur in `f` (see above)
+        return manager.get_terminal(BDDTerminal::False);
+    }
     debug_assert!(flevel <= vlevel);
-    let vars = vars.borrowed();
 
     // Query apply cache
     stat!(cache_query operator);
@@ -398,13 +417,18 @@ where
 
     let d = depth - 1;
     let (ft, fe) = collect_children(fnode);
+    let vt = if vlevel == flevel {
+        vnode.child(0)
+    } else {
+        vars.borrowed()
+    };
     let (t, e) = manager.join(
         || {
-            let t = quant::<M, Q>(manager, d, ft, vars.borrowed())?;
+            let t = quant::<M, Q>(manager, d, ft, vt.borrowed())?;
             Ok(EdgeDropGuard::new(manager, t))
         },
         || {
-            let e = quant::<M, Q>(manager, d, fe, vars.borrowed())?;
+            let e = quant::<M, Q>(manager, d, fe, vt.borrowed())?;
             Ok(EdgeDropGuard::new(manager, e))
         },
     );
