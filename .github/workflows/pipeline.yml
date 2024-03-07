@@ -37,6 +37,7 @@ jobs:
     strategy:
       matrix:
         toolchain: ['stable', 'nightly']
+        flags: ['', '--release']
 
     steps:
     - uses: actions/checkout@v4
@@ -44,6 +45,7 @@ jobs:
       with:
         toolchain: ${{ matrix.toolchain }}
     - name: Build
-      run: cargo build --verbose
+      run: cargo build ${{ matrix.flags }} --verbose
     - name: Run Tests
-      run: cargo test --verbose
+      run: cargo test ${{ matrix.flags }} --verbose
+    

@@ -245,9 +245,9 @@ impl Prop {
         &self,
         manager: &B::ManagerRef,
         vars: &[B],
-        var_roots: &[B],
+        var_handles: &[B],
     ) -> Result<(), Error<&Self>> {
-        assert!(vars.len() == var_roots.len());
+        assert!(vars.len() == var_handles.len());
         assert!(
             vars.len() < 31,
             "Too many variables for exhaustive checking"
@@ -257,7 +257,8 @@ impl Prop {
         let mut diffs = Vec::new();
         for env in 0..end {
             let expected = self.eval(env);
-            let actual = f.eval((0..var_roots.len()).map(|i| (&var_roots[i], env & (1 << i) != 0)));
+            let actual =
+                f.eval((0..var_handles.len()).map(|i| (&var_handles[i], env & (1 << i) != 0)));
             if expected != actual {
                 diffs.push(Diff {
                     expected,
@@ -281,9 +282,9 @@ impl Prop {
         &self,
         manager: &B::ManagerRef,
         vars: &[B],
-        var_roots: &[B],
+        var_handles: &[B],
     ) -> Result<(), Error<&Self>> {
-        assert!(vars.len() == var_roots.len());
+        assert!(vars.len() == var_handles.len());
         assert!(
             vars.len() < 31,
             "Too many variables for exhaustive checking"
@@ -293,7 +294,8 @@ impl Prop {
         let mut diffs = Vec::new();
         for env in 0..end {
             let expected = self.eval(env);
-            let actual = f.eval((0..var_roots.len()).map(|i| (&var_roots[i], env & (1 << i) != 0)));
+            let actual =
+                f.eval((0..var_handles.len()).map(|i| (&var_handles[i], env & (1 << i) != 0)));
             if expected != actual {
                 diffs.push(Diff {
                     expected,
