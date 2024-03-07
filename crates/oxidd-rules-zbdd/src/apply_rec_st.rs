@@ -778,9 +778,7 @@ where
             let (val, next_edge) = if hi == lo {
                 (OptBool::None, hi)
             } else {
-                let c = if manager.get_node(&hi).is_terminal(&ZBDDTerminal::Empty) {
-                    false
-                } else if manager.get_node(&lo).is_terminal(&ZBDDTerminal::Empty) {
+                let c = if manager.get_node(&lo).is_terminal(&ZBDDTerminal::Empty) {
                     true
                 } else {
                     choice(manager, &edge)
