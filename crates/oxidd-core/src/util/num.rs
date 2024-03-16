@@ -5,8 +5,13 @@ use std::ops::ShlAssign;
 use std::ops::ShrAssign;
 use std::ops::SubAssign;
 
-use oxidd_core::util::IsFloatingPoint;
+use crate::util::IsFloatingPoint;
 
+/// Natural numbers with saturating arithmetic
+///
+/// In contrast to [`std::num::Saturating`], `T::MAX` represents an
+/// out-of-bounds value, and a subsequent subtraction or right shift does not
+/// change this value.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Saturating<T>(pub T);
 
@@ -15,23 +20,27 @@ impl<T> IsFloatingPoint for Saturating<T> {
 }
 
 impl<T: From<u32>> From<u32> for Saturating<T> {
+    #[inline]
     fn from(value: u32) -> Self {
         Self(T::from(value))
     }
 }
 
 impl<'a> AddAssign<&'a Self> for Saturating<u64> {
+    #[inline]
     fn add_assign(&mut self, rhs: &'a Self) {
         self.0 = self.0.saturating_add(rhs.0);
     }
 }
 impl<'a> AddAssign<&'a Self> for Saturating<u128> {
+    #[inline]
     fn add_assign(&mut self, rhs: &'a Self) {
         self.0 = self.0.saturating_add(rhs.0);
     }
 }
 
 impl<'a> SubAssign<&'a Self> for Saturating<u64> {
+    #[inline]
     fn sub_assign(&mut self, rhs: &'a Self) {
         if self.0 != u64::MAX {
             self.0 -= rhs.0;
@@ -39,6 +48,7 @@ impl<'a> SubAssign<&'a Self> for Saturating<u64> {
     }
 }
 impl<'a> SubAssign<&'a Self> for Saturating<u128> {
+    #[inline]
     fn sub_assign(&mut self, rhs: &'a Self) {
         if self.0 != u128::MAX {
             self.0 -= rhs.0;
@@ -47,6 +57,7 @@ impl<'a> SubAssign<&'a Self> for Saturating<u128> {
 }
 
 impl ShrAssign<u32> for Saturating<u64> {
+    #[inline]
     fn shr_assign(&mut self, rhs: u32) {
         if self.0 != u64::MAX {
             self.0 >>= rhs;
@@ -54,6 +65,7 @@ impl ShrAssign<u32> for Saturating<u64> {
     }
 }
 impl ShrAssign<u32> for Saturating<u128> {
+    #[inline]
     fn shr_assign(&mut self, rhs: u32) {
         if self.0 != u128::MAX {
             self.0 >>= rhs;
@@ -62,6 +74,7 @@ impl ShrAssign<u32> for Saturating<u128> {
 }
 
 impl ShlAssign<u32> for Saturating<u64> {
+    #[inline]
     fn shl_assign(&mut self, rhs: u32) {
         self.0 = match self.0.checked_shl(rhs) {
             Some(v) => v,
@@ -70,6 +83,7 @@ impl ShlAssign<u32> for Saturating<u64> {
     }
 }
 impl ShlAssign<u32> for Saturating<u128> {
+    #[inline]
     fn shl_assign(&mut self, rhs: u32) {
         self.0 = match self.0.checked_shl(rhs) {
             Some(v) => v,
@@ -78,6 +92,8 @@ impl ShlAssign<u32> for Saturating<u128> {
     }
 }
 
+/// Floating point number like [`f64`], but with [`ShlAssign<u32>`] and
+/// [`ShrAssign<u32>`].
 #[derive(Clone, Copy, PartialEq, PartialOrd)]
 pub struct F64(pub f64);
 

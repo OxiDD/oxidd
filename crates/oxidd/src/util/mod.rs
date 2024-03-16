@@ -1,6 +1,6 @@
 pub(crate) mod apply_cache;
-pub mod num;
 pub(crate) mod type_cons;
+pub use oxidd_core::util::num;
 
 // We have a few `allow(unused)` attributes here to not spam the user with
 // warnings in case no manager implementation is selected.

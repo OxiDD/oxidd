@@ -57,6 +57,7 @@ Miri
 mmap
 MTBDD
 NAND
+nanorand
 nanos
 nonnull
 nonoverlapping
@@ -102,6 +103,7 @@ unoptimized
 unref
 usize
 wakeups
+wyrand
 ZBDD
 ZDDs
 ZSDDs

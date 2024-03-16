@@ -1,7 +1,11 @@
 //! Function traits
 
+use std::hash::BuildHasher;
 use std::hash::Hash;
 
+use nanorand::Rng;
+
+use crate::util::num::F64;
 use crate::util::AllocResult;
 use crate::util::Borrowed;
 use crate::util::EdgeDropGuard;
@@ -361,10 +365,6 @@ pub trait BooleanFunction: Function {
     ///
     /// Returns `None` iff `f` references a terminal node. For more details on
     /// the semantics of `f_true` and `f_false`, see [`Self::cofactors`].
-    ///
-    /// Implementation note: The default implementation assumes that
-    /// [cofactor 0][DiagramRules::cofactor] corresponds to `f_true` and
-    /// [cofactor 1][DiagramRules::cofactor] corresponds to `f_false`.
     #[inline]
     #[allow(clippy::type_complexity)]
     fn cofactors_edge<'a, 'id>(
@@ -374,14 +374,32 @@ pub trait BooleanFunction: Function {
         Borrowed<'a, EdgeOfFunc<'id, Self>>,
         Borrowed<'a, EdgeOfFunc<'id, Self>>,
     )> {
-        if let Node::Inner(n) = manager.get_node(f) {
-            let tag = f.tag();
-            let cofactor =
-                <<Self::Manager<'id> as Manager>::Rules as DiagramRules<_, _, _>>::cofactor;
-            Some((cofactor(tag, n, 0), cofactor(tag, n, 1)))
+        if let Node::Inner(node) = manager.get_node(f) {
+            Some(Self::cofactors_node(f.tag(), node))
         } else {
             None
         }
+    }
+
+    /// Get the cofactors `(f_true, f_false)` of `node`, assuming an incoming
+    /// edge with `EdgeTag`
+    ///
+    /// Returns `None` iff `f` references a terminal node. For more details on
+    /// the semantics of `f_true` and `f_false`, see [`Self::cofactors`].
+    ///
+    /// Implementation note: The default implementation assumes that
+    /// [cofactor 0][DiagramRules::cofactor] corresponds to `f_true` and
+    /// [cofactor 1][DiagramRules::cofactor] corresponds to `f_false`.
+    #[inline]
+    fn cofactors_node<'a, 'id>(
+        tag: ETagOfFunc<'id, Self>,
+        node: &'a INodeOfFunc<'id, Self>,
+    ) -> (
+        Borrowed<'a, EdgeOfFunc<'id, Self>>,
+        Borrowed<'a, EdgeOfFunc<'id, Self>>,
+    ) {
+        let cofactor = <<Self::Manager<'id> as Manager>::Rules as DiagramRules<_, _, _>>::cofactor;
+        (cofactor(tag, node, 0), cofactor(tag, node, 1))
     }
 
     /// Compute the negation `¬edge`, edge version
@@ -546,23 +564,27 @@ pub trait BooleanFunction: Function {
         cache: &mut SatCountCache<N, S>,
     ) -> N;
 
-    /// Pick a random cube of this function
+    /// Pick a cube of this function
     ///
-    /// `order` is a list of variables. If it is non-empty it must contain as
+    /// `order` is a list of variables. If it is non-empty, it must contain as
     /// many variables as there are levels.
     ///
     /// Returns `None` if the function is false. Otherwise, this method returns
     /// a vector where the i-th entry indicates if the i-th variable of `order`
     /// (or the variable currently at the i-th level in case `order` is empty)
-    /// is true, false or "don't care".
+    /// is true, false, or "don't care".
     ///
-    /// Whenever there is a choice for a variable, `choice` is called.
+    /// Whenever there is a choice for a variable, `choice` is called to
+    /// determine the valuation for this variable.
     ///
     /// Locking behavior: acquires a shared manager lock.
     fn pick_cube<'a, I: ExactSizeIterator<Item = &'a Self>>(
         &'a self,
         order: impl IntoIterator<IntoIter = I>,
-        choice: impl for<'b> FnMut(&Self::Manager<'b>, &<Self::Manager<'b> as Manager>::Edge) -> bool,
+        choice: impl for<'id> FnMut(
+            &Self::Manager<'id>,
+            &<Self::Manager<'id> as Manager>::InnerNode,
+        ) -> bool,
     ) -> Option<Vec<OptBool>> {
         self.with_manager_shared(|manager, edge| {
             Self::pick_cube_edge(
@@ -579,10 +601,64 @@ pub trait BooleanFunction: Function {
         manager: &'a Self::Manager<'id>,
         edge: &'a EdgeOfFunc<'id, Self>,
         order: impl IntoIterator<IntoIter = I>,
-        choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>) -> bool,
+        choice: impl FnMut(&Self::Manager<'id>, &INodeOfFunc<'id, Self>) -> bool,
     ) -> Option<Vec<OptBool>>
     where
         I: ExactSizeIterator<Item = &'a EdgeOfFunc<'id, Self>>;
+
+    /// Pick a random cube of this function, where each cube has the same
+    /// probability of being chosen
+    ///
+    /// `order` is a list of variables. If it is non-empty, it must contain as
+    /// many variables as there are levels.
+    ///
+    /// Returns `None` if the function is false. Otherwise, this method returns
+    /// a vector where the i-th entry indicates if the i-th variable of `order`
+    /// (or the variable currently at the i-th level in case `order` is empty)
+    /// is true, false, or "don't care". To obtain a total valuation from this
+    /// partial valuation, it suffices to pick true or false with probability ½.
+    /// (Note that this function returns a partial valuation with n "don't
+    /// cares" with a probability that is 2<sup>n</sup> as high as the
+    /// probability of any total valuation.)
+    ///
+    /// Locking behavior: acquires a shared manager lock.
+    fn pick_cube_uniform<'a, I: ExactSizeIterator<Item = &'a Self>, S: BuildHasher>(
+        &'a self,
+        order: impl IntoIterator<IntoIter = I>,
+        cache: &mut SatCountCache<F64, S>,
+        rng: &mut crate::util::Rng,
+    ) -> Option<Vec<OptBool>> {
+        self.with_manager_shared(|manager, edge| {
+            Self::pick_cube_uniform_edge(
+                manager,
+                edge,
+                order.into_iter().map(|f| f.as_edge(manager)),
+                cache,
+                rng,
+            )
+        })
+    }
+
+    /// `Edge` version of [`Self::pick_cube_uniform()`]
+    fn pick_cube_uniform_edge<'id, 'a, I, S>(
+        manager: &'a Self::Manager<'id>,
+        edge: &'a EdgeOfFunc<'id, Self>,
+        order: impl IntoIterator<IntoIter = I>,
+        cache: &mut SatCountCache<F64, S>,
+        rng: &mut crate::util::Rng,
+    ) -> Option<Vec<OptBool>>
+    where
+        I: ExactSizeIterator<Item = &'a EdgeOfFunc<'id, Self>>,
+        S: BuildHasher,
+    {
+        let vars = manager.num_levels();
+        Self::pick_cube_edge(manager, edge, order, |manager, node| {
+            let (t, e) = Self::cofactors_node(Default::default(), node);
+            let t_count = Self::sat_count_edge(manager, &*t, vars, cache).0;
+            let e_count = Self::sat_count_edge(manager, &*e, vars, cache).0;
+            rng.generate::<f64>() < t_count / (t_count + e_count)
+        })
+    }
 
     /// Evaluate this Boolean function
     ///

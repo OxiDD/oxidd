@@ -17,6 +17,9 @@ use crate::NodeID;
 
 pub mod edge_hash_map;
 pub use edge_hash_map::EdgeHashMap;
+pub mod num;
+
+pub use nanorand::WyRand as Rng;
 
 /// Borrowed version of some handle
 ///

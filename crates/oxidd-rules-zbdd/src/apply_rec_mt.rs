@@ -7,6 +7,7 @@ use oxidd_core::function::BooleanFunction;
 use oxidd_core::function::BooleanVecSet;
 use oxidd_core::function::EdgeOfFunc;
 use oxidd_core::function::Function;
+use oxidd_core::function::INodeOfFunc;
 use oxidd_core::util::AllocResult;
 use oxidd_core::util::Borrowed;
 use oxidd_core::util::EdgeDropGuard;
@@ -855,7 +856,7 @@ where
         manager: &'a Self::Manager<'id>,
         edge: &'a EdgeOfFunc<'id, Self>,
         order: impl IntoIterator<IntoIter = I>,
-        choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>) -> bool,
+        choice: impl FnMut(&Self::Manager<'id>, &INodeOfFunc<'id, Self>) -> bool,
     ) -> Option<Vec<OptBool>>
     where
         I: ExactSizeIterator<Item = &'a EdgeOfFunc<'id, Self>>,
