@@ -27,14 +27,14 @@ const FUNC_UNWRAP_MSG: &str = "the given function is invalid";
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct oxidd_bcdd_manager_t {
-    __p: *const std::ffi::c_void,
+    _p: *const std::ffi::c_void,
 }
 
 impl oxidd_bcdd_manager_t {
     #[inline]
     unsafe fn get(self) -> ManuallyDrop<BCDDManagerRef> {
-        assert!(!self.__p.is_null(), "the given manager is invalid");
-        ManuallyDrop::new(BCDDManagerRef::from_raw(self.__p))
+        assert!(!self._p.is_null(), "the given manager is invalid");
+        ManuallyDrop::new(BCDDManagerRef::from_raw(self._p))
     }
 }
 
@@ -45,26 +45,24 @@ impl oxidd_bcdd_manager_t {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct oxidd_bcdd_t {
-    __p: *const std::ffi::c_void,
-    __i: u32,
+    _p: *const std::ffi::c_void,
+    _i: u32,
 }
 
 impl oxidd_bcdd_t {
     unsafe fn get(self) -> AllocResult<ManuallyDrop<BCDDFunction>> {
-        if self.__p.is_null() {
+        if self._p.is_null() {
             Err(OutOfMemory)
         } else {
-            Ok(ManuallyDrop::new(BCDDFunction::from_raw(
-                self.__p, self.__i,
-            )))
+            Ok(ManuallyDrop::new(BCDDFunction::from_raw(self._p, self._i)))
         }
     }
 }
 
 impl From<BCDDFunction> for oxidd_bcdd_t {
     fn from(value: BCDDFunction) -> Self {
-        let (__p, __i) = value.into_raw();
-        Self { __p, __i }
+        let (_p, _i) = value.into_raw();
+        Self { _p, _i }
     }
 }
 
@@ -72,12 +70,12 @@ impl From<AllocResult<BCDDFunction>> for oxidd_bcdd_t {
     fn from(value: AllocResult<BCDDFunction>) -> Self {
         match value {
             Ok(f) => {
-                let (__p, __i) = f.into_raw();
-                Self { __p, __i }
+                let (_p, _i) = f.into_raw();
+                Self { _p, _i }
             }
             Err(_) => Self {
-                __p: std::ptr::null(),
-                __i: 0,
+                _p: std::ptr::null(),
+                _i: 0,
             },
         }
     }
@@ -131,8 +129,7 @@ pub extern "C" fn oxidd_bcdd_manager_new(
     threads: u32,
 ) -> oxidd_bcdd_manager_t {
     oxidd_bcdd_manager_t {
-        __p: oxidd::bcdd::new_manager(inner_node_capacity, apply_cache_capacity, threads)
-            .into_raw(),
+        _p: oxidd::bcdd::new_manager(inner_node_capacity, apply_cache_capacity, threads).into_raw(),
     }
 }
 
@@ -150,8 +147,8 @@ pub unsafe extern "C" fn oxidd_bcdd_manager_ref(
 /// Decrement the manager reference counter
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_bcdd_manager_unref(manager: oxidd_bcdd_manager_t) {
-    if !manager.__p.is_null() {
-        drop(BCDDManagerRef::from_raw(manager.__p));
+    if !manager._p.is_null() {
+        drop(BCDDManagerRef::from_raw(manager._p));
     }
 }
 
@@ -167,8 +164,8 @@ pub unsafe extern "C" fn oxidd_bcdd_ref(f: oxidd_bcdd_t) -> oxidd_bcdd_t {
 /// Decrement the reference count of the given BCDD node
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_bcdd_unref(f: oxidd_bcdd_t) {
-    if !f.__p.is_null() {
-        drop(BCDDFunction::from_raw(f.__p, f.__i));
+    if !f._p.is_null() {
+        drop(BCDDFunction::from_raw(f._p, f._i));
     }
 }
 
