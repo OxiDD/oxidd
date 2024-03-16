@@ -36,7 +36,7 @@ pub fn new_manager(
     }
 }
 
-#[cfg(feature = "manager-index")]
+#[cfg(all(feature = "manager-index", not(feature = "manager-pointer")))]
 mod index {
     use oxidd_manager_index::node::fixed_arity::NodeWithLevelCons;
     use oxidd_manager_index::terminal_manager::StaticTerminalManagerCons;

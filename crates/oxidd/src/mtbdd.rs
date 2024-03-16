@@ -2,13 +2,13 @@ pub use oxidd_rules_mtbdd::terminal;
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "manager-pointer")] {
-        pub type MTBDDFunction = ();
-        pub type MTBDDManagerRef = ();
+        pub type MTBDDFunction<T> = std::marker::PhantomData<T>;
+        pub type MTBDDManagerRef<T> = std::marker::PhantomData<T>;
     } else if #[cfg(feature = "manager-index")] {
         pub use index::{MTBDDFunction, MTBDDManagerRef};
     } else {
-        pub type MTBDDFunction = ();
-        pub type MTBDDManagerRef = ();
+        pub type MTBDDFunction<T> = std::marker::PhantomData<T>;
+        pub type MTBDDManagerRef<T> = std::marker::PhantomData<T>;
     }
 }
 
@@ -40,7 +40,7 @@ pub fn print_stats() {
     oxidd_rules_bdd::simple::print_stats();
 }
 
-#[cfg(feature = "manager-index")]
+#[cfg(all(feature = "manager-index", not(feature = "manager-pointer")))]
 mod index {
     use std::hash::Hash;
 

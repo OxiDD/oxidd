@@ -43,7 +43,7 @@ impl oxidd_zbdd_manager_t {
 #[repr(C)]
 pub struct oxidd_zbdd_t {
     _p: *const std::ffi::c_void,
-    _i: u32,
+    _i: usize,
 }
 
 impl oxidd_zbdd_t {
