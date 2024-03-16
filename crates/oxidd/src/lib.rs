@@ -49,7 +49,7 @@ pub trait RawFunction {
     /// This method does not change any reference counters. To avoid a
     /// memory leak, use [`Self::from_raw()`] to convert pointer and index
     /// back into a `Self`.
-    fn into_raw(self) -> (*const std::ffi::c_void, u32);
+    fn into_raw(self) -> (*const std::ffi::c_void, usize);
 
     /// Convert `raw` into `Self`
     ///
@@ -59,7 +59,7 @@ pub trait RawFunction {
     /// function does not change any reference counters, so calling this
     /// function multiple times for the same pointer may lead to use after free
     /// bugs depending on the usage of the returned `Self`.
-    unsafe fn from_raw(ptr: *const std::ffi::c_void, index: u32) -> Self;
+    unsafe fn from_raw(ptr: *const std::ffi::c_void, index: usize) -> Self;
 }
 
 pub trait RawManagerRef {

@@ -15,7 +15,7 @@ class bcdd_manager {
       : _manager(manager) {}
 
 public:
-  bcdd_manager() noexcept { _manager.__p = nullptr; }
+  bcdd_manager() noexcept { _manager._p = nullptr; }
   bcdd_manager(size_t inner_node_capacity, size_t apply_cache_capacity,
                uint32_t threads) noexcept {
     _manager = capi::oxidd_bcdd_manager_new(inner_node_capacity,
@@ -25,23 +25,23 @@ public:
     oxidd_bcdd_manager_ref(_manager);
   }
   bcdd_manager(bcdd_manager &&other) noexcept : _manager(other._manager) {
-    other._manager.__p = nullptr;
+    other._manager._p = nullptr;
   }
 
   ~bcdd_manager() noexcept {
-    if (_manager.__p != nullptr)
+    if (_manager._p != nullptr)
       oxidd_bcdd_manager_unref(_manager);
   }
 
   bcdd_manager &operator=(const bcdd_manager &rhs) noexcept {
-    if (_manager.__p != nullptr)
+    if (_manager._p != nullptr)
       oxidd_bcdd_manager_unref(_manager);
     _manager = rhs._manager;
     oxidd_bcdd_manager_ref(_manager);
     return *this;
   }
 
-  bool is_invalid() noexcept { return !_manager.__p; }
+  bool is_invalid() noexcept { return !_manager._p; }
 
   bcdd_function new_var() noexcept;
 
@@ -49,7 +49,7 @@ public:
   bcdd_function bot() const noexcept;
 
   size_t num_inner_nodes() const noexcept {
-    assert(_manager.__p != nullptr);
+    assert(_manager._p != nullptr);
     return oxidd_bcdd_num_inner_nodes(_manager);
   }
 };
@@ -61,39 +61,39 @@ class bcdd_function {
   bcdd_function(capi::oxidd_bcdd_t func) noexcept : _func(func) {}
 
 public:
-  bcdd_function() noexcept { _func.__p = nullptr; }
+  bcdd_function() noexcept { _func._p = nullptr; }
   bcdd_function(const bcdd_function &other) noexcept : _func(other._func) {
     oxidd_bcdd_ref(_func);
   }
   bcdd_function(bcdd_function &&other) noexcept : _func(other._func) {
-    other._func.__p = nullptr;
+    other._func._p = nullptr;
   }
 
   ~bcdd_function() noexcept {
-    if (_func.__p != nullptr)
+    if (_func._p != nullptr)
       oxidd_bcdd_unref(_func);
   }
 
   bcdd_function &operator=(const bcdd_function &rhs) noexcept {
-    if (_func.__p != nullptr)
+    if (_func._p != nullptr)
       oxidd_bcdd_unref(_func);
     _func = rhs._func;
-    if (_func.__p != nullptr)
+    if (_func._p != nullptr)
       oxidd_bcdd_ref(_func);
     return *this;
   }
   bcdd_function &operator=(bcdd_function &&rhs) noexcept {
-    if (_func.__p != nullptr)
+    if (_func._p != nullptr)
       oxidd_bcdd_unref(_func);
     _func = rhs._func;
-    rhs._func.__p = nullptr;
+    rhs._func._p = nullptr;
     return *this;
   }
 
-  bool is_invalid() noexcept { return _func.__p == nullptr; }
+  bool is_invalid() noexcept { return _func._p == nullptr; }
 
   bool operator==(const bcdd_function &rhs) const noexcept {
-    return (_func.__p == rhs._func.__p);
+    return (_func._p == rhs._func._p);
   }
   bool operator!=(const bcdd_function &rhs) const noexcept {
     return !(*this == rhs);
@@ -134,35 +134,35 @@ public:
   }
 
   uint64_t node_count() const noexcept {
-    assert(_func.__p);
+    assert(_func._p);
     return oxidd_bcdd_node_count(_func);
   }
 
   uint64_t sat_count_uint64(oxidd_level_no_t vars) const noexcept {
-    assert(_func.__p);
+    assert(_func._p);
     return oxidd_bcdd_sat_count_uint64(_func, vars);
   }
   double sat_count_double(oxidd_level_no_t vars) const noexcept {
-    assert(_func.__p);
+    assert(_func._p);
     return oxidd_bcdd_sat_count_double(_func, vars);
   }
 
   assignment pick_cube() const noexcept {
-    assert(_func.__p);
+    assert(_func._p);
     return assignment(oxidd_bcdd_pick_cube(_func));
   }
 };
 
 inline bcdd_function bcdd_manager::new_var() noexcept {
-  assert(_manager.__p);
+  assert(_manager._p);
   return bcdd_function(oxidd_bcdd_new_var(_manager));
 }
 inline bcdd_function bcdd_manager::top() const noexcept {
-  assert(_manager.__p);
+  assert(_manager._p);
   return oxidd_bcdd_true(_manager);
 }
 inline bcdd_function bcdd_manager::bot() const noexcept {
-  assert(_manager.__p);
+  assert(_manager._p);
   return oxidd_bcdd_false(_manager);
 }
 

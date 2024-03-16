@@ -287,15 +287,16 @@ macro_rules! derive_raw_function_index_based {
     (for: $name:ident$(<$($gen:ident),*>)?, inner: $inner:ty $(, where $($where:tt)*)?) => {
         impl$(<$($gen),*>)? $crate::RawFunction for $name$(<$($gen),*>)? $(where $($where)*)? {
             #[inline]
-            fn into_raw(self) -> (*const std::ffi::c_void, u32) {
-                self.0.into_inner().into_raw()
+            fn into_raw(self) -> (*const std::ffi::c_void, usize) {
+                let (ptr, index) = self.0.into_inner().into_raw();
+                (ptr, index as usize)
             }
 
             #[inline]
-            unsafe fn from_raw(ptr: *const std::ffi::c_void, index: u32) -> Self {
+            unsafe fn from_raw(ptr: *const std::ffi::c_void, index: usize) -> Self {
                 // SAFETY: Invariants are upheld by the caller.
                 Self(<$inner>::from(unsafe {
-                    ::oxidd_manager_index::manager::Function::from_raw(ptr, index)
+                    ::oxidd_manager_index::manager::Function::from_raw(ptr, index as u32)
                 }))
             }
         }
@@ -309,12 +310,12 @@ macro_rules! derive_raw_function_pointer_based {
     (for: $name:ident, inner: $inner:ident) => {
         impl $crate::RawFunction for $name {
             #[inline]
-            fn into_raw(self) -> (*const std::ffi::c_void, u32) {
+            fn into_raw(self) -> (*const std::ffi::c_void, usize) {
                 (self.0.into_inner().into_raw(), 0)
             }
 
             #[inline]
-            unsafe fn from_raw(ptr: *const std::ffi::c_void, _index: u32) -> Self {
+            unsafe fn from_raw(ptr: *const std::ffi::c_void, _index: usize) -> Self {
                 // SAFETY: Invariants are upheld by the caller.
                 Self($inner::from(unsafe {
                     ::oxidd_manager_pointer::manager::Function::from_raw(ptr)

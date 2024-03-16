@@ -14,7 +14,7 @@ class bdd_manager {
   bdd_manager(capi::oxidd_bdd_manager_t manager) noexcept : _manager(manager) {}
 
 public:
-  bdd_manager() noexcept { _manager.__p = nullptr; }
+  bdd_manager() noexcept { _manager._p = nullptr; }
   bdd_manager(size_t inner_node_capacity, size_t apply_cache_capacity,
               uint32_t threads) noexcept {
     _manager = capi::oxidd_bdd_manager_new(inner_node_capacity,
@@ -24,23 +24,23 @@ public:
     oxidd_bdd_manager_ref(_manager);
   }
   bdd_manager(bdd_manager &&other) noexcept : _manager(other._manager) {
-    other._manager.__p = nullptr;
+    other._manager._p = nullptr;
   }
 
   ~bdd_manager() noexcept {
-    if (_manager.__p != nullptr)
+    if (_manager._p != nullptr)
       oxidd_bdd_manager_unref(_manager);
   }
 
   bdd_manager &operator=(const bdd_manager &rhs) noexcept {
-    if (_manager.__p != nullptr)
+    if (_manager._p != nullptr)
       oxidd_bdd_manager_unref(_manager);
     _manager = rhs._manager;
     oxidd_bdd_manager_ref(_manager);
     return *this;
   }
 
-  bool is_invalid() const noexcept { return !_manager.__p; }
+  bool is_invalid() const noexcept { return !_manager._p; }
 
   bdd_function new_var() noexcept;
 
@@ -48,7 +48,7 @@ public:
   bdd_function bot() const noexcept;
 
   size_t num_inner_nodes() const noexcept {
-    assert(_manager.__p != nullptr);
+    assert(_manager._p != nullptr);
     return oxidd_bdd_num_inner_nodes(_manager);
   }
 };
@@ -60,39 +60,39 @@ class bdd_function {
   bdd_function(capi::oxidd_bdd_t func) noexcept : _func(func) {}
 
 public:
-  bdd_function() noexcept { _func.__p = nullptr; }
+  bdd_function() noexcept { _func._p = nullptr; }
   bdd_function(const bdd_function &other) noexcept : _func(other._func) {
     oxidd_bdd_ref(_func);
   }
   bdd_function(bdd_function &&other) noexcept : _func(other._func) {
-    other._func.__p = nullptr;
+    other._func._p = nullptr;
   }
 
   ~bdd_function() noexcept {
-    if (_func.__p != nullptr)
+    if (_func._p != nullptr)
       oxidd_bdd_unref(_func);
   }
 
   bdd_function &operator=(const bdd_function &rhs) noexcept {
-    if (_func.__p != nullptr)
+    if (_func._p != nullptr)
       oxidd_bdd_unref(_func);
     _func = rhs._func;
-    if (_func.__p != nullptr)
+    if (_func._p != nullptr)
       oxidd_bdd_ref(_func);
     return *this;
   }
   bdd_function &operator=(bdd_function &&rhs) noexcept {
-    if (_func.__p != nullptr)
+    if (_func._p != nullptr)
       oxidd_bdd_unref(_func);
     _func = rhs._func;
-    rhs._func.__p = nullptr;
+    rhs._func._p = nullptr;
     return *this;
   }
 
-  bool is_invalid() const noexcept { return _func.__p == nullptr; }
+  bool is_invalid() const noexcept { return _func._p == nullptr; }
 
   bool operator==(const bdd_function &rhs) const noexcept {
-    return (_func.__p == rhs._func.__p);
+    return (_func._p == rhs._func._p);
   }
   bool operator!=(const bdd_function &rhs) const noexcept {
     return !(*this == rhs);
@@ -133,35 +133,35 @@ public:
   }
 
   uint64_t node_count() const noexcept {
-    assert(_func.__p);
+    assert(_func._p);
     return oxidd_bdd_node_count(_func);
   }
 
   uint64_t sat_count_uint64(oxidd_level_no_t vars) const noexcept {
-    assert(_func.__p);
+    assert(_func._p);
     return oxidd_bdd_sat_count_uint64(_func, vars);
   }
   double sat_count_double(oxidd_level_no_t vars) const noexcept {
-    assert(_func.__p);
+    assert(_func._p);
     return oxidd_bdd_sat_count_double(_func, vars);
   }
 
   assignment pick_cube() const noexcept {
-    assert(_func.__p);
+    assert(_func._p);
     return assignment(oxidd_bdd_pick_cube(_func));
   }
 };
 
 inline bdd_function bdd_manager::new_var() noexcept {
-  assert(_manager.__p);
+  assert(_manager._p);
   return bdd_function(oxidd_bdd_new_var(_manager));
 }
 inline bdd_function bdd_manager::top() const noexcept {
-  assert(_manager.__p);
+  assert(_manager._p);
   return oxidd_bdd_true(_manager);
 }
 inline bdd_function bdd_manager::bot() const noexcept {
-  assert(_manager.__p);
+  assert(_manager._p);
   return oxidd_bdd_false(_manager);
 }
 

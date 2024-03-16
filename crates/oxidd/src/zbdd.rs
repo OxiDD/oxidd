@@ -130,7 +130,7 @@ pub fn print_stats() {
     oxidd_rules_zbdd::print_stats();
 }
 
-#[cfg(feature = "manager-index")]
+#[cfg(all(feature = "manager-index", not(feature = "manager-pointer")))]
 mod index {
     use oxidd_manager_index::node::fixed_arity::NodeWithLevelCons;
     use oxidd_manager_index::terminal_manager::StaticTerminalManagerCons;
