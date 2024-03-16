@@ -2,6 +2,7 @@
 
 use std::borrow::Borrow;
 
+use oxidd_core::function::EdgeOfFunc;
 use oxidd_core::function::Function;
 use oxidd_core::function::TVLFunction;
 use oxidd_core::util::AllocResult;
@@ -290,98 +291,98 @@ where
     }
 
     #[inline]
-    fn f_edge<'id>(manager: &Self::Manager<'id>) -> <Self::Manager<'id> as Manager>::Edge {
+    fn f_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self> {
         manager.get_terminal(TDDTerminal::False).unwrap()
     }
     #[inline]
-    fn u_edge<'id>(manager: &Self::Manager<'id>) -> <Self::Manager<'id> as Manager>::Edge {
+    fn u_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self> {
         manager.get_terminal(TDDTerminal::Unknown).unwrap()
     }
     #[inline]
-    fn t_edge<'id>(manager: &Self::Manager<'id>) -> <Self::Manager<'id> as Manager>::Edge {
+    fn t_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self> {
         manager.get_terminal(TDDTerminal::True).unwrap()
     }
 
     #[inline]
     fn not_edge<'id>(
         manager: &Self::Manager<'id>,
-        edge: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        edge: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         apply_not(manager, edge.borrowed())
     }
 
     #[inline]
     fn and_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         apply_bin::<_, { TDDOp::And as u8 }>(manager, lhs.borrowed(), rhs.borrowed())
     }
     #[inline]
     fn or_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         apply_bin::<_, { TDDOp::Or as u8 }>(manager, lhs.borrowed(), rhs.borrowed())
     }
     #[inline]
     fn nand_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         apply_bin::<_, { TDDOp::Nand as u8 }>(manager, lhs.borrowed(), rhs.borrowed())
     }
     #[inline]
     fn nor_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         apply_bin::<_, { TDDOp::Nor as u8 }>(manager, lhs.borrowed(), rhs.borrowed())
     }
     #[inline]
     fn xor_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         apply_bin::<_, { TDDOp::Xor as u8 }>(manager, lhs.borrowed(), rhs.borrowed())
     }
     #[inline]
     fn equiv_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         apply_bin::<_, { TDDOp::Equiv as u8 }>(manager, lhs.borrowed(), rhs.borrowed())
     }
     #[inline]
     fn imp_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         apply_bin::<_, { TDDOp::Imp as u8 }>(manager, lhs.borrowed(), rhs.borrowed())
     }
     #[inline]
     fn imp_strict_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         apply_bin::<_, { TDDOp::ImpStrict as u8 }>(manager, lhs.borrowed(), rhs.borrowed())
     }
 
     #[inline]
     fn ite_edge<'id>(
         manager: &Self::Manager<'id>,
-        if_edge: &<Self::Manager<'id> as Manager>::Edge,
-        then_edge: &<Self::Manager<'id> as Manager>::Edge,
-        else_edge: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        if_edge: &EdgeOfFunc<'id, Self>,
+        then_edge: &EdgeOfFunc<'id, Self>,
+        else_edge: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         apply_ite_rec(
             manager,
             if_edge.borrowed(),

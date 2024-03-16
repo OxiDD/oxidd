@@ -6,6 +6,7 @@ use bitvec::vec::BitVec;
 
 use oxidd_core::function::BooleanFunction;
 use oxidd_core::function::BooleanFunctionQuant;
+use oxidd_core::function::EdgeOfFunc;
 use oxidd_core::function::Function;
 use oxidd_core::util::AllocResult;
 use oxidd_core::util::Borrowed;
@@ -617,101 +618,101 @@ where
     }
 
     #[inline]
-    fn f_edge<'id>(manager: &Self::Manager<'id>) -> <Self::Manager<'id> as Manager>::Edge {
+    fn f_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self> {
         get_terminal(manager, false)
     }
     #[inline]
-    fn t_edge<'id>(manager: &Self::Manager<'id>) -> <Self::Manager<'id> as Manager>::Edge {
+    fn t_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self> {
         get_terminal(manager, true)
     }
 
     #[inline]
     fn not_edge<'id>(
         manager: &Self::Manager<'id>,
-        edge: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        edge: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         Ok(not_owned(manager.clone_edge(edge)))
     }
     #[inline]
     fn not_edge_owned<'id>(
         _manager: &Self::Manager<'id>,
-        edge: <Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        edge: EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         Ok(not_owned(edge))
     }
 
     #[inline]
     fn and_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         apply_and(manager, lhs.borrowed(), rhs.borrowed())
     }
     #[inline]
     fn or_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         Ok(not_owned(apply_and(manager, not(lhs), not(rhs))?))
     }
     #[inline]
     fn nand_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         Ok(not_owned(Self::and_edge(manager, lhs, rhs)?))
     }
     #[inline]
     fn nor_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         apply_and(manager, not(lhs), not(rhs))
     }
     #[inline]
     fn xor_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         apply_bin::<_, { BCDDOp::Xor as u8 }>(manager, lhs.borrowed(), rhs.borrowed())
     }
     #[inline]
     fn equiv_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         Ok(not_owned(Self::xor_edge(manager, lhs, rhs)?))
     }
     #[inline]
     fn imp_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         Ok(not_owned(apply_and(manager, lhs.borrowed(), not(rhs))?))
     }
     #[inline]
     fn imp_strict_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         apply_and(manager, not(lhs), rhs.borrowed())
     }
 
     #[inline]
     fn ite_edge<'id>(
         manager: &Self::Manager<'id>,
-        if_edge: &<Self::Manager<'id> as Manager>::Edge,
-        then_edge: &<Self::Manager<'id> as Manager>::Edge,
-        else_edge: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        if_edge: &EdgeOfFunc<'id, Self>,
+        then_edge: &EdgeOfFunc<'id, Self>,
+        else_edge: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         apply_ite(
             manager,
             if_edge.borrowed(),
@@ -723,7 +724,7 @@ where
     #[inline]
     fn sat_count_edge<'id, N: SatCountNumber, S: BuildHasher>(
         manager: &Self::Manager<'id>,
-        edge: &<Self::Manager<'id> as Manager>::Edge,
+        edge: &EdgeOfFunc<'id, Self>,
         vars: LevelNo,
         cache: &mut SatCountCache<N, S>,
     ) -> N {
@@ -821,12 +822,12 @@ where
     #[inline]
     fn pick_cube_edge<'id, 'a, I>(
         manager: &'a Self::Manager<'id>,
-        edge: &'a <Self::Manager<'id> as Manager>::Edge,
+        edge: &'a EdgeOfFunc<'id, Self>,
         order: impl IntoIterator<IntoIter = I>,
-        choice: impl FnMut(&Self::Manager<'id>, &<Self::Manager<'id> as Manager>::Edge) -> bool,
+        choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>) -> bool,
     ) -> Option<Vec<OptBool>>
     where
-        I: ExactSizeIterator<Item = &'a <Self::Manager<'id> as Manager>::Edge>,
+        I: ExactSizeIterator<Item = &'a EdgeOfFunc<'id, Self>>,
     {
         #[inline] // this function is tail-recursive
         fn inner<M: Manager<EdgeTag = EdgeTag>>(
@@ -880,8 +881,8 @@ where
     #[inline]
     fn eval_edge<'id, 'a>(
         manager: &'a Self::Manager<'id>,
-        edge: &'a <Self::Manager<'id> as Manager>::Edge,
-        env: impl IntoIterator<Item = (&'a <Self::Manager<'id> as Manager>::Edge, bool)>,
+        edge: &'a EdgeOfFunc<'id, Self>,
+        env: impl IntoIterator<Item = (&'a EdgeOfFunc<'id, Self>, bool)>,
     ) -> bool {
         let mut values = BitVec::new();
         values.resize(manager.num_levels() as usize, false);
@@ -921,36 +922,36 @@ where
     #[inline]
     fn restrict_edge<'id>(
         manager: &Self::Manager<'id>,
-        root: &<Self::Manager<'id> as Manager>::Edge,
-        vars: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        root: &EdgeOfFunc<'id, Self>,
+        vars: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         restrict(manager, root.borrowed(), vars.borrowed())
     }
 
     #[inline]
     fn forall_edge<'id>(
         manager: &Self::Manager<'id>,
-        root: &<Self::Manager<'id> as Manager>::Edge,
-        vars: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        root: &EdgeOfFunc<'id, Self>,
+        vars: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         quant::<_, { BCDDOp::Forall as u8 }>(manager, root.borrowed(), vars.borrowed())
     }
 
     #[inline]
     fn exist_edge<'id>(
         manager: &Self::Manager<'id>,
-        root: &<Self::Manager<'id> as Manager>::Edge,
-        vars: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        root: &EdgeOfFunc<'id, Self>,
+        vars: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         quant::<_, { BCDDOp::Exist as u8 }>(manager, root.borrowed(), vars.borrowed())
     }
 
     #[inline]
     fn unique_edge<'id>(
         manager: &Self::Manager<'id>,
-        root: &<Self::Manager<'id> as Manager>::Edge,
-        vars: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        root: &EdgeOfFunc<'id, Self>,
+        vars: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         quant::<_, { BCDDOp::Unique as u8 }>(manager, root.borrowed(), vars.borrowed())
     }
 }

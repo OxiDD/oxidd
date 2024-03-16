@@ -28,6 +28,7 @@ use std::sync::Arc;
 use bitvec::vec::BitVec;
 use crossbeam_utils::CachePadded;
 use linear_hashtbl::raw::RawTable;
+use oxidd_core::function::EdgeOfFunc;
 use parking_lot::Condvar;
 use parking_lot::Mutex;
 use parking_lot::MutexGuard;
@@ -2215,10 +2216,7 @@ unsafe impl<
     type ManagerRef = ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS>;
 
     #[inline]
-    fn from_edge<'id>(
-        manager: &Self::Manager<'id>,
-        edge: <Self::Manager<'id> as oxidd_core::Manager>::Edge,
-    ) -> Self {
+    fn from_edge<'id>(manager: &Self::Manager<'id>, edge: EdgeOfFunc<'id, Self>) -> Self {
         // SAFETY:
         // - We just change "identifier" lifetimes.
         // - The pointer was obtained via `Arc::into_raw()`, and since we have a
@@ -2239,10 +2237,7 @@ unsafe impl<
     }
 
     #[inline]
-    fn as_edge<'id>(
-        &self,
-        manager: &Self::Manager<'id>,
-    ) -> &<Self::Manager<'id> as oxidd_core::Manager>::Edge {
+    fn as_edge<'id>(&self, manager: &Self::Manager<'id>) -> &EdgeOfFunc<'id, Self> {
         assert!(
             crate::util::ptr_eq_untyped(self.store.0.manager.data_ptr(), manager),
             "This function does not belong to `manager`"
@@ -2257,10 +2252,7 @@ unsafe impl<
     }
 
     #[inline]
-    fn into_edge<'id>(
-        self,
-        manager: &Self::Manager<'id>,
-    ) -> <Self::Manager<'id> as oxidd_core::Manager>::Edge {
+    fn into_edge<'id>(self, manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self> {
         assert!(
             crate::util::ptr_eq_untyped(self.store.0.manager.data_ptr(), manager),
             "This function does not belong to `manager`"
@@ -2276,10 +2268,7 @@ unsafe impl<
 
     fn with_manager_shared<F, T>(&self, f: F) -> T
     where
-        F: for<'id> FnOnce(
-            &Self::Manager<'id>,
-            &<Self::Manager<'id> as oxidd_core::Manager>::Edge,
-        ) -> T,
+        F: for<'id> FnOnce(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>) -> T,
     {
         let local_guard = self.store.0.prepare_local_state();
         let res = f(&self.store.0.manager.read(), &self.edge);
@@ -2289,10 +2278,7 @@ unsafe impl<
 
     fn with_manager_exclusive<F, T>(&self, f: F) -> T
     where
-        F: for<'id> FnOnce(
-            &mut Self::Manager<'id>,
-            &<Self::Manager<'id> as oxidd_core::Manager>::Edge,
-        ) -> T,
+        F: for<'id> FnOnce(&mut Self::Manager<'id>, &EdgeOfFunc<'id, Self>) -> T,
     {
         let local_guard = self.store.0.prepare_local_state();
         let res = f(&mut self.store.0.manager.write(), &self.edge);

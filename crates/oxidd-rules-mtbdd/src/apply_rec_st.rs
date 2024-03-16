@@ -1,5 +1,6 @@
 //! Recursive single-threaded apply algorithms
 
+use oxidd_core::function::EdgeOfFunc;
 use oxidd_core::function::Function;
 use oxidd_core::function::NumberBase;
 use oxidd_core::function::PseudoBooleanFunction;
@@ -117,7 +118,7 @@ where
     fn constant_edge<'id>(
         manager: &Self::Manager<'id>,
         value: Self::Number,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         manager.get_terminal(value)
     }
 
@@ -133,54 +134,54 @@ where
     #[inline]
     fn add_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         apply_bin::<_, T, { MTBDDOp::Add as u8 }>(manager, lhs.borrowed(), rhs.borrowed())
     }
 
     #[inline]
     fn sub_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         apply_bin::<_, T, { MTBDDOp::Sub as u8 }>(manager, lhs.borrowed(), rhs.borrowed())
     }
 
     #[inline]
     fn mul_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         apply_bin::<_, T, { MTBDDOp::Mul as u8 }>(manager, lhs.borrowed(), rhs.borrowed())
     }
 
     #[inline]
     fn div_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         apply_bin::<_, T, { MTBDDOp::Div as u8 }>(manager, lhs.borrowed(), rhs.borrowed())
     }
 
     #[inline]
     fn min_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         apply_bin::<_, T, { MTBDDOp::Min as u8 }>(manager, lhs.borrowed(), rhs.borrowed())
     }
 
     #[inline]
     fn max_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         apply_bin::<_, T, { MTBDDOp::Max as u8 }>(manager, lhs.borrowed(), rhs.borrowed())
     }
 }
