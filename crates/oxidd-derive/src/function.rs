@@ -410,7 +410,7 @@ pub fn derive_boolean_function(input: syn::DeriveInput) -> TokenStream {
                 fn sat_count<__N, __S>(
                     &self,
                     vars: ::oxidd_core::LevelNo,
-                    cache: &mut ::std::collections::HashMap<::oxidd_core::NodeID, __N, __S>,
+                    cache: &mut ::oxidd_core::util::SatCountCache<__N, __S>,
                 ) -> __N
                 where
                     __N: ::oxidd_core::util::SatCountNumber,
@@ -424,7 +424,7 @@ pub fn derive_boolean_function(input: syn::DeriveInput) -> TokenStream {
                     manager: &#manager_ty,
                     edge: &#edge_ty,
                     vars: ::oxidd_core::LevelNo,
-                    cache: &mut ::std::collections::HashMap<::oxidd_core::NodeID, __N, __S>,
+                    cache: &mut ::oxidd_core::util::SatCountCache<__N, __S>,
                 ) -> __N
                 where
                     __N: ::oxidd_core::util::SatCountNumber,

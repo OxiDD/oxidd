@@ -1,6 +1,5 @@
 //! Recursive single-threaded apply algorithms
 
-use std::collections::HashMap;
 use std::hash::BuildHasher;
 
 use bitvec::vec::BitVec;
@@ -12,6 +11,7 @@ use oxidd_core::util::AllocResult;
 use oxidd_core::util::Borrowed;
 use oxidd_core::util::EdgeDropGuard;
 use oxidd_core::util::OptBool;
+use oxidd_core::util::SatCountCache;
 use oxidd_core::util::SatCountNumber;
 use oxidd_core::ApplyCache;
 use oxidd_core::Edge;
@@ -725,13 +725,13 @@ where
         manager: &Self::Manager<'id>,
         edge: &<Self::Manager<'id> as Manager>::Edge,
         vars: LevelNo,
-        cache: &mut HashMap<NodeID, N, S>,
+        cache: &mut SatCountCache<N, S>,
     ) -> N {
         fn inner<M, N: SatCountNumber, S: BuildHasher>(
             manager: &M,
             e: Borrowed<M::Edge>,
             terminal_val: &N,
-            cache: &mut HashMap<NodeID, N, S>,
+            cache: &mut SatCountCache<N, S>,
         ) -> N
         where
             M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal>,
@@ -743,7 +743,7 @@ where
 
             // query cache
             let node_id = e.node_id();
-            if let Some(n) = cache.get(&node_id) {
+            if let Some(n) = cache.map.get(&node_id) {
                 return n.clone();
             }
 
@@ -764,7 +764,7 @@ where
             n += &iter.next().unwrap();
             debug_assert!(iter.next().is_none());
             n >>= 1u32;
-            cache.insert(node_id, n.clone());
+            cache.map.insert(node_id, n.clone());
             n
         }
 
@@ -774,7 +774,7 @@ where
             manager: &M,
             e: Borrowed<M::Edge>,
             terminal_val: &N,
-            cache: &mut HashMap<NodeID, N, S>,
+            cache: &mut SatCountCache<N, S>,
         ) -> N
         where
             M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal>,
@@ -789,16 +789,18 @@ where
             };
             // MSB of NodeIDs is reserved [for us :)]
             let node_id = e.node_id() | ((tag as NodeID) << (NodeID::BITS - 1));
-            if let Some(n) = cache.get(&node_id) {
+            if let Some(n) = cache.map.get(&node_id) {
                 return n.clone();
             }
             let (e0, e1) = collect_cofactors(tag, node);
             let mut n = inner_floating(manager, e0, terminal_val, cache);
             n += &inner_floating(manager, e1, terminal_val, cache);
             n >>= 1u32;
-            cache.insert(node_id, n.clone());
+            cache.map.insert(node_id, n.clone());
             n
         }
+
+        cache.clear_if_invalid(manager, vars);
 
         let mut terminal_val = N::from(1u32);
         terminal_val <<= vars;

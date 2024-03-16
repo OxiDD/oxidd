@@ -1,6 +1,5 @@
 //! Function traits
 
-use std::collections::HashMap;
 use std::hash::Hash;
 
 use crate::util::AllocResult;
@@ -8,6 +7,7 @@ use crate::util::Borrowed;
 use crate::util::EdgeDropGuard;
 use crate::util::NodeSet;
 use crate::util::OptBool;
+use crate::util::SatCountCache;
 use crate::util::SatCountNumber;
 use crate::DiagramRules;
 use crate::Edge;
@@ -16,7 +16,6 @@ use crate::LevelNo;
 use crate::Manager;
 use crate::ManagerRef;
 use crate::Node;
-use crate::NodeID;
 
 /// Function in a decision diagram
 ///
@@ -521,21 +520,19 @@ pub trait BooleanFunction: Function {
     /// variables
     ///
     /// The `cache` can be used to speed up multiple model counting operations
-    /// for functions in the same decision diagram. Note however that the
-    /// results may be incorrect if variables are reordered in between. The
-    /// caller may hold a shared manager lock
-    /// ([`Function::with_manager_shared()`] or
-    /// [`ManagerRef::with_manager_shared()`][crate::ManagerRef::with_manager_shared])
-    /// to avoid this. Furthermore, `vars` must be equal for all calls with the
-    /// same cache. If the model counts of just one function are of interest,
-    /// one may simply pass an empty [`HashMap`] (e.g. using
-    /// `&mut Default::default()`).
+    /// for functions in the same decision diagram. If the model counts of just
+    /// one function are of interest, one may simply pass an empty
+    /// [`SatCountCache`] (using `&mut SatCountCache::default()`). The cache
+    /// will automatically be invalidated in case there have been reordering
+    /// operations or `vars` changed since the last query (see
+    /// [`SatCountCache::clear_if_invalid()`]). Still, it is the caller's
+    /// responsibility to not use the cache for different managers.
     ///
     /// Locking behavior: acquires a shared manager lock.
     fn sat_count<N: SatCountNumber, S: std::hash::BuildHasher>(
         &self,
         vars: LevelNo,
-        cache: &mut HashMap<NodeID, N, S>,
+        cache: &mut SatCountCache<N, S>,
     ) -> N {
         self.with_manager_shared(|manager, edge| Self::sat_count_edge(manager, edge, vars, cache))
     }
@@ -545,7 +542,7 @@ pub trait BooleanFunction: Function {
         manager: &Self::Manager<'id>,
         edge: &<Self::Manager<'id> as Manager>::Edge,
         vars: LevelNo,
-        cache: &mut HashMap<NodeID, N, S>,
+        cache: &mut SatCountCache<N, S>,
     ) -> N;
 
     /// Pick a random cube of this function

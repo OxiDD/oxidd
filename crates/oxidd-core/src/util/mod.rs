@@ -1,6 +1,7 @@
 //! Various utilities
 
 use std::collections::BTreeSet;
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::hash::BuildHasher;
 use std::iter::FusedIterator;
@@ -10,6 +11,7 @@ use std::ops::Deref;
 use std::ops::DerefMut;
 
 use crate::Edge;
+use crate::LevelNo;
 use crate::Manager;
 use crate::NodeID;
 
@@ -467,4 +469,53 @@ impl<
             + IsFloatingPoint,
     > SatCountNumber for T
 {
+}
+
+/// Cache for counting satisfying assignments
+pub struct SatCountCache<N: SatCountNumber, S: BuildHasher> {
+    /// Main map from [`NodeID`]s to their model count
+    pub map: HashMap<NodeID, N, S>,
+
+    /// Number of variables in the domain
+    vars: LevelNo,
+
+    /// Epoch to indicate if the cache is still valid.
+    ///
+    /// While reordering preserves semantics (and therefore also the count of
+    /// satisfying assignments), nodes may be deleted and their [`NodeID`]s may
+    /// get reused afterwards. The `map` should only be considered valid if
+    /// `epoch` is [`Manager::reorder_count()`].
+    epoch: u64,
+}
+
+impl<N: SatCountNumber, S: BuildHasher + Default> Default for SatCountCache<N, S> {
+    fn default() -> Self {
+        Self {
+            map: HashMap::default(),
+            vars: 0,
+            epoch: 0,
+        }
+    }
+}
+
+impl<N: SatCountNumber, S: BuildHasher> SatCountCache<N, S> {
+    /// Create a new satisfiability counting cache
+    pub fn with_hasher(hash_builder: S) -> Self {
+        Self {
+            map: HashMap::with_hasher(hash_builder),
+            vars: 0,
+            epoch: 0,
+        }
+    }
+
+    /// Clear the cache if it has become invalid due to reordering or a change
+    /// in the number of variables
+    pub fn clear_if_invalid<M: Manager>(&mut self, manager: &M, vars: LevelNo) {
+        let epoch = manager.reorder_count();
+        if epoch != self.epoch || vars != self.vars {
+            self.epoch = epoch;
+            self.vars = vars;
+            self.map.clear();
+        }
+    }
 }

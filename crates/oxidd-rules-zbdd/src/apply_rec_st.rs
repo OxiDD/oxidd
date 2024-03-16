@@ -3,7 +3,6 @@
 use std::borrow::Borrow;
 use std::cmp::Ord;
 use std::cmp::Ordering;
-use std::collections::HashMap;
 use std::hash::BuildHasher;
 use std::hash::Hash;
 
@@ -17,6 +16,7 @@ use oxidd_core::util::AllocResult;
 use oxidd_core::util::Borrowed;
 use oxidd_core::util::EdgeDropGuard;
 use oxidd_core::util::OptBool;
+use oxidd_core::util::SatCountCache;
 use oxidd_core::util::SatCountNumber;
 use oxidd_core::ApplyCache;
 use oxidd_core::Edge;
@@ -27,7 +27,6 @@ use oxidd_core::LevelNo;
 use oxidd_core::LevelView;
 use oxidd_core::Manager;
 use oxidd_core::Node;
-use oxidd_core::NodeID;
 use oxidd_core::Tag;
 use oxidd_derive::Function;
 use oxidd_dump::dot::DotStyle;
@@ -720,9 +719,9 @@ where
         manager: &Self::Manager<'id>,
         edge: &<Self::Manager<'id> as Manager>::Edge,
         vars: LevelNo,
-        cache: &mut HashMap<NodeID, N, S>,
+        cache: &mut SatCountCache<N, S>,
     ) -> N {
-        fn inner<M, N, S>(manager: &M, e: Borrowed<M::Edge>, cache: &mut HashMap<NodeID, N, S>) -> N
+        fn inner<M, N, S>(manager: &M, e: Borrowed<M::Edge>, cache: &mut SatCountCache<N, S>) -> N
         where
             M: Manager<Terminal = ZBDDTerminal>,
             N: SatCountNumber,
@@ -731,13 +730,13 @@ where
             match manager.get_node(&e) {
                 Node::Inner(node) => {
                     let node_id = e.node_id();
-                    if let Some(n) = cache.get(&node_id) {
+                    if let Some(n) = cache.map.get(&node_id) {
                         return n.clone();
                     }
                     let (e0, e1) = collect_children(node);
                     let mut n = inner(manager, e0, cache);
                     n += &inner(manager, e1, cache);
-                    cache.insert(node_id, n.clone());
+                    cache.map.insert(node_id, n.clone());
                     n
                 }
                 Node::Terminal(t) => N::from(if *t.borrow() == ZBDDTerminal::Empty {
@@ -747,6 +746,8 @@ where
                 }),
             }
         }
+
+        cache.clear_if_invalid(manager, vars);
 
         let mut n = inner(manager, edge.borrowed(), cache);
         n >>= manager.num_levels() - vars;

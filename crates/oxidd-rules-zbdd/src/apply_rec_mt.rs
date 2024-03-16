@@ -1,7 +1,6 @@
 //! Recursive, multi-threaded apply algorithms
 
 use std::cmp::Ordering;
-use std::collections::HashMap;
 use std::hash::Hash;
 
 use oxidd_core::function::BooleanFunction;
@@ -11,6 +10,7 @@ use oxidd_core::util::AllocResult;
 use oxidd_core::util::Borrowed;
 use oxidd_core::util::EdgeDropGuard;
 use oxidd_core::util::OptBool;
+use oxidd_core::util::SatCountCache;
 use oxidd_core::util::SatCountNumber;
 use oxidd_core::ApplyCache;
 use oxidd_core::Edge;
@@ -21,7 +21,6 @@ use oxidd_core::LevelNo;
 use oxidd_core::LevelView;
 use oxidd_core::Manager;
 use oxidd_core::Node;
-use oxidd_core::NodeID;
 use oxidd_core::Tag;
 use oxidd_derive::Function;
 use oxidd_dump::dot::DotStyle;
@@ -843,7 +842,7 @@ where
         manager: &Self::Manager<'id>,
         edge: &<Self::Manager<'id> as Manager>::Edge,
         vars: LevelNo,
-        cache: &mut HashMap<NodeID, N, S>,
+        cache: &mut SatCountCache<N, S>,
     ) -> N {
         apply_rec_st::ZBDDSet::<F>::sat_count_edge(manager, edge, vars, cache)
     }

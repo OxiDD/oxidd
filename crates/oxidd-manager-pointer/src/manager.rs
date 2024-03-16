@@ -176,6 +176,7 @@ where
     data: ManuallyDrop<MD>,
     store_inner: *const StoreInner<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>,
     gc_ongoing: TryLock,
+    reorder_count: u64,
     workers: rayon::ThreadPool,
     phantom: PhantomData<(TM, R)>,
 }
@@ -283,6 +284,7 @@ where
             data: ManuallyDrop::new(data),
             store_inner: slot,
             gc_ongoing: TryLock::new(),
+            reorder_count: 0,
             workers,
             phantom: PhantomData,
         });
@@ -750,7 +752,13 @@ where
         // SAFETY: We called `pre_gc()` and the reordering is done.
         unsafe { self.data.apply_cache().post_gc(self) };
         guard.defuse();
+        self.reorder_count += 1;
         res
+    }
+
+    #[inline]
+    fn reorder_count(&self) -> u64 {
+        self.reorder_count
     }
 }
 

@@ -1,7 +1,6 @@
 //! Recursive single-threaded apply algorithms
 
 use std::borrow::Borrow;
-use std::collections::HashMap;
 use std::hash::BuildHasher;
 
 use bitvec::vec::BitVec;
@@ -13,6 +12,7 @@ use oxidd_core::util::AllocResult;
 use oxidd_core::util::Borrowed;
 use oxidd_core::util::EdgeDropGuard;
 use oxidd_core::util::OptBool;
+use oxidd_core::util::SatCountCache;
 use oxidd_core::util::SatCountNumber;
 use oxidd_core::ApplyCache;
 use oxidd_core::Edge;
@@ -22,7 +22,6 @@ use oxidd_core::InnerNode;
 use oxidd_core::LevelNo;
 use oxidd_core::Manager;
 use oxidd_core::Node;
-use oxidd_core::NodeID;
 use oxidd_core::Tag;
 use oxidd_derive::Function;
 use oxidd_dump::dot::DotStyle;
@@ -612,13 +611,13 @@ where
         manager: &Self::Manager<'id>,
         edge: &<Self::Manager<'id> as Manager>::Edge,
         vars: LevelNo,
-        cache: &mut HashMap<NodeID, N, S>,
+        cache: &mut SatCountCache<N, S>,
     ) -> N {
         fn inner<M: Manager<Terminal = BDDTerminal>, N: SatCountNumber, S: BuildHasher>(
             manager: &M,
             e: Borrowed<M::Edge>,
             terminal_val: &N,
-            cache: &mut HashMap<NodeID, N, S>,
+            cache: &mut SatCountCache<N, S>,
         ) -> N {
             let node = match manager.get_node(&e) {
                 Node::Inner(node) => node,
@@ -631,16 +630,18 @@ where
                 }
             };
             let node_id = e.node_id();
-            if let Some(n) = cache.get(&node_id) {
+            if let Some(n) = cache.map.get(&node_id) {
                 return n.clone();
             }
             let (e0, e1) = collect_children(node);
             let mut n = inner(manager, e0, terminal_val, cache);
             n += &inner(manager, e1, terminal_val, cache);
             n >>= 1u32;
-            cache.insert(node_id, n.clone());
+            cache.map.insert(node_id, n.clone());
             n
         }
+
+        cache.clear_if_invalid(manager, vars);
 
         let mut terminal_val = N::from(1u32);
         terminal_val <<= vars;

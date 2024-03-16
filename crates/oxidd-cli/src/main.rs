@@ -3,6 +3,7 @@
 use std::borrow::Cow;
 use std::fmt;
 use std::fs;
+use std::hash::BuildHasherDefault;
 use std::io;
 use std::io::Seek;
 use std::io::Write;
@@ -16,6 +17,7 @@ use clap::Parser;
 use clap::ValueEnum;
 use num_bigint::BigUint;
 use oxidd::BooleanFunction;
+use oxidd::SatCountCache;
 use oxidd_core::ApplyCache;
 use oxidd_core::Edge;
 use oxidd_core::HasApplyCache;
@@ -24,7 +26,6 @@ use oxidd_core::LevelNo;
 use oxidd_core::LevelView;
 use oxidd_core::Manager;
 use oxidd_core::ManagerRef;
-use oxidd_core::NodeID;
 use oxidd_core::WorkerManager;
 use oxidd_dump::dddmp;
 use oxidd_dump::dot;
@@ -35,6 +36,7 @@ use oxidd_parser::Problem;
 use oxidd_parser::Prop;
 use oxidd_parser::Var;
 use rustc_hash::FxHashMap;
+use rustc_hash::FxHasher;
 
 // spell-checker:ignore mref,subsec,funcs,dotfile,dmpfile
 
@@ -517,7 +519,8 @@ where
             .or_insert_with(|| vec![i]);
     }
 
-    let mut model_count_cache: FxHashMap<NodeID, BigUint> = Default::default();
+    let mut model_count_cache: SatCountCache<BigUint, BuildHasherDefault<FxHasher>> =
+        SatCountCache::default();
     for (f, equiv) in equivalences.into_iter() {
         print!("- {}", funcs[equiv[0]].1);
         for &i in &equiv[1..] {

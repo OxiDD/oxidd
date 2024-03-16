@@ -275,6 +275,7 @@ where
     /// Theoretically, we should be able to get the pointer from a `&Manager`
     /// reference, but this leads to provenance issues.
     store: *const Store<'id, N, ET, TM, R, MD, TERMINALS>,
+    reorder_count: u64,
     gc_ongoing: TryLock,
     workers: ThreadPool,
 }
@@ -1055,7 +1056,13 @@ where
         // SAFETY: We called `pre_gc`, the reordering is done.
         unsafe { self.data.apply_cache().post_gc(self) };
         guard.defuse();
+        self.reorder_count += 1;
         res
+    }
+
+    #[inline]
+    fn reorder_count(&self) -> u64 {
+        self.reorder_count
     }
 }
 
@@ -1970,6 +1977,7 @@ pub fn new_manager<
             unique_table: Vec::new(),
             data: ManuallyDrop::new(data),
             store: std::ptr::null(),
+            reorder_count: 0,
             gc_ongoing: TryLock::new(),
             workers,
         }),
