@@ -197,7 +197,7 @@ impl<'a, M: Manager, V> Iterator for Iter<'a, M, V> {
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         match self.0.next() {
-            Some((key, value)) => Some((&key, value)),
+            Some((key, value)) => Some((key, value)),
             None => None,
         }
     }
@@ -226,7 +226,7 @@ impl<'a, M: Manager, V> Iterator for IterMut<'a, M, V> {
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         match self.0.next() {
-            Some((key, value)) => Some((&key, value)),
+            Some((key, value)) => Some((key, value)),
             None => None,
         }
     }

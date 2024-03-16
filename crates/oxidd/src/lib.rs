@@ -22,6 +22,7 @@ pub use oxidd_core::util::AllocResult;
 pub use oxidd_core::util::IsFloatingPoint;
 pub use oxidd_core::util::OptBool;
 pub use oxidd_core::util::OutOfMemory;
+pub use oxidd_core::util::SatCountCache;
 pub use oxidd_core::util::SatCountNumber;
 pub use oxidd_core::LevelNo;
 pub use oxidd_core::Manager;

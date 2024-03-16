@@ -1,7 +1,10 @@
+# Cargo/Rust build directory
 /target/
+# (Usual) CMake build directory
+/build/
 
-/.vscode/
-/.cspellcache
+# Local development tools etc.
+/.local/
 
 # Exported DDs
 *.bdd

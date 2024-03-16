@@ -666,11 +666,8 @@ where
 mod tests {
     use nom::Finish;
 
-    use crate::Problem;
-    use crate::Prop::{self, And, Or};
-    use crate::Var;
-
     use super::*;
+    use crate::Prop::{And, Or};
 
     // CNF var
     fn cv(v: i32) -> (Var, bool) {

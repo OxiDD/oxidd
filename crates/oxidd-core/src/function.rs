@@ -1,26 +1,39 @@
 //! Function traits
 
-use std::collections::HashMap;
+use std::hash::BuildHasher;
 use std::hash::Hash;
 
+use nanorand::Rng;
+
+use crate::util::num::F64;
 use crate::util::AllocResult;
+use crate::util::Borrowed;
 use crate::util::EdgeDropGuard;
 use crate::util::NodeSet;
 use crate::util::OptBool;
+use crate::util::SatCountCache;
 use crate::util::SatCountNumber;
+use crate::DiagramRules;
+use crate::Edge;
 use crate::InnerNode;
 use crate::LevelNo;
 use crate::Manager;
 use crate::ManagerRef;
 use crate::Node;
-use crate::NodeID;
+
+/// Shorthand to get the [`Edge`] type associated with a [`Function`]
+pub type EdgeOfFunc<'id, F> = <<F as Function>::Manager<'id> as Manager>::Edge;
+/// Shorthand to get the edge tag type associated with a [`Function`]
+pub type ETagOfFunc<'id, F> = <<F as Function>::Manager<'id> as Manager>::EdgeTag;
+/// Shorthand to get the [`InnerNode`] type associated with a [`Function`]
+pub type INodeOfFunc<'id, F> = <<F as Function>::Manager<'id> as Manager>::InnerNode;
 
 /// Function in a decision diagram
 ///
 /// A function is some kind of external reference to a node as opposed to
-/// [`Edge`][crate::Edge]s, which are diagram internal. A function also includes
-/// a reference to the diagram's manager. So one may view a function as an
-/// [`Edge`][crate::Edge] plus a [`ManagerRef`].
+/// [`Edge`]s, which are diagram internal. A function also includes a reference
+/// to the diagram's manager. So one may view a function as an [`Edge`] plus a
+/// [`ManagerRef`].
 ///
 /// Functions are what the library's user mostly works with. There may be
 /// subtraits such as `BooleanFunction` in the `oxidd-rules-bdd` crate which
@@ -35,8 +48,8 @@ use crate::NodeID;
 ///
 /// # Safety
 ///
-/// An implementation must ensure that the "[`Edge`][crate::Edge] part" of the
-/// function points to a node that is stored in the manager referenced  by the
+/// An implementation must ensure that the "[`Edge`] part" of the function
+/// points to a node that is stored in the manager referenced  by the
 /// "[`ManagerRef`] part" of the function. All functions of this trait must
 /// maintain this link accordingly. In particular, [`Self::as_edge()`] and
 /// [`Self::into_edge()`] must panic as specified there.
@@ -45,8 +58,8 @@ pub unsafe trait Function: Clone + Ord + Hash {
     ///
     /// This type is generic over a lifetime `'id` to permit the "lifetime
     /// trick" used e.g. in [`GhostCell`][GhostCell]: The idea is to make the
-    /// [`Manager`], [`Edge`][crate::Edge] and [`InnerNode`] types
-    /// [invariant][variance] over `'id`. Any call to one of the
+    /// [`Manager`], [`Edge`] and [`InnerNode`] types [invariant][variance] over
+    /// `'id`. Any call to one of the
     /// [`with_manager_shared()`][Function::with_manager_shared] /
     /// [`with_manager_exclusive()`][Function::with_manager_exclusive] functions
     /// of the [`Function`] or [`ManagerRef`] trait, which "generate" a fresh
@@ -67,22 +80,25 @@ pub unsafe trait Function: Clone + Ord + Hash {
     type ManagerRef: for<'id> ManagerRef<Manager<'id> = Self::Manager<'id>>;
 
     /// Create a new function from a manager reference and an edge
-    fn from_edge<'id>(
-        manager: &Self::Manager<'id>,
-        edge: <Self::Manager<'id> as Manager>::Edge,
-    ) -> Self;
+    fn from_edge<'id>(manager: &Self::Manager<'id>, edge: EdgeOfFunc<'id, Self>) -> Self;
+
+    /// Create a new function from a manager reference and an edge reference
+    #[inline(always)]
+    fn from_edge_ref<'id>(manager: &Self::Manager<'id>, edge: &EdgeOfFunc<'id, Self>) -> Self {
+        Self::from_edge(manager, manager.clone_edge(edge))
+    }
 
     /// Converts this function into the underlying edge (as reference), checking
     /// that it belongs to the given `manager`
     ///
     /// Panics if the function does not belong to `manager`.
-    fn as_edge<'id>(&self, manager: &Self::Manager<'id>) -> &<Self::Manager<'id> as Manager>::Edge;
+    fn as_edge<'id>(&self, manager: &Self::Manager<'id>) -> &EdgeOfFunc<'id, Self>;
 
     /// Converts this function into the underlying edge, checking that it
     /// belongs to the given `manager`
     ///
     /// Panics if the function does not belong to `manager`.
-    fn into_edge<'id>(self, manager: &Self::Manager<'id>) -> <Self::Manager<'id> as Manager>::Edge;
+    fn into_edge<'id>(self, manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self>;
 
     /// Obtain a shared manager reference as well as the underlying edge
     ///
@@ -103,7 +119,7 @@ pub unsafe trait Function: Clone + Ord + Hash {
     /// ```
     fn with_manager_shared<F, T>(&self, f: F) -> T
     where
-        F: for<'id> FnOnce(&Self::Manager<'id>, &<Self::Manager<'id> as Manager>::Edge) -> T;
+        F: for<'id> FnOnce(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>) -> T;
 
     /// Obtain an exclusive manager reference as well as the underlying edge
     ///
@@ -125,9 +141,9 @@ pub unsafe trait Function: Clone + Ord + Hash {
     /// ```
     fn with_manager_exclusive<F, T>(&self, f: F) -> T
     where
-        F: for<'id> FnOnce(&mut Self::Manager<'id>, &<Self::Manager<'id> as Manager>::Edge) -> T;
+        F: for<'id> FnOnce(&mut Self::Manager<'id>, &EdgeOfFunc<'id, Self>) -> T;
 
-    /// Count the number of nodes in this function
+    /// Count the number of nodes in this function, including terminal nodes
     ///
     /// Locking behavior: acquires a shared manager lock.
     fn node_count(&self) -> usize {
@@ -167,6 +183,71 @@ pub trait BooleanFunction: Function {
     /// Get a fresh variable, i.e. a function that is true if and only if the
     /// variable is true. This adds a new level to a decision diagram.
     fn new_var<'id>(manager: &mut Self::Manager<'id>) -> AllocResult<Self>;
+
+    /// Get the cofactors `(f_true, f_false)` of `self`
+    ///
+    /// Let f(x₀, …, xₙ) be represented by `self`, where x₀ is (currently) the
+    /// top-most variable. Then f<sub>true</sub>(x₁, …, xₙ) = f(⊤, x₁, …, xₙ)
+    /// and f<sub>false</sub>(x₁, …, xₙ) = f(⊥, x₁, …, xₙ).
+    ///
+    /// Note that the domain of f is 𝔹ⁿ⁺¹ while the domain of f<sub>true</sub>
+    /// and f<sub>false</sub> is 𝔹ⁿ. This is irrelevant in case of BDDs and
+    /// BCDDs, but not for ZBDDs: For instance, g(x₀) = x₀ and g'(x₀, x₁) = x₀
+    /// have the same representation as BDDs or BCDDs, but different
+    /// representations as ZBDDs.
+    ///
+    /// Structurally, the cofactors are simply the children in case of BDDs and
+    /// ZBDDs. (For BCDDs, the edge tags are adjusted accordingly.) On these
+    /// representations, runtime is thus in O(1).
+    ///
+    /// Returns `None` iff `self` references a terminal node. If you only need
+    /// `f_true` or `f_false`, [`Self::cofactor_true`] or
+    /// [`Self::cofactor_false`] are slightly more efficient.
+    ///
+    /// Locking behavior: acquires a shared manager lock.
+    fn cofactors(&self) -> Option<(Self, Self)> {
+        self.with_manager_shared(|manager, f| {
+            let (ft, ff) = Self::cofactors_edge(manager, f)?;
+            Some((
+                Self::from_edge_ref(manager, &ft),
+                Self::from_edge_ref(manager, &ff),
+            ))
+        })
+    }
+
+    /// Get the cofactor `f_true` of `self`
+    ///
+    /// This method is slightly more efficient than [`Self::cofactors`] in case
+    /// `f_false` is not needed.
+    ///
+    /// For a more detailed description, see [`Self::cofactors`].
+    ///
+    /// Returns `None` iff `self` references a terminal node.
+    ///
+    /// Locking behavior: acquires a shared manager lock.
+    fn cofactor_true(&self) -> Option<Self> {
+        self.with_manager_shared(|manager, f| {
+            let (ft, _) = Self::cofactors_edge(manager, f)?;
+            Some(Self::from_edge_ref(manager, &ft))
+        })
+    }
+
+    /// Get the cofactor `f_false` of `self`
+    ///
+    /// This method is slightly more efficient than [`Self::cofactors`] in case
+    /// `f_true` is not needed.
+    ///
+    /// For a more detailed description, see [`Self::cofactors`].
+    ///
+    /// Returns `None` iff `self` references a terminal node.
+    ///
+    /// Locking behavior: acquires a shared manager lock.
+    fn cofactor_false(&self) -> Option<Self> {
+        self.with_manager_shared(|manager, f| {
+            let (_, ff) = Self::cofactors_edge(manager, f)?;
+            Some(Self::from_edge_ref(manager, &ff))
+        })
+    }
 
     /// Compute the negation `¬self`
     ///
@@ -276,16 +357,57 @@ pub trait BooleanFunction: Function {
     }
 
     /// Get the always false function `⊥` as edge
-    fn f_edge<'id>(manager: &Self::Manager<'id>) -> <Self::Manager<'id> as Manager>::Edge;
+    fn f_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self>;
     /// Get the always true function `⊤` as edge
-    fn t_edge<'id>(manager: &Self::Manager<'id>) -> <Self::Manager<'id> as Manager>::Edge;
+    fn t_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self>;
+
+    /// Get the cofactors `(f_true, f_false)` of `f`, edge version
+    ///
+    /// Returns `None` iff `f` references a terminal node. For more details on
+    /// the semantics of `f_true` and `f_false`, see [`Self::cofactors`].
+    #[inline]
+    #[allow(clippy::type_complexity)]
+    fn cofactors_edge<'a, 'id>(
+        manager: &'a Self::Manager<'id>,
+        f: &'a EdgeOfFunc<'id, Self>,
+    ) -> Option<(
+        Borrowed<'a, EdgeOfFunc<'id, Self>>,
+        Borrowed<'a, EdgeOfFunc<'id, Self>>,
+    )> {
+        if let Node::Inner(node) = manager.get_node(f) {
+            Some(Self::cofactors_node(f.tag(), node))
+        } else {
+            None
+        }
+    }
+
+    /// Get the cofactors `(f_true, f_false)` of `node`, assuming an incoming
+    /// edge with `EdgeTag`
+    ///
+    /// Returns `None` iff `f` references a terminal node. For more details on
+    /// the semantics of `f_true` and `f_false`, see [`Self::cofactors`].
+    ///
+    /// Implementation note: The default implementation assumes that
+    /// [cofactor 0][DiagramRules::cofactor] corresponds to `f_true` and
+    /// [cofactor 1][DiagramRules::cofactor] corresponds to `f_false`.
+    #[inline]
+    fn cofactors_node<'a, 'id>(
+        tag: ETagOfFunc<'id, Self>,
+        node: &'a INodeOfFunc<'id, Self>,
+    ) -> (
+        Borrowed<'a, EdgeOfFunc<'id, Self>>,
+        Borrowed<'a, EdgeOfFunc<'id, Self>>,
+    ) {
+        let cofactor = <<Self::Manager<'id> as Manager>::Rules as DiagramRules<_, _, _>>::cofactor;
+        (cofactor(tag, node, 0), cofactor(tag, node, 1))
+    }
 
     /// Compute the negation `¬edge`, edge version
     #[must_use]
     fn not_edge<'id>(
         manager: &Self::Manager<'id>,
-        edge: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge>;
+        edge: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
     /// Compute the negation `¬edge`, owned edge version
     ///
@@ -295,8 +417,8 @@ pub trait BooleanFunction: Function {
     #[must_use]
     fn not_edge_owned<'id>(
         manager: &Self::Manager<'id>,
-        edge: <Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        edge: EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         Self::not_edge(manager, &edge)
     }
 
@@ -304,58 +426,58 @@ pub trait BooleanFunction: Function {
     #[must_use]
     fn and_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge>;
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
     /// Compute the disjunction `lhs ∨ rhs`, edge version
     #[must_use]
     fn or_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge>;
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
     /// Compute the negated conjunction `lhs ⊼ rhs`, edge version
     #[must_use]
     fn nand_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge>;
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
     /// Compute the negated disjunction `lhs ⊽ rhs`, edge version
     #[must_use]
     fn nor_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge>;
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
     /// Compute the exclusive disjunction `lhs ⊕ rhs`, edge version
     #[must_use]
     fn xor_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge>;
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
     /// Compute the equivalence `lhs ↔ rhs`, edge version
     #[must_use]
     fn equiv_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge>;
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
     /// Compute the implication `lhs → rhs`, edge version
     #[must_use]
     fn imp_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge>;
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
     /// Compute the strict implication `lhs < rhs`, edge version
     #[must_use]
     fn imp_strict_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge>;
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
     /// Returns `true` iff `self` is satisfiable, i.e. is not `⊥`
     ///
@@ -404,10 +526,10 @@ pub trait BooleanFunction: Function {
     #[must_use]
     fn ite_edge<'id>(
         manager: &Self::Manager<'id>,
-        if_edge: &<Self::Manager<'id> as Manager>::Edge,
-        then_edge: &<Self::Manager<'id> as Manager>::Edge,
-        else_edge: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        if_edge: &EdgeOfFunc<'id, Self>,
+        then_edge: &EdgeOfFunc<'id, Self>,
+        else_edge: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         let f = EdgeDropGuard::new(manager, Self::and_edge(manager, if_edge, then_edge)?);
         let g = EdgeDropGuard::new(manager, Self::imp_strict_edge(manager, if_edge, else_edge)?);
         Self::or_edge(manager, &*f, &*g)
@@ -417,21 +539,19 @@ pub trait BooleanFunction: Function {
     /// variables
     ///
     /// The `cache` can be used to speed up multiple model counting operations
-    /// for functions in the same decision diagram. Note however that the
-    /// results may be incorrect if variables are reordered in between. The
-    /// caller may hold a shared manager lock
-    /// ([`Function::with_manager_shared()`] or
-    /// [`ManagerRef::with_manager_shared()`][crate::ManagerRef::with_manager_shared])
-    /// to avoid this. Furthermore, `vars` must be equal for all calls with the
-    /// same cache. If the model counts of just one function are of interest,
-    /// one may simply pass an empty [`HashMap`] (e.g. using
-    /// `&mut Default::default()`).
+    /// for functions in the same decision diagram. If the model counts of just
+    /// one function are of interest, one may simply pass an empty
+    /// [`SatCountCache`] (using `&mut SatCountCache::default()`). The cache
+    /// will automatically be invalidated in case there have been reordering
+    /// operations or `vars` changed since the last query (see
+    /// [`SatCountCache::clear_if_invalid()`]). Still, it is the caller's
+    /// responsibility to not use the cache for different managers.
     ///
     /// Locking behavior: acquires a shared manager lock.
     fn sat_count<N: SatCountNumber, S: std::hash::BuildHasher>(
         &self,
         vars: LevelNo,
-        cache: &mut HashMap<NodeID, N, S>,
+        cache: &mut SatCountCache<N, S>,
     ) -> N {
         self.with_manager_shared(|manager, edge| Self::sat_count_edge(manager, edge, vars, cache))
     }
@@ -439,28 +559,32 @@ pub trait BooleanFunction: Function {
     /// `Edge` version of [`Self::sat_count()`]
     fn sat_count_edge<'id, N: SatCountNumber, S: std::hash::BuildHasher>(
         manager: &Self::Manager<'id>,
-        edge: &<Self::Manager<'id> as Manager>::Edge,
+        edge: &EdgeOfFunc<'id, Self>,
         vars: LevelNo,
-        cache: &mut HashMap<NodeID, N, S>,
+        cache: &mut SatCountCache<N, S>,
     ) -> N;
 
-    /// Pick a random cube of this function
+    /// Pick a cube of this function
     ///
-    /// `order` is a list of variables. If it is non-empty it must contain as
+    /// `order` is a list of variables. If it is non-empty, it must contain as
     /// many variables as there are levels.
     ///
     /// Returns `None` if the function is false. Otherwise, this method returns
     /// a vector where the i-th entry indicates if the i-th variable of `order`
     /// (or the variable currently at the i-th level in case `order` is empty)
-    /// is true, false or "don't care".
+    /// is true, false, or "don't care".
     ///
-    /// Whenever there is a choice for a variable, `choice` is called.
+    /// Whenever there is a choice for a variable, `choice` is called to
+    /// determine the valuation for this variable.
     ///
     /// Locking behavior: acquires a shared manager lock.
     fn pick_cube<'a, I: ExactSizeIterator<Item = &'a Self>>(
         &'a self,
         order: impl IntoIterator<IntoIter = I>,
-        choice: impl for<'b> FnMut(&Self::Manager<'b>, &<Self::Manager<'b> as Manager>::Edge) -> bool,
+        choice: impl for<'id> FnMut(
+            &Self::Manager<'id>,
+            &<Self::Manager<'id> as Manager>::InnerNode,
+        ) -> bool,
     ) -> Option<Vec<OptBool>> {
         self.with_manager_shared(|manager, edge| {
             Self::pick_cube_edge(
@@ -475,12 +599,66 @@ pub trait BooleanFunction: Function {
     /// `Edge` version of [`Self::pick_cube()`]
     fn pick_cube_edge<'id, 'a, I>(
         manager: &'a Self::Manager<'id>,
-        edge: &'a <Self::Manager<'id> as Manager>::Edge,
+        edge: &'a EdgeOfFunc<'id, Self>,
         order: impl IntoIterator<IntoIter = I>,
-        choice: impl FnMut(&Self::Manager<'id>, &<Self::Manager<'id> as Manager>::Edge) -> bool,
+        choice: impl FnMut(&Self::Manager<'id>, &INodeOfFunc<'id, Self>) -> bool,
     ) -> Option<Vec<OptBool>>
     where
-        I: ExactSizeIterator<Item = &'a <Self::Manager<'id> as Manager>::Edge>;
+        I: ExactSizeIterator<Item = &'a EdgeOfFunc<'id, Self>>;
+
+    /// Pick a random cube of this function, where each cube has the same
+    /// probability of being chosen
+    ///
+    /// `order` is a list of variables. If it is non-empty, it must contain as
+    /// many variables as there are levels.
+    ///
+    /// Returns `None` if the function is false. Otherwise, this method returns
+    /// a vector where the i-th entry indicates if the i-th variable of `order`
+    /// (or the variable currently at the i-th level in case `order` is empty)
+    /// is true, false, or "don't care". To obtain a total valuation from this
+    /// partial valuation, it suffices to pick true or false with probability ½.
+    /// (Note that this function returns a partial valuation with n "don't
+    /// cares" with a probability that is 2<sup>n</sup> as high as the
+    /// probability of any total valuation.)
+    ///
+    /// Locking behavior: acquires a shared manager lock.
+    fn pick_cube_uniform<'a, I: ExactSizeIterator<Item = &'a Self>, S: BuildHasher>(
+        &'a self,
+        order: impl IntoIterator<IntoIter = I>,
+        cache: &mut SatCountCache<F64, S>,
+        rng: &mut crate::util::Rng,
+    ) -> Option<Vec<OptBool>> {
+        self.with_manager_shared(|manager, edge| {
+            Self::pick_cube_uniform_edge(
+                manager,
+                edge,
+                order.into_iter().map(|f| f.as_edge(manager)),
+                cache,
+                rng,
+            )
+        })
+    }
+
+    /// `Edge` version of [`Self::pick_cube_uniform()`]
+    fn pick_cube_uniform_edge<'id, 'a, I, S>(
+        manager: &'a Self::Manager<'id>,
+        edge: &'a EdgeOfFunc<'id, Self>,
+        order: impl IntoIterator<IntoIter = I>,
+        cache: &mut SatCountCache<F64, S>,
+        rng: &mut crate::util::Rng,
+    ) -> Option<Vec<OptBool>>
+    where
+        I: ExactSizeIterator<Item = &'a EdgeOfFunc<'id, Self>>,
+        S: BuildHasher,
+    {
+        let vars = manager.num_levels();
+        Self::pick_cube_edge(manager, edge, order, |manager, node| {
+            let (t, e) = Self::cofactors_node(Default::default(), node);
+            let t_count = Self::sat_count_edge(manager, &*t, vars, cache).0;
+            let e_count = Self::sat_count_edge(manager, &*e, vars, cache).0;
+            rng.generate::<f64>() < t_count / (t_count + e_count)
+        })
+    }
 
     /// Evaluate this Boolean function
     ///
@@ -504,13 +682,29 @@ pub trait BooleanFunction: Function {
     /// `Edge` version of [`Self::eval()`]
     fn eval_edge<'id, 'a>(
         manager: &'a Self::Manager<'id>,
-        edge: &'a <Self::Manager<'id> as Manager>::Edge,
-        env: impl IntoIterator<Item = (&'a <Self::Manager<'id> as Manager>::Edge, bool)>,
+        edge: &'a EdgeOfFunc<'id, Self>,
+        env: impl IntoIterator<Item = (&'a EdgeOfFunc<'id, Self>, bool)>,
     ) -> bool;
 }
 
 /// Quantification extension for [`BooleanFunction`]
 pub trait BooleanFunctionQuant: BooleanFunction {
+    /// Restrict a set of `vars` to constant values
+    ///
+    /// `vars` conceptually is a partial assignment, represented as the
+    /// conjunction of positive or negative literals, depending on whether the
+    /// variable should be mapped to true or false.
+    ///
+    /// Locking behavior: acquires a shared manager lock.
+    ///
+    /// Panics if `self` and `vars` don't belong to the same manager.
+    fn restrict(&self, vars: &Self) -> AllocResult<Self> {
+        self.with_manager_shared(|manager, root| {
+            let e = Self::restrict_edge(manager, root, vars.as_edge(manager))?;
+            Ok(Self::from_edge(manager, e))
+        })
+    }
+
     /// Compute the universal quantification over `vars`
     ///
     /// `vars` is a set of variables, which in turn is just the conjunction of
@@ -521,7 +715,7 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     ///
     /// Locking behavior: acquires a shared manager lock.
     ///
-    /// Panics if `self` and `rhs` don't belong to the same manager.
+    /// Panics if `self` and `vars` don't belong to the same manager.
     fn forall(&self, vars: &Self) -> AllocResult<Self> {
         self.with_manager_shared(|manager, root| {
             let e = Self::forall_edge(manager, root, vars.as_edge(manager))?;
@@ -539,7 +733,7 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     ///
     /// Locking behavior: acquires a shared manager lock.
     ///
-    /// Panics if `self` and `rhs` don't belong to the same manager.
+    /// Panics if `self` and `vars` don't belong to the same manager.
     fn exist(&self, vars: &Self) -> AllocResult<Self> {
         self.with_manager_shared(|manager, root| {
             let e = Self::exist_edge(manager, root, vars.as_edge(manager))?;
@@ -556,13 +750,23 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     ///
     /// Locking behavior: acquires a shared manager lock.
     ///
-    /// Panics if `self` and `rhs` don't belong to the same manager.
+    /// Panics if `self` and `vars` don't belong to the same manager.
     fn unique(&self, vars: &Self) -> AllocResult<Self> {
         self.with_manager_shared(|manager, root| {
             let e = Self::unique_edge(manager, root, vars.as_edge(manager))?;
             Ok(Self::from_edge(manager, e))
         })
     }
+
+    /// Restrict a set of `vars` to constant values, edge version
+    ///
+    /// See [`Self::restrict()`] for more details.
+    #[must_use]
+    fn restrict_edge<'id>(
+        manager: &Self::Manager<'id>,
+        root: &EdgeOfFunc<'id, Self>,
+        vars: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
     /// Compute the universal quantification of `root` over `vars`, edge
     /// version
@@ -571,9 +775,9 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     #[must_use]
     fn forall_edge<'id>(
         manager: &Self::Manager<'id>,
-        root: &<Self::Manager<'id> as Manager>::Edge,
-        vars: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge>;
+        root: &EdgeOfFunc<'id, Self>,
+        vars: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
     /// Compute the existential quantification of `root` over `vars`, edge
     /// version
@@ -582,9 +786,9 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     #[must_use]
     fn exist_edge<'id>(
         manager: &Self::Manager<'id>,
-        root: &<Self::Manager<'id> as Manager>::Edge,
-        vars: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge>;
+        root: &EdgeOfFunc<'id, Self>,
+        vars: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
     /// Compute the unique quantification of `root` over `vars`, edge version
     ///
@@ -592,9 +796,9 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     #[must_use]
     fn unique_edge<'id>(
         manager: &Self::Manager<'id>,
-        root: &<Self::Manager<'id> as Manager>::Edge,
-        vars: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge>;
+        root: &EdgeOfFunc<'id, Self>,
+        vars: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 }
 
 /// Set of Boolean vectors
@@ -724,52 +928,52 @@ pub trait BooleanVecSet: Function {
     }
 
     /// Edge version of [`Self::empty()`]
-    fn empty_edge<'id>(manager: &Self::Manager<'id>) -> <Self::Manager<'id> as Manager>::Edge;
+    fn empty_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self>;
 
     /// Edge version of [`Self::base()`]
-    fn base_edge<'id>(manager: &Self::Manager<'id>) -> <Self::Manager<'id> as Manager>::Edge;
+    fn base_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self>;
 
     /// Edge version of [`Self::subset0()`]
     fn subset0_edge<'id>(
         manager: &Self::Manager<'id>,
-        set: &<Self::Manager<'id> as Manager>::Edge,
-        var: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge>;
+        set: &EdgeOfFunc<'id, Self>,
+        var: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
     /// Edge version of [`Self::subset1()`]
     fn subset1_edge<'id>(
         manager: &Self::Manager<'id>,
-        set: &<Self::Manager<'id> as Manager>::Edge,
-        var: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge>;
+        set: &EdgeOfFunc<'id, Self>,
+        var: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
     /// Edge version of [`Self::change()`]
     fn change_edge<'id>(
         manager: &Self::Manager<'id>,
-        set: &<Self::Manager<'id> as Manager>::Edge,
-        var: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge>;
+        set: &EdgeOfFunc<'id, Self>,
+        var: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
     /// Compute the union `lhs ∪ rhs`, edge version
     fn union_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge>;
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
     /// Compute the intersection `lhs ∩ rhs`, edge version
     fn intsec_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge>;
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
     /// Compute the set difference `lhs ∖ rhs`, edge version
     fn diff_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge>;
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 }
 
 /// Basic trait for numbers
@@ -909,49 +1113,49 @@ pub trait PseudoBooleanFunction: Function {
     fn constant_edge<'id>(
         manager: &Self::Manager<'id>,
         value: Self::Number,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge>;
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
     /// Point-wise addition `self + rhs`, edge version
     fn add_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge>;
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
     /// Point-wise subtraction `self - rhs`, edge version
     fn sub_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge>;
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
     /// Point-wise multiplication `self * rhs`, edge version
     fn mul_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge>;
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
     /// Point-wise division `self / rhs`, edge version
     fn div_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge>;
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
     /// Point-wise minimum `min(self, rhs)`, edge version
     fn min_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge>;
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
     /// Point-wise maximum `max(self, rhs)`, edge version
     fn max_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge>;
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 }
 
 /// Function of three valued logic
@@ -1082,18 +1286,18 @@ pub trait TVLFunction: Function {
     }
 
     /// Get the always false function `⊥` as edge
-    fn f_edge<'id>(manager: &Self::Manager<'id>) -> <Self::Manager<'id> as Manager>::Edge;
+    fn f_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self>;
     /// Get the always true function `⊤` as edge
-    fn t_edge<'id>(manager: &Self::Manager<'id>) -> <Self::Manager<'id> as Manager>::Edge;
+    fn t_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self>;
     /// Get the "unknown" function `U` as edge
-    fn u_edge<'id>(manager: &Self::Manager<'id>) -> <Self::Manager<'id> as Manager>::Edge;
+    fn u_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self>;
 
     /// Compute the negation `¬edge`, edge version
     #[must_use]
     fn not_edge<'id>(
         manager: &Self::Manager<'id>,
-        edge: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge>;
+        edge: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
     /// Compute the negation `¬edge`, owned edge version
     ///
@@ -1103,8 +1307,8 @@ pub trait TVLFunction: Function {
     #[must_use]
     fn not_edge_owned<'id>(
         manager: &Self::Manager<'id>,
-        edge: <Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        edge: EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         Self::not_edge(manager, &edge)
     }
 
@@ -1112,58 +1316,58 @@ pub trait TVLFunction: Function {
     #[must_use]
     fn and_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge>;
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
     /// Compute the disjunction `lhs ∨ rhs`, edge version
     #[must_use]
     fn or_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge>;
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
     /// Compute the negated conjunction `lhs ⊼ rhs`, edge version
     #[must_use]
     fn nand_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge>;
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
     /// Compute the negated disjunction `lhs ⊽ rhs`, edge version
     #[must_use]
     fn nor_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge>;
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
     /// Compute the exclusive disjunction `lhs ⊕ rhs`, edge version
     #[must_use]
     fn xor_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge>;
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
     /// Compute the equivalence `lhs ↔ rhs`, edge version
     #[must_use]
     fn equiv_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge>;
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
     /// Compute the implication `lhs → rhs`, edge version
     #[must_use]
     fn imp_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge>;
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
     /// Compute the strict implication `lhs < rhs`, edge version
     #[must_use]
     fn imp_strict_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &<Self::Manager<'id> as Manager>::Edge,
-        rhs: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge>;
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
     /// Compute `if self { then_case } else { else_case }`
     ///
@@ -1192,10 +1396,10 @@ pub trait TVLFunction: Function {
     #[must_use]
     fn ite_edge<'id>(
         manager: &Self::Manager<'id>,
-        if_edge: &<Self::Manager<'id> as Manager>::Edge,
-        then_edge: &<Self::Manager<'id> as Manager>::Edge,
-        else_edge: &<Self::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<Self::Manager<'id> as Manager>::Edge> {
+        if_edge: &EdgeOfFunc<'id, Self>,
+        then_edge: &EdgeOfFunc<'id, Self>,
+        else_edge: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         let f = EdgeDropGuard::new(manager, Self::and_edge(manager, if_edge, then_edge)?);
         let g = EdgeDropGuard::new(manager, Self::imp_strict_edge(manager, if_edge, else_edge)?);
         Self::or_edge(manager, &*f, &*g)

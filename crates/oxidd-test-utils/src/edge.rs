@@ -196,6 +196,10 @@ unsafe impl Manager for DummyManager {
     fn reorder<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T {
         f(self)
     }
+
+    fn reorder_count(&self) -> u64 {
+        0
+    }
 }
 
 impl WorkerManager for DummyManager {

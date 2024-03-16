@@ -81,6 +81,7 @@ impl HugeAlloc {
                 );
             }
 
+            #[allow(clippy::let_and_return)] // for non-Linux platforms
             ptr
         } else {
             // SAFETY: `layout` has non-zero size

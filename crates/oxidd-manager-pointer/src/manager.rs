@@ -40,6 +40,7 @@ use parking_lot::Mutex;
 use parking_lot::MutexGuard;
 use rustc_hash::FxHasher;
 
+use oxidd_core::function::EdgeOfFunc;
 use oxidd_core::util::AbortOnDrop;
 use oxidd_core::util::AllocResult;
 use oxidd_core::util::Borrowed;
@@ -176,6 +177,7 @@ where
     data: ManuallyDrop<MD>,
     store_inner: *const StoreInner<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>,
     gc_ongoing: TryLock,
+    reorder_count: u64,
     workers: rayon::ThreadPool,
     phantom: PhantomData<(TM, R)>,
 }
@@ -283,6 +285,7 @@ where
             data: ManuallyDrop::new(data),
             store_inner: slot,
             gc_ongoing: TryLock::new(),
+            reorder_count: 0,
             workers,
             phantom: PhantomData,
         });
@@ -750,7 +753,13 @@ where
         // SAFETY: We called `pre_gc()` and the reordering is done.
         unsafe { self.data.apply_cache().post_gc(self) };
         guard.defuse();
+        self.reorder_count += 1;
         res
+    }
+
+    #[inline]
+    fn reorder_count(&self) -> u64 {
+        self.reorder_count
     }
 }
 
@@ -2012,29 +2021,20 @@ unsafe impl<
     type ManagerRef = ManagerRef<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>;
 
     #[inline]
-    fn from_edge<'id>(
-        manager: &Self::Manager<'id>,
-        edge: <Self::Manager<'id> as oxidd_core::Manager>::Edge,
-    ) -> Self {
+    fn from_edge<'id>(manager: &Self::Manager<'id>, edge: EdgeOfFunc<'id, Self>) -> Self {
         manager.store().retain();
         Self(ManuallyDrop::new(edge).0, PhantomData)
     }
 
     #[inline]
-    fn as_edge<'id>(
-        &self,
-        manager: &Self::Manager<'id>,
-    ) -> &<Self::Manager<'id> as oxidd_core::Manager>::Edge {
+    fn as_edge<'id>(&self, manager: &Self::Manager<'id>) -> &EdgeOfFunc<'id, Self> {
         assert!(util::ptr_eq_untyped(self.store().as_ptr(), manager.store()));
         // SAFETY: `Function` and `Edge` have the same representation
         unsafe { std::mem::transmute(self) }
     }
 
     #[inline]
-    fn into_edge<'id>(
-        self,
-        manager: &Self::Manager<'id>,
-    ) -> <Self::Manager<'id> as oxidd_core::Manager>::Edge {
+    fn into_edge<'id>(self, manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self> {
         let store = manager.store();
         assert!(util::ptr_eq_untyped(self.store().as_ptr(), store));
         unsafe { ArcSlab::release(NonNull::from(store)) };
@@ -2044,10 +2044,7 @@ unsafe impl<
     #[inline]
     fn with_manager_shared<F, T>(&self, f: F) -> T
     where
-        F: for<'id> FnOnce(
-            &Self::Manager<'id>,
-            &<Self::Manager<'id> as oxidd_core::Manager>::Edge,
-        ) -> T,
+        F: for<'id> FnOnce(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>) -> T,
     {
         let edge = ManuallyDrop::new(Edge(self.0, PhantomData));
         let store_ptr = self.store();
@@ -2060,10 +2057,7 @@ unsafe impl<
     #[inline]
     fn with_manager_exclusive<F, T>(&self, f: F) -> T
     where
-        F: for<'id> FnOnce(
-            &mut Self::Manager<'id>,
-            &<Self::Manager<'id> as oxidd_core::Manager>::Edge,
-        ) -> T,
+        F: for<'id> FnOnce(&mut Self::Manager<'id>, &EdgeOfFunc<'id, Self>) -> T,
     {
         let edge = ManuallyDrop::new(Edge(self.0, PhantomData));
         let store_ptr = self.store();

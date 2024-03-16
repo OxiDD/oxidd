@@ -1,4 +1,11 @@
-//! Rules and other basic definitions for binary decision diagrams
+//! Rules and other basic definitions for binary decision diagrams (BDDs)
+//!
+//! BDDs are represented using binary inner nodes with a level number, and two
+//! terminal nodes ⊤ and ⊥. The first outgoing edge (`node.get_child(0)`) is the
+//! "then" edge, the second edge is the "else" edge. Along with the
+//! ["simple"][simple] variant of BDDs, this crate also provides an
+//! implementation using [complemented edges][complement_edge] (here, we elide
+//! the ⊥ terminal).
 //!
 //! ## Feature flags
 #![doc = document_features::document_features!()]

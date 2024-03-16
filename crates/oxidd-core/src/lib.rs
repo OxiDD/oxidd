@@ -136,6 +136,14 @@ pub trait DiagramRules<E: Edge, N: InnerNode<E>, T> {
     /// respect the tag of the incoming edge: If the incoming edge is
     /// complemented, then we need to complement the outgoing edges as well.
     fn cofactors(tag: E::Tag, node: &N) -> Self::Cofactors<'_>;
+
+    /// Get the `n`-th cofactor of `node` assuming an incoming edge with `tag`
+    ///
+    /// This is equivalent to `Self::cofactors(tag, node).nth(n).unwrap()`.
+    #[inline]
+    fn cofactor(tag: E::Tag, node: &N, n: usize) -> Borrowed<E> {
+        Self::cofactors(tag, node).nth(n).expect("out of range")
+    }
 }
 
 /// Result of the attempt to create a new node
@@ -732,6 +740,12 @@ pub unsafe trait Manager: Sized {
     ///
     /// Returns the value returned by `f`.
     fn reorder<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T;
+
+    /// Get the count of reordering operations
+    ///
+    /// This counter should monotonically increase to ensure that caches are
+    /// invalidated accordingly.
+    fn reorder_count(&self) -> u64;
 }
 
 /// View of a single level in the manager

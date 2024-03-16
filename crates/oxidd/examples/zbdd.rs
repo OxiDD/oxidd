@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::hash::BuildHasherDefault;
 
 use oxidd::util::num::Saturating;
@@ -8,6 +7,7 @@ use oxidd::BooleanVecSet;
 use oxidd::Function;
 use oxidd::Manager;
 use oxidd::ManagerRef;
+use oxidd::SatCountCache;
 use oxidd_dump::dot::dump_all;
 use rustc_hash::FxHasher;
 
@@ -44,8 +44,8 @@ fn main() {
         );
         assert!(n2 == b);
 
-        let mut count_cache: HashMap<_, Saturating<u64>, BuildHasherDefault<FxHasher>> =
-            HashMap::default();
+        let mut count_cache: SatCountCache<Saturating<u64>, BuildHasherDefault<FxHasher>> =
+            SatCountCache::default();
         assert!(a.sat_count(3, &mut count_cache).0 == 1);
         assert!(b.sat_count(3, &mut count_cache).0 == 1);
         assert!(c.sat_count(3, &mut count_cache).0 == 1);

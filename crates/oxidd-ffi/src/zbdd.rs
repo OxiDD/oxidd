@@ -172,7 +172,7 @@ pub unsafe extern "C" fn oxidd_zbdd_num_inner_nodes(manager: oxidd_zbdd_manager_
 /// Get a fresh variable in the form of a singleton set. This adds a new level
 /// to a decision diagram.
 ///
-/// This function does not decrement the reference counters of its argument.
+/// This function does not change the reference counters of its argument.
 ///
 /// Locking behavior: acquires an exclusive manager lock.
 ///
@@ -214,7 +214,7 @@ pub unsafe extern "C" fn oxidd_zbdd_make_node(
 
 /// Get the ZBDD set `∅`
 ///
-/// This function does not decrement the reference counters of its argument.
+/// This function does not change the reference counters of its argument.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -228,7 +228,7 @@ pub unsafe extern "C" fn oxidd_zbdd_empty(manager: oxidd_zbdd_manager_t) -> oxid
 
 /// Get the ZBDD set `{∅}`
 ///
-/// This function does not decrement the reference counters of its argument.
+/// This function does not change the reference counters of its argument.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -245,7 +245,7 @@ pub unsafe extern "C" fn oxidd_zbdd_base(manager: oxidd_zbdd_manager_t) -> oxidd
 ///
 /// `var` must be a singleton set.
 ///
-/// This function does not decrement the reference counters of its arguments.
+/// This function does not change the reference counters of its arguments.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -260,7 +260,7 @@ pub unsafe extern "C" fn oxidd_zbdd_subset0(set: oxidd_zbdd_t, var: oxidd_zbdd_t
 ///
 /// `var` must be a singleton set.
 ///
-/// This function does not decrement the reference counters of its arguments.
+/// This function does not change the reference counters of its arguments.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -277,7 +277,7 @@ pub unsafe extern "C" fn oxidd_zbdd_subset1(set: oxidd_zbdd_t, var: oxidd_zbdd_t
 ///
 /// `var` must be a singleton set.
 ///
-/// This function does not decrement the reference counters of its arguments.
+/// This function does not change the reference counters of its arguments.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -289,7 +289,7 @@ pub unsafe extern "C" fn oxidd_zbdd_change(set: oxidd_zbdd_t, var: oxidd_zbdd_t)
 
 /// Compute the ZBDD for the union `lhs ∪ rhs`
 ///
-/// This function does not decrement the reference counters of its arguments.
+/// This function does not change the reference counters of its arguments.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -301,7 +301,7 @@ pub unsafe extern "C" fn oxidd_zbdd_union(lhs: oxidd_zbdd_t, rhs: oxidd_zbdd_t) 
 
 /// Compute the ZBDD for the intersection `lhs ∩ rhs`
 ///
-/// This function does not decrement the reference counters of its arguments.
+/// This function does not change the reference counters of its arguments.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -313,7 +313,7 @@ pub unsafe extern "C" fn oxidd_zbdd_intsec(lhs: oxidd_zbdd_t, rhs: oxidd_zbdd_t)
 
 /// Compute the ZBDD for the set difference `lhs ∖ rhs`
 ///
-/// This function does not decrement the reference counters of its arguments.
+/// This function does not change the reference counters of its arguments.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -326,7 +326,7 @@ pub unsafe extern "C" fn oxidd_zbdd_diff(lhs: oxidd_zbdd_t, rhs: oxidd_zbdd_t) -
 /// Get a fresh variable, i.e. a Boolean function that is true if and only if
 /// the variable is true. This adds a new level to a decision diagram.
 ///
-/// This function does not decrement the reference counters of its argument.
+/// This function does not change the reference counters of its argument.
 ///
 /// Locking behavior: acquires an exclusive manager lock.
 ///
@@ -340,7 +340,7 @@ pub unsafe extern "C" fn oxidd_zbdd_new_var(manager: oxidd_zbdd_manager_t) -> ox
 
 /// Get the constant false ZBDD Boolean function `⊥`
 ///
-/// This function does not decrement the reference counters of its argument.
+/// This function does not change the reference counters of its argument.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -354,7 +354,7 @@ pub unsafe extern "C" fn oxidd_zbdd_false(manager: oxidd_zbdd_manager_t) -> oxid
 
 /// Get the constant true ZBDD Boolean function `⊤`
 ///
-/// This function does not decrement the reference counters of its argument.
+/// This function does not change the reference counters of its argument.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -368,7 +368,7 @@ pub unsafe extern "C" fn oxidd_zbdd_true(manager: oxidd_zbdd_manager_t) -> oxidd
 
 /// Compute the ZBDD for the negation `¬f`
 ///
-/// This function does not decrement the reference counters of its argument.
+/// This function does not change the reference counters of its argument.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -380,7 +380,7 @@ pub unsafe extern "C" fn oxidd_zbdd_not(f: oxidd_zbdd_t) -> oxidd_zbdd_t {
 
 /// Compute the ZBDD for the conjunction `lhs ∧ rhs`
 ///
-/// This function does not decrement the reference counters of its arguments.
+/// This function does not change the reference counters of its arguments.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -392,7 +392,7 @@ pub unsafe extern "C" fn oxidd_zbdd_and(lhs: oxidd_zbdd_t, rhs: oxidd_zbdd_t) ->
 
 /// Compute the ZBDD for the disjunction `lhs ∨ rhs`
 ///
-/// This function does not decrement the reference counters of its arguments.
+/// This function does not change the reference counters of its arguments.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -404,7 +404,7 @@ pub unsafe extern "C" fn oxidd_zbdd_or(lhs: oxidd_zbdd_t, rhs: oxidd_zbdd_t) -> 
 
 /// Compute the ZBDD for the negated conjunction `lhs ⊼ rhs`
 ///
-/// This function does not decrement the reference counters of its arguments.
+/// This function does not change the reference counters of its arguments.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -416,7 +416,7 @@ pub unsafe extern "C" fn oxidd_zbdd_nand(lhs: oxidd_zbdd_t, rhs: oxidd_zbdd_t) -
 
 /// Compute the ZBDD for the negated disjunction `lhs ⊽ rhs`
 ///
-/// This function does not decrement the reference counters of its arguments.
+/// This function does not change the reference counters of its arguments.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -428,7 +428,7 @@ pub unsafe extern "C" fn oxidd_zbdd_nor(lhs: oxidd_zbdd_t, rhs: oxidd_zbdd_t) ->
 
 /// Compute the ZBDD for the exclusive disjunction `lhs ⊕ rhs`
 ///
-/// This function does not decrement the reference counters of its arguments.
+/// This function does not change the reference counters of its arguments.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -440,7 +440,7 @@ pub unsafe extern "C" fn oxidd_zbdd_xor(lhs: oxidd_zbdd_t, rhs: oxidd_zbdd_t) ->
 
 /// Compute the ZBDD for the equivalence `lhs ↔ rhs`
 ///
-/// This function does not decrement the reference counters of its arguments.
+/// This function does not change the reference counters of its arguments.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -452,7 +452,7 @@ pub unsafe extern "C" fn oxidd_zbdd_equiv(lhs: oxidd_zbdd_t, rhs: oxidd_zbdd_t) 
 
 /// Compute the ZBDD for the implication `lhs → rhs` (or `self ≤ rhs`)
 ///
-/// This function does not decrement the reference counters of its arguments.
+/// This function does not change the reference counters of its arguments.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -464,7 +464,7 @@ pub unsafe extern "C" fn oxidd_zbdd_imp(lhs: oxidd_zbdd_t, rhs: oxidd_zbdd_t) ->
 
 /// Compute the ZBDD for the strict implication `lhs < rhs`
 ///
-/// This function does not decrement the reference counters of its arguments.
+/// This function does not change the reference counters of its arguments.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -479,7 +479,7 @@ pub unsafe extern "C" fn oxidd_zbdd_imp_strict(
 
 /// Compute the ZBDD for the conditional `cond ? then_case : else_case`
 ///
-/// This function does not decrement the reference counters of its arguments.
+/// This function does not change the reference counters of its arguments.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -495,7 +495,7 @@ pub unsafe extern "C" fn oxidd_zbdd_ite(
 
 /// Count nodes in `f`
 ///
-/// This function does not decrement the reference counters of its argument.
+/// This function does not change the reference counters of its argument.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -507,7 +507,7 @@ pub unsafe extern "C" fn oxidd_zbdd_node_count(f: oxidd_zbdd_t) -> usize {
 
 /// Count the number of satisfying assignments, assuming `vars` input variables
 ///
-/// This function does not decrement the reference counters of its argument.
+/// This function does not change the reference counters of its argument.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -526,7 +526,7 @@ pub unsafe extern "C" fn oxidd_zbdd_sat_count_uint64(
 
 /// Count the number of satisfying assignments, assuming `vars` input variables
 ///
-/// This function does not decrement the reference counters of its argument.
+/// This function does not change the reference counters of its argument.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
@@ -544,7 +544,7 @@ pub unsafe extern "C" fn oxidd_zbdd_sat_count_double(
 
 /// Pick a satisfying assignment
 ///
-/// This function does not decrement the reference counters of its argument.
+/// This function does not change the reference counters of its argument.
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
