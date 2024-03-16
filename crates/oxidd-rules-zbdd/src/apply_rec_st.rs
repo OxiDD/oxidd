@@ -24,7 +24,6 @@ use oxidd_core::HasApplyCache;
 use oxidd_core::HasLevel;
 use oxidd_core::InnerNode;
 use oxidd_core::LevelNo;
-use oxidd_core::LevelView;
 use oxidd_core::Manager;
 use oxidd_core::Node;
 use oxidd_core::Tag;
@@ -616,6 +615,9 @@ where
         let mut levels = manager.levels().rev();
         levels.next().unwrap();
         for mut view in levels {
+            // only use `oxidd_core::LevelView` here to mitigate confusion of Rust Analyzer
+            use oxidd_core::LevelView;
+
             let level = view.level_no();
             let edge2 = manager.clone_edge(&edge);
             edge = view.get_or_insert(<F::Manager<'id> as Manager>::InnerNode::new(
