@@ -1,5 +1,7 @@
 /target/
 
+/.local/
+
 /.vscode/
 /.cspellcache
 

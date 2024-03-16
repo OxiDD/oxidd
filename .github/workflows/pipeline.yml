@@ -25,7 +25,7 @@ jobs:
     - name: Install Just
       run: sudo snap install --edge --classic just
     - name: Install cSpell
-      run: npm install --prefix=target/cspell -g cspell
+      run: npm install --prefix=.local/cspell -g cspell
     - name: Lint
       run: just lint
       
