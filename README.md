@@ -2,7 +2,7 @@
 
 # OxiDD
 
-OxiDD is a highly modular decision diagram framework written in Rust. The most prominent instance of decision diagrams is provided by [(reduced ordered) binary decision diagrams (BDDs)](https://en.wikipedia.org/wiki/Binary_decision_diagram), which are succinct representations of Boolean functions $\mathbb B^n \to \mathbb B$. Such BDD representations are canonical and thus, deciding equality of Boolean functions—in general an NP-complete problem—can be done in constant time. Further, many Boolean operations on two BDDs $f,g$ are possible in $\mathcal O(|f|\cdot|g|)$ (where $|f|$ denotes the node count in $f$). There are various other kinds of decision diagrams for which OxiDD aims to be a framework enabling high-performance implementations with low effort.
+OxiDD is a highly modular decision diagram framework written in Rust. The most prominent instance of decision diagrams is provided by [(reduced ordered) binary decision diagrams (BDDs)](https://en.wikipedia.org/wiki/Binary_decision_diagram), which are succinct representations of Boolean functions $\mathbb B^n \to \mathbb B$. Such BDD representations are canonical and thus, deciding equality of Boolean functions—in general a co-NP-complete problem—can be done in constant time. Further, many Boolean operations on two BDDs $f,g$ are possible in $\mathcal O(|f|\cdot|g|)$ (where $|f|$ denotes the node count in $f$). There are various other kinds of decision diagrams for which OxiDD aims to be a framework enabling high-performance implementations with low effort.
 
 
 ## Features
