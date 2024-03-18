@@ -1,4 +1,4 @@
-/// Complement edge binary decision diagrams
+/// @file Complement edge binary decision diagrams
 
 #pragma once
 
@@ -41,7 +41,16 @@ public:
     return *this;
   }
 
-  bool is_invalid() noexcept { return !_manager._p; }
+  friend bool operator==(const bcdd_manager &lhs,
+                         const bcdd_manager &rhs) noexcept {
+    return lhs._manager._p == rhs._manager._p;
+  }
+  friend bool operator!=(const bcdd_manager &lhs,
+                         const bcdd_manager &rhs) noexcept {
+    return !(lhs == rhs);
+  }
+
+  bool is_invalid() const noexcept { return !_manager._p; }
 
   bcdd_function new_var() noexcept;
 
@@ -58,6 +67,8 @@ class bcdd_function {
   capi::oxidd_bcdd_t _func;
 
   friend class bcdd_manager;
+  friend struct std::hash<bcdd_function>;
+
   bcdd_function(capi::oxidd_bcdd_t func) noexcept : _func(func) {}
 
 public:
@@ -90,13 +101,15 @@ public:
     return *this;
   }
 
-  bool is_invalid() noexcept { return _func._p == nullptr; }
+  bool is_invalid() const noexcept { return _func._p == nullptr; }
 
-  bool operator==(const bcdd_function &rhs) const noexcept {
-    return (_func._p == rhs._func._p);
+  friend bool operator==(const bcdd_function &lhs,
+                         const bcdd_function &rhs) noexcept {
+    return lhs._func._i == rhs._func._i && lhs._func._p == rhs._func._p;
   }
-  bool operator!=(const bcdd_function &rhs) const noexcept {
-    return !(*this == rhs);
+  friend bool operator!=(const bcdd_function &lhs,
+                         const bcdd_function &rhs) noexcept {
+    return !(lhs == rhs);
   }
 
   bcdd_function operator~() const noexcept { return oxidd_bcdd_not(_func); }
@@ -138,11 +151,11 @@ public:
     return oxidd_bcdd_node_count(_func);
   }
 
-  uint64_t sat_count_uint64(oxidd_level_no_t vars) const noexcept {
+  uint64_t sat_count_uint64(level_no_t vars) const noexcept {
     assert(_func._p);
     return oxidd_bcdd_sat_count_uint64(_func, vars);
   }
-  double sat_count_double(oxidd_level_no_t vars) const noexcept {
+  double sat_count_double(level_no_t vars) const noexcept {
     assert(_func._p);
     return oxidd_bcdd_sat_count_double(_func, vars);
   }
@@ -167,3 +180,13 @@ inline bcdd_function bcdd_manager::bot() const noexcept {
 }
 
 } // namespace oxidd
+
+namespace std {
+
+template <> struct std::hash<oxidd::bcdd_function> {
+  std::size_t operator()(const oxidd::bcdd_function &f) const noexcept {
+    return std::hash<const void *>{}(f._func._p) ^ f._func._i;
+  }
+};
+
+} // namespace std

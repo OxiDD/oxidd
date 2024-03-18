@@ -1,4 +1,4 @@
-/// Binary decision diagrams (without complement edges)
+/// @file Binary decision diagrams (without complement edges)
 
 #pragma once
 
@@ -40,6 +40,15 @@ public:
     return *this;
   }
 
+  friend bool operator==(const bdd_manager &lhs,
+                         const bdd_manager &rhs) noexcept {
+    return lhs._manager._p == rhs._manager._p;
+  }
+  friend bool operator!=(const bdd_manager &lhs,
+                         const bdd_manager &rhs) noexcept {
+    return !(lhs == rhs);
+  }
+
   bool is_invalid() const noexcept { return !_manager._p; }
 
   bdd_function new_var() noexcept;
@@ -57,6 +66,8 @@ class bdd_function {
   capi::oxidd_bdd_t _func;
 
   friend class bdd_manager;
+  friend struct std::hash<bdd_function>;
+
   bdd_function(capi::oxidd_bdd_t func) noexcept : _func(func) {}
 
 public:
@@ -91,11 +102,13 @@ public:
 
   bool is_invalid() const noexcept { return _func._p == nullptr; }
 
-  bool operator==(const bdd_function &rhs) const noexcept {
-    return (_func._p == rhs._func._p);
+  friend bool operator==(const bdd_function &lhs,
+                         const bdd_function &rhs) noexcept {
+    return lhs._func._i == rhs._func._i && lhs._func._p == rhs._func._p;
   }
-  bool operator!=(const bdd_function &rhs) const noexcept {
-    return !(*this == rhs);
+  friend bool operator!=(const bdd_function &lhs,
+                         const bdd_function &rhs) noexcept {
+    return !(lhs == rhs);
   }
 
   bdd_function operator~() const noexcept { return oxidd_bdd_not(_func); }
@@ -137,11 +150,11 @@ public:
     return oxidd_bdd_node_count(_func);
   }
 
-  uint64_t sat_count_uint64(oxidd_level_no_t vars) const noexcept {
+  uint64_t sat_count_uint64(level_no_t vars) const noexcept {
     assert(_func._p);
     return oxidd_bdd_sat_count_uint64(_func, vars);
   }
-  double sat_count_double(oxidd_level_no_t vars) const noexcept {
+  double sat_count_double(level_no_t vars) const noexcept {
     assert(_func._p);
     return oxidd_bdd_sat_count_double(_func, vars);
   }
@@ -166,3 +179,13 @@ inline bdd_function bdd_manager::bot() const noexcept {
 }
 
 } // namespace oxidd
+
+namespace std {
+
+template <> struct std::hash<oxidd::bdd_function> {
+  std::size_t operator()(const oxidd::bdd_function &f) const noexcept {
+    return std::hash<const void *>{}(f._func._p) ^ f._func._i;
+  }
+};
+
+} // namespace std

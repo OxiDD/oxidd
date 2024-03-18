@@ -1,4 +1,4 @@
-/// Primitives and utilities
+/// @file Primitives and utilities
 
 #pragma once
 
@@ -11,7 +11,7 @@
 
 namespace oxidd {
 
-using capi::oxidd_level_no_t;
+using level_no_t = capi::oxidd_level_no_t;
 
 enum class opt_bool : int8_t {
   NONE = -1,

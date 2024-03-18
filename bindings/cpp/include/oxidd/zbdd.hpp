@@ -1,4 +1,4 @@
-/// Zero-suppressed binary decision diagrams
+/// @file Zero-suppressed binary decision diagrams
 
 #pragma once
 
@@ -41,7 +41,16 @@ public:
     return *this;
   }
 
-  bool is_invalid() noexcept { return !_manager._p; }
+  friend bool operator==(const zbdd_manager &lhs,
+                         const zbdd_manager &rhs) noexcept {
+    return lhs._manager._p == rhs._manager._p;
+  }
+  friend bool operator!=(const zbdd_manager &lhs,
+                         const zbdd_manager &rhs) noexcept {
+    return !(lhs == rhs);
+  }
+
+  bool is_invalid() const noexcept { return !_manager._p; }
 
   zbdd_set new_singleton() noexcept;
   zbdd_set new_var() noexcept;
@@ -61,6 +70,8 @@ class zbdd_set {
   capi::oxidd_zbdd_t _func;
 
   friend class zbdd_manager;
+  friend struct std::hash<zbdd_set>;
+
   zbdd_set(capi::oxidd_zbdd_t func) noexcept : _func(func) {}
 
 public:
@@ -93,15 +104,18 @@ public:
     return *this;
   }
 
-  bool is_invalid() noexcept { return _func._p == nullptr; }
+  bool is_invalid() const noexcept { return _func._p == nullptr; }
 
-  bool operator==(const zbdd_set &rhs) const noexcept {
-    return (_func._p == rhs._func._p);
+  friend bool operator==(const zbdd_set &lhs, const zbdd_set &rhs) noexcept {
+    return lhs._func._i == rhs._func._i && lhs._func._p == rhs._func._p;
   }
-  bool operator!=(const zbdd_set &rhs) const noexcept {
-    return !(*this == rhs);
+  friend bool operator!=(const zbdd_set &lhs, const zbdd_set &rhs) noexcept {
+    return !(lhs == rhs);
   }
 
+  zbdd_set operator~() const noexcept {
+    return zbdd_set(oxidd_zbdd_not(_func));
+  }
   zbdd_set operator&(const zbdd_set &rhs) const noexcept {
     return zbdd_set(oxidd_zbdd_intsec(_func, rhs._func));
   }
@@ -113,6 +127,12 @@ public:
   }
   zbdd_set &operator|=(const zbdd_set &rhs) noexcept {
     return (*this = *this | rhs);
+  }
+  zbdd_set operator^(const zbdd_set &rhs) const noexcept {
+    return zbdd_set(oxidd_zbdd_xor(_func, rhs._func));
+  }
+  zbdd_set &operator^=(const zbdd_set &rhs) noexcept {
+    return (*this = *this ^ rhs);
   }
   zbdd_set operator-(const zbdd_set &rhs) const noexcept {
     return zbdd_set(oxidd_zbdd_diff(_func, rhs._func));
@@ -133,11 +153,11 @@ public:
     return oxidd_zbdd_node_count(_func);
   }
 
-  uint64_t sat_count_uint64(oxidd_level_no_t vars) const noexcept {
+  uint64_t sat_count_uint64(level_no_t vars) const noexcept {
     assert(_func._p);
     return oxidd_zbdd_sat_count_uint64(_func, vars);
   }
-  double sat_count_double(oxidd_level_no_t vars) const noexcept {
+  double sat_count_double(level_no_t vars) const noexcept {
     assert(_func._p);
     return oxidd_zbdd_sat_count_double(_func, vars);
   }
@@ -174,3 +194,13 @@ inline zbdd_set zbdd_manager::bot() const noexcept {
 }
 
 } // namespace oxidd
+
+namespace std {
+
+template <> struct std::hash<oxidd::zbdd_set> {
+  std::size_t operator()(const oxidd::zbdd_set &f) const noexcept {
+    return std::hash<const void *>{}(f._func._p) ^ f._func._i;
+  }
+};
+
+} // namespace std
