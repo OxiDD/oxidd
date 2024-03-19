@@ -1,9 +1,6 @@
 find_package(Doxygen)
 
 if(DOXYGEN)
-    # exclude internal documentation
-    set(USE_INTERNAL_DOCS "NO")
-
     # configure doxygen files
     set(DOXYGEN_IN ${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile.in)
     set(DOXYGEN_OUT ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile)
@@ -11,7 +8,7 @@ if(DOXYGEN)
     configure_file(${DOXYGEN_IN} ${DOXYGEN_OUT} @ONLY)
 
     # add target
-    add_custom_target(oxidd-docs ALL
+    add_custom_target(oxidd-doc ALL
         COMMAND ${DOXYGEN_EXECUTABLE} ${DOXYGEN_OUT}
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
         COMMENT "Generating API documentation with Doxygen"

@@ -13,7 +13,7 @@ project(OxiDD
 set(OXIDD_CARGO_PROFILE "release" CACHE STRING "Sets the build profile used for Rust dependencies (`dev`, `release`, or `release-with-debug`)")
 set_property(CACHE OXIDD_CARGO_PROFILE PROPERTY STRINGS "dev" "release" "release-with-debug")
 
-option(OXIDD_CXX_DOCS "Build C/C++ API documentation for OxiDD" ${PROJECT_IS_TOP_LEVEL})
+option(OXIDD_CXX_DOC "Build C/C++ API documentation for OxiDD" ${PROJECT_IS_TOP_LEVEL})
 
 # Mark some cmake variables as advanced since they don't have to be exposed to the user.
 mark_as_advanced(FORCE
@@ -80,9 +80,9 @@ add_subdirectory(bindings/cpp/tests EXCLUDE_FROM_ALL)
 
 # --- Dev tools ----------------------------------------------------------------
 
-if(OXIDD_CXX_DOCS)
-  add_subdirectory(bindings/cpp/docs)
-endif(OXIDD_CXX_DOCS)
+if(OXIDD_CXX_DOC)
+  add_subdirectory(bindings/cpp/doc)
+endif(OXIDD_CXX_DOC)
 
 if(PROJECT_IS_TOP_LEVEL)
     set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
