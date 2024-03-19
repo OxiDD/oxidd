@@ -448,7 +448,11 @@ pub fn derive_boolean_function(input: syn::DeriveInput) -> TokenStream {
                 fn pick_cube<'__a, __I: ::std::iter::ExactSizeIterator<Item = &'__a Self>>(
                     &'__a self,
                     order: impl ::std::iter::IntoIterator<IntoIter = __I>,
-                    choice: impl for<'__id> ::std::ops::FnMut(&#manager_ty, &::oxidd_core::function::INodeOfFunc<'__id, Self>) -> bool,
+                    choice: impl for<'__id> ::std::ops::FnMut(
+                        &#manager_ty,
+                        ::oxidd_core::function::ETagOfFunc<'__id, Self>,
+                        &::oxidd_core::function::INodeOfFunc<'__id, Self>,
+                    ) -> bool,
                 ) -> ::std::option::Option<::std::vec::Vec<::oxidd_core::util::OptBool>> {
                     <#inner as #trait_path>::pick_cube(&self.#field, order.into_iter().map(|f| &f.#field), choice)
                 }
@@ -458,7 +462,11 @@ pub fn derive_boolean_function(input: syn::DeriveInput) -> TokenStream {
                     manager: &'__a #manager_ty,
                     edge: &'__a #edge_ty,
                     order: impl ::std::iter::IntoIterator<IntoIter = __I>,
-                    choice: impl ::std::ops::FnMut(&#manager_ty, &::oxidd_core::function::INodeOfFunc<'__id, Self>) -> bool,
+                    choice: impl ::std::ops::FnMut(
+                        &#manager_ty,
+                        ::oxidd_core::function::ETagOfFunc<'__id, Self>,
+                        &::oxidd_core::function::INodeOfFunc<'__id, Self>,
+                    ) -> bool,
                 ) -> ::std::option::Option<::std::vec::Vec<::oxidd_core::util::OptBool>>
                 where
                     __I: ::std::iter::ExactSizeIterator<Item = &'__a #edge_ty>,

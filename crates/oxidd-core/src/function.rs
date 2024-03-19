@@ -583,7 +583,8 @@ pub trait BooleanFunction: Function {
         order: impl IntoIterator<IntoIter = I>,
         choice: impl for<'id> FnMut(
             &Self::Manager<'id>,
-            &<Self::Manager<'id> as Manager>::InnerNode,
+            ETagOfFunc<'id, Self>,
+            &INodeOfFunc<'id, Self>,
         ) -> bool,
     ) -> Option<Vec<OptBool>> {
         self.with_manager_shared(|manager, edge| {
@@ -601,7 +602,7 @@ pub trait BooleanFunction: Function {
         manager: &'a Self::Manager<'id>,
         edge: &'a EdgeOfFunc<'id, Self>,
         order: impl IntoIterator<IntoIter = I>,
-        choice: impl FnMut(&Self::Manager<'id>, &INodeOfFunc<'id, Self>) -> bool,
+        choice: impl FnMut(&Self::Manager<'id>, ETagOfFunc<'id, Self>, &INodeOfFunc<'id, Self>) -> bool,
     ) -> Option<Vec<OptBool>>
     where
         I: ExactSizeIterator<Item = &'a EdgeOfFunc<'id, Self>>;
@@ -652,8 +653,8 @@ pub trait BooleanFunction: Function {
         S: BuildHasher,
     {
         let vars = manager.num_levels();
-        Self::pick_cube_edge(manager, edge, order, |manager, node| {
-            let (t, e) = Self::cofactors_node(Default::default(), node);
+        Self::pick_cube_edge(manager, edge, order, |manager, tag, node| {
+            let (t, e) = Self::cofactors_node(tag, node);
             let t_count = Self::sat_count_edge(manager, &*t, vars, cache).0;
             let e_count = Self::sat_count_edge(manager, &*e, vars, cache).0;
             rng.generate::<f64>() < t_count / (t_count + e_count)

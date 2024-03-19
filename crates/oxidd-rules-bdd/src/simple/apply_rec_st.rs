@@ -7,6 +7,7 @@ use bitvec::vec::BitVec;
 
 use oxidd_core::function::BooleanFunction;
 use oxidd_core::function::BooleanFunctionQuant;
+use oxidd_core::function::ETagOfFunc;
 use oxidd_core::function::EdgeOfFunc;
 use oxidd_core::function::Function;
 use oxidd_core::function::INodeOfFunc;
@@ -654,7 +655,7 @@ where
         manager: &'a Self::Manager<'id>,
         edge: &'a EdgeOfFunc<'id, Self>,
         order: impl IntoIterator<IntoIter = I>,
-        choice: impl FnMut(&Self::Manager<'id>, &INodeOfFunc<'id, Self>) -> bool,
+        choice: impl FnMut(&Self::Manager<'id>, ETagOfFunc<'id, Self>, &INodeOfFunc<'id, Self>) -> bool,
     ) -> Option<Vec<OptBool>>
     where
         I: ExactSizeIterator<Item = &'a EdgeOfFunc<'id, Self>>,
@@ -664,7 +665,7 @@ where
             manager: &M,
             edge: Borrowed<M::Edge>,
             cube: &mut [OptBool],
-            mut choice: impl FnMut(&M, &M::InnerNode) -> bool,
+            mut choice: impl FnMut(&M, M::EdgeTag, &M::InnerNode) -> bool,
         ) where
             M::InnerNode: HasLevel,
         {
@@ -677,7 +678,7 @@ where
             } else if manager.get_node(&e).is_terminal(&BDDTerminal::False) {
                 true
             } else {
-                choice(manager, node)
+                choice(manager, Default::default(), node)
             };
             cube[node.level() as usize] = OptBool::from(c);
             inner(manager, if c { t } else { e }, cube, choice);
