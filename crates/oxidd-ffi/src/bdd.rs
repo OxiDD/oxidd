@@ -7,7 +7,6 @@ use rustc_hash::FxHasher;
 
 use oxidd::bdd::BDDFunction;
 use oxidd::bdd::BDDManagerRef;
-use oxidd::util::num::Saturating;
 use oxidd::util::num::F64;
 use oxidd::BooleanFunction;
 use oxidd::BooleanFunctionQuant;
@@ -175,7 +174,7 @@ pub unsafe extern "C" fn oxidd_bdd_num_inner_nodes(manager: oxidd_bdd_manager_t)
         .with_manager_shared(|manager| manager.num_inner_nodes())
 }
 
-/// Get a fresh variable, i.e. a function that is true if and only if the
+/// Get a fresh variable, i.e., a function that is true if and only if the
 /// variable is true. This adds a new level to a decision diagram.
 ///
 /// This function does not change the reference counters of its argument.
@@ -302,7 +301,7 @@ pub unsafe extern "C" fn oxidd_bdd_equiv(lhs: oxidd_bdd_t, rhs: oxidd_bdd_t) -> 
     op2(lhs, rhs, BDDFunction::equiv)
 }
 
-/// Compute the BDD for the implication `lhs → rhs` (or `self ≤ rhs`)
+/// Compute the BDD for the implication `lhs → rhs` (or `lhs ≤ rhs`)
 ///
 /// This function does not change the reference counters of its arguments.
 ///
@@ -381,7 +380,7 @@ pub unsafe extern "C" fn oxidd_bdd_forall(f: oxidd_bdd_t, vars: oxidd_bdd_t) -> 
 /// `vars` is a set of variables, which in turn is just the conjunction of the
 /// variables. This operation removes all occurrences of the variables by
 /// existential quantification. Existential quantification of a Boolean function
-/// `f(…, x, …)` over a single variable `x` is `f(…, 0, …) ∧ f(…, 1, …)`.
+/// `f(…, x, …)` over a single variable `x` is `f(…, 0, …) ∨ f(…, 1, …)`.
 ///
 /// This function does not change the reference counters of its arguments.
 ///
@@ -398,7 +397,7 @@ pub unsafe extern "C" fn oxidd_bdd_exist(f: oxidd_bdd_t, vars: oxidd_bdd_t) -> o
 /// `vars` is a set of variables, which in turn is just the conjunction of the
 /// variables. This operation removes all occurrences of the variables by
 /// unique quantification. Unique quantification of a Boolean function
-/// `f(…, x, …)` over a single variable `x` is `f(…, 0, …) ∧ f(…, 1, …)`.
+/// `f(…, x, …)` over a single variable `x` is `f(…, 0, …) ⊕ f(…, 1, …)`.
 ///
 /// This function does not change the reference counters of its arguments.
 ///
@@ -420,22 +419,6 @@ pub unsafe extern "C" fn oxidd_bdd_unique(f: oxidd_bdd_t, vars: oxidd_bdd_t) -> 
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_bdd_node_count(f: oxidd_bdd_t) -> usize {
     f.get().expect(FUNC_UNWRAP_MSG).node_count()
-}
-
-/// Count the number of satisfying assignments, assuming `vars` input variables
-///
-/// This function does not change the reference counters of its argument.
-///
-/// Locking behavior: acquires a shared manager lock.
-///
-/// @returns  The number of satisfying assignments or `UINT64_MAX` if the number
-///           or some intermediate result is too large
-#[no_mangle]
-pub unsafe extern "C" fn oxidd_bdd_sat_count_uint64(f: oxidd_bdd_t, vars: oxidd_level_no_t) -> u64 {
-    f.get()
-        .expect(FUNC_UNWRAP_MSG)
-        .sat_count::<Saturating<u64>, BuildHasherDefault<FxHasher>>(vars, &mut Default::default())
-        .0
 }
 
 /// Count the number of satisfying assignments, assuming `vars` input variables

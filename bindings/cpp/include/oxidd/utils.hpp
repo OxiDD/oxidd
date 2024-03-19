@@ -1,4 +1,5 @@
-/// @file Primitives and utilities
+/// @file  utils.hpp
+/// @brief Primitives and utilities
 
 #pragma once
 
@@ -9,10 +10,13 @@
 
 #include <oxidd.h>
 
+/// OxiDD's main namespace
 namespace oxidd {
 
+/// Level number type
 using level_no_t = capi::oxidd_level_no_t;
 
+/// Optional `bool`
 enum class opt_bool : int8_t {
   NONE = -1,
   FALSE = 0,

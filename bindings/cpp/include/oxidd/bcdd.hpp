@@ -1,4 +1,5 @@
-/// @file Complement edge binary decision diagrams
+/// @file  bcdd.hpp
+/// @brief Complement edge binary decision diagrams
 
 #pragma once
 
@@ -8,22 +9,37 @@ namespace oxidd {
 
 class bcdd_function;
 
+/// Manager for binary decision diagrams with complement edges
+///
+/// Models the oxidd::manager concept.
 class bcdd_manager {
+  /// Wrapped CAPI BCDD manager
   capi::oxidd_bcdd_manager_t _manager;
 
+  /// Create a new BCDD manager from a manager instance of the CAPI
   bcdd_manager(capi::oxidd_bcdd_manager_t manager) noexcept
       : _manager(manager) {}
 
 public:
+  /// Default constructor, yields an invalid manager
   bcdd_manager() noexcept { _manager._p = nullptr; }
+  /// Create a new BCDD manager
+  ///
+  /// @param  inner_node_capacity   Maximum count of inner nodes
+  /// @param  apply_cache_capacity  Maximum count of apply cache entries
+  /// @param  threads               Thread count for the internal thread pool
   bcdd_manager(size_t inner_node_capacity, size_t apply_cache_capacity,
                uint32_t threads) noexcept {
     _manager = capi::oxidd_bcdd_manager_new(inner_node_capacity,
                                             apply_cache_capacity, threads);
   }
+  /// Copy constructor: increments the internal atomic reference counter
+  ///
+  /// Runtime complexity: O(1)
   bcdd_manager(const bcdd_manager &other) noexcept : _manager(other._manager) {
     oxidd_bcdd_manager_ref(_manager);
   }
+  /// Move constructor: invalidates `other`
   bcdd_manager(bcdd_manager &&other) noexcept : _manager(other._manager) {
     other._manager._p = nullptr;
   }
@@ -33,6 +49,7 @@ public:
       oxidd_bcdd_manager_unref(_manager);
   }
 
+  /// Copy assignment operator
   bcdd_manager &operator=(const bcdd_manager &rhs) noexcept {
     if (_manager._p != nullptr)
       oxidd_bcdd_manager_unref(_manager);
@@ -40,42 +57,112 @@ public:
     oxidd_bcdd_manager_ref(_manager);
     return *this;
   }
+  /// Move assignment operator
+  bcdd_manager &operator=(bcdd_manager &&rhs) noexcept {
+    if (_manager._p != nullptr)
+      oxidd_bcdd_manager_unref(_manager);
+    _manager = rhs._manager;
+    rhs._manager._p = nullptr;
+    return *this;
+  }
 
+  /// Compare two managers for referential equality
+  ///
+  /// Runtime complexity: O(1)
+  ///
+  /// @param  lhs  Left hand side operand
+  /// @param  rhs  Right hand side operand
+  ///
+  /// @returns  `true` iff `lhs` and `rhs` reference the same manager
   friend bool operator==(const bcdd_manager &lhs,
                          const bcdd_manager &rhs) noexcept {
     return lhs._manager._p == rhs._manager._p;
   }
+  /// Same as `!(lhs == rhs)` (see \ref operator==)
   friend bool operator!=(const bcdd_manager &lhs,
                          const bcdd_manager &rhs) noexcept {
     return !(lhs == rhs);
   }
 
+  /// Check if this manager reference is invalid
+  ///
+  /// A manager reference created by the default constructor bcdd_manager() is
+  /// invalid as well as a \ref bcdd_manager instance that has been moved (via
+  /// bcdd_manager(bcdd_manager &&other)).
+  ///
+  /// @returns  `true` iff this manager reference is invalid
   bool is_invalid() const noexcept { return !_manager._p; }
 
+  /// Get a fresh variable, i.e., a function that is true if and only if the
+  /// variable is true. This adds a new level to a decision diagram.
+  ///
+  /// `this` must not be invalid (check via is_invalid()).
+  ///
+  /// Locking behavior: acquires an exclusive manager lock.
+  ///
+  /// @returns  The BCDD function representing the variable
   bcdd_function new_var() noexcept;
 
+  /// Get the constant true BCDD function ⊤
+  ///
+  /// `this` must not be invalid (check via is_invalid()).
+  ///
+  /// Locking behavior: acquires a shared manager lock.
+  ///
+  /// Runtime complexity: O(1)
+  ///
+  /// @returns  ⊤ as BCDD function
   bcdd_function top() const noexcept;
+  /// Get the constant false BCDD function ⊥
+  ///
+  /// `this` must not be invalid (check via is_invalid()).
+  ///
+  /// Locking behavior: acquires a shared manager lock.
+  ///
+  /// Runtime complexity: O(1)
+  ///
+  /// @returns  ⊥ as BCDD function
   bcdd_function bot() const noexcept;
 
+  /// Get the number of inner nodes currently stored
+  ///
+  /// `this` must not be invalid (check via is_invalid()).
+  ///
+  /// Locking behavior: acquires a shared manager lock.
+  ///
+  /// @returns  The number of inner nodes
   size_t num_inner_nodes() const noexcept {
     assert(_manager._p != nullptr);
     return oxidd_bcdd_num_inner_nodes(_manager);
   }
 };
 
+/// Boolean function represented as a binary decision diagram with complement
+/// edges (BCDD)
+///
+/// This is essentially a reference to a BCDD node.
+///
+/// Models the oxidd::boolean_function concept.
 class bcdd_function {
+  /// Wrapped BCDD function
   capi::oxidd_bcdd_t _func;
 
   friend class bcdd_manager;
   friend struct std::hash<bcdd_function>;
 
+  /// Create a new BCDD function from a BCDD function instance of the CAPI
   bcdd_function(capi::oxidd_bcdd_t func) noexcept : _func(func) {}
 
 public:
+  /// Default constructor, yields an invalid BCDD function
   bcdd_function() noexcept { _func._p = nullptr; }
+  /// Copy constructor: increments the internal reference counters
+  ///
+  /// Runtime complexity: O(1)
   bcdd_function(const bcdd_function &other) noexcept : _func(other._func) {
     oxidd_bcdd_ref(_func);
   }
+  /// Move constructor: invalidates `other`
   bcdd_function(bcdd_function &&other) noexcept : _func(other._func) {
     other._func._p = nullptr;
   }
@@ -85,6 +172,7 @@ public:
       oxidd_bcdd_unref(_func);
   }
 
+  /// Copy assignment operator
   bcdd_function &operator=(const bcdd_function &rhs) noexcept {
     if (_func._p != nullptr)
       oxidd_bcdd_unref(_func);
@@ -93,6 +181,7 @@ public:
       oxidd_bcdd_ref(_func);
     return *this;
   }
+  /// Move assignment operator
   bcdd_function &operator=(bcdd_function &&rhs) noexcept {
     if (_func._p != nullptr)
       oxidd_bcdd_unref(_func);
@@ -101,65 +190,264 @@ public:
     return *this;
   }
 
-  bool is_invalid() const noexcept { return _func._p == nullptr; }
-
+  /// Compare two functions for referential equality
+  ///
+  /// Runtime complexity: O(1)
+  ///
+  /// @param  lhs  Left hand side operand
+  /// @param  rhs  Right hand side operand
+  ///
+  /// @returns  `true` iff `lhs` and `rhs` reference the same node and have the
+  ///           same edge tag
   friend bool operator==(const bcdd_function &lhs,
                          const bcdd_function &rhs) noexcept {
     return lhs._func._i == rhs._func._i && lhs._func._p == rhs._func._p;
   }
+  /// Same as `!(lhs == rhs)` (see \ref operator==)
   friend bool operator!=(const bcdd_function &lhs,
                          const bcdd_function &rhs) noexcept {
     return !(lhs == rhs);
   }
-
-  bcdd_function operator~() const noexcept { return oxidd_bcdd_not(_func); }
-  bcdd_function operator&(const bcdd_function &rhs) const noexcept {
-    return bcdd_function(oxidd_bcdd_and(_func, rhs._func));
+  /// Check if `lhs` is less than `rhs` according to an arbitrary total order
+  ///
+  /// Runtime complexity: O(1)
+  ///
+  /// @param  lhs  Left hand side operand
+  /// @param  rhs  Right hand side operand
+  ///
+  /// @returns  `true` iff `lhs` is less than `rhs` according to the total order
+  friend bool operator<(const bcdd_function &lhs,
+                        const bcdd_function &rhs) noexcept {
+    return std::tie(lhs._func._p, lhs._func._i) <
+           std::tie(rhs._func._p, rhs._func._i);
   }
+  /// \ref operator< with arguments swapped
+  friend bool operator>(const bcdd_function &lhs,
+                        const bcdd_function &rhs) noexcept {
+    return rhs < lhs;
+  }
+  /// Same as `!(rhs < lhs)` (see \ref operator<)
+  friend bool operator<=(const bcdd_function &lhs,
+                         const bcdd_function &rhs) noexcept {
+    return !(rhs < lhs);
+  }
+  /// Same as `!(lhs < rhs)` (see \ref operator<)
+  friend bool operator>=(const bcdd_function &lhs,
+                         const bcdd_function &rhs) noexcept {
+    return !(lhs < rhs);
+  }
+
+  /// Check if this BCDD function is invalid
+  ///
+  /// A BCDD function created by the default constructor bcdd_function() is
+  /// invalid as well as a \ref bcdd_function instance that has been moved
+  /// (via bcdd_function(bcdd_function &&other)). Moreover, if an operation
+  /// tries to allocate new nodes but runs out of memory, then it returns an
+  /// invalid function.
+  ///
+  /// @returns  `true` iff this BCDD function is invalid
+  bool is_invalid() const noexcept { return _func._p == nullptr; }
+
+  /// Compute the BCDD for the negation `¬this`
+  ///
+  /// Locking behavior: acquires a shared manager lock.
+  ///
+  /// Runtime complexity: O(1)
+  ///
+  /// @returns  The BCDD function
+  bcdd_function operator~() const noexcept { return oxidd_bcdd_not(_func); }
+  /// Compute the BCDD for the conjunction `lhs ∧ rhs`
+  ///
+  /// Locking behavior: acquires a shared manager lock.
+  ///
+  /// Runtime complexity: O(|lhs| · |rhs|)
+  ///
+  /// @returns  The BCDD function (may be invalid if the operation runs
+  ///           out of memory)
+  friend bcdd_function operator&(const bcdd_function &lhs,
+                                 const bcdd_function &rhs) noexcept {
+    return bcdd_function(oxidd_bcdd_and(lhs._func, rhs._func));
+  }
+  /// Assignment version of \ref operator&
   bcdd_function &operator&=(const bcdd_function &rhs) noexcept {
     return (*this = *this & rhs);
   }
-  bcdd_function operator|(const bcdd_function &rhs) const noexcept {
-    return bcdd_function(oxidd_bcdd_or(_func, rhs._func));
+  /// Compute the BCDD for the disjunction `lhs ∨ rhs`
+  ///
+  /// Locking behavior: acquires a shared manager lock.
+  ///
+  /// Runtime complexity: O(|lhs| · |rhs|)
+  ///
+  /// @returns  The BCDD function (may be invalid if the operation runs
+  ///           out of memory)
+  friend bcdd_function operator|(const bcdd_function &lhs,
+                                 const bcdd_function &rhs) noexcept {
+    return bcdd_function(oxidd_bcdd_or(lhs._func, rhs._func));
   }
+  /// Assignment version of \ref operator|
   bcdd_function &operator|=(const bcdd_function &rhs) noexcept {
     return (*this = *this | rhs);
   }
-  bcdd_function operator^(const bcdd_function &rhs) const noexcept {
-    return bcdd_function(oxidd_bcdd_xor(_func, rhs._func));
+  /// Compute the BCDD for the exclusive disjunction `lhs ⊕ rhs`
+  ///
+  /// Locking behavior: acquires a shared manager lock.
+  ///
+  /// Runtime complexity: O(|lhs| · |rhs|)
+  ///
+  /// @returns  The BCDD function (may be invalid if the operation runs
+  ///           out of memory)
+  friend bcdd_function operator^(const bcdd_function &lhs,
+                                 const bcdd_function &rhs) noexcept {
+    return bcdd_function(oxidd_bcdd_xor(lhs._func, rhs._func));
   }
+  /// Assignment version of \ref operator^
   bcdd_function &operator^=(const bcdd_function &rhs) noexcept {
     return (*this = *this ^ rhs);
   }
+  /// Compute the BCDD for the negated conjunction `this ⊼ rhs`
+  ///
+  /// Locking behavior: acquires a shared manager lock.
+  ///
+  /// Runtime complexity: O(|this| · |rhs|)
+  ///
+  /// @returns  The BCDD function (may be invalid if the operation runs
+  ///           out of memory)
+  bcdd_function nand(const bcdd_function &rhs) const noexcept {
+    return bcdd_function(oxidd_bcdd_nand(_func, rhs._func));
+  }
+  /// Compute the BCDD for the negated disjunction `this ⊽ rhs`
+  ///
+  /// Locking behavior: acquires a shared manager lock.
+  ///
+  /// Runtime complexity: O(|this| · |rhs|)
+  ///
+  /// @returns  The BCDD function (may be invalid if the operation runs
+  ///           out of memory)
+  bcdd_function nor(const bcdd_function &rhs) const noexcept {
+    return bcdd_function(oxidd_bcdd_nor(_func, rhs._func));
+  }
+  /// Compute the BCDD for the equivalence `this ↔ rhs`
+  ///
+  /// Locking behavior: acquires a shared manager lock.
+  ///
+  /// Runtime complexity: O(|this| · |rhs|)
+  ///
+  /// @returns  The BCDD function (may be invalid if the operation runs
+  ///           out of memory)
+  bcdd_function equiv(const bcdd_function &rhs) const noexcept {
+    return bcdd_function(oxidd_bcdd_equiv(_func, rhs._func));
+  }
+  /// Compute the BCDD for the implication `this → rhs` (or `this ≤ rhs`)
+  ///
+  /// Locking behavior: acquires a shared manager lock.
+  ///
+  /// Runtime complexity: O(|this| · |rhs|)
+  ///
+  /// @returns  The BCDD function (may be invalid if the operation runs
+  ///           out of memory)
+  bcdd_function imp(const bcdd_function &rhs) const noexcept {
+    return bcdd_function(oxidd_bcdd_imp(_func, rhs._func));
+  }
+  /// Compute the BCDD for the strict implication `this < rhs`
+  ///
+  /// Locking behavior: acquires a shared manager lock.
+  ///
+  /// Runtime complexity: O(|this| · |rhs|)
+  ///
+  /// @returns  The BCDD function (may be invalid if the operation runs
+  ///           out of memory)
+  bcdd_function imp_strict(const bcdd_function &rhs) const noexcept {
+    return bcdd_function(oxidd_bcdd_imp_strict(_func, rhs._func));
+  }
+  /// Compute the BCDD for the conditional `this ? t : e`
+  ///
+  /// Locking behavior: acquires a shared manager lock.
+  ///
+  /// Runtime complexity: O(|this| · |t| · |e|)
+  ///
+  /// @returns  The BCDD function (may be invalid if the operation runs
+  ///           out of memory)
   bcdd_function ite(const bcdd_function &t,
                     const bcdd_function &e) const noexcept {
     return bcdd_function(oxidd_bcdd_ite(_func, t._func, e._func));
   }
 
+  /// Compute the BCDD for the universal quantification over `vars`
+  ///
+  /// `vars` is a set of variables, which in turn is just the conjunction of the
+  /// variables. This operation removes all occurrences of the variables
+  /// universal quantification. Universal quantification of a Boolean function
+  /// `f(…, x, …)` over a single variable `x` is `f(…, 0, …) ∧ f(…, 1, …)`.
+  ///
+  /// Locking behavior: acquires a shared manager lock.
+  ///
+  /// @returns  The BCDD function (may be invalid if the operation runs
+  ///           out of memory)
   bcdd_function forall(const bcdd_function &vars) const noexcept {
     return oxidd_bcdd_forall(_func, vars._func);
   }
+  /// Compute the BCDD for the existential quantification over `vars`
+  ///
+  /// `vars` is a set of variables, which in turn is just the conjunction of the
+  /// variables. This operation removes all occurrences of the variables
+  /// existential quantification. Existential quantification of a Boolean
+  /// function `f(…, x, …)` over a single variable `x` is
+  /// `f(…, 0, …) ∨ f(…, 1, …)`.
+  ///
+  /// Locking behavior: acquires a shared manager lock.
+  ///
+  /// @returns  The BCDD function (may be invalid if the operation runs
+  ///           out of memory)
   bcdd_function exist(const bcdd_function &vars) const noexcept {
     return oxidd_bcdd_exist(_func, vars._func);
   }
+  /// Compute the BCDD for the unique quantification over `vars`
+  ///
+  /// `vars` is a set of variables, which in turn is just the conjunction of the
+  /// variables. This operation removes all occurrences of the variables
+  /// unique quantification. Unique quantification of a Boolean function
+  /// `f(…, x, …)` over a single variable `x` is `f(…, 0, …) ⊕ f(…, 1, …)`.
+  ///
+  /// Locking behavior: acquires a shared manager lock.
+  ///
+  /// @returns  The BCDD function (may be invalid if the operation runs
+  ///           out of memory)
   bcdd_function unique(const bcdd_function &vars) const noexcept {
     return oxidd_bcdd_unique(_func, vars._func);
   }
 
-  uint64_t node_count() const noexcept {
+  /// Count descendant nodes
+  ///
+  /// `this` must not be invalid (check via is_invalid()).
+  ///
+  /// Locking behavior: acquires a shared manager lock.
+  ///
+  /// @returns  Node count including the terminal node
+  size_t node_count() const noexcept {
     assert(_func._p);
     return oxidd_bcdd_node_count(_func);
   }
 
-  uint64_t sat_count_uint64(level_no_t vars) const noexcept {
-    assert(_func._p);
-    return oxidd_bcdd_sat_count_uint64(_func, vars);
-  }
+  /// Count the number of satisfying assignments
+  ///
+  /// `this` must not be invalid (check via is_invalid()).
+  ///
+  /// Locking behavior: acquires a shared manager lock.
+  ///
+  /// @returns  Count of satisfying assignments
   double sat_count_double(level_no_t vars) const noexcept {
     assert(_func._p);
     return oxidd_bcdd_sat_count_double(_func, vars);
   }
 
+  /// Pick a satisfying assignment
+  ///
+  /// `this` must not be invalid (check via is_invalid()).
+  ///
+  /// Locking behavior: acquires a shared manager lock.
+  ///
+  /// @returns  A satisfying assignment. If `f` is unsatisfiable, the assignment
+  ///           is empty.
   assignment pick_cube() const noexcept {
     assert(_func._p);
     return assignment(oxidd_bcdd_pick_cube(_func));
@@ -183,6 +471,7 @@ inline bcdd_function bcdd_manager::bot() const noexcept {
 
 namespace std {
 
+/// Partial specialization for oxidd::bcdd_function
 template <> struct std::hash<oxidd::bcdd_function> {
   std::size_t operator()(const oxidd::bcdd_function &f) const noexcept {
     return std::hash<const void *>{}(f._func._p) ^ f._func._i;

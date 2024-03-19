@@ -4,7 +4,6 @@ use std::mem::ManuallyDrop;
 use oxidd::AllocResult;
 use rustc_hash::FxHasher;
 
-use oxidd::util::num::Saturating;
 use oxidd::util::num::F64;
 use oxidd::zbdd::ZBDDManagerRef;
 use oxidd::zbdd::ZBDDSet;
@@ -239,7 +238,7 @@ pub unsafe extern "C" fn oxidd_zbdd_base(manager: oxidd_zbdd_manager_t) -> oxidd
         .with_manager_shared(|manager| ZBDDSet::base(manager).into())
 }
 
-/// Get the set of subsets of `self` not containing `var`, formally
+/// Get the set of subsets of `set` not containing `var`, formally
 /// `{s ∈ set | var ∉ s}`
 ///
 /// `var` must be a singleton set.
@@ -254,8 +253,8 @@ pub unsafe extern "C" fn oxidd_zbdd_subset0(set: oxidd_zbdd_t, var: oxidd_zbdd_t
     op2(set, var, ZBDDSet::subset0)
 }
 
-/// Get the set of subsets of `self` containing `var`, formally
-/// `{s ∈ self | var ∈ s}`
+/// Get the set of subsets of `set` containing `var`, formally
+/// `{s ∈ set | var ∈ s}`
 ///
 /// `var` must be a singleton set.
 ///
@@ -269,10 +268,10 @@ pub unsafe extern "C" fn oxidd_zbdd_subset1(set: oxidd_zbdd_t, var: oxidd_zbdd_t
     op2(set, var, ZBDDSet::subset1)
 }
 
-/// Get the set of subsets derived from `self` by adding `var` to the
+/// Get the set of subsets derived from `set` by adding `var` to the
 /// subsets that do not contain `var`, and removing `var` from the subsets
 /// that contain `var`, formally
-/// `{s ∪ {var} | s ∈ self ∧ var ∉ s} ∪ {s ∖ {var} | s ∈ self ∧ var ∈ s}`
+/// `{s ∪ {var} | s ∈ set ∧ var ∉ s} ∪ {s ∖ {var} | s ∈ set ∧ var ∈ s}`
 ///
 /// `var` must be a singleton set.
 ///
@@ -322,7 +321,7 @@ pub unsafe extern "C" fn oxidd_zbdd_diff(lhs: oxidd_zbdd_t, rhs: oxidd_zbdd_t) -
     op2(lhs, rhs, ZBDDSet::diff)
 }
 
-/// Get a fresh variable, i.e. a Boolean function that is true if and only if
+/// Get a fresh variable, i.e., a Boolean function that is true if and only if
 /// the variable is true. This adds a new level to a decision diagram.
 ///
 /// This function does not change the reference counters of its argument.
@@ -449,7 +448,7 @@ pub unsafe extern "C" fn oxidd_zbdd_equiv(lhs: oxidd_zbdd_t, rhs: oxidd_zbdd_t) 
     op2(lhs, rhs, ZBDDSet::equiv)
 }
 
-/// Compute the ZBDD for the implication `lhs → rhs` (or `self ≤ rhs`)
+/// Compute the ZBDD for the implication `lhs → rhs` (or `lhs ≤ rhs`)
 ///
 /// This function does not change the reference counters of its arguments.
 ///
@@ -502,25 +501,6 @@ pub unsafe extern "C" fn oxidd_zbdd_ite(
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_zbdd_node_count(f: oxidd_zbdd_t) -> usize {
     f.get().expect(SET_UNWRAP_MSG).node_count()
-}
-
-/// Count the number of satisfying assignments, assuming `vars` input variables
-///
-/// This function does not change the reference counters of its argument.
-///
-/// Locking behavior: acquires a shared manager lock.
-///
-/// @returns  The number of satisfying assignments or `UINT64_MAX` if the number
-///           or some intermediate result is too large
-#[no_mangle]
-pub unsafe extern "C" fn oxidd_zbdd_sat_count_uint64(
-    f: oxidd_zbdd_t,
-    vars: oxidd_level_no_t,
-) -> u64 {
-    f.get()
-        .expect(SET_UNWRAP_MSG)
-        .sat_count::<Saturating<u64>, BuildHasherDefault<FxHasher>>(vars, &mut Default::default())
-        .0
 }
 
 /// Count the number of satisfying assignments, assuming `vars` input variables
