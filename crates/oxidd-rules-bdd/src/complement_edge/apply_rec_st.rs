@@ -825,7 +825,7 @@ where
         manager: &'a Self::Manager<'id>,
         edge: &'a EdgeOfFunc<'id, Self>,
         order: impl IntoIterator<IntoIter = I>,
-        choice: impl FnMut(&Self::Manager<'id>, &INodeOfFunc<'id, Self>) -> bool,
+        choice: impl FnMut(&Self::Manager<'id>, EdgeTag, &INodeOfFunc<'id, Self>) -> bool,
     ) -> Option<Vec<OptBool>>
     where
         I: ExactSizeIterator<Item = &'a EdgeOfFunc<'id, Self>>,
@@ -835,20 +835,21 @@ where
             manager: &M,
             edge: Borrowed<M::Edge>,
             cube: &mut [OptBool],
-            mut choice: impl FnMut(&M, &M::InnerNode) -> bool,
+            mut choice: impl FnMut(&M, EdgeTag, &M::InnerNode) -> bool,
         ) where
             M::InnerNode: HasLevel,
         {
             let Node::Inner(node) = manager.get_node(&edge) else {
                 return;
             };
-            let (t, e) = collect_cofactors(edge.tag(), node);
+            let tag = edge.tag();
+            let (t, e) = collect_cofactors(tag, node);
             let c = if manager.get_node(&t).is_any_terminal() && t.tag() == EdgeTag::Complemented {
                 false
             } else if manager.get_node(&e).is_any_terminal() && e.tag() == EdgeTag::Complemented {
                 true
             } else {
-                choice(manager, node)
+                choice(manager, tag, node)
             };
             cube[node.level() as usize] = OptBool::from(c);
             inner(manager, if c { t } else { e }, cube, choice);
