@@ -46,6 +46,11 @@ pub struct oxidd_zbdd_t {
 }
 
 impl oxidd_zbdd_t {
+    const INVALID: Self = Self {
+        _p: std::ptr::null(),
+        _i: 0,
+    };
+
     unsafe fn get(self) -> AllocResult<ManuallyDrop<ZBDDSet>> {
         if self._p.is_null() {
             Err(OutOfMemory)
@@ -69,12 +74,27 @@ impl From<AllocResult<ZBDDSet>> for oxidd_zbdd_t {
                 let (_p, _i) = f.into_raw();
                 Self { _p, _i }
             }
-            Err(_) => Self {
-                _p: std::ptr::null(),
-                _i: 0,
-            },
+            Err(_) => Self::INVALID,
         }
     }
+}
+impl From<Option<ZBDDSet>> for oxidd_zbdd_t {
+    fn from(value: Option<ZBDDSet>) -> Self {
+        match value {
+            Some(f) => {
+                let (_p, _i) = f.into_raw();
+                Self { _p, _i }
+            }
+            None => Self::INVALID,
+        }
+    }
+}
+
+/// Pair of two `oxidd_zbdd_t` instances
+#[repr(C)]
+pub struct oxidd_zbdd_pair_t {
+    a: oxidd_zbdd_t,
+    b: oxidd_zbdd_t,
 }
 
 unsafe fn op1(f: oxidd_zbdd_t, op: impl FnOnce(&ZBDDSet) -> AllocResult<ZBDDSet>) -> oxidd_zbdd_t {
@@ -183,7 +203,7 @@ pub unsafe extern "C" fn oxidd_zbdd_new_singleton(manager: oxidd_zbdd_manager_t)
 }
 
 /// Create a new ZBDD node at the level of `var` with the given `hi` and `lo`
-/// edge
+/// edges
 ///
 /// `var` must be a singleton set.
 ///
@@ -192,7 +212,7 @@ pub unsafe extern "C" fn oxidd_zbdd_new_singleton(manager: oxidd_zbdd_manager_t)
 ///
 /// Locking behavior: acquires a shared manager lock.
 ///
-/// @returns  The ZBDD set representing the variable.
+/// @returns  The ZBDD set referencing the new node.
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_zbdd_make_node(
     var: oxidd_zbdd_t,
@@ -210,7 +230,7 @@ pub unsafe extern "C" fn oxidd_zbdd_make_node(
     res.into()
 }
 
-/// Get the ZBDD set `∅`
+/// Get the ZBDD set ∅
 ///
 /// This function does not change the reference counters of its argument.
 ///
@@ -224,7 +244,7 @@ pub unsafe extern "C" fn oxidd_zbdd_empty(manager: oxidd_zbdd_manager_t) -> oxid
         .with_manager_shared(|manager| ZBDDSet::empty(manager).into())
 }
 
-/// Get the ZBDD set `{∅}`
+/// Get the ZBDD set \{∅\}
 ///
 /// This function does not change the reference counters of its argument.
 ///
@@ -236,6 +256,91 @@ pub unsafe extern "C" fn oxidd_zbdd_base(manager: oxidd_zbdd_manager_t) -> oxidd
     manager
         .get()
         .with_manager_shared(|manager| ZBDDSet::base(manager).into())
+}
+
+/// Get the cofactors `(f_true, f_false)` of `f`
+///
+/// Let f(x₀, …, xₙ) be represented by `f`, where x₀ is (currently) the top-most
+/// variable. Then f<sub>true</sub>(x₁, …, xₙ) = f(⊤, x₁, …, xₙ) and
+/// f<sub>false</sub>(x₁, …, xₙ) = f(⊥, x₁, …, xₙ).
+///
+/// Structurally, the cofactors are the children. If you only need one of the
+/// cofactors, then use oxidd_zbdd_cofactor_true() or
+/// oxidd_zbdd_cofactor_false(). These functions are slightly more efficient
+/// then.
+///
+/// Note that the domain of f is 𝔹ⁿ⁺¹ while the domain of f<sub>true</sub> and
+/// f<sub>false</sub> is 𝔹ⁿ. (Remember that, e.g., g(x₀) = x₀ and
+/// g'(x₀, x₁) = x₀ have different representations as ZBDDs.)
+///
+/// This function does not change the reference counters of its argument.
+///
+/// Locking behavior: acquires a shared manager lock.
+///
+/// Runtime complexity: O(1)
+///
+/// @returns  The pair `f_true` and `f_false` if `f` is valid and references an
+///           inner node, otherwise a pair of invalid functions.
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_zbdd_cofactors(f: oxidd_zbdd_t) -> oxidd_zbdd_pair_t {
+    if let Ok(f) = f.get() {
+        if let Some((t, e)) = f.cofactors() {
+            return oxidd_zbdd_pair_t {
+                a: t.into(),
+                b: e.into(),
+            };
+        }
+    }
+    oxidd_zbdd_pair_t {
+        a: oxidd_zbdd_t::INVALID,
+        b: oxidd_zbdd_t::INVALID,
+    }
+}
+
+/// Get the cofactor `f_true` of `f`
+///
+/// This function is slightly more efficient than oxidd_zbdd_cofactors() in case
+/// `f_false` is not needed. For a more detailed description, see
+/// oxidd_zbdd_cofactors().
+///
+/// This function does not change the reference counters of its argument.
+///
+/// Locking behavior: acquires a shared manager lock.
+///
+/// Runtime complexity: O(1)
+///
+/// @returns  `f_true` if `f` is valid and references an inner node, otherwise
+///           an invalid function.
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_zbdd_cofactor_true(f: oxidd_zbdd_t) -> oxidd_zbdd_t {
+    if let Ok(f) = f.get() {
+        f.cofactor_true().into()
+    } else {
+        oxidd_zbdd_t::INVALID
+    }
+}
+
+/// Get the cofactor `f_false` of `f`
+///
+/// This function is slightly more efficient than oxidd_bdd_cofactors() in case
+/// `f_true` is not needed. For a more detailed description, see
+/// oxidd_bdd_cofactors().
+///
+/// This function does not change the reference counters of its argument.
+///
+/// Locking behavior: acquires a shared manager lock.
+///
+/// Runtime complexity: O(1)
+///
+/// @returns  `f_false` if `f` is valid and references an inner node, otherwise
+///           an invalid function.
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_zbdd_cofactor_false(f: oxidd_zbdd_t) -> oxidd_zbdd_t {
+    if let Ok(f) = f.get() {
+        f.cofactor_false().into()
+    } else {
+        oxidd_zbdd_t::INVALID
+    }
 }
 
 /// Get the set of subsets of `set` not containing `var`, formally

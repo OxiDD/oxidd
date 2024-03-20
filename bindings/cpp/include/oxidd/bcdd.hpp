@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "oxidd.h"
 #include <oxidd/utils.hpp>
 
 namespace oxidd {
@@ -11,7 +12,9 @@ class bcdd_function;
 
 /// Manager for binary decision diagrams with complement edges
 ///
-/// Models the oxidd::manager concept.
+/// Models the oxidd::boolean_function_manager concept.
+///
+/// Instances can safely be sent to other threads.
 class bcdd_manager {
   /// Wrapped CAPI BCDD manager
   capi::oxidd_bcdd_manager_t _manager;
@@ -21,6 +24,9 @@ class bcdd_manager {
       : _manager(manager) {}
 
 public:
+  /// Associated function type
+  using function = bcdd_function;
+
   /// Default constructor, yields an invalid manager
   bcdd_manager() noexcept { _manager._p = nullptr; }
   /// Create a new BCDD manager
@@ -94,7 +100,7 @@ public:
   bool is_invalid() const noexcept { return !_manager._p; }
 
   /// Get a fresh variable, i.e., a function that is true if and only if the
-  /// variable is true. This adds a new level to a decision diagram.
+  /// variable is true. This adds a new level to the decision diagram.
   ///
   /// `this` must not be invalid (check via is_invalid()).
   ///
@@ -140,9 +146,11 @@ public:
 /// Boolean function represented as a binary decision diagram with complement
 /// edges (BCDD)
 ///
-/// This is essentially a reference to a BCDD node.
+/// This is essentially a tagged reference to a BCDD node.
 ///
-/// Models the oxidd::boolean_function concept.
+/// Models the oxidd::boolean_function_quant concept.
+///
+/// Instances can safely be sent to other threads.
 class bcdd_function {
   /// Wrapped BCDD function
   capi::oxidd_bcdd_t _func;
@@ -150,7 +158,7 @@ class bcdd_function {
   friend class bcdd_manager;
   friend struct std::hash<bcdd_function>;
 
-  /// Create a new BCDD function from a BCDD function instance of the CAPI
+  /// Create a new \ref bcdd_function from a BCDD function instance of the CAPI
   bcdd_function(capi::oxidd_bcdd_t func) noexcept : _func(func) {}
 
 public:
@@ -248,6 +256,56 @@ public:
   /// @returns  `true` iff this BCDD function is invalid
   bool is_invalid() const noexcept { return _func._p == nullptr; }
 
+  /// Get the cofactors `(f_true, f_false)` of `f`
+  ///
+  /// Let f(x₀, …, xₙ) be represented by `f`, where x₀ is (currently) the
+  /// top-most variable. Then f<sub>true</sub>(x₁, …, xₙ) = f(⊤, x₁, …, xₙ) and
+  /// f<sub>false</sub>(x₁, …, xₙ) = f(⊥, x₁, …, xₙ).
+  ///
+  /// Structurally, the cofactors are children with edge tags are adjusted
+  /// accordingly. If you only need one of the cofactors, then use
+  /// cofactor_true() or cofactor_false(). These functions are slightly more
+  /// efficient then.
+  ///
+  /// Locking behavior: acquires a shared manager lock.
+  ///
+  /// Runtime complexity: O(1)
+  ///
+  /// @returns  The pair `{f_true, f_false}` if `f` is valid and references an
+  ///           inner node, otherwise a pair of invalid functions.
+  std::pair<bcdd_function, bcdd_function> cofactors() const noexcept {
+    capi::oxidd_bcdd_pair_t p = capi::oxidd_bcdd_cofactors(_func);
+    return {p.a, p.b};
+  }
+  /// Get the cofactor `f_true` of `f`
+  ///
+  /// This function is slightly more efficient than cofactors() in case
+  /// `f_false` is not needed.
+  ///
+  /// Locking behavior: acquires a shared manager lock.
+  ///
+  /// Runtime complexity: O(1)
+  ///
+  /// @returns  `f_true` if `f` is valid and references an inner node, otherwise
+  ///           an invalid function.
+  bcdd_function cofactor_true() const noexcept {
+    return capi::oxidd_bcdd_cofactor_true(_func);
+  }
+  /// Get the cofactor `f_false` of `f`
+  ///
+  /// This function is slightly more efficient than cofactors() in case `f_true`
+  /// is not needed.
+  ///
+  /// Locking behavior: acquires a shared manager lock.
+  ///
+  /// Runtime complexity: O(1)
+  ///
+  /// @returns  `f_false` if `f` is valid and references an inner node,
+  ///           otherwise an invalid function.
+  bcdd_function cofactor_false() const noexcept {
+    return capi::oxidd_bcdd_cofactor_true(_func);
+  }
+
   /// Compute the BCDD for the negation `¬this`
   ///
   /// Locking behavior: acquires a shared manager lock.
@@ -262,11 +320,11 @@ public:
   ///
   /// Runtime complexity: O(|lhs| · |rhs|)
   ///
-  /// @returns  The BCDD function (may be invalid if the operation runs
-  ///           out of memory)
+  /// @returns  The BCDD function (may be invalid if the operation runs out of
+  ///           memory)
   friend bcdd_function operator&(const bcdd_function &lhs,
                                  const bcdd_function &rhs) noexcept {
-    return bcdd_function(oxidd_bcdd_and(lhs._func, rhs._func));
+    return capi::oxidd_bcdd_and(lhs._func, rhs._func);
   }
   /// Assignment version of \ref operator&
   bcdd_function &operator&=(const bcdd_function &rhs) noexcept {
@@ -278,11 +336,11 @@ public:
   ///
   /// Runtime complexity: O(|lhs| · |rhs|)
   ///
-  /// @returns  The BCDD function (may be invalid if the operation runs
-  ///           out of memory)
+  /// @returns  The BCDD function (may be invalid if the operation runs out of
+  ///           memory)
   friend bcdd_function operator|(const bcdd_function &lhs,
                                  const bcdd_function &rhs) noexcept {
-    return bcdd_function(oxidd_bcdd_or(lhs._func, rhs._func));
+    return capi::oxidd_bcdd_or(lhs._func, rhs._func);
   }
   /// Assignment version of \ref operator|
   bcdd_function &operator|=(const bcdd_function &rhs) noexcept {
@@ -294,11 +352,11 @@ public:
   ///
   /// Runtime complexity: O(|lhs| · |rhs|)
   ///
-  /// @returns  The BCDD function (may be invalid if the operation runs
-  ///           out of memory)
+  /// @returns  The BCDD function (may be invalid if the operation runs out of
+  ///           memory)
   friend bcdd_function operator^(const bcdd_function &lhs,
                                  const bcdd_function &rhs) noexcept {
-    return bcdd_function(oxidd_bcdd_xor(lhs._func, rhs._func));
+    return capi::oxidd_bcdd_xor(lhs._func, rhs._func);
   }
   /// Assignment version of \ref operator^
   bcdd_function &operator^=(const bcdd_function &rhs) noexcept {
@@ -310,10 +368,10 @@ public:
   ///
   /// Runtime complexity: O(|this| · |rhs|)
   ///
-  /// @returns  The BCDD function (may be invalid if the operation runs
-  ///           out of memory)
+  /// @returns  The BCDD function (may be invalid if the operation runs out of
+  ///           memory)
   bcdd_function nand(const bcdd_function &rhs) const noexcept {
-    return bcdd_function(oxidd_bcdd_nand(_func, rhs._func));
+    return capi::oxidd_bcdd_nand(_func, rhs._func);
   }
   /// Compute the BCDD for the negated disjunction `this ⊽ rhs`
   ///
@@ -321,10 +379,10 @@ public:
   ///
   /// Runtime complexity: O(|this| · |rhs|)
   ///
-  /// @returns  The BCDD function (may be invalid if the operation runs
-  ///           out of memory)
+  /// @returns  The BCDD function (may be invalid if the operation runs out of
+  ///           memory)
   bcdd_function nor(const bcdd_function &rhs) const noexcept {
-    return bcdd_function(oxidd_bcdd_nor(_func, rhs._func));
+    return capi::oxidd_bcdd_nor(_func, rhs._func);
   }
   /// Compute the BCDD for the equivalence `this ↔ rhs`
   ///
@@ -332,10 +390,10 @@ public:
   ///
   /// Runtime complexity: O(|this| · |rhs|)
   ///
-  /// @returns  The BCDD function (may be invalid if the operation runs
-  ///           out of memory)
+  /// @returns  The BCDD function (may be invalid if the operation runs out of
+  ///           memory)
   bcdd_function equiv(const bcdd_function &rhs) const noexcept {
-    return bcdd_function(oxidd_bcdd_equiv(_func, rhs._func));
+    return capi::oxidd_bcdd_equiv(_func, rhs._func);
   }
   /// Compute the BCDD for the implication `this → rhs` (or `this ≤ rhs`)
   ///
@@ -343,10 +401,10 @@ public:
   ///
   /// Runtime complexity: O(|this| · |rhs|)
   ///
-  /// @returns  The BCDD function (may be invalid if the operation runs
-  ///           out of memory)
+  /// @returns  The BCDD function (may be invalid if the operation runs out of
+  ///           memory)
   bcdd_function imp(const bcdd_function &rhs) const noexcept {
-    return bcdd_function(oxidd_bcdd_imp(_func, rhs._func));
+    return capi::oxidd_bcdd_imp(_func, rhs._func);
   }
   /// Compute the BCDD for the strict implication `this < rhs`
   ///
@@ -354,10 +412,10 @@ public:
   ///
   /// Runtime complexity: O(|this| · |rhs|)
   ///
-  /// @returns  The BCDD function (may be invalid if the operation runs
-  ///           out of memory)
+  /// @returns  The BCDD function (may be invalid if the operation runs out of
+  ///           memory)
   bcdd_function imp_strict(const bcdd_function &rhs) const noexcept {
-    return bcdd_function(oxidd_bcdd_imp_strict(_func, rhs._func));
+    return capi::oxidd_bcdd_imp_strict(_func, rhs._func);
   }
   /// Compute the BCDD for the conditional `this ? t : e`
   ///
@@ -365,55 +423,55 @@ public:
   ///
   /// Runtime complexity: O(|this| · |t| · |e|)
   ///
-  /// @returns  The BCDD function (may be invalid if the operation runs
-  ///           out of memory)
+  /// @returns  The BCDD function (may be invalid if the operation runs out of
+  ///           memory)
   bcdd_function ite(const bcdd_function &t,
                     const bcdd_function &e) const noexcept {
-    return bcdd_function(oxidd_bcdd_ite(_func, t._func, e._func));
+    return capi::oxidd_bcdd_ite(_func, t._func, e._func);
   }
 
   /// Compute the BCDD for the universal quantification over `vars`
   ///
   /// `vars` is a set of variables, which in turn is just the conjunction of the
-  /// variables. This operation removes all occurrences of the variables
+  /// variables. This operation removes all occurrences of the variables by
   /// universal quantification. Universal quantification of a Boolean function
   /// `f(…, x, …)` over a single variable `x` is `f(…, 0, …) ∧ f(…, 1, …)`.
   ///
   /// Locking behavior: acquires a shared manager lock.
   ///
-  /// @returns  The BCDD function (may be invalid if the operation runs
-  ///           out of memory)
+  /// @returns  The BCDD function (may be invalid if the operation runs out of
+  ///           memory)
   bcdd_function forall(const bcdd_function &vars) const noexcept {
-    return oxidd_bcdd_forall(_func, vars._func);
+    return capi::oxidd_bcdd_forall(_func, vars._func);
   }
   /// Compute the BCDD for the existential quantification over `vars`
   ///
   /// `vars` is a set of variables, which in turn is just the conjunction of the
-  /// variables. This operation removes all occurrences of the variables
+  /// variables. This operation removes all occurrences of the variables by
   /// existential quantification. Existential quantification of a Boolean
   /// function `f(…, x, …)` over a single variable `x` is
   /// `f(…, 0, …) ∨ f(…, 1, …)`.
   ///
   /// Locking behavior: acquires a shared manager lock.
   ///
-  /// @returns  The BCDD function (may be invalid if the operation runs
-  ///           out of memory)
+  /// @returns  The BCDD function (may be invalid if the operation runs out of
+  ///           memory)
   bcdd_function exist(const bcdd_function &vars) const noexcept {
-    return oxidd_bcdd_exist(_func, vars._func);
+    return capi::oxidd_bcdd_exist(_func, vars._func);
   }
   /// Compute the BCDD for the unique quantification over `vars`
   ///
   /// `vars` is a set of variables, which in turn is just the conjunction of the
-  /// variables. This operation removes all occurrences of the variables
+  /// variables. This operation removes all occurrences of the variables by
   /// unique quantification. Unique quantification of a Boolean function
   /// `f(…, x, …)` over a single variable `x` is `f(…, 0, …) ⊕ f(…, 1, …)`.
   ///
   /// Locking behavior: acquires a shared manager lock.
   ///
-  /// @returns  The BCDD function (may be invalid if the operation runs
-  ///           out of memory)
+  /// @returns  The BCDD function (may be invalid if the operation runs out of
+  ///           memory)
   bcdd_function unique(const bcdd_function &vars) const noexcept {
-    return oxidd_bcdd_unique(_func, vars._func);
+    return capi::oxidd_bcdd_unique(_func, vars._func);
   }
 
   /// Count descendant nodes
@@ -425,7 +483,7 @@ public:
   /// @returns  Node count including the terminal node
   size_t node_count() const noexcept {
     assert(_func._p);
-    return oxidd_bcdd_node_count(_func);
+    return capi::oxidd_bcdd_node_count(_func);
   }
 
   /// Count the number of satisfying assignments
@@ -437,7 +495,7 @@ public:
   /// @returns  Count of satisfying assignments
   double sat_count_double(level_no_t vars) const noexcept {
     assert(_func._p);
-    return oxidd_bcdd_sat_count_double(_func, vars);
+    return capi::oxidd_bcdd_sat_count_double(_func, vars);
   }
 
   /// Pick a satisfying assignment
@@ -456,20 +514,20 @@ public:
 
 inline bcdd_function bcdd_manager::new_var() noexcept {
   assert(_manager._p);
-  return bcdd_function(oxidd_bcdd_new_var(_manager));
+  return capi::oxidd_bcdd_new_var(_manager);
 }
 inline bcdd_function bcdd_manager::top() const noexcept {
   assert(_manager._p);
-  return oxidd_bcdd_true(_manager);
+  return capi::oxidd_bcdd_true(_manager);
 }
 inline bcdd_function bcdd_manager::bot() const noexcept {
   assert(_manager._p);
-  return oxidd_bcdd_false(_manager);
+  return capi::oxidd_bcdd_false(_manager);
 }
 
 } // namespace oxidd
 
-namespace std {
+/// @cond
 
 /// Partial specialization for oxidd::bcdd_function
 template <> struct std::hash<oxidd::bcdd_function> {
@@ -478,4 +536,4 @@ template <> struct std::hash<oxidd::bcdd_function> {
   }
 };
 
-} // namespace std
+/// @endcond
