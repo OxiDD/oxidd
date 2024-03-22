@@ -1176,6 +1176,81 @@ pub trait TVLFunction: Function {
         Self::from_edge(manager, Self::t_edge(manager))
     }
 
+    /// Get the cofactors `(f_true, f_unknown, f_false)` of `self`
+    ///
+    /// Let f(x₀, …, xₙ) be represented by `self`, where x₀ is (currently) the
+    /// top-most variable. Then f<sub>true</sub>(x₁, …, xₙ) = f(⊤, x₁, …, xₙ)
+    /// and f<sub>false</sub>(x₁, …, xₙ) = f(⊥, x₁, …, xₙ).
+    ///
+    /// Note that the domain of f is 𝔹ⁿ⁺¹ while the domain of f<sub>true</sub>
+    /// and f<sub>false</sub> is 𝔹ⁿ.
+    ///
+    /// Returns `None` iff `self` references a terminal node. If you only need
+    /// `f_true`, `f_unknown`, or `f_false`, [`Self::cofactor_true`],
+    /// [`Self::cofactor_unknown`], or [`Self::cofactor_false`] are slightly
+    /// more efficient.
+    ///
+    /// Locking behavior: acquires a shared manager lock.
+    fn cofactors(&self) -> Option<(Self, Self, Self)> {
+        self.with_manager_shared(|manager, f| {
+            let (ft, fu, ff) = Self::cofactors_edge(manager, f)?;
+            Some((
+                Self::from_edge_ref(manager, &ft),
+                Self::from_edge_ref(manager, &fu),
+                Self::from_edge_ref(manager, &ff),
+            ))
+        })
+    }
+
+    /// Get the cofactor `f_true` of `self`
+    ///
+    /// This method is slightly more efficient than [`Self::cofactors`] in case
+    /// `f_unknown` and `f_false` are not needed.
+    ///
+    /// For a more detailed description, see [`Self::cofactors`].
+    ///
+    /// Returns `None` iff `self` references a terminal node.
+    ///
+    /// Locking behavior: acquires a shared manager lock.
+    fn cofactor_true(&self) -> Option<Self> {
+        self.with_manager_shared(|manager, f| {
+            let (ft, _, _) = Self::cofactors_edge(manager, f)?;
+            Some(Self::from_edge_ref(manager, &ft))
+        })
+    }
+    /// Get the cofactor `f_unknown` of `self`
+    ///
+    /// This method is slightly more efficient than [`Self::cofactors`] in case
+    /// `f_true` and `f_false` are not needed.
+    ///
+    /// For a more detailed description, see [`Self::cofactors`].
+    ///
+    /// Returns `None` iff `self` references a terminal node.
+    ///
+    /// Locking behavior: acquires a shared manager lock.
+    fn cofactor_unknown(&self) -> Option<Self> {
+        self.with_manager_shared(|manager, f| {
+            let (_, fu, _) = Self::cofactors_edge(manager, f)?;
+            Some(Self::from_edge_ref(manager, &fu))
+        })
+    }
+    /// Get the cofactor `f_false` of `self`
+    ///
+    /// This method is slightly more efficient than [`Self::cofactors`] in case
+    /// `f_true` and `f_unknown` are not needed.
+    ///
+    /// For a more detailed description, see [`Self::cofactors`].
+    ///
+    /// Returns `None` iff `self` references a terminal node.
+    ///
+    /// Locking behavior: acquires a shared manager lock.
+    fn cofactor_false(&self) -> Option<Self> {
+        self.with_manager_shared(|manager, f| {
+            let (_, _, ff) = Self::cofactors_edge(manager, f)?;
+            Some(Self::from_edge_ref(manager, &ff))
+        })
+    }
+
     /// Get a fresh variable, i.e. a function that is true if the variable is
     /// true, false if the variable is false, and undefined otherwise. This adds
     /// a new level to a decision diagram.
@@ -1294,6 +1369,55 @@ pub trait TVLFunction: Function {
     fn t_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self>;
     /// Get the "unknown" function `U` as edge
     fn u_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self>;
+
+    /// Get the cofactors `(f_true, f_unknown, f_false)` of `f`, edge version
+    ///
+    /// Returns `None` iff `f` references a terminal node. For more details on
+    /// the semantics of `f_true` and `f_false`, see [`Self::cofactors`].
+    #[inline]
+    #[allow(clippy::type_complexity)]
+    fn cofactors_edge<'a, 'id>(
+        manager: &'a Self::Manager<'id>,
+        f: &'a EdgeOfFunc<'id, Self>,
+    ) -> Option<(
+        Borrowed<'a, EdgeOfFunc<'id, Self>>,
+        Borrowed<'a, EdgeOfFunc<'id, Self>>,
+        Borrowed<'a, EdgeOfFunc<'id, Self>>,
+    )> {
+        if let Node::Inner(node) = manager.get_node(f) {
+            Some(Self::cofactors_node(f.tag(), node))
+        } else {
+            None
+        }
+    }
+
+    /// Get the cofactors `(f_true, f_unknown, f_false)` of `node`, assuming an
+    /// incoming edge with `EdgeTag`
+    ///
+    /// Returns `None` iff `f` references a terminal node. For more details on
+    /// the semantics of `f_true` and `f_false`, see [`Self::cofactors`].
+    ///
+    /// Implementation note: The default implementation assumes that
+    /// [cofactor 0][DiagramRules::cofactor] corresponds to `f_true`,
+    /// [cofactor 1][DiagramRules::cofactor] corresponds to `f_unknown`, and
+    /// [cofactor 2][DiagramRules::cofactor] corresponds to `f_false`.
+    #[inline]
+    #[allow(clippy::type_complexity)]
+    fn cofactors_node<'a, 'id>(
+        tag: ETagOfFunc<'id, Self>,
+        node: &'a INodeOfFunc<'id, Self>,
+    ) -> (
+        Borrowed<'a, EdgeOfFunc<'id, Self>>,
+        Borrowed<'a, EdgeOfFunc<'id, Self>>,
+        Borrowed<'a, EdgeOfFunc<'id, Self>>,
+    ) {
+        let cofactor = <<Self::Manager<'id> as Manager>::Rules as DiagramRules<_, _, _>>::cofactor;
+        (
+            cofactor(tag, node, 0),
+            cofactor(tag, node, 1),
+            cofactor(tag, node, 2),
+        )
+    }
 
     /// Compute the negation `¬edge`, edge version
     #[must_use]

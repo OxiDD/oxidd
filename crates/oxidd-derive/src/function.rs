@@ -367,8 +367,8 @@ pub fn derive_boolean_function(input: syn::DeriveInput) -> TokenStream {
             let field = &struct_field.ident;
             let inner = &struct_field.ty;
 
-            let from_ff = struct_field.gen_from_inner(quote!(ff));
             let from_ft = struct_field.gen_from_inner(quote!(ft));
+            let from_ff = struct_field.gen_from_inner(quote!(ff));
 
             quote! {
                 #[inline]
@@ -611,6 +611,53 @@ pub fn derive_tvl_function(input: syn::DeriveInput) -> TokenStream {
             Binary("imp_strict"),
             Ternary("ite"),
         ],
-        |_| TokenStream::new(),
+        |ctx| {
+            let CustomMethodsCtx {
+                trait_path,
+                manager_ty,
+                edge_ty,
+                struct_field,
+            } = ctx;
+            let field = &struct_field.ident;
+            let inner = &struct_field.ty;
+
+            let from_ft = struct_field.gen_from_inner(quote!(ft));
+            let from_fu = struct_field.gen_from_inner(quote!(fu));
+            let from_ff = struct_field.gen_from_inner(quote!(ff));
+
+            quote! {
+                #[inline]
+                fn cofactors(&self) -> ::std::option::Option<(Self, Self, Self)> {
+                    let (ft, fu, ff) = <#inner as #trait_path>::cofactors(&self.#field)?;
+                    ::std::option::Option::Some((#from_ft, #from_fu, #from_ff))
+                }
+                #[inline]
+                fn cofactor_true(&self) -> ::std::option::Option<Self> {
+                    let ft = <#inner as #trait_path>::cofactor_true(&self.#field)?;
+                    ::std::option::Option::Some(#from_ft)
+                }
+                #[inline]
+                fn cofactor_unknown(&self) -> ::std::option::Option<Self> {
+                    let fu = <#inner as #trait_path>::cofactor_unknown(&self.#field)?;
+                    ::std::option::Option::Some(#from_fu)
+                }
+                #[inline]
+                fn cofactor_false(&self) -> ::std::option::Option<Self> {
+                    let ff = <#inner as #trait_path>::cofactor_false(&self.#field)?;
+                    ::std::option::Option::Some(#from_ff)
+                }
+                #[inline]
+                fn cofactors_edge<'__a, '__id>(
+                    manager: &'__a #manager_ty,
+                    f: &'__a #edge_ty,
+                ) -> ::std::option::Option<(
+                    ::oxidd_core::util::Borrowed<'__a, #edge_ty>,
+                    ::oxidd_core::util::Borrowed<'__a, #edge_ty>,
+                    ::oxidd_core::util::Borrowed<'__a, #edge_ty>,
+                )> {
+                    <#inner as #trait_path>::cofactors_edge(manager, f)
+                }
+            }
+        },
     )
 }
