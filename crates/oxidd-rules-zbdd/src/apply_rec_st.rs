@@ -11,10 +11,8 @@ use bitvec::vec::BitVec;
 
 use oxidd_core::function::BooleanFunction;
 use oxidd_core::function::BooleanVecSet;
-use oxidd_core::function::ETagOfFunc;
 use oxidd_core::function::EdgeOfFunc;
 use oxidd_core::function::Function;
-use oxidd_core::function::INodeOfFunc;
 use oxidd_core::util::AllocResult;
 use oxidd_core::util::Borrowed;
 use oxidd_core::util::EdgeDropGuard;
@@ -763,7 +761,7 @@ where
         manager: &'a Self::Manager<'id>,
         edge: &'a EdgeOfFunc<'id, Self>,
         order: impl IntoIterator<IntoIter = I>,
-        choice: impl FnMut(&Self::Manager<'id>, ETagOfFunc<'id, Self>, &INodeOfFunc<'id, Self>) -> bool,
+        choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>) -> bool,
     ) -> Option<Vec<OptBool>>
     where
         I: ExactSizeIterator<Item = &'a EdgeOfFunc<'id, Self>>,
@@ -773,7 +771,7 @@ where
             manager: &M,
             edge: Borrowed<M::Edge>,
             cube: &mut [OptBool],
-            mut choice: impl FnMut(&M, M::EdgeTag, &M::InnerNode) -> bool,
+            mut choice: impl FnMut(&M, &M::Edge) -> bool,
         ) where
             M::InnerNode: HasLevel,
         {
@@ -787,7 +785,7 @@ where
                 let c = if manager.get_node(&lo).is_terminal(&ZBDDTerminal::Empty) {
                     true
                 } else {
-                    choice(manager, Default::default(), node)
+                    choice(manager, &edge)
                 };
                 (OptBool::from(c), if c { hi } else { lo })
             };

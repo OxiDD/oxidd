@@ -1,6 +1,9 @@
 pub(crate) mod apply_cache;
 pub(crate) mod type_cons;
+
 pub use oxidd_core::util::num;
+pub use oxidd_core::util::Rng;
+pub use rustc_hash::FxHasher;
 
 // We have a few `allow(unused)` attributes here to not spam the user with
 // warnings in case no manager implementation is selected.

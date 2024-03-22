@@ -477,10 +477,7 @@ pub unsafe extern "C" fn oxidd_bcdd_sat_count_double(
 ///           deallocated using oxidd_assignment_free().
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_bcdd_pick_cube(f: oxidd_bcdd_t) -> oxidd_assignment_t {
-    let res = f
-        .get()
-        .expect(FUNC_UNWRAP_MSG)
-        .pick_cube([], |_, _, _| false);
+    let res = f.get().expect(FUNC_UNWRAP_MSG).pick_cube([], |_, _| false);
     match res {
         Some(mut v) => {
             v.shrink_to_fit();

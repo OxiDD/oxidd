@@ -575,17 +575,16 @@ pub trait BooleanFunction: Function {
     /// is true, false, or "don't care".
     ///
     /// Whenever there is a choice for a variable, `choice` is called to
-    /// determine the valuation for this variable.
+    /// determine the valuation for this variable. The [`Edge`] argument is
+    /// guaranteed to point to an inner node. (We pass an [`Edge`] and not an
+    /// [`InnerNode`] reference since [`Edge`]s provide more information, e.g.,
+    /// the [`NodeID`][Edge::node_id()].)
     ///
     /// Locking behavior: acquires a shared manager lock.
     fn pick_cube<'a, I: ExactSizeIterator<Item = &'a Self>>(
         &'a self,
         order: impl IntoIterator<IntoIter = I>,
-        choice: impl for<'id> FnMut(
-            &Self::Manager<'id>,
-            ETagOfFunc<'id, Self>,
-            &INodeOfFunc<'id, Self>,
-        ) -> bool,
+        choice: impl for<'id> FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>) -> bool,
     ) -> Option<Vec<OptBool>> {
         self.with_manager_shared(|manager, edge| {
             Self::pick_cube_edge(
@@ -602,7 +601,7 @@ pub trait BooleanFunction: Function {
         manager: &'a Self::Manager<'id>,
         edge: &'a EdgeOfFunc<'id, Self>,
         order: impl IntoIterator<IntoIter = I>,
-        choice: impl FnMut(&Self::Manager<'id>, ETagOfFunc<'id, Self>, &INodeOfFunc<'id, Self>) -> bool,
+        choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>) -> bool,
     ) -> Option<Vec<OptBool>>
     where
         I: ExactSizeIterator<Item = &'a EdgeOfFunc<'id, Self>>;
@@ -653,7 +652,10 @@ pub trait BooleanFunction: Function {
         S: BuildHasher,
     {
         let vars = manager.num_levels();
-        Self::pick_cube_edge(manager, edge, order, |manager, tag, node| {
+        Self::pick_cube_edge(manager, edge, order, |manager, edge| {
+            let tag = edge.tag();
+            // `edge` is guaranteed to point to an inner node
+            let node = manager.get_node(edge).unwrap_inner();
             let (t, e) = Self::cofactors_node(tag, node);
             let t_count = Self::sat_count_edge(manager, &*t, vars, cache).0;
             let e_count = Self::sat_count_edge(manager, &*e, vars, cache).0;
