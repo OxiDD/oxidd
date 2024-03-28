@@ -701,7 +701,7 @@ where
         let mut cube = vec![OptBool::None; manager.num_levels() as usize];
         inner(manager, edge.borrowed(), &mut cube, choice);
 
-        Some(if order.len() != 0 {
+        Some(if order.len() == 0 {
             cube
         } else {
             order
