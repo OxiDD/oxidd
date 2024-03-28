@@ -713,6 +713,10 @@ impl<T, S: Status, A: Clone + Allocator> RawTable<T, S, A> {
             }
             i -= 1;
             if i == 0 {
+                if self.len < self.data.len() / 4 {
+                    // shrink the table
+                    self.reserve_rehash(0);
+                }
                 return;
             }
         }
