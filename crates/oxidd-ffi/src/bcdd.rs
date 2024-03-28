@@ -7,7 +7,6 @@ use rustc_hash::FxHasher;
 
 use oxidd::bcdd::BCDDFunction;
 use oxidd::bcdd::BCDDManagerRef;
-use oxidd::util::num::Saturating;
 use oxidd::util::num::F64;
 use oxidd::BooleanFunction;
 use oxidd::BooleanFunctionQuant;
@@ -50,6 +49,11 @@ pub struct oxidd_bcdd_t {
 }
 
 impl oxidd_bcdd_t {
+    const INVALID: Self = Self {
+        _p: std::ptr::null(),
+        _i: 0,
+    };
+
     unsafe fn get(self) -> AllocResult<ManuallyDrop<BCDDFunction>> {
         if self._p.is_null() {
             Err(OutOfMemory)
@@ -73,12 +77,27 @@ impl From<AllocResult<BCDDFunction>> for oxidd_bcdd_t {
                 let (_p, _i) = f.into_raw();
                 Self { _p, _i }
             }
-            Err(_) => Self {
-                _p: std::ptr::null(),
-                _i: 0,
-            },
+            Err(_) => Self::INVALID,
         }
     }
+}
+impl From<Option<BCDDFunction>> for oxidd_bcdd_t {
+    fn from(value: Option<BCDDFunction>) -> Self {
+        match value {
+            Some(f) => {
+                let (_p, _i) = f.into_raw();
+                Self { _p, _i }
+            }
+            None => Self::INVALID,
+        }
+    }
+}
+
+/// Pair of two `oxidd_bcdd_t` instances
+#[repr(C)]
+pub struct oxidd_bcdd_pair_t {
+    a: oxidd_bcdd_t,
+    b: oxidd_bcdd_t,
 }
 
 unsafe fn op1(
@@ -171,6 +190,8 @@ pub unsafe extern "C" fn oxidd_bcdd_unref(f: oxidd_bcdd_t) {
 
 /// Get the number of inner nodes currently stored in `manager`
 ///
+/// Locking behavior: acquires a shared manager lock.
+///
 /// @returns  The number of inner nodes
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_bcdd_num_inner_nodes(manager: oxidd_bcdd_manager_t) -> usize {
@@ -220,6 +241,85 @@ pub unsafe extern "C" fn oxidd_bcdd_true(manager: oxidd_bcdd_manager_t) -> oxidd
     manager
         .get()
         .with_manager_shared(|manager| BCDDFunction::t(manager).into())
+}
+
+/// Get the cofactors `(f_true, f_false)` of `f`
+///
+/// Let f(x₀, …, xₙ) be represented by `f`, where x₀ is (currently) the top-most
+/// variable. Then f<sub>true</sub>(x₁, …, xₙ) = f(⊤, x₁, …, xₙ) and
+/// f<sub>false</sub>(x₁, …, xₙ) = f(⊥, x₁, …, xₙ).
+///
+/// Structurally, the cofactors are the children with edge tags are adjusted
+/// accordingly. If you only need one of the cofactors, then use
+/// oxidd_bcdd_cofactor_true() or oxidd_bcdd_cofactor_false(). These functions
+/// are slightly more efficient then.
+///
+/// This function does not change the reference counters of its argument.
+///
+/// Locking behavior: acquires a shared manager lock.
+///
+/// Runtime complexity: O(1)
+///
+/// @returns  The pair `f_true` and `f_false` if `f` is valid and references an
+///           inner node, otherwise a pair of invalid functions.
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bcdd_cofactors(f: oxidd_bcdd_t) -> oxidd_bcdd_pair_t {
+    if let Ok(f) = f.get() {
+        if let Some((t, e)) = f.cofactors() {
+            return oxidd_bcdd_pair_t {
+                a: t.into(),
+                b: e.into(),
+            };
+        }
+    }
+    oxidd_bcdd_pair_t {
+        a: oxidd_bcdd_t::INVALID,
+        b: oxidd_bcdd_t::INVALID,
+    }
+}
+
+/// Get the cofactor `f_true` of `f`
+///
+/// This function is slightly more efficient than oxidd_bcdd_cofactors() in case
+/// `f_false` is not needed.
+///
+/// This function does not change the reference counters of its argument.
+///
+/// Locking behavior: acquires a shared manager lock.
+///
+/// Runtime complexity: O(1)
+///
+/// @returns  `f_true` if `f` is valid and references an inner node, otherwise
+///           an invalid function.
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bcdd_cofactor_true(f: oxidd_bcdd_t) -> oxidd_bcdd_t {
+    if let Ok(f) = f.get() {
+        f.cofactor_true().into()
+    } else {
+        oxidd_bcdd_t::INVALID
+    }
+}
+
+/// Get the cofactor `f_false` of `f`
+///
+/// This function is slightly more efficient than oxidd_bcdd_cofactors() in case
+/// `f_true` is not needed.
+///
+/// This function does not change the reference counters of its argument.
+///
+/// Locking behavior: acquires a shared manager lock.
+///
+/// Runtime complexity: O(1)
+///
+/// @returns  `f_false` if `f` is valid and references an inner node, otherwise
+///           an invalid function.
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bcdd_cofactor_false(f: oxidd_bcdd_t) -> oxidd_bcdd_t {
+    if let Ok(f) = f.get() {
+        f.cofactor_false().into()
+    } else {
+        oxidd_bcdd_t::INVALID
+    }
 }
 
 /// Compute the BCDD for the negation `¬f`
@@ -306,7 +406,7 @@ pub unsafe extern "C" fn oxidd_bcdd_equiv(lhs: oxidd_bcdd_t, rhs: oxidd_bcdd_t) 
     op2(lhs, rhs, BCDDFunction::equiv)
 }
 
-/// Compute the BCDD for the implication `lhs → rhs` (or `self ≤ rhs`)
+/// Compute the BCDD for the implication `lhs → rhs` (or `lhs ≤ rhs`)
 ///
 /// This function does not change the reference counters of its arguments.
 ///
@@ -369,9 +469,9 @@ pub unsafe extern "C" fn oxidd_bcdd_restrict(f: oxidd_bcdd_t, vars: oxidd_bcdd_t
 /// Compute the BCDD for the universal quantification of `f` over `vars`
 ///
 /// `vars` is a set of variables, which in turn is just the conjunction of the
-/// variables. This operation removes all occurrences of the variables universal
-/// quantification. Universal quantification of a Boolean function `f(…, x, …)`
-/// over a single variable `x` is `f(…, 0, …) ∧ f(…, 1, …)`.
+/// variables. This operation removes all occurrences of the variables by
+/// universal quantification. Universal quantification of a Boolean function
+/// `f(…, x, …)` over a single variable `x` is `f(…, 0, …) ∧ f(…, 1, …)`.
 ///
 /// This function does not change the reference counters of its arguments.
 ///
@@ -388,7 +488,7 @@ pub unsafe extern "C" fn oxidd_bcdd_forall(f: oxidd_bcdd_t, var: oxidd_bcdd_t) -
 /// `vars` is a set of variables, which in turn is just the conjunction of the
 /// variables. This operation removes all occurrences of the variables by
 /// existential quantification. Existential quantification of a Boolean function
-/// `f(…, x, …)` over a single variable `x` is `f(…, 0, …) ∧ f(…, 1, …)`.
+/// `f(…, x, …)` over a single variable `x` is `f(…, 0, …) ∨ f(…, 1, …)`.
 ///
 /// This function does not change the reference counters of its arguments.
 ///
@@ -405,7 +505,7 @@ pub unsafe extern "C" fn oxidd_bcdd_exist(f: oxidd_bcdd_t, var: oxidd_bcdd_t) ->
 /// `vars` is a set of variables, which in turn is just the conjunction of the
 /// variables. This operation removes all occurrences of the variables by
 /// unique quantification. Unique quantification of a Boolean function
-/// `f(…, x, …)` over a single variable `x` is `f(…, 0, …) ∧ f(…, 1, …)`.
+/// `f(…, x, …)` over a single variable `x` is `f(…, 0, …) ⊕ f(…, 1, …)`.
 ///
 /// This function does not change the reference counters of its arguments.
 ///
@@ -427,25 +527,6 @@ pub unsafe extern "C" fn oxidd_bcdd_unique(f: oxidd_bcdd_t, var: oxidd_bcdd_t) -
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_bcdd_node_count(f: oxidd_bcdd_t) -> usize {
     f.get().expect(FUNC_UNWRAP_MSG).node_count()
-}
-
-/// Count the number of satisfying assignments, assuming `vars` input variables
-///
-/// This function does not change the reference counters of its argument.
-///
-/// Locking behavior: acquires a shared manager lock.
-///
-/// @returns  The number of satisfying assignments or `UINT64_MAX` if the number
-///           or some intermediate result is too large
-#[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_sat_count_uint64(
-    f: oxidd_bcdd_t,
-    vars: oxidd_level_no_t,
-) -> u64 {
-    f.get()
-        .expect(FUNC_UNWRAP_MSG)
-        .sat_count::<Saturating<u64>, BuildHasherDefault<FxHasher>>(vars, &mut Default::default())
-        .0
 }
 
 /// Count the number of satisfying assignments, assuming `vars` input variables

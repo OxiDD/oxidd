@@ -180,7 +180,7 @@ pub trait BooleanFunction: Function {
         Self::from_edge(manager, Self::t_edge(manager))
     }
 
-    /// Get a fresh variable, i.e. a function that is true if and only if the
+    /// Get a fresh variable, i.e., a function that is true if and only if the
     /// variable is true. This adds a new level to a decision diagram.
     fn new_var<'id>(manager: &mut Self::Manager<'id>) -> AllocResult<Self>;
 

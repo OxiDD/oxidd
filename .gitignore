@@ -1,8 +1,38 @@
+# Cargo/Rust build directory
 /target/
+# (Usual) CMake build directory
+/build/
 
+# Local development tools etc.
 /.local/
 
-/.vscode/
-/.cspellcache
-
+# Exported DDs
+*.bdd
 *.dot
+
+# Temp files created by some text editors
+*~
+# Merge files created by git
+*.orig
+# Reject files created by patch
+*.rej
+# Byte compiled python modules
+*.pyc
+# vim swap files
+.*.sw?
+.sw?
+# macOS specific files
+.DS_store
+# cSpell cache
+.cspellcache
+
+# clangd index (".clangd" is a config file now, thus trailing slash)
+.clangd/
+.cache
+# VS2017 and VSCode config files
+.vscode
+.vs
+# Visual Studio built-in CMake configuration
+/CMakeSettings.json
+# CLion/… project configuration
+/.idea

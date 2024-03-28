@@ -4,6 +4,7 @@ arity
 arrayvec
 BCDD
 BDD
+BibTeX
 binop
 bitflags
 bitvec
@@ -12,6 +13,7 @@ cassert
 cbindgen
 cdylib
 cfgs
+clangd
 clippy
 codegen
 cofactor
@@ -29,9 +31,17 @@ Cython
 DDDMP
 dealloc
 DIMACS
+docstring
+docstrings
+Doxyfile
+Doxygen
 Dubslaff
+endcond
 fieldless
+filesystems
 forall
+Graphviz
+hashable
 hasher
 hashtbl
 Hermanns
@@ -48,6 +58,7 @@ impls
 intptr
 intsec
 isize
+Javadoc
 Köhl
 levelized
 madvise
@@ -74,10 +85,12 @@ rustc
 rustfmt
 rustix
 Rustonomicon
+rustup
 rwlock
 satisfiability
 segtree
 serde
+sideeffect
 smallvec
 spinlock
 spinlocks
@@ -89,6 +102,10 @@ stdint
 stdlib
 struct
 structs
+subdir
+subdirs
+subgroup
+subgrouping
 subtrait
 subtraits
 sysinfo
