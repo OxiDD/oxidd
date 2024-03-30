@@ -71,6 +71,8 @@ realloc
 repr
 retag
 rustc
+RUSTDOCFLAGS
+RUSTFLAGS
 rustfmt
 rustix
 Rustonomicon

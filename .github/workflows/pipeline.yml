@@ -15,23 +15,26 @@ jobs:
     name: Lint
 
     runs-on: ubuntu-latest
-    
+
     steps:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@master
       with:
         toolchain: nightly
         components: clippy, rustfmt
-    - name: Install Just
-      run: sudo snap install --edge --classic just
+    - uses: extractions/setup-just@v1
     - name: Install cSpell
       run: npm install --prefix=.local/cspell -g cspell
     - name: Lint
       run: just lint
-      
+    - name: Doc
+      run: cargo doc --no-deps
+      env:
+        RUSTDOCFLAGS: "-D warnings"
+
   test:
     name: Test
-    
+
     runs-on: ubuntu-latest
 
     strategy:
@@ -46,6 +49,7 @@ jobs:
         toolchain: ${{ matrix.toolchain }}
     - name: Build
       run: cargo build ${{ matrix.flags }} --verbose
+      env:
+        RUSTFLAGS: "-D warnings"
     - name: Run Tests
       run: cargo test ${{ matrix.flags }} --verbose
-    
