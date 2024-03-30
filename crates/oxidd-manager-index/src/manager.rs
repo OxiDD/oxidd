@@ -735,11 +735,7 @@ where
                 #[cold]
                 fn return_slot<N>(shared: &Mutex<SharedStoreState>, slot: &mut Slot<N>, id: u32) {
                     let mut shared = shared.lock();
-                    slot.next_free = if let Some(next_free) = shared.next_free.pop() {
-                        next_free
-                    } else {
-                        0
-                    };
+                    slot.next_free = shared.next_free.pop().unwrap_or(0);
                     shared.next_free.push(id);
                     shared.node_count -= 1;
                 }
