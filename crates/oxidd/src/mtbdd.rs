@@ -1,3 +1,5 @@
+//! Multi-terminal binary decision diagrams (MTBDDs)
+
 pub use oxidd_rules_mtbdd::terminal;
 
 cfg_if::cfg_if! {
@@ -71,6 +73,7 @@ mod index {
     //type FunctionInner<T> = oxidd_rules_mtbdd::MTBDDFunctionMT<<MTBDD<T> as
     // DD>::Function>;
 
+    /// Pseudo-Boolean function represented as MTBDD
     #[derive(
         Clone, PartialEq, Eq, Hash, oxidd_derive::Function, oxidd_derive::PseudoBooleanFunction,
     )]

@@ -5,6 +5,7 @@
 #![doc = document_features::document_features!()]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![allow(clippy::upper_case_acronyms)]
+#![warn(missing_docs)]
 
 #[cfg(not(any(feature = "manager-index", feature = "manager-pointer")))]
 std::compile_error!(
@@ -42,6 +43,9 @@ pub mod tdd;
 #[cfg(feature = "zbdd")]
 pub mod zbdd;
 
+/// [`Function`] that can be converted into raw values. For use via the FFI
+/// only.
+#[doc(hidden)]
 pub trait RawFunction {
     /// Convert `self` into a raw pointer and index, e.g. for usage in a
     /// foreign function interface.
@@ -62,6 +66,9 @@ pub trait RawFunction {
     unsafe fn from_raw(ptr: *const std::ffi::c_void, index: usize) -> Self;
 }
 
+/// [`ManagerRef`] that can be converted into a raw value. For use via the FFI
+/// only.
+#[doc(hidden)]
 pub trait RawManagerRef {
     /// Convert `self` into a raw pointer, e.g. for usage in a foreign
     /// function interface.

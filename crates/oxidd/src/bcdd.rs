@@ -1,3 +1,5 @@
+//! Binary decision diagrams with complemented edges (BCDDs)
+
 cfg_if::cfg_if! {
     if #[cfg(feature = "manager-pointer")] {
         pub use pointer::{BCDDFunction, BCDDManagerRef};
@@ -65,6 +67,7 @@ mod index {
     #[cfg(feature = "multi-threading")]
     type FunctionInner = oxidd_rules_bdd::complement_edge::BCDDFunctionMT<<BCDD as DD>::Function>;
 
+    /// Boolean function represented as BCDD
     #[derive(
         Clone,
         PartialEq,
@@ -113,6 +116,7 @@ mod pointer {
     #[cfg(feature = "multi-threading")]
     type FunctionInner = oxidd_rules_bdd::complement_edge::BCDDFunctionMT<<BCDD as DD>::Function>;
 
+    /// Boolean function represented as BCDD
     #[derive(
         Clone,
         PartialEq,

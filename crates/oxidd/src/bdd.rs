@@ -1,3 +1,5 @@
+//! Binary decision diagrams (BDDs)
+
 cfg_if::cfg_if! {
     if #[cfg(feature = "manager-pointer")] {
         pub use pointer::{BDDFunction, BDDManagerRef};
@@ -64,6 +66,7 @@ mod index {
     #[cfg(feature = "multi-threading")]
     type FunctionInner = oxidd_rules_bdd::simple::BDDFunctionMT<<BDD as DD>::Function>;
 
+    /// Boolean function represented as BDD
     #[derive(
         Clone,
         PartialEq,
@@ -111,6 +114,7 @@ mod pointer {
     #[cfg(feature = "multi-threading")]
     type FunctionInner = oxidd_rules_bdd::simple::BDDFunctionMT<<BDD as DD>::Function>;
 
+    /// Boolean function represented as BDD
     #[derive(
         Clone,
         PartialEq,

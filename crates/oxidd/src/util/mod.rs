@@ -1,3 +1,5 @@
+//! Various utilities for working with DDs
+
 pub(crate) mod apply_cache;
 pub(crate) mod type_cons;
 
@@ -156,6 +158,7 @@ pub(crate) use dd_pointer_based;
 #[allow(unused)]
 macro_rules! manager_ref_index_based {
     (pub struct $name:ident$(<$($gen:ident),*>)?($inner:ty) with $mgr_data:ty $(where $($where:tt)*)?) => {
+        /// Reference to a [`Manager`][crate::Manager]
         #[derive(PartialEq, Eq, PartialOrd, Ord, Hash)]
         pub struct $name$(<$($gen),*>)?($inner) $(where $($where)*)?;
 
@@ -199,6 +202,14 @@ macro_rules! manager_ref_index_based {
         }
 
         impl$(<$($gen),*>)? $name$(<$($gen),*>)? $(where $($where)*)? {
+            /// Create a new manager instance
+            ///
+            /// - `inner_node_capacity` is the maximum number of inner nodes that can be
+            ///   stored
+            /// - `terminal_node_capacity` is the maximum number of terminal nodes
+            /// - `apply_cache_capacity` refers to the maximum number of apply cache
+            ///   entries
+            /// - `threads` is the thread count for the worker pool
             pub fn new_manager(
                 inner_node_capacity: usize,
                 terminal_node_capacity: usize,
@@ -228,6 +239,7 @@ pub(crate) use manager_ref_index_based;
 #[allow(unused)]
 macro_rules! manager_ref_pointer_based {
     (pub struct $name:ident($inner:ty) with $mgr_data:ty) => {
+        /// Reference to a [`Manager`][::oxidd::Manager]
         #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
         pub struct $name($inner);
 
@@ -265,6 +277,13 @@ macro_rules! manager_ref_pointer_based {
         }
 
         impl $name {
+            /// Create a new manager instance
+            ///
+            /// - `inner_node_capacity` is the maximum number of inner nodes that can be
+            ///   stored
+            /// - `apply_cache_capacity` refers to the maximum number of apply cache
+            ///   entries
+            /// - `threads` is the thread count for the worker pool
             #[allow(unused_variables)]
             pub fn new_manager(
                 inner_node_capacity: usize,

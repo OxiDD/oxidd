@@ -1,3 +1,5 @@
+//! Zero-suppressed binary decision diagrams (ZBDDs)
+
 #[allow(unused)] // unused in case no manager impl is selected
 macro_rules! manager_data {
     ($name:ident for $dd:ident, operator: $op:ty, cache_max_arity: $arity:expr) => {
@@ -99,6 +101,7 @@ cfg_if::cfg_if! {
     }
 }
 
+#[allow(missing_docs)]
 #[deprecated = "use ZBDDFunction instead"]
 pub type ZBDDSet = ZBDDFunction;
 
@@ -161,6 +164,7 @@ mod index {
     #[cfg(feature = "multi-threading")]
     type FunctionInner = oxidd_rules_zbdd::ZBDDFunctionMT<<ZBDD as DD>::Function>;
 
+    /// Boolean function (or bit vector set) represented as ZBDD
     #[derive(
         Clone,
         PartialEq,
@@ -208,6 +212,7 @@ mod pointer {
     #[cfg(feature = "multi-threading")]
     type FunctionInner = oxidd_rules_zbdd::ZBDDFunctionMT<<ZBDD as DD>::Function>;
 
+    /// Boolean function (or bit vector set) represented as ZBDD
     #[derive(
         Clone,
         PartialEq,

@@ -1,3 +1,5 @@
+//! Ternary decision diagrams (TDDs)
+
 cfg_if::cfg_if! {
     if #[cfg(feature = "manager-pointer")] {
         pub use pointer::{TDDFunction, TDDManagerRef};
