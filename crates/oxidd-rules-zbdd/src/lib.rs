@@ -194,12 +194,12 @@ impl<E: Edge> ZBDDCache<E> {
     ///
     /// The logical semantics of ZBDD nodes is dependent on the set of
     /// variables. The [`oxidd_core::function::BooleanFunction`]
-    /// implementation for [`ZBDDSet`] assumes that this set of variables is
-    /// the set containing all variables. So if we add a new variable/level
+    /// implementation for [`ZBDDFunction`] assumes that this set of variables
+    /// is the set containing all variables. So if we add a new variable/level
     /// to the diagram, the cache needs to be rebuilt.
-    /// [`ZBDDSet::new_var()`][oxidd_core::function::BooleanFunction::new_var()]
+    /// [`ZBDDFunction::new_var()`][oxidd_core::function::BooleanFunction::new_var()]
     /// and
-    /// [`ZBDDSet::new_singleton()`][`oxidd_core::function::BooleanVecSet::new_singleton()`]
+    /// [`ZBDDFunction::new_singleton()`][`oxidd_core::function::BooleanVecSet::new_singleton()`]
     /// call this function automatically.
     pub fn rebuild<M: Manager<Edge = E, Terminal = ZBDDTerminal> + HasZBDDCache<E>>(
         manager: &mut M,
@@ -377,8 +377,8 @@ trait HasZBDDOpApplyCache<M: Manager>: HasApplyCache<M, Operator = ZBDDOp> {}
 impl<M: Manager + HasApplyCache<M, Operator = ZBDDOp>> HasZBDDOpApplyCache<M> for M {}
 
 #[cfg(feature = "multi-threading")]
-pub use apply_rec_mt::ZBDDSetMT;
-pub use apply_rec_st::ZBDDSet;
+pub use apply_rec_mt::ZBDDFunctionMT;
+pub use apply_rec_st::ZBDDFunction;
 
 // --- Statistics --------------------------------------------------------------
 

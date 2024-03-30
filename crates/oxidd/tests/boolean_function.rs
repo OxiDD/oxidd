@@ -9,8 +9,8 @@ use rustc_hash::FxHashMap;
 
 use oxidd::bcdd::BCDDFunction;
 use oxidd::bdd::BDDFunction;
+use oxidd::zbdd::ZBDDFunction;
 use oxidd::zbdd::ZBDDManagerRef;
-use oxidd::zbdd::ZBDDSet;
 use oxidd::BooleanFunction;
 use oxidd::BooleanFunctionQuant;
 use oxidd::BooleanVecSet;
@@ -75,10 +75,10 @@ fn zbdd_node_count() {
 
     let (x0, x1, ee, bb) = mref.with_manager_exclusive(|manager| {
         (
-            ZBDDSet::new_singleton(manager).unwrap(),
-            ZBDDSet::new_singleton(manager).unwrap(),
-            ZBDDSet::empty(manager),
-            ZBDDSet::base(manager),
+            ZBDDFunction::new_singleton(manager).unwrap(),
+            ZBDDFunction::new_singleton(manager).unwrap(),
+            ZBDDFunction::empty(manager),
+            ZBDDFunction::base(manager),
         )
     });
 
@@ -174,10 +174,10 @@ fn zbdd_cofactors() {
 
     let (x0, x1, ee, bb) = mref.with_manager_exclusive(|manager| {
         (
-            ZBDDSet::new_singleton(manager).unwrap(),
-            ZBDDSet::new_singleton(manager).unwrap(),
-            ZBDDSet::empty(manager),
-            ZBDDSet::base(manager),
+            ZBDDFunction::new_singleton(manager).unwrap(),
+            ZBDDFunction::new_singleton(manager).unwrap(),
+            ZBDDFunction::empty(manager),
+            ZBDDFunction::base(manager),
         )
     });
     let g = x0.union(&x1).unwrap();
@@ -264,13 +264,13 @@ fn bcdd_simple_formulas_t2() {
 #[test]
 fn zbdd_simple_formulas_t1() {
     let mref = oxidd::zbdd::new_manager(65536, 1024, 1);
-    test_simple_formulas::<ZBDDSet>(&mref);
+    test_simple_formulas::<ZBDDFunction>(&mref);
 }
 
 #[test]
 fn zbdd_simple_formulas_t2() {
     let mref = oxidd::zbdd::new_manager(65536, 1024, 2);
-    test_simple_formulas::<ZBDDSet>(&mref);
+    test_simple_formulas::<ZBDDFunction>(&mref);
 }
 
 /// Works for BDDs & BCDDs
@@ -284,25 +284,25 @@ fn bdd_3_vars<B: BooleanFunction>(mref: &B::ManagerRef) -> [B; 3] {
     })
 }
 
-fn zbdd_3_singletons_vars(mref: &ZBDDManagerRef) -> ([ZBDDSet; 3], [ZBDDSet; 3]) {
+fn zbdd_3_singletons_vars(mref: &ZBDDManagerRef) -> ([ZBDDFunction; 3], [ZBDDFunction; 3]) {
     let singletons = mref.with_manager_exclusive(|manager| {
         [
-            ZBDDSet::new_singleton(manager).unwrap(),
-            ZBDDSet::new_singleton(manager).unwrap(),
-            ZBDDSet::new_singleton(manager).unwrap(),
+            ZBDDFunction::new_singleton(manager).unwrap(),
+            ZBDDFunction::new_singleton(manager).unwrap(),
+            ZBDDFunction::new_singleton(manager).unwrap(),
         ]
     });
     let vars = mref.with_manager_shared(|manager| {
         [
-            ZBDDSet::from_edge(
+            ZBDDFunction::from_edge(
                 manager,
                 oxidd::zbdd::var_boolean_function(manager, singletons[0].as_edge(manager)).unwrap(),
             ),
-            ZBDDSet::from_edge(
+            ZBDDFunction::from_edge(
                 manager,
                 oxidd::zbdd::var_boolean_function(manager, singletons[1].as_edge(manager)).unwrap(),
             ),
-            ZBDDSet::from_edge(
+            ZBDDFunction::from_edge(
                 manager,
                 oxidd::zbdd::var_boolean_function(manager, singletons[2].as_edge(manager)).unwrap(),
             ),

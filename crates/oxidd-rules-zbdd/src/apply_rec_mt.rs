@@ -594,16 +594,16 @@ use oxidd_core::WorkerManager;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Function, Debug)]
 #[repr(transparent)]
-pub struct ZBDDSetMT<F: Function>(F);
+pub struct ZBDDFunctionMT<F: Function>(F);
 
-impl<F: Function> From<F> for ZBDDSetMT<F> {
+impl<F: Function> From<F> for ZBDDFunctionMT<F> {
     #[inline(always)]
     fn from(value: F) -> Self {
-        ZBDDSetMT(value)
+        ZBDDFunctionMT(value)
     }
 }
 
-impl<F: Function> ZBDDSetMT<F>
+impl<F: Function> ZBDDFunctionMT<F>
 where
     for<'id> F::Manager<'id>: WorkerManager,
 {
@@ -623,7 +623,7 @@ where
     }
 }
 
-impl<F: Function> BooleanVecSet for ZBDDSetMT<F>
+impl<F: Function> BooleanVecSet for ZBDDFunctionMT<F>
 where
     for<'id> F::Manager<'id>: Manager<Terminal = ZBDDTerminal>
         + super::HasZBDDOpApplyCache<F::Manager<'id>>
@@ -715,7 +715,7 @@ where
     }
 }
 
-impl<F: Function> BooleanFunction for ZBDDSetMT<F>
+impl<F: Function> BooleanFunction for ZBDDFunctionMT<F>
 where
     for<'id> F::Manager<'id>: Manager<Terminal = ZBDDTerminal>
         + super::HasZBDDOpApplyCache<F::Manager<'id>>
@@ -847,7 +847,7 @@ where
         vars: LevelNo,
         cache: &mut SatCountCache<N, S>,
     ) -> N {
-        apply_rec_st::ZBDDSet::<F>::sat_count_edge(manager, edge, vars, cache)
+        apply_rec_st::ZBDDFunction::<F>::sat_count_edge(manager, edge, vars, cache)
     }
 
     #[inline]
@@ -860,7 +860,7 @@ where
     where
         I: ExactSizeIterator<Item = &'a EdgeOfFunc<'id, Self>>,
     {
-        apply_rec_st::ZBDDSet::<F>::pick_cube_edge(manager, edge, order, choice)
+        apply_rec_st::ZBDDFunction::<F>::pick_cube_edge(manager, edge, order, choice)
     }
 
     #[inline]
@@ -869,8 +869,8 @@ where
         edge: &'a EdgeOfFunc<'id, Self>,
         env: impl IntoIterator<Item = (&'a EdgeOfFunc<'id, Self>, bool)>,
     ) -> bool {
-        apply_rec_st::ZBDDSet::<F>::eval_edge(manager, edge, env)
+        apply_rec_st::ZBDDFunction::<F>::eval_edge(manager, edge, env)
     }
 }
 
-impl<F: Function, T: Tag> DotStyle<T> for ZBDDSetMT<F> {}
+impl<F: Function, T: Tag> DotStyle<T> for ZBDDFunctionMT<F> {}

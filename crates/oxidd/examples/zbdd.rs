@@ -1,7 +1,7 @@
 use std::hash::BuildHasherDefault;
 
 use oxidd::util::num::Saturating;
-use oxidd::zbdd::ZBDDSet;
+use oxidd::zbdd::ZBDDFunction;
 use oxidd::BooleanFunction;
 use oxidd::BooleanVecSet;
 use oxidd::Function;
@@ -15,29 +15,29 @@ fn main() {
     let manager_ref = oxidd::zbdd::new_manager(1024, 1024, 1);
     let (a, b, c) = manager_ref.with_manager_exclusive(|manager| {
         (
-            ZBDDSet::new_singleton(manager).unwrap(),
-            ZBDDSet::new_singleton(manager).unwrap(),
-            ZBDDSet::new_singleton(manager).unwrap(),
+            ZBDDFunction::new_singleton(manager).unwrap(),
+            ZBDDFunction::new_singleton(manager).unwrap(),
+            ZBDDFunction::new_singleton(manager).unwrap(),
         )
     });
 
     manager_ref.with_manager_shared(|manager| {
-        let n1 = ZBDDSet::from_edge(
+        let n1 = ZBDDFunction::from_edge(
             manager,
             oxidd::zbdd::make_node(
                 manager,
                 a.as_edge(manager),
                 manager.clone_edge(b.as_edge(manager)),
-                ZBDDSet::empty_edge(manager),
+                ZBDDFunction::empty_edge(manager),
             )
             .unwrap(),
         );
-        let n2 = ZBDDSet::from_edge(
+        let n2 = ZBDDFunction::from_edge(
             manager,
             oxidd::zbdd::make_node(
                 manager,
                 a.as_edge(manager),
-                ZBDDSet::empty_edge(manager),
+                ZBDDFunction::empty_edge(manager),
                 manager.clone_edge(b.as_edge(manager)),
             )
             .unwrap(),
@@ -50,7 +50,7 @@ fn main() {
         assert!(b.sat_count(3, &mut count_cache).0 == 1);
         assert!(c.sat_count(3, &mut count_cache).0 == 1);
 
-        assert!(ZBDDSet::t(manager).sat_count(3, &mut count_cache).0 == 1 << 3);
+        assert!(ZBDDFunction::t(manager).sat_count(3, &mut count_cache).0 == 1 << 3);
 
         let ab = a.union(&b).unwrap();
         assert!(ab == b.union(&a).unwrap());
@@ -59,12 +59,12 @@ fn main() {
         assert!(abc == c.union(&b).unwrap().union(&a).unwrap());
         assert!(abc.sat_count(3, &mut count_cache).0 == 3);
 
-        assert!(abc.intsec(&ZBDDSet::t(manager)).unwrap() == abc);
+        assert!(abc.intsec(&ZBDDFunction::t(manager)).unwrap() == abc);
 
-        let complement_a = ZBDDSet::t(manager).diff(&a).unwrap();
+        let complement_a = ZBDDFunction::t(manager).diff(&a).unwrap();
         assert!(complement_a.sat_count(3, &mut count_cache).0 == (1 << 3) - 1);
 
-        let func_a = ZBDDSet::from_edge(
+        let func_a = ZBDDFunction::from_edge(
             manager,
             oxidd::zbdd::var_boolean_function(manager, a.as_edge(manager)).unwrap(),
         );
@@ -85,7 +85,7 @@ fn main() {
                 (&func_a, "func a"),
                 (&not_a, "¬a"),
                 (&not_not_a, "¬¬a"),
-                (&ZBDDSet::t(manager), "⊤"),
+                (&ZBDDFunction::t(manager), "⊤"),
             ],
         )
         .expect("dot export failed");

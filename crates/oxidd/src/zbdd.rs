@@ -90,14 +90,17 @@ macro_rules! manager_data {
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "manager-pointer")] {
-        pub use pointer::{ZBDDSet, ZBDDManagerRef};
+        pub use pointer::{ZBDDFunction, ZBDDManagerRef};
     } else if #[cfg(feature = "manager-index")] {
-        pub use index::{ZBDDSet, ZBDDManagerRef};
+        pub use index::{ZBDDFunction, ZBDDManagerRef};
     } else {
-        pub type ZBDDSet = ();
+        pub type ZBDDFunction = ();
         pub type ZBDDManagerRef = ();
     }
 }
+
+#[deprecated = "use ZBDDFunction instead"]
+pub type ZBDDSet = ZBDDFunction;
 
 /// Create a new manager for a simple binary decision diagram
 #[allow(unused_variables)]
@@ -154,9 +157,9 @@ mod index {
     crate::util::manager_ref_index_based!(pub struct ZBDDManagerRef(<ZBDD as DD>::ManagerRef) with ZBDDManagerData);
 
     #[cfg(not(feature = "multi-threading"))]
-    type SetInner = oxidd_rules_zbdd::ZBDDSet<<ZBDD as DD>::Function>;
+    type FunctionInner = oxidd_rules_zbdd::ZBDDFunction<<ZBDD as DD>::Function>;
     #[cfg(feature = "multi-threading")]
-    type SetInner = oxidd_rules_zbdd::ZBDDSetMT<<ZBDD as DD>::Function>;
+    type FunctionInner = oxidd_rules_zbdd::ZBDDFunctionMT<<ZBDD as DD>::Function>;
 
     #[derive(
         Clone,
@@ -170,11 +173,11 @@ mod index {
         oxidd_derive::BooleanVecSet,
     )]
     #[use_manager_ref(ZBDDManagerRef)]
-    pub struct ZBDDSet(SetInner);
-    crate::util::derive_raw_function_index_based!(for: ZBDDSet, inner: SetInner);
+    pub struct ZBDDFunction(FunctionInner);
+    crate::util::derive_raw_function_index_based!(for: ZBDDFunction, inner: FunctionInner);
 
     // Default implementation suffices
-    impl oxidd_dump::dot::DotStyle<()> for ZBDDSet {}
+    impl oxidd_dump::dot::DotStyle<()> for ZBDDFunction {}
 }
 
 #[cfg(feature = "manager-pointer")]
@@ -201,9 +204,9 @@ mod pointer {
     crate::util::manager_ref_pointer_based!(pub struct ZBDDManagerRef(<ZBDD as DD>::ManagerRef) with ZBDDManagerData);
 
     #[cfg(not(feature = "multi-threading"))]
-    type SetInner = oxidd_rules_zbdd::ZBDDSet<<ZBDD as DD>::Function>;
+    type FunctionInner = oxidd_rules_zbdd::ZBDDFunction<<ZBDD as DD>::Function>;
     #[cfg(feature = "multi-threading")]
-    type SetInner = oxidd_rules_zbdd::ZBDDSetMT<<ZBDD as DD>::Function>;
+    type FunctionInner = oxidd_rules_zbdd::ZBDDFunctionMT<<ZBDD as DD>::Function>;
 
     #[derive(
         Clone,
@@ -217,11 +220,11 @@ mod pointer {
         oxidd_derive::BooleanVecSet,
     )]
     #[use_manager_ref(ZBDDManagerRef)]
-    pub struct ZBDDSet(SetInner);
-    crate::util::derive_raw_function_pointer_based!(for: ZBDDSet, inner: SetInner);
+    pub struct ZBDDFunction(FunctionInner);
+    crate::util::derive_raw_function_pointer_based!(for: ZBDDFunction, inner: FunctionInner);
 
     // Default implementation suffices
-    impl oxidd_dump::dot::DotStyle<()> for ZBDDSet {}
+    impl oxidd_dump::dot::DotStyle<()> for ZBDDFunction {}
 }
 
 use oxidd_core::ManagerRef;

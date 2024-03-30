@@ -499,16 +499,16 @@ where
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Function, Debug)]
 #[repr(transparent)]
-pub struct ZBDDSet<F: Function>(F);
+pub struct ZBDDFunction<F: Function>(F);
 
-impl<F: Function> From<F> for ZBDDSet<F> {
+impl<F: Function> From<F> for ZBDDFunction<F> {
     #[inline(always)]
     fn from(value: F) -> Self {
-        ZBDDSet(value)
+        ZBDDFunction(value)
     }
 }
 
-impl<F: Function> ZBDDSet<F> {
+impl<F: Function> ZBDDFunction<F> {
     /// Convert `self` into the underlying [`Function`]
     #[inline(always)]
     pub fn into_inner(self) -> F {
@@ -516,7 +516,7 @@ impl<F: Function> ZBDDSet<F> {
     }
 }
 
-impl<F: Function> BooleanVecSet for ZBDDSet<F>
+impl<F: Function> BooleanVecSet for ZBDDFunction<F>
 where
     for<'id> F::Manager<'id>: Manager<Terminal = ZBDDTerminal>
         + super::HasZBDDOpApplyCache<F::Manager<'id>>
@@ -600,7 +600,7 @@ where
     }
 }
 
-impl<F: Function> BooleanFunction for ZBDDSet<F>
+impl<F: Function> BooleanFunction for ZBDDFunction<F>
 where
     for<'id> F::Manager<'id>: Manager<Terminal = ZBDDTerminal>
         + super::HasZBDDOpApplyCache<F::Manager<'id>>
@@ -861,4 +861,4 @@ where
     }
 }
 
-impl<F: Function, T: Tag> DotStyle<T> for ZBDDSet<F> {}
+impl<F: Function, T: Tag> DotStyle<T> for ZBDDFunction<F> {}
