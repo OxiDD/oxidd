@@ -180,7 +180,7 @@ pub trait BooleanFunction: Function {
         Self::from_edge(manager, Self::t_edge(manager))
     }
 
-    /// Get a fresh variable, i.e. a function that is true if and only if the
+    /// Get a fresh variable, i.e., a function that is true if and only if the
     /// variable is true. This adds a new level to a decision diagram.
     fn new_var<'id>(manager: &mut Self::Manager<'id>) -> AllocResult<Self>;
 
@@ -665,19 +665,20 @@ pub trait BooleanFunction: Function {
 
     /// Evaluate this Boolean function
     ///
-    /// `env` determines the valuation for all variables. Missing values are
-    /// assumed to be false. However, note that the environment may also
-    /// determine the domain, e.g., in case of ZBDDs. If values are specified
-    /// multiple times, the last one counts. Panics if any function in `env`
-    /// refers to a terminal node.
+    /// `args` determines the valuation for all variables. Missing values are
+    /// assumed to be false. However, note that the arguments may also determine
+    /// the domain, e.g., in case of ZBDDs. If values are specified multiple
+    /// times, the last one counts. Panics if any function in `args` refers to a
+    /// terminal node.
     ///
     /// Locking behavior: acquires a shared manager lock.
-    fn eval<'a>(&'a self, env: impl IntoIterator<Item = (&'a Self, bool)>) -> bool {
+    fn eval<'a>(&'a self, args: impl IntoIterator<Item = (&'a Self, bool)>) -> bool {
         self.with_manager_shared(|manager, edge| {
             Self::eval_edge(
                 manager,
                 edge,
-                env.into_iter().map(|(f, b)| (f.as_edge(manager), b)),
+                args.into_iter()
+                    .map(|(f, b)| (f.as_edge(manager).borrowed(), b)),
             )
         })
     }
@@ -686,7 +687,7 @@ pub trait BooleanFunction: Function {
     fn eval_edge<'id, 'a>(
         manager: &'a Self::Manager<'id>,
         edge: &'a EdgeOfFunc<'id, Self>,
-        env: impl IntoIterator<Item = (&'a EdgeOfFunc<'id, Self>, bool)>,
+        args: impl IntoIterator<Item = (Borrowed<'a, EdgeOfFunc<'id, Self>>, bool)>,
     ) -> bool;
 }
 

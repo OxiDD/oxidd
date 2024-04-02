@@ -374,7 +374,7 @@ impl<E: Edge> NodeSet<E> for BTreeSet<NodeID> {
     }
 }
 
-/// Optional boolean with `repr(i8)`
+/// Optional Boolean with `repr(i8)`
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[repr(i8)]
 pub enum OptBool {

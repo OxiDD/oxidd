@@ -1,13 +1,13 @@
 use std::hash::BuildHasherDefault;
 
 use oxidd::util::num::Saturating;
+use oxidd::util::SatCountCache;
 use oxidd::zbdd::ZBDDFunction;
 use oxidd::BooleanFunction;
 use oxidd::BooleanVecSet;
 use oxidd::Function;
 use oxidd::Manager;
 use oxidd::ManagerRef;
-use oxidd::SatCountCache;
 use oxidd_dump::dot::dump_all;
 use rustc_hash::FxHasher;
 

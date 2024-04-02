@@ -432,7 +432,7 @@ type ExplicitBFunc = u32;
 struct TestAllBooleanFunctions<'a, B: BooleanFunction> {
     mref: &'a B::ManagerRef,
     vars: &'a [B],
-    /// Stores all possible Boolean functions with `var.len()` vars
+    /// Stores all possible Boolean functions with `vars.len()` vars
     boolean_functions: Vec<B>,
     dd_to_boolean_func: FxHashMap<B, ExplicitBFunc>,
 }
@@ -457,7 +457,7 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
             for explicit_f in 0..num_functions {
                 // naïve DD construction from the on-set
                 let mut f = B::f(manager);
-                for assignment in 0..(1u32 << nvars) {
+                for assignment in 0..num_assignments {
                     if explicit_f & (1 << assignment) == 0 {
                         continue; // not part of the on-set
                     }
@@ -501,8 +501,9 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
         }
     }
 
-    /// Test operations on all Boolean function with the given variable set
-    pub fn test_boolean_functions(&self) {
+    /// Test basic operations on all Boolean function with the given variable
+    /// set
+    pub fn basic(&self) {
         let nvars = self.vars.len() as u32;
         let num_assignments = 1u32 << nvars;
         let num_functions: ExplicitBFunc = 1 << num_assignments;
@@ -517,7 +518,7 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
         // vars
         for (i, var) in self.vars.iter().enumerate() {
             let mut expected = 0;
-            for assignment in 0..(1 << nvars) {
+            for assignment in 0..num_assignments {
                 expected |= ((assignment >> i) & 1) << assignment;
             }
             let actual = self.dd_to_boolean_func[var];
@@ -594,17 +595,17 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
 impl<'a, B: BooleanFunctionQuant> TestAllBooleanFunctions<'a, B> {
     /// Test quantification operations on all Boolean function with the given
     /// variable set
-    pub fn test_boolean_functions_quant(&self) {
+    pub fn quant(&self) {
         let nvars = self.vars.len() as ExplicitBFunc;
         let num_assignments = 1u32 << nvars;
         let num_functions: ExplicitBFunc = 1 << num_assignments;
         let func_mask = num_functions - 1;
 
         // Example for 3 vars: [0b01010101, 0b00110011, 0b00001111]
-        let var_functions: Vec<ExplicitBFunc> = (0..(1u32 << nvars))
+        let var_functions: Vec<ExplicitBFunc> = (0..nvars)
             .map(|i| {
                 let mut f = 0;
-                for assignment in 0..(1u32 << nvars) {
+                for assignment in 0..num_assignments {
                     f |= (((assignment >> i) & 1) as ExplicitBFunc) << assignment;
                 }
                 f
@@ -645,8 +646,8 @@ impl<'a, B: BooleanFunctionQuant> TestAllBooleanFunctions<'a, B> {
         }
 
         // quantification
-        let mut assignment_to_mask: Vec<ExplicitBFunc> = vec![0; 1 << nvars];
-        for var_set in 0..(1u32 << nvars) {
+        let mut assignment_to_mask: Vec<ExplicitBFunc> = vec![0; num_assignments as usize];
+        for var_set in 0..num_assignments {
             let mut dd_var_set = t.clone();
             for (i, var) in self.vars.iter().enumerate() {
                 if var_set & (1 << i) != 0 {
@@ -654,6 +655,7 @@ impl<'a, B: BooleanFunctionQuant> TestAllBooleanFunctions<'a, B> {
                 }
             }
 
+            // precompute `assignment_to_mask`
             for (assignment, mask) in assignment_to_mask.iter_mut().enumerate() {
                 let mut tmp: ExplicitBFunc = func_mask;
                 for (i, func) in var_functions.iter().copied().enumerate() {
@@ -702,8 +704,8 @@ fn bdd_all_boolean_functions_3vars_t1() {
     let mref = oxidd::bdd::new_manager(65536, 1024, 1);
     let vars = bdd_3_vars::<BDDFunction>(&mref);
     let test = TestAllBooleanFunctions::init(&mref, &vars, &vars);
-    test.test_boolean_functions();
-    test.test_boolean_functions_quant();
+    test.basic();
+    test.quant();
 }
 
 #[test]
@@ -712,8 +714,8 @@ fn bdd_all_boolean_functions_3vars_t2() {
     let mref = oxidd::bdd::new_manager(65536, 1024, 2);
     let vars = bdd_3_vars::<BDDFunction>(&mref);
     let test = TestAllBooleanFunctions::init(&mref, &vars, &vars);
-    test.test_boolean_functions();
-    test.test_boolean_functions_quant();
+    test.basic();
+    test.quant();
 }
 
 #[test]
@@ -722,8 +724,8 @@ fn bcdd_all_boolean_functions_3vars_t1() {
     let mref = oxidd::bcdd::new_manager(65536, 1024, 1);
     let vars = bdd_3_vars::<BCDDFunction>(&mref);
     let test = TestAllBooleanFunctions::init(&mref, &vars, &vars);
-    test.test_boolean_functions();
-    test.test_boolean_functions_quant();
+    test.basic();
+    test.quant();
 }
 
 #[test]
@@ -732,8 +734,8 @@ fn bcdd_all_boolean_functions_3vars_t2() {
     let mref = oxidd::bcdd::new_manager(65536, 1024, 2);
     let vars = bdd_3_vars::<BCDDFunction>(&mref);
     let test = TestAllBooleanFunctions::init(&mref, &vars, &vars);
-    test.test_boolean_functions();
-    test.test_boolean_functions_quant();
+    test.basic();
+    test.quant();
 }
 
 #[test]
@@ -742,7 +744,7 @@ fn zbdd_all_boolean_functions_3vars_t1() {
     let mref = oxidd::zbdd::new_manager(65536, 1024, 1);
     let (singletons, vars) = zbdd_3_singletons_vars(&mref);
     let test = TestAllBooleanFunctions::init(&mref, &vars, &singletons);
-    test.test_boolean_functions();
+    test.basic();
 }
 
 #[test]
@@ -751,5 +753,5 @@ fn zbdd_all_boolean_functions_3vars_t2() {
     let mref = oxidd::zbdd::new_manager(65536, 1024, 2);
     let (singletons, vars) = zbdd_3_singletons_vars(&mref);
     let test = TestAllBooleanFunctions::init(&mref, &vars, &singletons);
-    test.test_boolean_functions();
+    test.basic();
 }

@@ -687,9 +687,9 @@ where
     fn eval_edge<'id, 'a>(
         manager: &'a Self::Manager<'id>,
         edge: &'a EdgeOfFunc<'id, Self>,
-        env: impl IntoIterator<Item = (&'a EdgeOfFunc<'id, Self>, bool)>,
+        args: impl IntoIterator<Item = (Borrowed<'a, EdgeOfFunc<'id, Self>>, bool)>,
     ) -> bool {
-        apply_rec_st::BCDDFunction::<F>::eval_edge(manager, edge, env)
+        apply_rec_st::BCDDFunction::<F>::eval_edge(manager, edge, args)
     }
 }
 
