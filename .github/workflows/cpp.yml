@@ -1,0 +1,76 @@
+name: C++
+
+# spell-checker:ignore DCMAKE
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+    - 'bindings/cpp/**'
+    - 'CMakeLists.txt'
+    - 'crates/**'
+    - 'Cargo.*'
+  pull_request:
+    branches: ["main"]
+    paths:
+    - 'bindings/cpp/**'
+    - 'CMakeLists.txt'
+    - 'crates/**'
+    - 'Cargo.*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint:
+    name: Lint
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      pull-requests: write
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: CMake Configure
+      run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+    - name: Generate oxidd/capi.h
+      working-directory: build
+      run: make oxidd-capi-header
+    - uses: cpp-linter/cpp-linter-action@v2
+      id: linter
+      env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        version: 18
+        ignore: "|!bindings/cpp"
+        database: "build/compile_commands.json"
+        style: "file"  # Use .clang-format config file
+        tidy-checks: "" # Use .clang-tidy config file
+        thread-comments: ${{ github.event_name == 'pull_request' && 'update' }}
+    - name: Fail fast?!
+      if: steps.linter.outputs.checks-failed > 0
+      run: exit 1
+
+
+  test:
+    name: Test
+
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        compiler:
+        - { cc: "gcc", cxx: "g++" }
+        - { cc: "clang", cxx: "clang++" }
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: CMake Configure
+      run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=${{ matrix.compiler.cc }} -DCMAKE_CXX_COMPILER=${{ matrix.compiler.cxx }}
+    - name: Build
+      working-directory: build
+      run: make boolean-function
+    - name: Run Tests
+      working-directory: build
+      run: make test
