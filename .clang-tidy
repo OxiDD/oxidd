@@ -1,0 +1,22 @@
+---
+# spell-checker:ignore cppcoreguidelines
+Checks: 'bugprone-*,-bugprone-easily-swappable-parameters,cppcoreguidelines-*,modernize-*,-modernize-use-trailing-return-type,misc-*,-misc-include-cleaner,readability-*,performance-*,portability-*,-readability-braces-around-statements,-readability-function-cognitive-complexity,-readability-identifier-length,-readability-isolate-declaration'
+FormatStyle: file
+CheckOptions:
+  readability-identifier-naming.PrivateMemberPrefix: '_'
+  readability-identifier-naming.ClassCase: 'lower_case'
+  readability-identifier-naming.ConceptCase: 'lower_case'
+  readability-identifier-naming.ConstantCase: 'lower_case'
+  readability-identifier-naming.EnumCase: 'lower_case'
+  readability-identifier-naming.FunctionCase: 'lower_case'
+  readability-identifier-naming.MemberCase: 'lower_case'
+  readability-identifier-naming.MethodCase: 'lower_case'
+  readability-identifier-naming.NamespaceCase: 'lower_case'
+  readability-identifier-naming.ParameterCase: 'lower_case'
+  readability-identifier-naming.TypeAliasCase: 'lower_case'
+  readability-identifier-naming.TypeTemplateParameterCase: 'UPPER_CASE'
+  readability-identifier-naming.UnionCase: 'lower_case'
+  readability-identifier-naming.ValueTemplateParameterCase: 'UPPER_CASE'
+  readability-identifier-naming.VariableCase: 'lower_case'
+  readability-identifier-naming.VirtualMethodCase: 'lower_case'
+...
