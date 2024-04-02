@@ -1,14 +1,23 @@
-name: Pipeline
+name: Rust
 
 # spell-checker:ignore dtolnay
 
 on:
   push:
+    branches: ["main"]
+    paths:
+    - 'crates/**'
+    - 'Cargo.*'
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
+    paths:
+    - 'crates/**'
+    - 'Cargo.*'
 
 env:
   CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+  RUSTDOCFLAGS: "-D warnings"
 
 jobs:
   lint:
@@ -23,14 +32,8 @@ jobs:
         toolchain: nightly
         components: clippy, rustfmt
     - uses: extractions/setup-just@v1
-    - name: Install cSpell
-      run: npm install --prefix=.local/cspell -g cspell
     - name: Lint
-      run: just lint
-    - name: Doc
-      run: cargo doc --no-deps
-      env:
-        RUSTDOCFLAGS: "-D warnings"
+      run: just lint-rust
 
   test:
     name: Test
@@ -39,8 +42,8 @@ jobs:
 
     strategy:
       matrix:
-        toolchain: ['stable', 'nightly']
-        flags: ['', '--release']
+        toolchain: ["stable", "nightly"]
+        flags: ["", "--release"]
 
     steps:
     - uses: actions/checkout@v4
@@ -49,7 +52,5 @@ jobs:
         toolchain: ${{ matrix.toolchain }}
     - name: Build
       run: cargo build ${{ matrix.flags }} --verbose
-      env:
-        RUSTFLAGS: "-D warnings"
     - name: Run Tests
       run: cargo test ${{ matrix.flags }} --verbose
