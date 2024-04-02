@@ -1,7 +1,7 @@
 use std::fmt;
 use std::fmt::Write;
 
-use oxidd::AllocResult;
+use oxidd::util::AllocResult;
 use oxidd::BooleanFunction;
 use oxidd::BooleanFunctionQuant;
 use oxidd::ManagerRef;
@@ -75,7 +75,7 @@ impl fmt::Display for Prop {
 struct Diff {
     expected: bool,
     actual: bool,
-    env: u32,
+    args: u32,
 }
 
 #[derive(Clone)]
@@ -94,7 +94,11 @@ impl<F: fmt::Display> fmt::Debug for Error<F> {
                 if var % 4 == 0 {
                     f.write_char(' ')?;
                 }
-                let c = if diff.env & (1 << var) != 0 { '1' } else { '0' };
+                let c = if diff.args & (1 << var) != 0 {
+                    '1'
+                } else {
+                    '0'
+                };
                 f.write_char(c)?;
             }
             writeln!(f, "  expected: {}, got: {}", diff.expected, diff.actual)?;
@@ -104,21 +108,25 @@ impl<F: fmt::Display> fmt::Debug for Error<F> {
 }
 
 impl Prop {
-    fn eval(&self, env: u32) -> bool {
+    fn eval(&self, args: u32) -> bool {
         use Prop::*;
 
         /// Q: 0 = ∃, 1 = ∀, 2 = ∃!
-        fn quant_inner<const Q: u8>(vars: u32, env: u32, p: &Prop) -> bool {
+        fn quant_inner<const Q: u8>(vars: u32, args: u32, p: &Prop) -> bool {
             if vars == 0 {
-                p.eval(env)
+                p.eval(args)
             } else {
                 let trailing = vars.trailing_zeros();
                 let v = 1 << trailing;
                 let vars = vars & !v;
                 match Q {
-                    0 => quant_inner::<Q>(vars, env | v, p) || quant_inner::<Q>(vars, env & !v, p),
-                    1 => quant_inner::<Q>(vars, env | v, p) && quant_inner::<Q>(vars, env & !v, p),
-                    2 => quant_inner::<Q>(vars, env | v, p) ^ quant_inner::<Q>(vars, env & !v, p),
+                    0 => {
+                        quant_inner::<Q>(vars, args | v, p) || quant_inner::<Q>(vars, args & !v, p)
+                    }
+                    1 => {
+                        quant_inner::<Q>(vars, args | v, p) && quant_inner::<Q>(vars, args & !v, p)
+                    }
+                    2 => quant_inner::<Q>(vars, args | v, p) ^ quant_inner::<Q>(vars, args & !v, p),
                     _ => unreachable!(),
                 }
             }
@@ -127,27 +135,27 @@ impl Prop {
         match self {
             False => false,
             True => true,
-            Var(i) => env & (1 << *i) != 0,
-            Not(p) => !p.eval(env),
-            And(p, q) => p.eval(env) && q.eval(env),
-            Or(p, q) => p.eval(env) || q.eval(env),
-            Xor(p, q) => p.eval(env) ^ q.eval(env),
-            Equiv(p, q) => p.eval(env) == q.eval(env),
-            Nand(p, q) => !(p.eval(env) && q.eval(env)),
-            Nor(p, q) => !(p.eval(env) || q.eval(env)),
-            Imp(p, q) => !p.eval(env) || q.eval(env),
-            ImpStrict(p, q) => !p.eval(env) && q.eval(env),
+            Var(i) => args & (1 << *i) != 0,
+            Not(p) => !p.eval(args),
+            And(p, q) => p.eval(args) && q.eval(args),
+            Or(p, q) => p.eval(args) || q.eval(args),
+            Xor(p, q) => p.eval(args) ^ q.eval(args),
+            Equiv(p, q) => p.eval(args) == q.eval(args),
+            Nand(p, q) => !(p.eval(args) && q.eval(args)),
+            Nor(p, q) => !(p.eval(args) || q.eval(args)),
+            Imp(p, q) => !p.eval(args) || q.eval(args),
+            ImpStrict(p, q) => !p.eval(args) && q.eval(args),
             Ite(i, t, e) => {
-                if i.eval(env) {
-                    t.eval(env)
+                if i.eval(args) {
+                    t.eval(args)
                 } else {
-                    e.eval(env)
+                    e.eval(args)
                 }
             }
-            Restrict(positive, negative, p) => p.eval((env | positive) & !negative),
-            Exists(vars, p) => quant_inner::<0>(*vars, env, p),
-            Forall(vars, p) => quant_inner::<1>(*vars, env, p),
-            Unique(vars, p) => quant_inner::<2>(*vars, env, p),
+            Restrict(positive, negative, p) => p.eval((args | positive) & !negative),
+            Exists(vars, p) => quant_inner::<0>(*vars, args, p),
+            Forall(vars, p) => quant_inner::<1>(*vars, args, p),
+            Unique(vars, p) => quant_inner::<2>(*vars, args, p),
         }
     }
 
@@ -255,15 +263,15 @@ impl Prop {
         let end = 1u32 << vars.len();
         let f = self.cons(manager, vars).expect("out of memory");
         let mut diffs = Vec::new();
-        for env in 0..end {
-            let expected = self.eval(env);
+        for args in 0..end {
+            let expected = self.eval(args);
             let actual =
-                f.eval((0..var_handles.len()).map(|i| (&var_handles[i], env & (1 << i) != 0)));
+                f.eval((0..var_handles.len()).map(|i| (&var_handles[i], args & (1 << i) != 0)));
             if expected != actual {
                 diffs.push(Diff {
                     expected,
                     actual,
-                    env,
+                    args,
                 })
             }
         }
@@ -292,15 +300,15 @@ impl Prop {
         let end = 1u32 << vars.len();
         let f = self.cons_q(manager, vars).expect("out of memory");
         let mut diffs = Vec::new();
-        for env in 0..end {
-            let expected = self.eval(env);
+        for args in 0..end {
+            let expected = self.eval(args);
             let actual =
-                f.eval((0..var_handles.len()).map(|i| (&var_handles[i], env & (1 << i) != 0)));
+                f.eval((0..var_handles.len()).map(|i| (&var_handles[i], args & (1 << i) != 0)));
             if expected != actual {
                 diffs.push(Diff {
                     expected,
                     actual,
-                    env,
+                    args,
                 })
             }
         }

@@ -330,15 +330,15 @@ where
     reduce(manager, level, hi, lo, ZBDDOp::MkNode)
 }
 
-/// Get the Boolean function for `var`
+/// Get the Boolean function v for the singleton set {v} (given by `singleton`)
 ///
-/// Panics if `var` is no singleton set
-pub fn var_boolean_function<M>(manager: &M, var: &M::Edge) -> AllocResult<M::Edge>
+/// Panics if `singleton` is not a singleton set
+pub fn var_boolean_function<M>(manager: &M, singleton: &M::Edge) -> AllocResult<M::Edge>
 where
     M: Manager<Terminal = ZBDDTerminal> + HasZBDDCache<M::Edge>,
     M::InnerNode: HasLevel,
 {
-    let level = singleton_level(manager, var);
+    let level = singleton_level(manager, singleton);
     let lo = manager.get_terminal(ZBDDTerminal::Empty)?;
     let hi = manager.clone_edge(manager.zbdd_cache().tautology(level + 1));
     let edge = manager

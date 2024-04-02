@@ -494,18 +494,18 @@ pub fn derive_boolean_function(input: syn::DeriveInput) -> TokenStream {
                 #[inline]
                 fn eval<'__a>(
                     &'__a self,
-                    env: impl ::std::iter::IntoIterator<Item = (&'__a Self, bool)>,
+                    args: impl ::std::iter::IntoIterator<Item = (&'__a Self, bool)>,
                 ) -> bool {
-                    <#inner as #trait_path>::eval(&self.#field, env.into_iter().map(|(f, b)| (&f.#field, b)))
+                    <#inner as #trait_path>::eval(&self.#field, args.into_iter().map(|(f, b)| (&f.#field, b)))
                 }
 
                 #[inline]
                 fn eval_edge<'__id, '__a>(
                     manager: &'__a #manager_ty,
                     edge: &'__a #edge_ty,
-                    env: impl ::std::iter::IntoIterator<Item = (&'__a #edge_ty, bool)>,
+                    args: impl ::std::iter::IntoIterator<Item = (::oxidd_core::util::Borrowed<'__a, #edge_ty>, bool)>,
                 ) -> bool {
-                    <#inner as #trait_path>::eval_edge(manager, edge, env)
+                    <#inner as #trait_path>::eval_edge(manager, edge, args)
                 }
             }
         },

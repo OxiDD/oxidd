@@ -12,7 +12,17 @@ language = "C"
 
 # An optional string of text to output at the beginning of the generated file
 # default: doesn't emit anything
-header = "/* Text to put at the beginning of the generated file. Probably a license. */"
+header = """
+/**
+ * @file capi.h
+ * @brief OxiDD's C API
+ */
+
+/**
+ * @namespace oxidd::capi
+ * @brief Namespace of OxiDD's C API
+ */
+"""
 
 # An optional string of text to output at the end of the generated file
 # default: doesn't emit anything
@@ -20,7 +30,7 @@ header = "/* Text to put at the beginning of the generated file. Probably a lice
 
 # An optional name to use as an include guard
 # default: doesn't emit an include guard
-#include_guard = "__OXIDD_BDD_H__"
+#include_guard = "__OXIDD_CAPI_H__"
 
 # Whether to add a `#pragma once` guard
 # default: doesn't emit a `#pragma once`

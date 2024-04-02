@@ -1,5 +1,5 @@
 use oxidd::bdd::BDDFunction;
-use oxidd::AllocResult;
+use oxidd::util::AllocResult;
 use oxidd::BooleanFunction;
 use oxidd::ManagerRef;
 

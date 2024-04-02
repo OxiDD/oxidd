@@ -713,14 +713,14 @@ where
     fn eval_edge<'id, 'a>(
         manager: &'a Self::Manager<'id>,
         edge: &'a EdgeOfFunc<'id, Self>,
-        env: impl IntoIterator<Item = (&'a EdgeOfFunc<'id, Self>, bool)>,
+        args: impl IntoIterator<Item = (Borrowed<'a, EdgeOfFunc<'id, Self>>, bool)>,
     ) -> bool {
         let mut values = BitVec::new();
         values.resize(manager.num_levels() as usize, false);
-        for (edge, val) in env {
+        for (edge, val) in args {
             let node = manager
-                .get_node(edge)
-                .expect_inner("edges in `env` must refer to inner nodes");
+                .get_node(&edge)
+                .expect_inner("edges in `args` must refer to inner nodes");
             values.set(node.level() as usize, val);
         }
 
