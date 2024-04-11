@@ -24,7 +24,7 @@ OxiDD is a highly modular decision diagram framework written in Rust. The most p
 
 ## Getting Started
 
-Constructing a BDD for the formula $(x_1 \land x_2) \lor x_3$ works as follows:
+Constructing a BDD for the formula (x₁ ∧ x₂) ∨ x₃ works as follows:
 
 ```Rust
 // Create a manager for up to 2048 nodes, up to 1024 apply cache entries, and
