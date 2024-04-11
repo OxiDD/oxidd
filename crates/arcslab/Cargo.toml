@@ -3,7 +3,12 @@ name = "arcslab"
 version = "0.1.0"
 edition = "2021"
 description = "Slab, but with reference counted items"
-license = "MIT OR Apache-2.0"
+
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+
 
 [dependencies]
 

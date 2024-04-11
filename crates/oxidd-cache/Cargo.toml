@@ -1,13 +1,18 @@
 [package]
 name = "oxidd-cache"
-version = "0.1.0"
+version = "0.6.0"
 edition = "2021"
 description = "Apply cache for OxiDD"
-license = "MIT OR Apache-2.0"
+readme = "../../README.md"
+
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
 
 
 [dependencies]
-oxidd-core = { path = "../oxidd-core" }
+oxidd-core.workspace = true
 
 # fast alternative Mutex & RwLock implementation
 parking_lot = "0.12"
@@ -16,12 +21,12 @@ parking_lot = "0.12"
 document-features = "0.2"
 
 # allocation with madvise for hugepages
-hugealloc = { path = "../hugealloc", optional = true }
+hugealloc = { workspace = true, optional = true }
 allocator-api2 = { version = "0.2", optional = true }
 
 [dev-dependencies]
-oxidd-derive = { path = "../oxidd-derive" }
-oxidd-test-utils = { path = "../oxidd-test-utils" }
+oxidd-derive.workspace = true
+oxidd-test-utils.workspace = true
 
 # fast hash function
 rustc-hash = "1"

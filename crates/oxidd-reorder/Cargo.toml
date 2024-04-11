@@ -3,12 +3,18 @@ name = "oxidd-reorder"
 version = "0.1.0"
 edition = "2021"
 description = "Reordering algorithms for OxiDD"
-license = "MIT OR Apache-2.0"
+readme = "../../README.md"
+
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+
 
 # spell-checker:ignore mpmc
 
 [dependencies]
-oxidd-core = { path = "../oxidd-core" }
+oxidd-core.workspace = true
 
 # stack-allocated vectors
 smallvec = { version = "1", features = ["union", "const_generics"] }
@@ -24,4 +30,4 @@ rayon = "1.7"
 flume = { version = "0.10", default-features = false }
 
 [dev-dependencies]
-oxidd-test-utils = { path = "../oxidd-test-utils" }
+oxidd-test-utils.workspace = true

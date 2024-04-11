@@ -69,7 +69,7 @@ impl<'a, M: Manager, V, S: Default + BuildHasher> EdgeHashMap<'a, M, V, S> {
     pub fn get(&self, key: &M::Edge) -> Option<&V> {
         // SAFETY: `ManuallyDrop<T>` has the same representation as `T`
         self.map
-            .get(unsafe { std::mem::transmute::<_, &ManuallyDrop<M::Edge>>(key) })
+            .get(unsafe { std::mem::transmute::<&M::Edge, &ManuallyDrop<M::Edge>>(key) })
     }
 
     /// Get a mutable reference to the value for `edge` (if present)
@@ -77,7 +77,7 @@ impl<'a, M: Manager, V, S: Default + BuildHasher> EdgeHashMap<'a, M, V, S> {
     pub fn get_mut(&mut self, key: &M::Edge) -> Option<&mut V> {
         // SAFETY: `ManuallyDrop<T>` has the same representation as `T`
         self.map
-            .get_mut(unsafe { std::mem::transmute::<_, &ManuallyDrop<M::Edge>>(key) })
+            .get_mut(unsafe { std::mem::transmute::<&M::Edge, &ManuallyDrop<M::Edge>>(key) })
     }
 
     /// Insert a key-value pair into the map
@@ -108,7 +108,7 @@ impl<'a, M: Manager, V, S: Default + BuildHasher> EdgeHashMap<'a, M, V, S> {
         // SAFETY: `ManuallyDrop<T>` has the same representation as `T`
         match self
             .map
-            .remove_entry(unsafe { std::mem::transmute::<_, &ManuallyDrop<M::Edge>>(key) })
+            .remove_entry(unsafe { std::mem::transmute::<&M::Edge, &ManuallyDrop<M::Edge>>(key) })
         {
             Some((key, value)) => {
                 self.manager.drop_edge(ManuallyDrop::into_inner(key));

@@ -3,15 +3,22 @@ name = "oxidd-cli"
 version = "0.1.0"
 edition = "2021"
 description = "Command line interface for OxiDD"
-license = "MIT OR Apache-2.0"
+readme = "../../README.md"
+keywords = ["bdd", "binary-decision-diagrams", "boolean-expression", "symbolic"]
+categories = ["command-line-utilities", "mathematics", "science"]
+
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
 
 
 [dependencies]
-oxidd = { path = "../oxidd", features = ["bdd", "bcdd"], default-features = false }
-oxidd-core = { path = "../oxidd-core" }
-oxidd-dump = { path = "../oxidd-dump" }
-oxidd-reorder = { path = "../oxidd-reorder" }
-oxidd-parser = { path = "../oxidd-parser", features = ["load-file"] }
+oxidd = { workspace = true, features = ["bdd", "bcdd"] }
+oxidd-core.workspace = true
+oxidd-dump.workspace = true
+oxidd-reorder.workspace = true
+oxidd-parser = { workspace = true, features = ["load-file"] }
 
 # command line argument parsing
 clap = { version = "4", features = ["derive", "wrap_help"] }

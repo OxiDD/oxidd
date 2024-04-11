@@ -1,17 +1,22 @@
 [package]
 name = "oxidd-rules-bdd"
-version = "0.1.0"
+version = "0.6.0"
 edition = "2021"
 description = "Binary decision diagrams (BDDs) for OxiDD"
-license = "MIT OR Apache-2.0"
+readme = "../../README.md"
+
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
 
 
 [dependencies]
-oxidd-core = { path = "../oxidd-core" }
-oxidd-derive = { path = "../oxidd-derive" }
+oxidd-core.workspace = true
+oxidd-derive.workspace = true
 
 # for implementing `DotStyle`
-oxidd-dump = { path = "../oxidd-dump", default-features = false, features = ["dot"] }
+oxidd-dump = { workspace = true, features = ["dot"] }
 
 # bit vectors for memory efficient valuations
 bitvec = "1"

@@ -3,10 +3,18 @@ name = "oxidd-dump"
 version = "0.1.0"
 edition = "2021"
 description = "Dump OxiDD decision diagrams to file"
-license = "MIT OR Apache-2.0"
+readme = "../../README.md"
+categories = ["visualization", "encoding"]
+
+
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+
 
 [dependencies]
-oxidd-core = { path = "../oxidd-core" }
+oxidd-core.workspace = true
 
 # bit vectors
 bitvec = { version = "1", optional = true }

@@ -3,10 +3,15 @@ name = "oxidd-test-utils"
 version = "0.1.0"
 edition = "2021"
 description = "Test utilities for OxiDD"
-license = "MIT OR Apache-2.0"
+readme = "../../README.md"
+
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
 
 
 [dependencies]
-oxidd-core = { path = "../oxidd-core" }
+oxidd-core.workspace = true
 
 rayon = "1.7"

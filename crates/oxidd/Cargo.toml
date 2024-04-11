@@ -1,25 +1,30 @@
 [package]
 name = "oxidd"
-version = "0.1.0"
+version = "0.6.0"
 edition = "2021"
-description = "Decision diagrams"
-license = "MIT OR Apache-2.0"
+description = "A safe, concurrent, modular, and performant decision diagram framework."
+readme = "../../README.md"
+keywords = ["binary-decision-diagrams", "bdd", "zbdd", "zdd", "zero-suppressed-decision-diagrams"]
+categories = ["data-structures", "mathematics", "science"]
+
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
 
 
 [dependencies]
-oxidd-core = { path = "../oxidd-core" }
-oxidd-manager-index = { path = "../oxidd-manager-index", optional = true }
-oxidd-manager-pointer = { path = "../oxidd-manager-pointer", optional = true }
-oxidd-cache = { path = "../oxidd-cache", features = [
-  "hugealloc",
-], default-features = false, optional = true }
-oxidd-derive = { path = "../oxidd-derive" }
-oxidd-dump = { path = "../oxidd-dump" }
-oxidd-reorder = { path = "../oxidd-reorder" }
-oxidd-rules-bdd = { path = "../oxidd-rules-bdd", default-features = false, optional = true }
-oxidd-rules-mtbdd = { path = "../oxidd-rules-mtbdd", default-features = false, optional = true }
-oxidd-rules-tdd = { path = "../oxidd-rules-tdd", default-features = false, optional = true }
-oxidd-rules-zbdd = { path = "../oxidd-rules-zbdd", default-features = false, optional = true }
+oxidd-core.workspace = true
+oxidd-manager-index = { workspace = true, optional = true }
+oxidd-manager-pointer = { workspace = true, optional = true }
+oxidd-cache = { workspace = true, features = ["hugealloc"], optional = true }
+oxidd-derive.workspace = true
+oxidd-dump.workspace = true
+oxidd-reorder.workspace = true
+oxidd-rules-bdd = { workspace = true, optional = true }
+oxidd-rules-mtbdd = { workspace = true, optional = true }
+oxidd-rules-tdd = { workspace = true, optional = true }
+oxidd-rules-zbdd = { workspace = true, optional = true }
 
 rustc-hash = "1" # fast hash function
 

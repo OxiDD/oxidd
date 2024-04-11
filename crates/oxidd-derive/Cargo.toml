@@ -1,9 +1,15 @@
 [package]
 name = "oxidd-derive"
-version = "0.1.0"
+version = "0.6.0"
 edition = "2021"
 description = "Derive macros for OxiDD"
-license = "MIT OR Apache-2.0"
+readme = "../../README.md"
+
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+
 
 [lib]
 proc-macro = true
@@ -16,8 +22,8 @@ proc-macro2 = "1.0"
 proc-macro-error = { version = "1.0", default-features = false }
 
 [dev-dependencies]
-oxidd-core = { path = "../oxidd-core" }
-oxidd-test-utils = { path = "../oxidd-test-utils" }
+oxidd-core.workspace = true
+oxidd-test-utils.workspace = true
 trybuild = "1.0"
 
 

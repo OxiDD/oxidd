@@ -1,19 +1,24 @@
 [package]
 name = "oxidd-manager-index"
-version = "0.1.0"
+version = "0.6.0"
 edition = "2021"
 description = "Index-based manager implementation for OxiDD"
-license = "MIT OR Apache-2.0"
+readme = "../../README.md"
+
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
 
 
 [dependencies]
-oxidd-core = { path = "../oxidd-core" }
+oxidd-core.workspace = true
 
 # fast alternative Mutex & RwLock implementation
 parking_lot = "0.12"
 
 # hash table for the unique table
-linear-hashtbl = { path = "../linear-hashtbl" }
+linear-hashtbl.workspace = true
 
 # fast hash function
 rustc-hash = "1"

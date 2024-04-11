@@ -3,7 +3,14 @@ name = "oxidd-parser"
 version = "0.1.0"
 edition = "2021"
 description = "Parsers for logic file formats"
-license = "MIT OR Apache-2.0"
+readme = "../../README.md"
+categories = ["parser-implementations", "mathematics", "science"]
+
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+
 
 # spell-checker:ignore codespan
 

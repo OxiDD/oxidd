@@ -3,7 +3,13 @@ name = "linear-hashtbl"
 version = "0.1.0"
 edition = "2021"
 description = "Linear probing hash table"
-license = "MIT OR Apache-2.0"
+categories = ["data-structures"]
+keywords = ["hashmap", "hash"]
+
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
 
 
 [dependencies]
