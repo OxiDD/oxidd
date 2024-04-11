@@ -5,7 +5,7 @@
 [![Matrix](https://img.shields.io/badge/matrix-join_chat-brightgreen?style=for-the-badge&logo=matrix)](https://matrix.to/#/#oxidd:matrix.org)
 
 
-OxiDD is a highly modular decision diagram framework written in Rust. The most prominent instance of decision diagrams is provided by [(reduced ordered) binary decision diagrams (BDDs)](https://en.wikipedia.org/wiki/Binary_decision_diagram), which are succinct representations of Boolean functions $\mathbb B^n \to \mathbb B$. Such BDD representations are canonical and thus, deciding equality of Boolean functions—in general a co-NP-complete problem—can be done in constant time. Further, many Boolean operations on two BDDs $f,g$ are possible in $\mathcal O(|f|\cdot|g|)$ (where $|f|$ denotes the node count in $f$). There are various other kinds of decision diagrams for which OxiDD aims to be a framework enabling high-performance implementations with low effort.
+OxiDD is a highly modular decision diagram framework written in Rust. The most prominent instance of decision diagrams is provided by [(reduced ordered) binary decision diagrams (BDDs)](https://en.wikipedia.org/wiki/Binary_decision_diagram), which are succinct representations of Boolean functions 𝔹<sup>n</sup> → 𝔹. Such BDD representations are canonical and thus, deciding equality of Boolean functions—in general a co-NP-complete problem—can be done in constant time. Further, many Boolean operations on two BDDs *f,g* are possible in 𝒪(|*f*| · |*g*|) (where |*f*| denotes the node count in *f*). There are various other kinds of decision diagrams for which OxiDD aims to be a framework enabling high-performance implementations with low effort.
 
 
 ## Features
@@ -54,13 +54,9 @@ The main code is located in the [crates](crates) directory. The framework is cen
 
 ## FAQ
 
-Q: Why is the `oxidd` crate on crates.io empty?
-
-A: OxiDD is not yet fully mature. Currently, we have some ideas in mind that will probably cause breaking changes. We decided to postpone the release on crates.io until we are a bit more confident that APIs won’t change a lot anymore. This is expected to happen in the course of 2024.
-
 Q: What about bindings for language X?
 
-OxiDD has a foreign function interface (FFI) located in the `oxidd-ffi` crate. It does not expose the entire API that can be used from Rust, but it is sufficient to, e.g., create BDDs and apply various logical operators on them. In principle, you can use the FFI from any language that can call C functions. However, there are also more ergonomic C++ bindings that build on top of the C FFI. They will soon-ish be added to this repository. Additionally, we are planning to provide Python bindings.
+OxiDD has a foreign function interface (FFI) located in the `oxidd-ffi` crate. It does not expose the entire API that can be used from Rust, but it is sufficient to, e.g., create BDDs and apply various logical operators on them. In principle, you can use the FFI from any language that can call C functions. However, there are also more ergonomic C++ bindings that build on top of the C FFI. You can just use include this repository using CMake. Additionally, we are currently working on Python bindings that will be published very soon. If you want to use OxiDD from a different language, please contact us. We really like to support you and your use-case.
 
 
 ## Licensing
@@ -72,16 +68,16 @@ Unless you explicitly state otherwise, any contribution intentionally submitted 
 
 ## Publications
 
-The seminal paper presenting OxiDD is not yet published, but accepted for publication at TACAS'24. If you use OxiDD, please cite us as:
+The [seminal paper](https://doi.org/10.1007/978-3-031-57256-2_13) presenting OxiDD was published at TACAS'24. If you use OxiDD, please cite us as:
 
 Nils Husung, Clemens Dubslaff, Holger Hermanns, and Maximilian A. Köhl: *OxiDD: A safe, concurrent, modular, and performant decision diagram framework in Rust.* In: Proceedings of the 30th International Conference on Tools and Algorithms for the Construction and Analysis of Systems (TACAS’24) (accepted for publication 2024)
 
     @inproceedings{oxidd24,
       author        = {Husung, Nils and Dubslaff, Clemens and Hermanns, Holger and K{\"o}hl, Maximilian A.},
       booktitle     = {Proceedings of the 30th International Conference on Tools and Algorithms for the Construction and Analysis of Systems (TACAS'24)},
-      month         = {accepted for publication},
       title         = {{OxiDD}: A Safe, Concurrent, Modular, and Performant Decision Diagram Framework in {Rust}},
-      year          = {2024}
+      year          = {2024},
+      doi           = {10.1007/978-3-031-57256-2_13}
     }
 
 
