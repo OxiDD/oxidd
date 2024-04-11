@@ -4,7 +4,7 @@ version = "0.6.0"
 edition = "2021"
 description = "A safe, concurrent, modular, and performant decision diagram framework."
 readme = "../../README.md"
-keywords = ["binary-decision-diagrams", "bdd", "zbdd", "zdd", "zero-suppressed-decision-diagrams"]
+keywords = ["decision-diagrams", "bdd", "zbdd", "zdd"]
 categories = ["data-structures", "mathematics", "science"]
 
 authors.workspace = true

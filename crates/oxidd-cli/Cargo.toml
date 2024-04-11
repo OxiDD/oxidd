@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "Command line interface for OxiDD"
 readme = "../../README.md"
-keywords = ["bdd", "binary-decision-diagrams", "boolean-expression", "symbolic"]
+keywords = ["decision-diagrams", "bdd", "zbdd", "zdd"]
 categories = ["command-line-utilities", "mathematics", "science"]
 
 authors.workspace = true
