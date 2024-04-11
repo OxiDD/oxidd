@@ -16,7 +16,7 @@ oxidd-core.workspace = true
 oxidd-derive.workspace = true
 
 # for implementing `DotStyle`
-oxidd-dump = { workspace = true, features = ["dot"] }
+oxidd-dump = { workspace = true, features = ["dddmp", "dot"] }
 
 # bit vectors for memory efficient valuations
 bitvec = "1"

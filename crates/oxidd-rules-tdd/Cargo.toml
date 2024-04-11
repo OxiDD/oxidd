@@ -16,7 +16,7 @@ oxidd-core.workspace = true
 oxidd-derive.workspace = true
 
 # For implementing `DotStyle`
-oxidd-dump = { workspace = true, features = ["dot"] }
+oxidd-dump = { workspace = true, features = ["dddmp", "dot"] }
 
 # document feature flags
 document-features = "0.2"
