@@ -507,7 +507,7 @@ public:
   /// Locking behavior: acquires a shared manager lock.
   ///
   /// @returns  Node count including the two terminal nodes
-  [[nodiscard]] uint64_t node_count() const noexcept {
+  [[nodiscard]] std::size_t node_count() const noexcept {
     assert(_func._p);
     return capi::oxidd_bdd_node_count(_func);
   }
