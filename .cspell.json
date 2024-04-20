@@ -5,7 +5,7 @@
   "ignorePaths": [
     "/.cache/",
     "/.cspellcache",
-    "/.git/",
+    "/.git",
     "/.project-words.txt",
     "/build/",
     "/doc/book/book/",
