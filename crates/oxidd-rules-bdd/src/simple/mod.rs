@@ -234,7 +234,7 @@ fn terminal_bin<'a, M: Manager<Terminal = BDDTerminal>, const OP: u8>(
         match (m.get_node(f), m.get_node(g)) {
             // Unique representation of {f, g} for commutative functions
             (Inner(_), Inner(_)) if f > g => Binary(BDDOp::And, g.borrowed(), f.borrowed()),
-            (Inner(_), Inner(_)) => Binary(BDDOp::And, g.borrowed(), f.borrowed()),
+            (Inner(_), Inner(_)) => Binary(BDDOp::And, f.borrowed(), g.borrowed()),
             (Terminal(t), _) | (_, Terminal(t)) if *t.borrow() == False => {
                 Done(m.get_terminal(False).unwrap())
             }
@@ -247,7 +247,7 @@ fn terminal_bin<'a, M: Manager<Terminal = BDDTerminal>, const OP: u8>(
         }
         match (m.get_node(f), m.get_node(g)) {
             (Inner(_), Inner(_)) if f > g => Binary(BDDOp::Or, g.borrowed(), f.borrowed()),
-            (Inner(_), Inner(_)) => Binary(BDDOp::Or, g.borrowed(), f.borrowed()),
+            (Inner(_), Inner(_)) => Binary(BDDOp::Or, f.borrowed(), g.borrowed()),
             (Terminal(t), _) | (_, Terminal(t)) if *t.borrow() == True => {
                 Done(m.get_terminal(True).unwrap())
             }
@@ -260,7 +260,7 @@ fn terminal_bin<'a, M: Manager<Terminal = BDDTerminal>, const OP: u8>(
         }
         match (m.get_node(f), m.get_node(g)) {
             (Inner(_), Inner(_)) if f > g => Binary(BDDOp::Nand, g.borrowed(), f.borrowed()),
-            (Inner(_), Inner(_)) => Binary(BDDOp::Nand, g.borrowed(), f.borrowed()),
+            (Inner(_), Inner(_)) => Binary(BDDOp::Nand, f.borrowed(), g.borrowed()),
             (Terminal(t), _) | (_, Terminal(t)) if *t.borrow() == False => {
                 Done(m.get_terminal(True).unwrap())
             }
@@ -273,7 +273,7 @@ fn terminal_bin<'a, M: Manager<Terminal = BDDTerminal>, const OP: u8>(
         }
         match (m.get_node(f), m.get_node(g)) {
             (Inner(_), Inner(_)) if f > g => Binary(BDDOp::Nor, g.borrowed(), f.borrowed()),
-            (Inner(_), Inner(_)) => Binary(BDDOp::Nor, g.borrowed(), f.borrowed()),
+            (Inner(_), Inner(_)) => Binary(BDDOp::Nor, f.borrowed(), g.borrowed()),
             (Terminal(t), _) | (_, Terminal(t)) if *t.borrow() == True => {
                 Done(m.get_terminal(False).unwrap())
             }
