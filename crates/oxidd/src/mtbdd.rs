@@ -77,7 +77,7 @@ mod index {
     #[derive(
         Clone, PartialEq, Eq, Hash, oxidd_derive::Function, oxidd_derive::PseudoBooleanFunction,
     )]
-    #[use_manager_ref(MTBDDManagerRef<T>)]
+    #[use_manager_ref(MTBDDManagerRef<T>, MTBDDManagerRef::<T>(inner))]
     pub struct MTBDDFunction<T: 'static + NumberBase + Send + Sync>(FunctionInner<T>);
 
     impl<T: NumberBase + Send + Sync> PartialOrd for MTBDDFunction<T> {

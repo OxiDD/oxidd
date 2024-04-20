@@ -57,7 +57,7 @@ pub unsafe trait Function: Clone + Ord + Hash {
     /// Type of the associated manager
     ///
     /// This type is generic over a lifetime `'id` to permit the "lifetime
-    /// trick" used e.g. in [`GhostCell`][GhostCell]: The idea is to make the
+    /// trick" used, e.g., in [`GhostCell`][GhostCell]: The idea is to make the
     /// [`Manager`], [`Edge`] and [`InnerNode`] types [invariant][variance] over
     /// `'id`. Any call to one of the
     /// [`with_manager_shared()`][Function::with_manager_shared] /
@@ -99,6 +99,9 @@ pub unsafe trait Function: Clone + Ord + Hash {
     ///
     /// Panics if the function does not belong to `manager`.
     fn into_edge<'id>(self, manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self>;
+
+    /// Clone the [`ManagerRef`] part
+    fn manager_ref(&self) -> Self::ManagerRef;
 
     /// Obtain a shared manager reference as well as the underlying edge
     ///

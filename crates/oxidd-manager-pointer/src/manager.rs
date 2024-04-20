@@ -181,6 +181,18 @@ where
     workers: rayon::ThreadPool,
     phantom: PhantomData<(TM, R)>,
 }
+
+type M<'id, NC, ET, TMC, RC, MDC, const PAGE_SIZE: usize, const TAG_BITS: u32> = Manager<
+    'id,
+    <NC as InnerNodeCons<ET, TAG_BITS>>::T<'id>,
+    ET,
+    <TMC as TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>>::T<'id>,
+    <RC as DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>>::T<'id>,
+    <MDC as ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>>::T<'id>,
+    PAGE_SIZE,
+    TAG_BITS,
+>;
+
 unsafe impl<
         'id,
         N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>> + Send + Sync,
@@ -1625,6 +1637,25 @@ impl<
 }
 
 impl<
+        'a,
+        'id,
+        NC: InnerNodeCons<ET, TAG_BITS>,
+        ET: Tag,
+        TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
+        RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
+        MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
+        const PAGE_SIZE: usize,
+        const TAG_BITS: u32,
+    > From<&'a M<'id, NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>>
+    for ManagerRef<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
+{
+    fn from(manager: &'a M<'id, NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>) -> Self {
+        manager.store().retain();
+        todo!()
+    }
+}
+
+impl<
         NC: InnerNodeCons<ET, TAG_BITS>,
         ET: Tag,
         TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
@@ -1634,8 +1665,7 @@ impl<
         const TAG_BITS: u32,
     > oxidd_core::ManagerRef for ManagerRef<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
 {
-    type Manager<'id> =
-        Manager<'id, NC::T<'id>, ET, TMC::T<'id>, RC::T<'id>, MDC::T<'id>, PAGE_SIZE, TAG_BITS>;
+    type Manager<'id> = M<'id, NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>;
 
     #[inline]
     fn with_manager_shared<F, T>(&self, f: F) -> T
@@ -2039,6 +2069,11 @@ unsafe impl<
         assert!(util::ptr_eq_untyped(self.store().as_ptr(), store));
         unsafe { ArcSlab::release(NonNull::from(store)) };
         Edge(ManuallyDrop::new(self).0, PhantomData)
+    }
+
+    #[inline]
+    fn manager_ref(&self) -> Self::ManagerRef {
+        todo!()
     }
 
     #[inline]

@@ -175,6 +175,13 @@ macro_rules! manager_ref_index_based {
             }
         }
 
+        impl<'__a, '__id, $($($gen),*)?> From<&'__a <$inner as $crate::ManagerRef>::Manager<'__id>> for $name$(<$($gen),*>)? $(where $($where)*)? {
+            #[inline]
+            fn from(manager: &'__a <$inner as $crate::ManagerRef>::Manager<'__id>) -> Self {
+                Self(<$inner as From<&'__a <$inner as $crate::ManagerRef>::Manager<'__id>>>::from(manager))
+            }
+        }
+
         impl$(<$($gen),*>)? $crate::ManagerRef for $name$(<$($gen),*>)? $(where $($where)*)? {
             type Manager<'__id> = <$inner as $crate::ManagerRef>::Manager<'__id>;
 
@@ -249,6 +256,15 @@ macro_rules! manager_ref_pointer_based {
         /// Reference to a [`Manager`][::oxidd::Manager]
         #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
         pub struct $name($inner);
+
+        impl<'__a, '__id> From<&'__a <$inner as $crate::ManagerRef>::Manager<'__id>> for $name {
+            #[inline]
+            fn from(manager: &'__a <$inner as $crate::ManagerRef>::Manager<'__id>) -> Self {
+                Self(<$inner as From<
+                    &'__a <$inner as $crate::ManagerRef>::Manager<'__id>,
+                >>::from(manager))
+            }
+        }
 
         impl $crate::ManagerRef for $name {
             type Manager<'id> = <$inner as $crate::ManagerRef>::Manager<'id>;

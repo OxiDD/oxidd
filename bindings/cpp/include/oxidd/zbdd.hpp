@@ -26,6 +26,8 @@ class zbdd_manager {
   /// Wrapped CAPI ZBDD manager
   capi::oxidd_zbdd_manager_t _manager = {._p = nullptr};
 
+  friend class zbdd_function;
+
   /// Create a new ZBDD manager from a manager instance of the CAPI
   zbdd_manager(capi::oxidd_zbdd_manager_t manager) noexcept
       : _manager(manager) {}
@@ -198,6 +200,9 @@ class zbdd_function {
   zbdd_function(capi::oxidd_zbdd_t func) noexcept : _func(func) {}
 
 public:
+  /// Associated manager type
+  using manager = zbdd_manager;
+
   /// Default constructor, yields an invalid ZBDD function
   zbdd_function() noexcept = default;
   /// Copy constructor: increments the internal reference counters
@@ -290,6 +295,16 @@ public:
   ///
   /// @returns  `true` iff this ZBDD function is invalid
   [[nodiscard]] bool is_invalid() const noexcept { return _func._p == nullptr; }
+
+  /// Get the containing manager
+  ///
+  /// `this` must not be invalid (check via is_invalid()).
+  ///
+  /// @returns  The bdd_manager
+  [[nodiscard]] zbdd_manager containing_manager() const noexcept {
+    assert(!is_invalid());
+    return capi::oxidd_zbdd_containing_manager(_func);
+  }
 
   /// @name ZBDD Construction Operations
   /// @{

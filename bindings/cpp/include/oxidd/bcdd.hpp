@@ -26,6 +26,8 @@ class bcdd_manager {
   /// Wrapped CAPI BCDD manager
   capi::oxidd_bcdd_manager_t _manager = {._p = nullptr};
 
+  friend class bcdd_function;
+
   /// Create a new BCDD manager from a manager instance of the CAPI
   bcdd_manager(capi::oxidd_bcdd_manager_t manager) noexcept
       : _manager(manager) {}
@@ -179,6 +181,9 @@ class bcdd_function {
   bcdd_function(capi::oxidd_bcdd_t func) noexcept : _func(func) {}
 
 public:
+  /// Associated manager type
+  using manager = bcdd_manager;
+
   /// Default constructor, yields an invalid BCDD function
   bcdd_function() noexcept = default;
   /// Copy constructor: increments the internal reference counters
@@ -272,6 +277,16 @@ public:
   ///
   /// @returns  `true` iff this BCDD function is invalid
   [[nodiscard]] bool is_invalid() const noexcept { return _func._p == nullptr; }
+
+  /// Get the containing manager
+  ///
+  /// `this` must not be invalid (check via is_invalid()).
+  ///
+  /// @returns  The bcdd_manager
+  [[nodiscard]] bcdd_manager containing_manager() const noexcept {
+    assert(!is_invalid());
+    return capi::oxidd_bcdd_containing_manager(_func);
+  }
 
   /// @name BCDD Construction Operations
   /// @{

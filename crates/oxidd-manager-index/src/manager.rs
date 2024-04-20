@@ -281,6 +281,17 @@ where
     workers: ThreadPool,
 }
 
+/// Type "constructor" for the manager from `InnerNodeCons` etc.
+type M<'id, NC, ET, TMC, RC, MDC, const TERMINALS: usize> = Manager<
+    'id,
+    <NC as InnerNodeCons<ET>>::T<'id>,
+    ET,
+    <TMC as TerminalManagerCons<NC, ET, TERMINALS>>::T<'id>,
+    <RC as DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>>::T<'id>,
+    <MDC as ManagerDataCons<NC, ET, TMC, RC, TERMINALS>>::T<'id>,
+    TERMINALS,
+>;
+
 unsafe impl<
         'id,
         N: NodeBase + InnerNode<Edge<'id, N, ET>> + Send + Sync,
@@ -1879,6 +1890,34 @@ impl<
 }
 
 impl<
+        'a,
+        'id,
+        NC: InnerNodeCons<ET>,
+        ET: Tag,
+        TMC: TerminalManagerCons<NC, ET, TERMINALS>,
+        RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
+        MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
+        const TERMINALS: usize,
+    > From<&'a M<'id, NC, ET, TMC, RC, MDC, TERMINALS>>
+    for ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS>
+{
+    fn from(manager: &'a M<'id, NC, ET, TMC, RC, MDC, TERMINALS>) -> Self {
+        // SAFETY:
+        // - We just change "identifier" lifetimes.
+        // - The pointer was obtained via `Arc::into_raw()`, and since we have a
+        //   `&Manager` reference, the counter is at least 1.
+        unsafe {
+            let manager = std::mem::transmute::<
+                &M<'id, NC, ET, TMC, RC, MDC, TERMINALS>,
+                &M<'static, NC, ET, TMC, RC, MDC, TERMINALS>,
+            >(manager);
+            Arc::increment_strong_count(manager.store);
+            ManagerRef(Arc::from_raw(manager.store))
+        }
+    }
+}
+
+impl<
         NC: InnerNodeCons<ET>,
         ET: Tag,
         TMC: TerminalManagerCons<NC, ET, TERMINALS>,
@@ -1887,8 +1926,7 @@ impl<
         const TERMINALS: usize,
     > oxidd_core::ManagerRef for ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS>
 {
-    type Manager<'id> =
-        Manager<'id, NC::T<'id>, ET, TMC::T<'id>, RC::T<'id>, MDC::T<'id>, TERMINALS>;
+    type Manager<'id> = M<'id, NC, ET, TMC, RC, MDC, TERMINALS>;
 
     fn with_manager_shared<F, T>(&self, f: F) -> T
     where
@@ -2206,8 +2244,7 @@ unsafe impl<
         const TERMINALS: usize,
     > oxidd_core::function::Function for Function<NC, ET, TMC, RC, MDC, TERMINALS>
 {
-    type Manager<'id> =
-        Manager<'id, NC::T<'id>, ET, TMC::T<'id>, RC::T<'id>, MDC::T<'id>, TERMINALS>;
+    type Manager<'id> = M<'id, NC, ET, TMC, RC, MDC, TERMINALS>;
 
     type ManagerRef = ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS>;
 
@@ -2260,6 +2297,11 @@ unsafe impl<
         // SAFETY: we forget `self`
         unsafe { std::ptr::drop_in_place(&mut this.store) };
         edge
+    }
+
+    #[inline]
+    fn manager_ref(&self) -> Self::ManagerRef {
+        self.store.clone()
     }
 
     fn with_manager_shared<F, T>(&self, f: F) -> T

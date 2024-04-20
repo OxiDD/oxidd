@@ -1,7 +1,7 @@
 use proc_macro2::{Span, TokenStream};
 use proc_macro_error::{abort, emit_error};
 use quote::{quote, ToTokens};
-use syn::spanned::Spanned;
+use syn::{spanned::Spanned, Token};
 
 struct StructField {
     ident: TokenStream,
@@ -73,29 +73,61 @@ impl StructField {
     }
 }
 
+struct UseManagerRefAttr {
+    ty: syn::Type,
+    #[allow(unused)]
+    delim: Token![,],
+    conversion_expr: syn::Expr,
+}
+
+impl syn::parse::Parse for UseManagerRefAttr {
+    fn parse(input: syn::parse::ParseStream) -> syn::parse::Result<Self> {
+        let span = input.span();
+        let res = Self {
+            ty: input.parse()?,
+            delim: input.parse()?,
+            conversion_expr: input.parse()?,
+        };
+
+        if input.is_empty() || (input.parse::<Token![,]>().is_ok() && input.is_empty()) {
+            Ok(res)
+        } else {
+            Err(syn::parse::Error::new(
+                span,
+                "expected `ManagerRefType, expr_to_convert_from(inner)`",
+            ))
+        }
+    }
+}
+
 pub fn derive_function(input: syn::DeriveInput) -> TokenStream {
     let ident = input.ident;
 
-    let mut manager_ref = None;
+    let mut manager_ref_attr = None;
     for attr in input.attrs {
         let syn::AttrStyle::Outer = attr.style else {
             continue;
         };
-        if attr.meta.path().is_ident("use_manager_ref") {
-            if manager_ref.is_some() {
+        let meta = attr.meta;
+        if meta.path().is_ident("use_manager_ref") {
+            if manager_ref_attr.is_some() {
                 emit_error!(
-                    attr.span(),
+                    meta.span(),
                     "the `use_manager_ref` attribute may only be given once per item"
                 );
             }
-            if let syn::Meta::List(ml) = attr.meta {
-                manager_ref = Some(ml.tokens);
-            } else {
-                emit_error!(
-                    attr.span(),
-                    "expected `#[use_manager_ref(YourManagerRefType)]`"
-                );
+            let mut span = meta.span();
+            if let syn::Meta::List(ml) = &meta {
+                span = ml.tokens.span();
+                if let Ok(attr) = ml.parse_args::<UseManagerRefAttr>() {
+                    manager_ref_attr = Some(attr);
+                    continue;
+                }
             }
+            emit_error!(
+                span,
+                "expected `#[use_manager_ref(ManagerRefType, expr_to_convert_from(inner))]`"
+            );
         }
     }
 
@@ -112,8 +144,17 @@ pub fn derive_function(input: syn::DeriveInput) -> TokenStream {
     // does not seem to work well for the way we instantiate MTBDDs (i.e.
     // `Function`s that are generic over the terminal type).
 
-    let manager_ref = manager_ref
-        .unwrap_or_else(|| quote!(<#ty as ::oxidd_core::function::Function>::ManagerRef));
+    let (manager_ref, manager_ref_expr) = match manager_ref_attr {
+        Some(UseManagerRefAttr {
+            ty,
+            conversion_expr,
+            ..
+        }) => (ty.into_token_stream(), conversion_expr.into_token_stream()),
+        None => (
+            quote!(<#ty as ::oxidd_core::function::Function>::ManagerRef),
+            quote!(inner),
+        ),
+    };
 
     // SAFETY of the generated implementation is inherited from the inner
     // `Function` implementation
@@ -142,6 +183,12 @@ pub fn derive_function(input: syn::DeriveInput) -> TokenStream {
             #[inline]
             fn into_edge<'__id>(self, manager: &Self::Manager<'__id>) -> <Self::Manager<'__id> as ::oxidd_core::Manager>::Edge {
                 self.#field.into_edge(manager)
+            }
+
+            #[inline]
+            fn manager_ref(&self) -> #manager_ref {
+                let inner = self.#field.manager_ref();
+                #manager_ref_expr
             }
 
             #[inline]

@@ -206,6 +206,18 @@ pub unsafe extern "C" fn oxidd_zbdd_unref(f: oxidd_zbdd_t) {
     drop(ZBDDFunction::from_raw(f._p, f._i));
 }
 
+/// Get the manager that stores `f`
+///
+/// @param  f  A *valid* ZBDD function
+///
+/// @returns  A manager reference with its own reference count
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_zbdd_containing_manager(f: oxidd_zbdd_t) -> oxidd_zbdd_manager_t {
+    oxidd_zbdd_manager_t {
+        _p: f.get().expect(FUNC_UNWRAP_MSG).manager_ref().into_raw(),
+    }
+}
+
 /// Get the number of inner nodes currently stored in `manager`
 ///
 /// @returns  The number of inner nodes

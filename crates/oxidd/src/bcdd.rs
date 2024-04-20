@@ -79,7 +79,7 @@ mod index {
         oxidd_derive::BooleanFunction,
         oxidd_derive::BooleanFunctionQuant,
     )]
-    #[use_manager_ref(BCDDManagerRef)]
+    #[use_manager_ref(BCDDManagerRef, BCDDManagerRef(inner))]
     pub struct BCDDFunction(FunctionInner);
     crate::util::derive_raw_function_index_based!(for: BCDDFunction, inner: FunctionInner);
 
@@ -128,7 +128,7 @@ mod pointer {
         oxidd_derive::BooleanFunction,
         oxidd_derive::BooleanFunctionQuant,
     )]
-    #[use_manager_ref(BCDDManagerRef)]
+    #[use_manager_ref(BCDDManagerRef, BCDDManagerRef(inner))]
     pub struct BCDDFunction(FunctionInner);
     crate::util::derive_raw_function_pointer_based!(for: BCDDFunction, inner: FunctionInner);
 

@@ -66,6 +66,7 @@ mod index {
     //#[cfg(feature = "multi-threading")]
     //type FunctionInner = oxidd_rules_tdd::TDDFunctionMT<<TDD as DD>::Function>;
 
+    /// Function of three-valued logic represented as TDD
     #[derive(
         Clone,
         PartialEq,
@@ -76,7 +77,7 @@ mod index {
         oxidd_derive::Function,
         oxidd_derive::TVLFunction,
     )]
-    #[use_manager_ref(TDDManagerRef)]
+    #[use_manager_ref(TDDManagerRef, TDDManagerRef(inner))]
     pub struct TDDFunction(FunctionInner);
     crate::util::derive_raw_function_index_based!(for: TDDFunction, inner: FunctionInner);
 
@@ -118,6 +119,7 @@ mod pointer {
     //#[cfg(feature = "multi-threading")]
     //type FunctionInner = oxidd_rules_tdd::TDDFunctionMT<<TDD as DD>::Function>;
 
+    /// Function of three-valued logic represented as TDD
     #[derive(
         Clone,
         PartialEq,
@@ -128,7 +130,7 @@ mod pointer {
         oxidd_derive::Function,
         oxidd_derive::TVLFunction,
     )]
-    #[use_manager_ref(TDDManagerRef)]
+    #[use_manager_ref(TDDManagerRef, TDDManagerRef(inner))]
     pub struct TDDFunction(FunctionInner);
     crate::util::derive_raw_function_pointer_based!(for: TDDFunction, inner: FunctionInner);
 

@@ -18,7 +18,8 @@ namespace oxidd::concepts {
 /// Function represented as decision diagram
 ///
 /// A function is the combination of a reference to an oxidd::concepts::manager
-/// and a (possibly tagged) edge pointing to a node.
+/// and a (possibly tagged) edge pointing to a node. Obtaining the manager
+/// reference is possible via the `containing_manager()` method.
 ///
 /// ### Reference Counting
 ///
@@ -62,6 +63,7 @@ template <class F>
 concept function =
     std::regular<F> && std::totally_ordered<F> && requires(const F f) {
       { f.is_invalid() } -> std::same_as<bool>;
+      { f.containing_manager() } -> std::same_as<typename F::manager>;
 
       { std::hash<F>{}(f) } -> std::convertible_to<std::size_t>;
 
@@ -96,7 +98,8 @@ concept function =
 ///   Acquires a shared manager lock.
 template <class M>
 concept manager =
-    std::regular<M> && function<typename M::function> && requires(const M m) {
+    std::regular<M> && function<typename M::function> &&
+    std::same_as<typename M::function::manager, M> && requires(const M m) {
       { m.is_invalid() } -> std::same_as<bool>;
 
       { m.num_inner_nodes() } -> std::same_as<size_t>;

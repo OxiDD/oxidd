@@ -38,7 +38,7 @@ pub mod util;
 /// [`Self::with_manager_shared()`] / [`Self::with_manager_exclusive()`] acquire
 /// this lock accordingly. In a sequential implementation, a
 /// [`RefCell`][std::cell::RefCell] or the like may be used instead of lock.
-pub trait ManagerRef: Clone {
+pub trait ManagerRef: Clone + Eq + Hash + for<'a, 'id> From<&'a Self::Manager<'id>> {
     /// Type of the associated manager
     ///
     /// For more details on why this type is generic over `'id`, see the
@@ -91,7 +91,7 @@ pub trait DiagramRules<E: Edge, N: InnerNode<E>, T> {
     /// struct BDDRules;
     /// impl<E: Edge, N: InnerNode<E>, T> DiagramRules<E, N, T> for BDDRules {
     ///     type Cofactors<'a> = N::ChildrenIter<'a> where N: 'a, E: 'a;
-    ///     
+    ///
     ///     fn reduce<M: Manager<Edge = E, InnerNode = N, Terminal = T>>(
     ///         manager: &M,
     ///         level: LevelNo,
@@ -101,7 +101,7 @@ pub trait DiagramRules<E: Edge, N: InnerNode<E>, T> {
     ///         let f0 = it.next().unwrap();
     ///         let f1 = it.next().unwrap();
     ///         debug_assert!(it.next().is_none());
-    ///     
+    ///
     ///         if f0 == f1 {
     ///             manager.drop_edge(f1);
     ///             ReducedOrNew::Reduced(f0)

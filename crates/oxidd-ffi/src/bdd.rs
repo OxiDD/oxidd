@@ -210,6 +210,18 @@ pub unsafe extern "C" fn oxidd_bdd_unref(f: oxidd_bdd_t) {
     }
 }
 
+/// Get the manager that stores `f`
+///
+/// @param  f  A *valid* BDD function
+///
+/// @returns  A manager reference with its own reference count
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_containing_manager(f: oxidd_bdd_t) -> oxidd_bdd_manager_t {
+    oxidd_bdd_manager_t {
+        _p: f.get().expect(FUNC_UNWRAP_MSG).manager_ref().into_raw(),
+    }
+}
+
 /// Get the number of inner nodes currently stored in `manager`
 ///
 /// Locking behavior: acquires a shared manager lock.

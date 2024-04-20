@@ -176,7 +176,7 @@ mod index {
         oxidd_derive::BooleanFunction,
         oxidd_derive::BooleanVecSet,
     )]
-    #[use_manager_ref(ZBDDManagerRef)]
+    #[use_manager_ref(ZBDDManagerRef, ZBDDManagerRef(inner))]
     pub struct ZBDDFunction(FunctionInner);
     crate::util::derive_raw_function_index_based!(for: ZBDDFunction, inner: FunctionInner);
 
@@ -224,7 +224,7 @@ mod pointer {
         oxidd_derive::BooleanFunction,
         oxidd_derive::BooleanVecSet,
     )]
-    #[use_manager_ref(ZBDDManagerRef)]
+    #[use_manager_ref(ZBDDManagerRef, ZBDDManagerRef(inner))]
     pub struct ZBDDFunction(FunctionInner);
     crate::util::derive_raw_function_pointer_based!(for: ZBDDFunction, inner: FunctionInner);
 
