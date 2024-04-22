@@ -116,7 +116,7 @@ public:
   ///
   /// `this` must not be invalid (check via is_invalid()).
   ///
-  /// Locking behavior: acquires an exclusive manager lock.
+  /// Locking behavior: acquires the manager's lock for exclusive access.
   ///
   /// @returns  The BDD function representing the variable
   [[nodiscard]] bdd_function new_var() noexcept;
@@ -125,7 +125,7 @@ public:
   ///
   /// `this` must not be invalid (check via is_invalid()).
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// Runtime complexity: O(1)
   ///
@@ -135,7 +135,7 @@ public:
   ///
   /// `this` must not be invalid (check via is_invalid()).
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// Runtime complexity: O(1)
   ///
@@ -150,7 +150,7 @@ public:
   ///
   /// `this` must not be invalid (check via is_invalid()).
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// @returns  The number of inner nodes
   [[nodiscard]] size_t num_inner_nodes() const noexcept {
@@ -299,7 +299,7 @@ public:
   /// cofactors, then use cofactor_true() or cofactor_false(). These functions
   /// are slightly more efficient then.
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// Runtime complexity: O(1)
   ///
@@ -315,7 +315,7 @@ public:
   /// This function is slightly more efficient than cofactors() in case
   /// `f_false` is not needed.
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// Runtime complexity: O(1)
   ///
@@ -329,7 +329,7 @@ public:
   /// This function is slightly more efficient than cofactors() in case `f_true`
   /// is not needed.
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// Runtime complexity: O(1)
   ///
@@ -341,7 +341,7 @@ public:
 
   /// Compute the BDD for the negation `¬this`
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// Runtime complexity: O(|this|)
   ///
@@ -352,7 +352,7 @@ public:
   }
   /// Compute the BDD for the conjunction `lhs ∧ rhs`
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// Runtime complexity: O(|lhs| · |rhs|)
   ///
@@ -368,7 +368,7 @@ public:
   }
   /// Compute the BDD for the disjunction `lhs ∨ rhs`
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// Runtime complexity: O(|lhs| · |rhs|)
   ///
@@ -384,7 +384,7 @@ public:
   }
   /// Compute the BDD for the exclusive disjunction `lhs ⊕ rhs`
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// Runtime complexity: O(|lhs| · |rhs|)
   ///
@@ -400,7 +400,7 @@ public:
   }
   /// Compute the BDD for the negated conjunction `this ⊼ rhs`
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// Runtime complexity: O(|this| · |rhs|)
   ///
@@ -411,7 +411,7 @@ public:
   }
   /// Compute the BDD for the negated disjunction `this ⊽ rhs`
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// Runtime complexity: O(|this| · |rhs|)
   ///
@@ -422,7 +422,7 @@ public:
   }
   /// Compute the BDD for the equivalence `this ↔ rhs`
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// Runtime complexity: O(|this| · |rhs|)
   ///
@@ -433,7 +433,7 @@ public:
   }
   /// Compute the BDD for the implication `this → rhs` (or `this ≤ rhs`)
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// Runtime complexity: O(|this| · |rhs|)
   ///
@@ -444,7 +444,7 @@ public:
   }
   /// Compute the BDD for the strict implication `this < rhs`
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// Runtime complexity: O(|this| · |rhs|)
   ///
@@ -456,7 +456,7 @@ public:
   }
   /// Compute the BDD for the conditional `this ? t : e`
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// Runtime complexity: O(|this| · |t| · |e|)
   ///
@@ -474,7 +474,7 @@ public:
   /// universal quantification. Universal quantification of a Boolean function
   /// `f(…, x, …)` over a single variable `x` is `f(…, 0, …) ∧ f(…, 1, …)`.
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// @returns  The BDD function (may be invalid if the operation runs out of
   ///           memory)
@@ -489,7 +489,7 @@ public:
   /// function `f(…, x, …)` over a single variable `x` is
   /// `f(…, 0, …) ∨ f(…, 1, …)`.
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// @returns  The BDD function (may be invalid if the operation runs out of
   ///           memory)
@@ -503,7 +503,7 @@ public:
   /// unique quantification. Unique quantification of a Boolean function
   /// `f(…, x, …)` over a single variable `x` is `f(…, 0, …) ⊕ f(…, 1, …)`.
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// @returns  The BDD function (may be invalid if the operation runs out of
   ///           memory)
@@ -519,7 +519,7 @@ public:
   ///
   /// `this` must not be invalid (check via is_invalid()).
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// @returns  Node count including the two terminal nodes
   [[nodiscard]] std::size_t node_count() const noexcept {
@@ -531,7 +531,7 @@ public:
   ///
   /// `this` must not be invalid (check via is_invalid()).
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// @returns  `true` iff there is a satisfying assignment
   [[nodiscard]] bool satisfiable() const noexcept {
@@ -544,7 +544,7 @@ public:
   /// `this` must not be invalid (in the technical, not the mathematical sense).
   /// Check via is_invalid().
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// @returns  `true` iff there is are only satisfying assignment
   [[nodiscard]] bool valid() const noexcept {
@@ -556,7 +556,7 @@ public:
   ///
   /// `this` must not be invalid (check via is_invalid()).
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// @returns  Count of satisfying assignments
   [[nodiscard]] double sat_count_double(level_no_t vars) const noexcept {
@@ -568,7 +568,7 @@ public:
   ///
   /// `this` must not be invalid (check via is_invalid()).
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// @returns  A satisfying assignment if there exists one. If this function is
   ///           unsatisfiable, the assignment is empty.
@@ -583,7 +583,7 @@ public:
   /// assumed to be false. The order is irrelevant. All elements must point to
   /// inner nodes.
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// @param  args  Slice of pairs `(variable, value)`, where all variables are
   ///               not invalid

@@ -117,7 +117,7 @@ public:
   ///
   /// `this` must not be invalid (check via is_invalid()).
   ///
-  /// Locking behavior: acquires an exclusive manager lock.
+  /// Locking behavior: acquires the manager's lock for exclusive access.
   ///
   /// @returns  The ZBDD Boolean function representing the variable.
   [[nodiscard]] zbdd_function new_singleton() noexcept;
@@ -126,7 +126,7 @@ public:
   ///
   /// `this` must not be invalid (check via is_invalid()).
   ///
-  /// Locking behavior: acquires an exclusive manager lock.
+  /// Locking behavior: acquires the manager's lock for exclusive access.
   ///
   /// @returns  The ZBDD set representing the variable
   [[nodiscard]] zbdd_function new_var() noexcept;
@@ -135,7 +135,7 @@ public:
   ///
   /// `this` must not be invalid (check via is_invalid()).
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// @returns  ∅ as ZBDD set
   [[nodiscard]] zbdd_function empty() const noexcept;
@@ -143,7 +143,7 @@ public:
   ///
   /// `this` must not be invalid (check via is_invalid()).
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// @returns  {∅} as ZBDD set
   [[nodiscard]] zbdd_function base() const noexcept;
@@ -151,7 +151,7 @@ public:
   ///
   /// `this` must not be invalid (check via is_invalid()).
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// Runtime complexity: O(1)
   ///
@@ -161,7 +161,7 @@ public:
   ///
   /// `this` must not be invalid (check via is_invalid()).
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// Runtime complexity: O(1)
   ///
@@ -176,7 +176,7 @@ public:
   ///
   /// `this` must not be invalid (check via is_invalid()).
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// @returns  The number of inner nodes
   [[nodiscard]] size_t num_inner_nodes() const noexcept {
@@ -323,7 +323,7 @@ public:
   /// f<sub>false</sub> is 𝔹ⁿ. (Remember that, e.g., g(x₀) = x₀ and
   /// g'(x₀, x₁) = x₀ have different representations as ZBDDs.)
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// Runtime complexity: O(1)
   ///
@@ -339,7 +339,7 @@ public:
   /// This function is slightly more efficient than cofactors() in case
   /// `f_false` is not needed.
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// Runtime complexity: O(1)
   ///
@@ -353,7 +353,7 @@ public:
   /// This function is slightly more efficient than cofactors() in case `f_true`
   /// is not needed.
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// Runtime complexity: O(1)
   ///
@@ -367,7 +367,7 @@ public:
   ///
   /// `this` must be a singleton set.
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// @returns  The ZBDD Boolean function v
   [[nodiscard]] zbdd_function var_boolean_function() const noexcept {
@@ -376,7 +376,7 @@ public:
 
   /// Compute the ZBDD for the negation `¬this`
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// Runtime complexity: O(|this|)
   ///
@@ -390,7 +390,7 @@ public:
   /// The conjunction on Boolean functions may equivalently be viewed as an
   /// intersection of sets `lhs ∩ rhs`.
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// Runtime complexity: O(|lhs| · |rhs|)
   ///
@@ -409,7 +409,7 @@ public:
   /// The disjunction on Boolean functions may equivalently be viewed as a
   /// union of sets `lhs ∪ rhs`.
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// Runtime complexity: O(|lhs| · |rhs|)
   ///
@@ -428,7 +428,7 @@ public:
   /// The disjunction on Boolean functions may equivalently be viewed as a
   /// symmetric difference on sets.
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// Runtime complexity: O(|lhs| · |rhs|)
   ///
@@ -447,7 +447,7 @@ public:
   /// This is equivalent to the strict implication `rhs < lhs` on Boolean
   /// functions.
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// Runtime complexity: O(|lhs| · |rhs|)
   ///
@@ -463,7 +463,7 @@ public:
   }
   /// Compute the ZBDD for the negated conjunction `this ⊼ rhs`
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// Runtime complexity: O(|this| · |rhs|)
   ///
@@ -474,7 +474,7 @@ public:
   }
   /// Compute the ZBDD for the negated disjunction `this ⊽ rhs`
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// Runtime complexity: O(|this| · |rhs|)
   ///
@@ -485,7 +485,7 @@ public:
   }
   /// Compute the ZBDD for the equivalence `this ↔ rhs`
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// Runtime complexity: O(|this| · |rhs|)
   ///
@@ -496,7 +496,7 @@ public:
   }
   /// Compute the ZBDD for the implication `this → rhs` (or `this ≤ rhs`)
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// Runtime complexity: O(|this| · |rhs|)
   ///
@@ -507,7 +507,7 @@ public:
   }
   /// Compute the ZBDD for the strict implication `this < rhs`
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// Runtime complexity: O(|this| · |rhs|)
   ///
@@ -519,7 +519,7 @@ public:
   }
   /// Compute the ZBDD for the conditional `this ? t : e`
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// Runtime complexity: O(|this| · |t| · |e|)
   ///
@@ -535,7 +535,7 @@ public:
   ///
   /// `var` must be a singleton set.
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// @returns  The ZBDD set representing referencing the new node (may be
   ///           invalid if the operation runs out of memory)
@@ -557,7 +557,7 @@ public:
   ///
   /// `this` must not be invalid (check via is_invalid()).
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// @returns  Node count including the two terminal nodes
   [[nodiscard]] std::size_t node_count() const noexcept {
@@ -569,7 +569,7 @@ public:
   ///
   /// `this` must not be invalid (check via is_invalid()).
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// @returns  `true` iff there is a satisfying assignment
   [[nodiscard]] bool satisfiable() const noexcept {
@@ -582,7 +582,7 @@ public:
   /// `this` must not be invalid (in the technical, not the mathematical sense).
   /// Check via is_invalid().
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// @returns  `true` iff there is are only satisfying assignment
   [[nodiscard]] bool valid() const noexcept {
@@ -594,7 +594,7 @@ public:
   ///
   /// `this` must not be invalid (check via is_invalid()).
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// @returns  Count of satisfying assignments
   [[nodiscard]] double sat_count_double(level_no_t vars) const noexcept {
@@ -606,7 +606,7 @@ public:
   ///
   /// `this` must not be invalid (check via is_invalid()).
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// @returns  A satisfying assignment if there exists one. If this function is
   ///           unsatisfiable, the assignment is empty.
@@ -625,7 +625,7 @@ public:
   ///
   /// `this` must not be invalid (check via is_invalid()).
   ///
-  /// Locking behavior: acquires a shared manager lock.
+  /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// @param  args  Slice of pairs `(variable, value)`, where all variables are
   ///               not invalid

@@ -105,7 +105,7 @@ pub unsafe trait Function: Clone + Ord + Hash {
 
     /// Obtain a shared manager reference as well as the underlying edge
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     ///
     /// # Example
     ///
@@ -126,7 +126,7 @@ pub unsafe trait Function: Clone + Ord + Hash {
 
     /// Obtain an exclusive manager reference as well as the underlying edge
     ///
-    /// Locking behavior: acquires an exclusive manager lock.
+    /// Locking behavior: acquires the manager's lock for exclusive access.
     ///
     /// # Example
     ///
@@ -148,7 +148,7 @@ pub unsafe trait Function: Clone + Ord + Hash {
 
     /// Count the number of nodes in this function, including terminal nodes
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     fn node_count(&self) -> usize {
         fn inner<M: Manager>(manager: &M, e: &M::Edge, set: &mut M::NodeSet) {
             if set.insert(e) {
@@ -207,7 +207,7 @@ pub trait BooleanFunction: Function {
     /// `f_true` or `f_false`, [`Self::cofactor_true`] or
     /// [`Self::cofactor_false`] are slightly more efficient.
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     fn cofactors(&self) -> Option<(Self, Self)> {
         self.with_manager_shared(|manager, f| {
             let (ft, ff) = Self::cofactors_edge(manager, f)?;
@@ -227,7 +227,7 @@ pub trait BooleanFunction: Function {
     ///
     /// Returns `None` iff `self` references a terminal node.
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     fn cofactor_true(&self) -> Option<Self> {
         self.with_manager_shared(|manager, f| {
             let (ft, _) = Self::cofactors_edge(manager, f)?;
@@ -244,7 +244,7 @@ pub trait BooleanFunction: Function {
     ///
     /// Returns `None` iff `self` references a terminal node.
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     fn cofactor_false(&self) -> Option<Self> {
         self.with_manager_shared(|manager, f| {
             let (_, ff) = Self::cofactors_edge(manager, f)?;
@@ -254,7 +254,7 @@ pub trait BooleanFunction: Function {
 
     /// Compute the negation `¬self`
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     fn not(&self) -> AllocResult<Self> {
         self.with_manager_shared(|manager, edge| {
             Ok(Self::from_edge(manager, Self::not_edge(manager, edge)?))
@@ -266,13 +266,13 @@ pub trait BooleanFunction: Function {
     /// function, so when the implementation is using (e.g.) complemented edges,
     /// this might be a little bit faster than [`Self::not()`].
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     fn not_owned(self) -> AllocResult<Self> {
         self.not()
     }
     /// Compute the conjunction `self ∧ rhs`
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     ///
     /// Panics if `self` and `rhs` don't belong to the same manager.
     fn and(&self, rhs: &Self) -> AllocResult<Self> {
@@ -283,7 +283,7 @@ pub trait BooleanFunction: Function {
     }
     /// Compute the disjunction `self ∨ rhs`
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     ///
     /// Panics if `self` and `rhs` don't belong to the same manager.
     fn or(&self, rhs: &Self) -> AllocResult<Self> {
@@ -294,7 +294,7 @@ pub trait BooleanFunction: Function {
     }
     /// Compute the negated conjunction `self ⊼ rhs`
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     ///
     /// Panics if `self` and `rhs` don't belong to the same manager.
     fn nand(&self, rhs: &Self) -> AllocResult<Self> {
@@ -305,7 +305,7 @@ pub trait BooleanFunction: Function {
     }
     /// Compute the negated disjunction `self ⊽ rhs`
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     ///
     /// Panics if `self` and `rhs` don't belong to the same manager.
     fn nor(&self, rhs: &Self) -> AllocResult<Self> {
@@ -316,7 +316,7 @@ pub trait BooleanFunction: Function {
     }
     /// Compute the exclusive disjunction `self ⊕ rhs`
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     ///
     /// Panics if `self` and `rhs` don't belong to the same manager.
     fn xor(&self, rhs: &Self) -> AllocResult<Self> {
@@ -327,7 +327,7 @@ pub trait BooleanFunction: Function {
     }
     /// Compute the equivalence `self ↔ rhs`
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     ///
     /// Panics if `self` and `rhs` don't belong to the same manager.
     fn equiv(&self, rhs: &Self) -> AllocResult<Self> {
@@ -338,7 +338,7 @@ pub trait BooleanFunction: Function {
     }
     /// Compute the implication `self → rhs` (or `self ≤ rhs`)
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     ///
     /// Panics if `self` and `rhs` don't belong to the same manager.
     fn imp(&self, rhs: &Self) -> AllocResult<Self> {
@@ -349,7 +349,7 @@ pub trait BooleanFunction: Function {
     }
     /// Compute the strict implication `self < rhs`
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     ///
     /// Panics if `self` and `rhs` don't belong to the same manager.
     fn imp_strict(&self, rhs: &Self) -> AllocResult<Self> {
@@ -484,7 +484,7 @@ pub trait BooleanFunction: Function {
 
     /// Returns `true` iff `self` is satisfiable, i.e. is not `⊥`
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     fn satisfiable(&self) -> bool {
         self.with_manager_shared(|manager, edge| {
             let f = EdgeDropGuard::new(manager, Self::f_edge(manager));
@@ -494,7 +494,7 @@ pub trait BooleanFunction: Function {
 
     /// Returns `true` iff `self` is valid, i.e. is `⊤`
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     fn valid(&self) -> bool {
         self.with_manager_shared(|manager, edge| {
             let t = EdgeDropGuard::new(manager, Self::t_edge(manager));
@@ -508,7 +508,7 @@ pub trait BooleanFunction: Function {
     /// possibly more efficient than computing all the
     /// conjunctions/disjunctions.
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     ///
     /// Panics if `self`, `then_case`, and `else_case` don't belong to the same
     /// manager.
@@ -550,7 +550,7 @@ pub trait BooleanFunction: Function {
     /// [`SatCountCache::clear_if_invalid()`]). Still, it is the caller's
     /// responsibility to not use the cache for different managers.
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     fn sat_count<N: SatCountNumber, S: std::hash::BuildHasher>(
         &self,
         vars: LevelNo,
@@ -583,7 +583,7 @@ pub trait BooleanFunction: Function {
     /// [`InnerNode`] reference since [`Edge`]s provide more information, e.g.,
     /// the [`NodeID`][Edge::node_id()].)
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     fn pick_cube<'a, I: ExactSizeIterator<Item = &'a Self>>(
         &'a self,
         order: impl IntoIterator<IntoIter = I>,
@@ -624,7 +624,7 @@ pub trait BooleanFunction: Function {
     /// cares" with a probability that is 2<sup>n</sup> as high as the
     /// probability of any total valuation.)
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     fn pick_cube_uniform<'a, I: ExactSizeIterator<Item = &'a Self>, S: BuildHasher>(
         &'a self,
         order: impl IntoIterator<IntoIter = I>,
@@ -674,7 +674,7 @@ pub trait BooleanFunction: Function {
     /// times, the last one counts. Panics if any function in `args` refers to a
     /// terminal node.
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     fn eval<'a>(&'a self, args: impl IntoIterator<Item = (&'a Self, bool)>) -> bool {
         self.with_manager_shared(|manager, edge| {
             Self::eval_edge(
@@ -702,7 +702,7 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     /// conjunction of positive or negative literals, depending on whether the
     /// variable should be mapped to true or false.
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     ///
     /// Panics if `self` and `vars` don't belong to the same manager.
     fn restrict(&self, vars: &Self) -> AllocResult<Self> {
@@ -720,7 +720,7 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     /// function `f(…, x, …)` over a single variable `x` is
     /// `f(…, 0, …) ∧ f(…, 1, …)`.
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     ///
     /// Panics if `self` and `vars` don't belong to the same manager.
     fn forall(&self, vars: &Self) -> AllocResult<Self> {
@@ -738,7 +738,7 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     /// function `f(…, x, …)` over a single variable `x` is
     /// `f(…, 0, …) ∨ f(…, 1, …)`.
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     ///
     /// Panics if `self` and `vars` don't belong to the same manager.
     fn exist(&self, vars: &Self) -> AllocResult<Self> {
@@ -755,7 +755,7 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     /// by unique quantification. Unique quantification of a boolean function
     /// `f(…, x, …)` over a single variable `x` is `f(…, 0, …) ⊕ f(…, 1, …)`.
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     ///
     /// Panics if `self` and `vars` don't belong to the same manager.
     fn unique(&self, vars: &Self) -> AllocResult<Self> {
@@ -1194,7 +1194,7 @@ pub trait TVLFunction: Function {
     /// [`Self::cofactor_unknown`], or [`Self::cofactor_false`] are slightly
     /// more efficient.
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     fn cofactors(&self) -> Option<(Self, Self, Self)> {
         self.with_manager_shared(|manager, f| {
             let (ft, fu, ff) = Self::cofactors_edge(manager, f)?;
@@ -1215,7 +1215,7 @@ pub trait TVLFunction: Function {
     ///
     /// Returns `None` iff `self` references a terminal node.
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     fn cofactor_true(&self) -> Option<Self> {
         self.with_manager_shared(|manager, f| {
             let (ft, _, _) = Self::cofactors_edge(manager, f)?;
@@ -1231,7 +1231,7 @@ pub trait TVLFunction: Function {
     ///
     /// Returns `None` iff `self` references a terminal node.
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     fn cofactor_unknown(&self) -> Option<Self> {
         self.with_manager_shared(|manager, f| {
             let (_, fu, _) = Self::cofactors_edge(manager, f)?;
@@ -1247,7 +1247,7 @@ pub trait TVLFunction: Function {
     ///
     /// Returns `None` iff `self` references a terminal node.
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     fn cofactor_false(&self) -> Option<Self> {
         self.with_manager_shared(|manager, f| {
             let (_, _, ff) = Self::cofactors_edge(manager, f)?;
@@ -1262,7 +1262,7 @@ pub trait TVLFunction: Function {
 
     /// Compute the negation `¬self`
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     fn not(&self) -> AllocResult<Self> {
         self.with_manager_shared(|manager, edge| {
             Ok(Self::from_edge(manager, Self::not_edge(manager, edge)?))
@@ -1274,13 +1274,13 @@ pub trait TVLFunction: Function {
     /// function, so when the implementation is using (e.g.) complemented edges,
     /// this might be a little bit faster than [`Self::not()`].
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     fn not_owned(self) -> AllocResult<Self> {
         self.not()
     }
     /// Compute the conjunction `self ∧ rhs`
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     ///
     /// Panics if `self` and `rhs` don't belong to the same manager.
     fn and(&self, rhs: &Self) -> AllocResult<Self> {
@@ -1291,7 +1291,7 @@ pub trait TVLFunction: Function {
     }
     /// Compute the disjunction `self ∨ rhs`
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     ///
     /// Panics if `self` and `rhs` don't belong to the same manager.
     fn or(&self, rhs: &Self) -> AllocResult<Self> {
@@ -1302,7 +1302,7 @@ pub trait TVLFunction: Function {
     }
     /// Compute the negated conjunction `self ⊼ rhs`
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     ///
     /// Panics if `self` and `rhs` don't belong to the same manager.
     fn nand(&self, rhs: &Self) -> AllocResult<Self> {
@@ -1313,7 +1313,7 @@ pub trait TVLFunction: Function {
     }
     /// Compute the negated disjunction `self ⊽ rhs`
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     ///
     /// Panics if `self` and `rhs` don't belong to the same manager.
     fn nor(&self, rhs: &Self) -> AllocResult<Self> {
@@ -1324,7 +1324,7 @@ pub trait TVLFunction: Function {
     }
     /// Compute the exclusive disjunction `self ⊕ rhs`
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     ///
     /// Panics if `self` and `rhs` don't belong to the same manager.
     fn xor(&self, rhs: &Self) -> AllocResult<Self> {
@@ -1335,7 +1335,7 @@ pub trait TVLFunction: Function {
     }
     /// Compute the equivalence `self ↔ rhs`
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     ///
     /// Panics if `self` and `rhs` don't belong to the same manager.
     fn equiv(&self, rhs: &Self) -> AllocResult<Self> {
@@ -1346,7 +1346,7 @@ pub trait TVLFunction: Function {
     }
     /// Compute the implication `self → rhs` (or `self ≤ rhs`)
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     ///
     /// Panics if `self` and `rhs` don't belong to the same manager.
     fn imp(&self, rhs: &Self) -> AllocResult<Self> {
@@ -1357,7 +1357,7 @@ pub trait TVLFunction: Function {
     }
     /// Compute the strict implication `self < rhs`
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     ///
     /// Panics if `self` and `rhs` don't belong to the same manager.
     fn imp_strict(&self, rhs: &Self) -> AllocResult<Self> {
@@ -1506,7 +1506,7 @@ pub trait TVLFunction: Function {
     /// possibly more efficient than computing all the
     /// conjunctions/disjunctions.
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     ///
     /// Panics if `self`, `then_case`, and `else_case` don't belong to the same
     /// manager.

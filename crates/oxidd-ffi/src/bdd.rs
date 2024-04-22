@@ -224,7 +224,7 @@ pub unsafe extern "C" fn oxidd_bdd_containing_manager(f: oxidd_bdd_t) -> oxidd_b
 
 /// Get the number of inner nodes currently stored in `manager`
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The number of inner nodes
 #[no_mangle]
@@ -237,7 +237,7 @@ pub unsafe extern "C" fn oxidd_bdd_num_inner_nodes(manager: oxidd_bdd_manager_t)
 /// Get a fresh variable, i.e., a function that is true if and only if the
 /// variable is true. This adds a new level to a decision diagram.
 ///
-/// Locking behavior: acquires an exclusive manager lock.
+/// Locking behavior: acquires the manager's lock for exclusive access.
 ///
 /// @returns  The BDD function representing the variable.
 #[no_mangle]
@@ -249,7 +249,7 @@ pub unsafe extern "C" fn oxidd_bdd_new_var(manager: oxidd_bdd_manager_t) -> oxid
 
 /// Get the constant false BDD function `⊥`
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The BDD function with its own reference count
 #[no_mangle]
@@ -261,7 +261,7 @@ pub unsafe extern "C" fn oxidd_bdd_false(manager: oxidd_bdd_manager_t) -> oxidd_
 
 /// Get the constant true BDD function `⊤`
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The BDD function with its own reference count
 #[no_mangle]
@@ -281,7 +281,7 @@ pub unsafe extern "C" fn oxidd_bdd_true(manager: oxidd_bdd_manager_t) -> oxidd_b
 /// cofactors, then use oxidd_bdd_cofactor_true() or oxidd_bdd_cofactor_false().
 /// These functions are slightly more efficient then.
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// Runtime complexity: O(1)
 ///
@@ -309,7 +309,7 @@ pub unsafe extern "C" fn oxidd_bdd_cofactors(f: oxidd_bdd_t) -> oxidd_bdd_pair_t
 /// `f_false` is not needed. For a more detailed description, see
 /// oxidd_bdd_cofactors().
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// Runtime complexity: O(1)
 ///
@@ -330,7 +330,7 @@ pub unsafe extern "C" fn oxidd_bdd_cofactor_true(f: oxidd_bdd_t) -> oxidd_bdd_t 
 /// `f_true` is not needed. For a more detailed description, see
 /// oxidd_bdd_cofactors().
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// Runtime complexity: O(1)
 ///
@@ -347,7 +347,7 @@ pub unsafe extern "C" fn oxidd_bdd_cofactor_false(f: oxidd_bdd_t) -> oxidd_bdd_t
 
 /// Compute the BDD for the negation `¬f`
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The BDD function with its own reference count
 #[no_mangle]
@@ -357,7 +357,7 @@ pub unsafe extern "C" fn oxidd_bdd_not(f: oxidd_bdd_t) -> oxidd_bdd_t {
 
 /// Compute the BDD for the conjunction `lhs ∧ rhs`
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The BDD function with its own reference count
 #[no_mangle]
@@ -367,7 +367,7 @@ pub unsafe extern "C" fn oxidd_bdd_and(lhs: oxidd_bdd_t, rhs: oxidd_bdd_t) -> ox
 
 /// Compute the BDD for the disjunction `lhs ∨ rhs`
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The BDD function with its own reference count
 #[no_mangle]
@@ -377,7 +377,7 @@ pub unsafe extern "C" fn oxidd_bdd_or(lhs: oxidd_bdd_t, rhs: oxidd_bdd_t) -> oxi
 
 /// Compute the BDD for the negated conjunction `lhs ⊼ rhs`
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The BDD function with its own reference count
 #[no_mangle]
@@ -387,7 +387,7 @@ pub unsafe extern "C" fn oxidd_bdd_nand(lhs: oxidd_bdd_t, rhs: oxidd_bdd_t) -> o
 
 /// Compute the BDD for the negated disjunction `lhs ⊽ rhs`
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The BDD function with its own reference count
 #[no_mangle]
@@ -397,7 +397,7 @@ pub unsafe extern "C" fn oxidd_bdd_nor(lhs: oxidd_bdd_t, rhs: oxidd_bdd_t) -> ox
 
 /// Compute the BDD for the exclusive disjunction `lhs ⊕ rhs`
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The BDD function with its own reference count
 #[no_mangle]
@@ -407,7 +407,7 @@ pub unsafe extern "C" fn oxidd_bdd_xor(lhs: oxidd_bdd_t, rhs: oxidd_bdd_t) -> ox
 
 /// Compute the BDD for the equivalence `lhs ↔ rhs`
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The BDD function with its own reference count
 #[no_mangle]
@@ -417,7 +417,7 @@ pub unsafe extern "C" fn oxidd_bdd_equiv(lhs: oxidd_bdd_t, rhs: oxidd_bdd_t) -> 
 
 /// Compute the BDD for the implication `lhs → rhs` (or `lhs ≤ rhs`)
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The BDD function with its own reference count
 #[no_mangle]
@@ -427,7 +427,7 @@ pub unsafe extern "C" fn oxidd_bdd_imp(lhs: oxidd_bdd_t, rhs: oxidd_bdd_t) -> ox
 
 /// Compute the BDD for the strict implication `lhs < rhs`
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The BDD function with its own reference count
 #[no_mangle]
@@ -437,7 +437,7 @@ pub unsafe extern "C" fn oxidd_bdd_imp_strict(lhs: oxidd_bdd_t, rhs: oxidd_bdd_t
 
 /// Compute the BDD for the conditional `cond ? then_case : else_case`
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The BDD function with its own reference count
 #[no_mangle]
@@ -456,7 +456,7 @@ pub unsafe extern "C" fn oxidd_bdd_ite(
 /// of positive or negative literals, depending on whether the variable should
 /// be mapped to true or false.
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The BDD function with its own reference count
 #[no_mangle]
@@ -471,7 +471,7 @@ pub unsafe extern "C" fn oxidd_bdd_restrict(f: oxidd_bdd_t, vars: oxidd_bdd_t) -
 /// universal quantification. Universal quantification of a Boolean function
 /// `f(…, x, …)` over a single variable `x` is `f(…, 0, …) ∧ f(…, 1, …)`.
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The BDD function with its own reference count
 #[no_mangle]
@@ -486,7 +486,7 @@ pub unsafe extern "C" fn oxidd_bdd_forall(f: oxidd_bdd_t, vars: oxidd_bdd_t) -> 
 /// existential quantification. Existential quantification of a Boolean function
 /// `f(…, x, …)` over a single variable `x` is `f(…, 0, …) ∨ f(…, 1, …)`.
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The BDD function with its own reference count
 #[no_mangle]
@@ -501,7 +501,7 @@ pub unsafe extern "C" fn oxidd_bdd_exist(f: oxidd_bdd_t, vars: oxidd_bdd_t) -> o
 /// unique quantification. Unique quantification of a Boolean function
 /// `f(…, x, …)` over a single variable `x` is `f(…, 0, …) ⊕ f(…, 1, …)`.
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The BDD function with its own reference count
 #[no_mangle]
@@ -511,7 +511,7 @@ pub unsafe extern "C" fn oxidd_bdd_unique(f: oxidd_bdd_t, vars: oxidd_bdd_t) -> 
 
 /// Count nodes in `f`
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @param  f  A *valid* BDD function
 ///
@@ -523,7 +523,7 @@ pub unsafe extern "C" fn oxidd_bdd_node_count(f: oxidd_bdd_t) -> usize {
 
 /// Check if `f` is satisfiable
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @param  f  A *valid* BDD function
 ///
@@ -535,7 +535,7 @@ pub unsafe extern "C" fn oxidd_bdd_satisfiable(f: oxidd_bdd_t) -> bool {
 
 /// Check if `f` is valid
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @param  f  A *valid* BDD function
 ///
@@ -547,7 +547,7 @@ pub unsafe extern "C" fn oxidd_bdd_valid(f: oxidd_bdd_t) -> bool {
 
 /// Count the satisfying assignments of `f`, assuming `vars` input variables
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @param  f     A *valid* BDD function
 /// @param  vars  Number of input variables
@@ -563,7 +563,7 @@ pub unsafe extern "C" fn oxidd_bdd_sat_count_double(f: oxidd_bdd_t, vars: oxidd_
 
 /// Pick a satisfying assignment
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @param  f  A *valid* BDD function
 ///
@@ -604,7 +604,7 @@ pub struct oxidd_bdd_bool_pair_t {
 /// assumed to be false. The order is irrelevant. All elements must point to
 /// inner nodes.
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @param  f         A *valid* BDD function
 /// @param  args      Array of pairs `(variable, value)`, where `variable` is

@@ -95,7 +95,7 @@ concept function =
 /// ### Decision Diagram Operations
 ///
 /// - `m.num_inner_nodes()` returns the count of inner nodes. `m` must be valid.
-///   Acquires a shared manager lock.
+///   Acquires the manager's lock for shared access.
 template <class M>
 concept manager =
     std::regular<M> && function<typename M::function> &&
@@ -138,7 +138,7 @@ concept manager =
 ///   irrelevant. All variables must point to inner nodes. `f` and all variables
 ///   must be valid.
 ///
-/// All of the operations above acquire a shared manager lock.
+/// All of the operations above acquire the manager's lock for shared access.
 ///
 /// @see oxidd::concepts::function
 template <class F>
@@ -194,7 +194,7 @@ concept boolean_function =
 /// over a single variable `x` is `f(…, 0, …) o f(…, 1, …)`, where `o` is `∧`
 /// for universal, `∨` for existential, and `⊕` for unique quantification.
 ///
-/// All operations here acquire a shared manager lock.
+/// All operations here acquire the manager's lock for shared access.
 template <class F>
 concept boolean_function_quant = boolean_function<F> && requires(const F bf) {
   { bf.forall(bf) } -> std::same_as<F>;
@@ -206,11 +206,11 @@ concept boolean_function_quant = boolean_function<F> && requires(const F bf) {
 ///
 /// - `m.new_var()` creates a fresh variable, i.e., a function that is true iff
 ///   the variable is true. This adds a new level to the decision diagram. `m`
-///   must be valid. Acquires an exclusive manager lock.
+///   must be valid. Acquires the manager's lock for exclusive access.
 /// - `m.t()` returns the constant true Boolean function ⊤. `m` must be valid.
-///   Acquires a shared manager lock.
+///   Acquires the manager's lock for shared access.
 /// - `m.f()` returns the constant false Boolean function ⊥. `m` must be valid.
-///   Acquires a shared manager lock.
+///   Acquires the manager's lock for shared access.
 ///
 /// @see oxidd::concepts::manager, oxidd::concepts::boolean_function
 template <class M>

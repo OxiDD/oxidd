@@ -47,14 +47,14 @@ pub trait ManagerRef: Clone + Eq + Hash + for<'a, 'id> From<&'a Self::Manager<'i
 
     /// Obtain a shared manager reference
     ///
-    /// Locking behavior: acquires a shared manager lock.
+    /// Locking behavior: acquires the manager's lock for shared access.
     fn with_manager_shared<F, T>(&self, f: F) -> T
     where
         F: for<'id> FnOnce(&Self::Manager<'id>) -> T;
 
     /// Obtain an exclusive manager reference
     ///
-    /// Locking behavior: acquires an exclusive manager lock.
+    /// Locking behavior: acquires the manager's lock for exclusive access.
     fn with_manager_exclusive<F, T>(&self, f: F) -> T
     where
         F: for<'id> FnOnce(&mut Self::Manager<'id>) -> T;

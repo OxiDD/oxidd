@@ -231,7 +231,7 @@ pub unsafe extern "C" fn oxidd_zbdd_num_inner_nodes(manager: oxidd_zbdd_manager_
 /// Get a fresh variable in the form of a singleton set. This adds a new level
 /// to a decision diagram.
 ///
-/// Locking behavior: acquires an exclusive manager lock.
+/// Locking behavior: acquires the manager's lock for exclusive access.
 ///
 /// @returns  The ZBDD set representing the variable.
 #[no_mangle]
@@ -245,7 +245,7 @@ pub unsafe extern "C" fn oxidd_zbdd_new_singleton(manager: oxidd_zbdd_manager_t)
 ///
 /// `var` must be a singleton set.
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @param  singleton  The singleton set {v}
 ///
@@ -270,7 +270,7 @@ pub unsafe extern "C" fn oxidd_zbdd_var_boolean_function(singleton: oxidd_zbdd_t
 ///
 /// This function takes ownership of `hi` and `lo` (but not `var`).
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD set referencing the new node
 #[no_mangle]
@@ -292,7 +292,7 @@ pub unsafe extern "C" fn oxidd_zbdd_make_node(
 
 /// Get the ZBDD set ∅
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD set with its own reference count
 #[no_mangle]
@@ -304,7 +304,7 @@ pub unsafe extern "C" fn oxidd_zbdd_empty(manager: oxidd_zbdd_manager_t) -> oxid
 
 /// Get the ZBDD set {∅}
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD set with its own reference count
 #[no_mangle]
@@ -329,7 +329,7 @@ pub unsafe extern "C" fn oxidd_zbdd_base(manager: oxidd_zbdd_manager_t) -> oxidd
 /// f<sub>false</sub> is 𝔹ⁿ. (Remember that, e.g., g(x₀) = x₀ and
 /// g'(x₀, x₁) = x₀ have different representations as ZBDDs.)
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// Runtime complexity: O(1)
 ///
@@ -357,7 +357,7 @@ pub unsafe extern "C" fn oxidd_zbdd_cofactors(f: oxidd_zbdd_t) -> oxidd_zbdd_pai
 /// `f_false` is not needed. For a more detailed description, see
 /// oxidd_zbdd_cofactors().
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// Runtime complexity: O(1)
 ///
@@ -378,7 +378,7 @@ pub unsafe extern "C" fn oxidd_zbdd_cofactor_true(f: oxidd_zbdd_t) -> oxidd_zbdd
 /// `f_true` is not needed. For a more detailed description, see
 /// oxidd_bdd_cofactors().
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// Runtime complexity: O(1)
 ///
@@ -398,7 +398,7 @@ pub unsafe extern "C" fn oxidd_zbdd_cofactor_false(f: oxidd_zbdd_t) -> oxidd_zbd
 ///
 /// `var` must be a singleton set.
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD set with its own reference count
 #[no_mangle]
@@ -411,7 +411,7 @@ pub unsafe extern "C" fn oxidd_zbdd_subset0(set: oxidd_zbdd_t, var: oxidd_zbdd_t
 ///
 /// `var` must be a singleton set.
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD set with its own reference count
 #[no_mangle]
@@ -426,7 +426,7 @@ pub unsafe extern "C" fn oxidd_zbdd_subset1(set: oxidd_zbdd_t, var: oxidd_zbdd_t
 ///
 /// `var` must be a singleton set.
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD set with its own reference count
 #[no_mangle]
@@ -436,7 +436,7 @@ pub unsafe extern "C" fn oxidd_zbdd_change(set: oxidd_zbdd_t, var: oxidd_zbdd_t)
 
 /// Compute the ZBDD for the union `lhs ∪ rhs`
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD set with its own reference count
 #[no_mangle]
@@ -446,7 +446,7 @@ pub unsafe extern "C" fn oxidd_zbdd_union(lhs: oxidd_zbdd_t, rhs: oxidd_zbdd_t) 
 
 /// Compute the ZBDD for the intersection `lhs ∩ rhs`
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD set with its own reference count
 #[no_mangle]
@@ -456,7 +456,7 @@ pub unsafe extern "C" fn oxidd_zbdd_intsec(lhs: oxidd_zbdd_t, rhs: oxidd_zbdd_t)
 
 /// Compute the ZBDD for the set difference `lhs ∖ rhs`
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD set with its own reference count
 #[no_mangle]
@@ -467,7 +467,7 @@ pub unsafe extern "C" fn oxidd_zbdd_diff(lhs: oxidd_zbdd_t, rhs: oxidd_zbdd_t) -
 /// Get a fresh variable, i.e., a Boolean function that is true if and only if
 /// the variable is true. This adds a new level to a decision diagram.
 ///
-/// Locking behavior: acquires an exclusive manager lock.
+/// Locking behavior: acquires the manager's lock for exclusive access.
 ///
 /// @returns  The ZBDD Boolean function representing the variable.
 #[no_mangle]
@@ -479,7 +479,7 @@ pub unsafe extern "C" fn oxidd_zbdd_new_var(manager: oxidd_zbdd_manager_t) -> ox
 
 /// Get the constant false ZBDD Boolean function `⊥`
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD Boolean function with its own reference count
 #[no_mangle]
@@ -491,7 +491,7 @@ pub unsafe extern "C" fn oxidd_zbdd_false(manager: oxidd_zbdd_manager_t) -> oxid
 
 /// Get the constant true ZBDD Boolean function `⊤`
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD Boolean function with its own reference count
 #[no_mangle]
@@ -503,7 +503,7 @@ pub unsafe extern "C" fn oxidd_zbdd_true(manager: oxidd_zbdd_manager_t) -> oxidd
 
 /// Compute the ZBDD for the negation `¬f`
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD Boolean function with its own reference count
 #[no_mangle]
@@ -513,7 +513,7 @@ pub unsafe extern "C" fn oxidd_zbdd_not(f: oxidd_zbdd_t) -> oxidd_zbdd_t {
 
 /// Compute the ZBDD for the conjunction `lhs ∧ rhs`
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD Boolean function with its own reference count
 #[no_mangle]
@@ -523,7 +523,7 @@ pub unsafe extern "C" fn oxidd_zbdd_and(lhs: oxidd_zbdd_t, rhs: oxidd_zbdd_t) ->
 
 /// Compute the ZBDD for the disjunction `lhs ∨ rhs`
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD Boolean function with its own reference count
 #[no_mangle]
@@ -533,7 +533,7 @@ pub unsafe extern "C" fn oxidd_zbdd_or(lhs: oxidd_zbdd_t, rhs: oxidd_zbdd_t) -> 
 
 /// Compute the ZBDD for the negated conjunction `lhs ⊼ rhs`
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD Boolean function with its own reference count
 #[no_mangle]
@@ -543,7 +543,7 @@ pub unsafe extern "C" fn oxidd_zbdd_nand(lhs: oxidd_zbdd_t, rhs: oxidd_zbdd_t) -
 
 /// Compute the ZBDD for the negated disjunction `lhs ⊽ rhs`
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD Boolean function with its own reference count
 #[no_mangle]
@@ -553,7 +553,7 @@ pub unsafe extern "C" fn oxidd_zbdd_nor(lhs: oxidd_zbdd_t, rhs: oxidd_zbdd_t) ->
 
 /// Compute the ZBDD for the exclusive disjunction `lhs ⊕ rhs`
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD Boolean function with its own reference count
 #[no_mangle]
@@ -563,7 +563,7 @@ pub unsafe extern "C" fn oxidd_zbdd_xor(lhs: oxidd_zbdd_t, rhs: oxidd_zbdd_t) ->
 
 /// Compute the ZBDD for the equivalence `lhs ↔ rhs`
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD Boolean function with its own reference count
 #[no_mangle]
@@ -573,7 +573,7 @@ pub unsafe extern "C" fn oxidd_zbdd_equiv(lhs: oxidd_zbdd_t, rhs: oxidd_zbdd_t) 
 
 /// Compute the ZBDD for the implication `lhs → rhs` (or `lhs ≤ rhs`)
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD Boolean function with its own reference count
 #[no_mangle]
@@ -583,7 +583,7 @@ pub unsafe extern "C" fn oxidd_zbdd_imp(lhs: oxidd_zbdd_t, rhs: oxidd_zbdd_t) ->
 
 /// Compute the ZBDD for the strict implication `lhs < rhs`
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD Boolean function with its own reference count
 #[no_mangle]
@@ -596,7 +596,7 @@ pub unsafe extern "C" fn oxidd_zbdd_imp_strict(
 
 /// Compute the ZBDD for the conditional `cond ? then_case : else_case`
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD Boolean function with its own reference count
 #[no_mangle]
@@ -610,7 +610,7 @@ pub unsafe extern "C" fn oxidd_zbdd_ite(
 
 /// Count nodes in `f`
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @param  f     A *valid* ZBDD function
 ///
@@ -622,7 +622,7 @@ pub unsafe extern "C" fn oxidd_zbdd_node_count(f: oxidd_zbdd_t) -> usize {
 
 /// Check if `f` is satisfiable
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @param  f  A *valid* ZBDD function
 ///
@@ -634,7 +634,7 @@ pub unsafe extern "C" fn oxidd_zbdd_satisfiable(f: oxidd_zbdd_t) -> bool {
 
 /// Check if `f` is valid
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @param  f  A *valid* ZBDD function
 ///
@@ -646,7 +646,7 @@ pub unsafe extern "C" fn oxidd_zbdd_valid(f: oxidd_zbdd_t) -> bool {
 
 /// Count the number of satisfying assignments, assuming `vars` input variables
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @param  f     A *valid* ZBDD function
 /// @param  vars  Number of input variables
@@ -665,7 +665,7 @@ pub unsafe extern "C" fn oxidd_zbdd_sat_count_double(
 
 /// Pick a satisfying assignment
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @param  f  A *valid* ZBDD function
 ///
@@ -708,7 +708,7 @@ pub struct oxidd_zbdd_bool_pair_t {
 /// contains at least all `args` and all variables in the support of the ZBDD
 /// `f`. Unlike BDDs, extending the domain changes the semantics of ZBDDs.
 ///
-/// Locking behavior: acquires a shared manager lock.
+/// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @param  f         A *valid* ZBDD function
 /// @param  args      Array of pairs `(variable, value)`, where `variable` is
