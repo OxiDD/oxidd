@@ -592,9 +592,14 @@ public:
 
   /// Count the number of satisfying assignments
   ///
+  /// This method assumes that the function's domain of has `vars` many
+  /// variables.
+  ///
   /// `this` must not be invalid (check via is_invalid()).
   ///
   /// Locking behavior: acquires the manager's lock for shared access.
+  ///
+  /// @param  vars  Number of variables in the function's domain
   ///
   /// @returns  Count of satisfying assignments
   [[nodiscard]] double sat_count_double(level_no_t vars) const noexcept {
