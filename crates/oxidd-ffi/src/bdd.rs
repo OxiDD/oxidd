@@ -468,8 +468,9 @@ pub unsafe extern "C" fn oxidd_bdd_restrict(f: oxidd_bdd_t, vars: oxidd_bdd_t) -
 ///
 /// `vars` is a set of variables, which in turn is just the conjunction of the
 /// variables. This operation removes all occurrences of the variables by
-/// universal quantification. Universal quantification of a Boolean function
-/// `f(…, x, …)` over a single variable `x` is `f(…, 0, …) ∧ f(…, 1, …)`.
+/// universal quantification. Universal quantification `∀x. f(…, x, …)` of a
+/// Boolean function `f(…, x, …)` over a single variable `x` is
+/// `f(…, 0, …) ∧ f(…, 1, …)`.
 ///
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
@@ -483,8 +484,9 @@ pub unsafe extern "C" fn oxidd_bdd_forall(f: oxidd_bdd_t, vars: oxidd_bdd_t) -> 
 ///
 /// `vars` is a set of variables, which in turn is just the conjunction of the
 /// variables. This operation removes all occurrences of the variables by
-/// existential quantification. Existential quantification of a Boolean function
-/// `f(…, x, …)` over a single variable `x` is `f(…, 0, …) ∨ f(…, 1, …)`.
+/// existential quantification. Existential quantification `∃x. f(…, x, …)` of
+/// a Boolean function `f(…, x, …)` over a single variable `x` is
+/// `f(…, 0, …) ∨ f(…, 1, …)`.
 ///
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
@@ -497,9 +499,15 @@ pub unsafe extern "C" fn oxidd_bdd_exist(f: oxidd_bdd_t, vars: oxidd_bdd_t) -> o
 /// Compute the BDD for the unique quantification of `f` over `vars`
 ///
 /// `vars` is a set of variables, which in turn is just the conjunction of the
-/// variables. This operation removes all occurrences of the variables by
-/// unique quantification. Unique quantification of a Boolean function
-/// `f(…, x, …)` over a single variable `x` is `f(…, 0, …) ⊕ f(…, 1, …)`.
+/// variables. This operation removes all occurrences of the variables by unique
+/// quantification. Unique quantification `∃!x. f(…, x, …)` of a Boolean
+/// function `f(…, x, …)` over a single variable `x` is
+/// `f(…, 0, …) ⊕ f(…, 1, …)`.
+///
+/// Unique quantification is also known as the
+/// [Boolean difference](https://en.wikipedia.org/wiki/Boole%27s_expansion_theorem#Operations_with_cofactors)
+/// or
+/// [Boolean derivative](https://en.wikipedia.org/wiki/Boolean_differential_calculus).
 ///
 /// Locking behavior: acquires the manager's lock for shared access.
 ///

@@ -319,9 +319,10 @@ public:
   /// cofactors, then use cofactor_true() or cofactor_false(). These functions
   /// are slightly more efficient then.
   ///
-  /// Note that the domain of f is 𝔹ⁿ⁺¹ while the domain of f<sub>true</sub> and
-  /// f<sub>false</sub> is 𝔹ⁿ. (Remember that, e.g., g(x₀) = x₀ and
-  /// g'(x₀, x₁) = x₀ have different representations as ZBDDs.)
+  /// Note that the domain of f is 𝔹<sup>n+1</sup> while the domain of
+  /// f<sub>true</sub> and f<sub>false</sub> is 𝔹<sup>n</sup>. (Remember that,
+  /// e.g., g(x₀) = x₀ and g'(x₀, x₁) = x₀ have different representations as
+  /// ZBDDs.)
   ///
   /// Locking behavior: acquires the manager's lock for shared access.
   ///
