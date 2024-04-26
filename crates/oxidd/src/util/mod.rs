@@ -224,7 +224,7 @@ macro_rules! manager_ref_index_based {
                 threads: u32,
             ) -> Self {
                 assert!(
-                    inner_node_capacity + terminal_node_capacity <= (1 << u32::BITS),
+                    (inner_node_capacity + terminal_node_capacity) as u64 <= (1 << u32::BITS),
                     "`inner_node_capacity ({inner_node_capacity}) + terminal_node_capacity ({terminal_node_capacity})` must be <= 2^32"
                 );
                 Self(::oxidd_manager_index::manager::new_manager(
