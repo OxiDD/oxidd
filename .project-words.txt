@@ -64,6 +64,7 @@ isize
 Javadoc
 Köhl
 levelized
+libc
 liboxidd
 madvise
 mdbook
@@ -92,7 +93,6 @@ rustc
 RUSTDOCFLAGS
 RUSTFLAGS
 rustfmt
-rustix
 Rustonomicon
 rustup
 rwlock

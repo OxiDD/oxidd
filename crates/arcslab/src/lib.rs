@@ -440,14 +440,16 @@ impl<I, D, const PAGE_SIZE: usize> Page<I, D, PAGE_SIZE> {
             None => alloc::handle_alloc_error(layout),
             Some(ptr) => ptr,
         };
+
+        // Use transparent hugepages on Linux
         #[cfg(all(not(miri), target_os = "linux"))]
         if PAGE_SIZE >= 2 * 1024 * 1024 {
             unsafe {
-                // spell-checker:ignore rustix
-                let _ = rustix::mm::madvise(
+                // spell-checker:ignore MADV
+                let _ = libc::madvise(
                     raw_ptr as *mut std::ffi::c_void,
                     PAGE_SIZE,
-                    rustix::mm::Advice::LinuxHugepage,
+                    libc::MADV_HUGEPAGE,
                 );
             }
         }

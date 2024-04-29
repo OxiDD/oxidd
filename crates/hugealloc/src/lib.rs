@@ -74,11 +74,8 @@ impl HugeAlloc {
             // https://www.kernel.org/doc/html/latest/admin-guide/mm/transhuge.html
             #[cfg(all(target_os = "linux", not(miri)))]
             unsafe {
-                let _ = rustix::mm::madvise(
-                    ptr as *mut core::ffi::c_void,
-                    size,
-                    rustix::mm::Advice::LinuxHugepage,
-                );
+                // spell-checker:ignore MADV
+                let _ = libc::madvise(ptr as *mut core::ffi::c_void, size, libc::MADV_HUGEPAGE);
             }
 
             #[allow(clippy::let_and_return)] // for non-Linux platforms

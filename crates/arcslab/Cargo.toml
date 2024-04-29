@@ -24,4 +24,4 @@ crossbeam-utils = { version = "0.8", default-features = false }
 
 [target.'cfg(all(not(miri), target_os = "linux"))'.dependencies]
 # `madvise`
-rustix = { version = "0.38", features = ["mm"], default-features = false }
+libc = { version = "0.2.153", default-features = false }
