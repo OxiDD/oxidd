@@ -1,0 +1,110 @@
+name: Python
+
+# spell-checker:ignore pyproject,pydata,jakebailey,CIBW
+
+on:
+  push:
+    branches: [main]
+    paths:
+    - bindings/python/**
+    - pyproject.toml
+    - crates/**
+    - Cargo.*
+  pull_request:
+    branches: [main]
+    paths:
+    - bindings/python/**
+    - pyproject.toml
+    - crates/**
+    - Cargo.*
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint-test-doc:
+    name: Lint, Test & Doc
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: 3.x
+    - name: Install tools & dependencies
+      run: python -m pip install --upgrade pip ruff sphinx pydata-sphinx-theme cibuildwheel pytest
+    - name: Build
+      run: python -m pip install .
+    - name: Ruff check
+      run: ruff check --output-format=github
+    - name: Ruff format check
+      run: ruff format --check
+    - uses: jakebailey/pyright-action@v2
+    - name: Test
+      run: pytest
+    - name: Sphinx
+      run: sphinx-build -W bindings/python/doc build/python-doc
+
+  linux-buildwheel:
+    name: Build wheels for Linux
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: docker/setup-qemu-action@v3
+      with:
+        platforms: arm64,s390x,ppc64le
+    - name: Install cibuildwheel
+      run: python3 -m pip install cibuildwheel
+    - name: Build (linux-buildwheel.py)
+      run: python3 bindings/python/build/linux-buildwheel.py --install-targets --archs all
+    - uses: actions/upload-artifact@v4
+      with:
+        name: python-wheels-linux
+        path: wheelhouse/*.whl
+
+  mac-buildwheel:
+    name: Build wheels for macOS
+
+    runs-on: ${{ matrix.os.image }}
+    strategy:
+      matrix:
+        os:
+        - { arch: x86_64, image: macos-13 }
+        - { arch: arm64, image: macos-14 }
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cbindgen
+        run: brew install cbindgen
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v2.17.0
+        env:
+          CIBW_ARCHS_MACOS: native
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-wheels-mac-${{ matrix.os.arch }}
+          path: ./wheelhouse/*.whl
+
+  win-buildwheel:
+    name: Build wheels for Windows
+
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust targets
+        run: rustup target add aarch64-pc-windows-msvc
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v2.17.0
+        env:
+          CIBW_ARCHS_WINDOWS: all
+          CIBW_TEST_SKIP: "*-win_arm64"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-wheels-win
+          path: ./wheelhouse/*.whl

@@ -1,0 +1,104 @@
+[project]
+name = "oxidd"
+version = "0.1.0"
+description = "Decision Diagrams"
+requires-python = ">=3.9"
+keywords = ["Decision Diagrams", "BDD", "ZBDD", "ZDD"]
+authors = [{ name = "OxiDD Contributors", email = "info@oxidd.net" }]
+maintainers = [{ name = "Nils Husung", email = "nils@oxidd.net" }]
+
+
+dependencies = ["cffi ~= 1.12", "typing-extensions ~= 4.0"]
+
+# see https://pypi.org/classifiers/
+classifiers = [
+  "Development Status :: 4 - Beta",
+
+  "License :: OSI Approved :: MIT License",
+  "License :: OSI Approved :: Apache Software License",
+
+  "Programming Language :: C",
+  "Programming Language :: C++",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Rust",
+
+  "Topic :: Scientific/Engineering",
+
+  "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://oxidd.net"
+Repository = "https://github.com/OxiDD/oxidd"
+Issues = "https://github.com/OxiDD/oxidd/issues"
+
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["oxidd"]
+package-dir = { "" = "bindings/python" }
+
+[tool.pyright]
+include = ["bindings/python"]
+pythonVersion = "3.9"
+typeCheckingMode = "standard"
+strict = ["bindings/python/tests/**"]
+
+[tool.ruff]
+target-version = "py39"
+
+[tool.ruff.lint]
+select = [
+  # pycodestyle
+  "E",
+  # Pyflakes
+  "F",
+  # pyupgrade
+  "UP",
+  # flake8-bugbear
+  "B",
+  # flake8-simplify
+  "SIM",
+  # isort
+  "I",
+]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.cibuildwheel]
+# `python -m build --wheel` is the current PyPA recommendation and prints better
+# error messages than `python -m pip wheel`
+build-frontend = "build"
+
+# Skip all CPython versions >= 3.10 right away to avoid downloading additional
+# Python versions (macOS, Windows). This is possible as we build abi3 modules.
+build = ["cp39-*", "pp*"]
+# Skip every target that is not tier 1 or 2, see
+# https://doc.rust-lang.org/stable/rustc/platform-support.html
+skip = ["*-musllinux_ppc64le", "*-musllinux_s390x"]
+
+environment.OXIDD_PYFFI_LINK_MODE = "static"
+linux.environment.OXIDD_PYFFI_CONTAINER_BUILD = "1"
+
+# All Rust musl targets require musl 1.2
+musllinux-x86_64-image = "musllinux_1_2"
+musllinux-i686-image = "musllinux_1_2"
+musllinux-aarch64-image = "musllinux_1_2"
+
+# Ensure a clean build in the container (dev setups, should be a no-op in CI)
+linux.before-all = "rm -rf build"
+
+test-requires = "pytest"
+test-command = "pytest {project}/bindings/python/oxidd"
+
+[tool.pytest.ini_options]
+# spell-checker:ignore testpaths
+testpaths = ["bindings/python/oxidd"]
