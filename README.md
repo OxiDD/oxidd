@@ -51,12 +51,18 @@ The main code is located in the [crates](crates) directory. The framework is cen
 
 ![Crate Dependency Graph](doc/book/src/img/crate-deps.svg)
 
+Besides the Rust code, there are also bindings for C/C++ and Python in the `bindings` directory. OxiDD has a foreign function interface (FFI) located in the `oxidd-ffi` crate. It does not expose the entire API that can be used from Rust, but it is sufficient to, e.g., create BDDs and apply various logical operators on them. In principle, you can use the FFI from any language that can call C functions. However, there are also more ergonomic C++ bindings that build on top of the C FFI. You can just use include this repository using CMake. To use OxiDD from Python, the easiest way is to use the package on PyPI (to be published soon).
+
 
 ## FAQ
 
 Q: What about bindings for language X?
 
-OxiDD has a foreign function interface (FFI) located in the `oxidd-ffi` crate. It does not expose the entire API that can be used from Rust, but it is sufficient to, e.g., create BDDs and apply various logical operators on them. In principle, you can use the FFI from any language that can call C functions. However, there are also more ergonomic C++ bindings that build on top of the C FFI. You can just use include this repository using CMake. Additionally, we are currently working on Python bindings that will be published very soon. If you want to use OxiDD from a different language, please contact us. We really like to support you and your use-case.
+As mentioned above, OxiDD already supports C/C++ and Python. C# and Java bindings might follow later this year. If you want to use OxiDD from a different language, please contact us. We would really like to support you and your use-case.
+
+Q: What about dynamic/automatic reordering?
+
+OxiDD already supports reordering in the sense of establishing a given variable order. Implementing this without introducing unsafe code in the algorithms applying operators, adding rather expensive synchronization mechanisms, or disabling concurrency entirely was a larger effort. More details on that can be found in [our paper](https://doi.org/10.1007/978-3-031-57256-2_13). But now, adding reordering heuristics such as sifting is a low-hanging fruit. Next up, we will also work on dynamic reordering (i.e., aborting operations for reordering and restarting them afterwards) and automatic reordering (i.e., heuristics that identify points in time where dynamic reordering is beneficial).
 
 
 ## Licensing

@@ -1,0 +1,7 @@
+.logo__image {
+  border-radius: 25%;
+}
+
+.logo__image.only-dark {
+  border: 2px solid var(--pst-color-text-base);
+}

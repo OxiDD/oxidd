@@ -16,19 +16,30 @@
 *.orig
 # Reject files created by patch
 *.rej
-# Byte compiled python modules
-*.pyc
 # vim swap files
 .*.sw?
 .sw?
 # macOS specific files
-.DS_store
+.DS_Store
 # cSpell cache
 .cspellcache
+
+# Build products
+*.so
+*.dylib
+*.dll
+*.pyc
+*.pyd
+*.egg-info
+*.whl
 
 # clangd index (".clangd" is a config file now, thus trailing slash)
 .clangd/
 .cache
+# Coverage reports
+.coverage
+# Python cache
+__pycache__/
 # VS2017 and VSCode config files
 .vscode
 .vs
