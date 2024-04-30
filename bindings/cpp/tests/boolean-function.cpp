@@ -245,17 +245,17 @@ public:
         for (unsigned assignment = 0; assignment < num_assignments;
              ++assignment) {
           const explicit_b_func mask = assignment_to_mask[assignment];
+          const explicit_b_func bit = 1 << assignment;
 
           // or of all bits under mask
-          exist_expected |= explicit_b_func{(f_explicit & mask) != 0}
-                            << assignment;
+          if ((f_explicit & mask) != 0)
+            exist_expected |= bit;
           // and of all bits under mask
-          forall_expected |= explicit_b_func{(f_explicit & mask) == mask}
-                             << assignment;
+          if ((f_explicit & mask) == mask)
+            forall_expected |= bit;
           // xor of all bits under mask
-          unique_expected |=
-              static_cast<explicit_b_func>(std::popcount(f_explicit & mask) & 1)
-              << assignment;
+          if ((std::popcount(f_explicit & mask) & 1) != 0)
+            unique_expected |= bit;
         }
 
         const explicit_b_func exist_actual =
