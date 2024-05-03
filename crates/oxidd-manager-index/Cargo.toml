@@ -27,7 +27,7 @@ rustc-hash = "1"
 bitvec = "1"
 
 # thread pool
-rayon = "1.7"
+rayon = "1.10"
 
 # `CachePadded`
 crossbeam-utils = { version = "0.8", default-features = false }

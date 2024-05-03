@@ -610,7 +610,7 @@ fn main() {
     }
     #[cfg(not(miri))]
     if inner_node_capacity == 0 {
-        use sysinfo::{System, SystemExt};
+        use sysinfo::System;
         let mut sys = System::new();
         sys.refresh_memory();
         let mem = sys.available_memory();

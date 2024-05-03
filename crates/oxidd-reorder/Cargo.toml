@@ -24,10 +24,10 @@ smallvec = { version = "1", features = ["union", "const_generics"] }
 is_sorted = "0.1"
 
 # thread pools, parallel iterators, etc.
-rayon = "1.7"
+rayon = "1.10"
 
 # mpmc channels
-flume = { version = "0.10", default-features = false }
+flume = { version = "0.11", default-features = false }
 
 [dev-dependencies]
 oxidd-test-utils.workspace = true

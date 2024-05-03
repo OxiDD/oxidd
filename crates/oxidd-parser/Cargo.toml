@@ -31,7 +31,7 @@ bitvec = "1"
 rustc-hash = "1"
 
 # `Builder` derive macro
-derive_builder = "0.12"
+derive_builder = "0.20"
 
 # document feature flags
 document-features = "0.2"

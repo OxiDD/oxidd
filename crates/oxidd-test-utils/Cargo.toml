@@ -14,4 +14,4 @@ repository.workspace = true
 [dependencies]
 oxidd-core.workspace = true
 
-rayon = "1.7"
+rayon = "1.10"
