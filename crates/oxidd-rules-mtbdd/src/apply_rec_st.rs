@@ -37,7 +37,7 @@ pub(super) fn apply_bin<M, T, const OP: u8>(
     g: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = T> + HasApplyCache<M, Operator = MTBDDOp>,
+    M: Manager<Terminal = T> + HasApplyCache<M, MTBDDOp>,
     M::InnerNode: HasLevel,
     T: NumberBase,
 {

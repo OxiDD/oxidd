@@ -882,47 +882,16 @@ pub trait ApplyCache<M: Manager, O: Copy>: DropWith<M::Edge> {
 
     /// Remove all entries from the cache
     fn clear(&self, manager: &M);
-
-    /// Prepare for garbage collection
-    ///
-    /// The `ApplyCache` implementation may rely on that this method is called
-    /// before the `Manager` performs garbage collection or any other operation
-    /// that possibly removes nodes from the manager. (If this is required
-    /// for SAFETY, however, creation of the apply cache must be marked unsafe).
-    ///
-    /// The intent behind this is that an apply cache does not necessarily have
-    /// to clone/drop edges on insertion. Experiments have shown that when using
-    /// a reference counting approach, this causes many (CPU) cache misses.
-    /// Instead, the apply cache may store [`Borrowed<M::Edge>`]s (e.g. using
-    /// the unsafe [`Borrowed::into_inner()`]). Now the cache implementation has
-    /// to guarantee that every edge returned by [`Self::get()`] still points to
-    /// a valid node. To that end, the apply cache may e.g. clear itself when
-    /// this method is called and reject any insertion of new entries until the
-    /// `GCGuard` is dropped.
-    ///
-    /// This method may lock (parts of) the apply cache. The unlocking may be
-    /// performed in [`Self::post_gc()`].
-    fn pre_gc(&self, manager: &M);
-
-    /// Post-process a garbage collection
-    ///
-    /// # Safety
-    ///
-    /// This method needs to be called at most once after a call to
-    /// [`Self::pre_gc()`] and the subsequent reordering.
-    unsafe fn post_gc(&self, manager: &M);
 }
 
 /// Apply cache container
 ///
 /// Intended to be implemented by [`Manager`]s such that generic implementations
 /// of the recursive apply algorithm can simply require
-/// `M: Manager + HasApplyCache<M>`.
-pub trait HasApplyCache<M: Manager> {
-    /// Operations used in the apply cache
-    type Operator: Copy + Ord + Hash;
+/// `M: Manager + HasApplyCache<M, O>`, where `O` is the operator type.
+pub trait HasApplyCache<M: Manager, O: Copy> {
     /// The concrete apply cache type
-    type ApplyCache: ApplyCache<M, Self::Operator>;
+    type ApplyCache: ApplyCache<M, O>;
 
     /// Get a shared reference to the contained apply cache
     #[must_use]

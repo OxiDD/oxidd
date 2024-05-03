@@ -11,6 +11,7 @@ use crate::util::Mutex;
 
 use oxidd_core::util::Borrowed;
 use oxidd_core::util::DropWith;
+use oxidd_core::util::GCContainer;
 use oxidd_core::ApplyCache;
 use oxidd_core::Manager;
 
@@ -277,7 +278,7 @@ impl<M: Manager, O: Copy + Eq, const ARITY: usize, const SIZE: usize> Bucket<M, 
             value: manager.clone_edge(&*value),
         };
         for (src, dst) in operands.iter().zip(&mut new.operands) {
-            dst.write(manager.clone_edge(&*src));
+            dst.write(manager.clone_edge(src));
         }
         if len < SIZE {
             self.entries[(self.start as usize + len) % SIZE] = MaybeUninit::new(new);
@@ -375,6 +376,26 @@ impl<M: Manager, O, const ARITY: usize> Entry<M, O, ARITY> {
     }
 }
 
+impl<M, O, H, const ARITY: usize, const BUCKET_SIZE: usize> GCContainer<M>
+    for FIFOApplyCache<M, O, H, ARITY, BUCKET_SIZE>
+where
+    M: Manager,
+    O: Copy + Hash + Ord,
+    H: Hasher + Default,
+{
+    fn pre_gc(&self, manager: &M) {
+        for bucket in self.0.iter() {
+            if let Some(mut bucket) = bucket.try_lock() {
+                bucket.gc(manager, Entry::should_gc);
+            }
+        }
+    }
+
+    unsafe fn post_gc(&self, _manager: &M) {
+        // Nothing to do
+    }
+}
+
 impl<M, O, H, const ARITY: usize, const BUCKET_SIZE: usize> ApplyCache<M, O>
     for FIFOApplyCache<M, O, H, ARITY, BUCKET_SIZE>
 where
@@ -414,18 +435,6 @@ where
         self.0
             .iter()
             .for_each(|bucket| bucket.lock().clear(manager));
-    }
-
-    fn pre_gc(&self, manager: &M) {
-        for bucket in self.0.iter() {
-            if let Some(mut bucket) = bucket.try_lock() {
-                bucket.gc(manager, Entry::should_gc);
-            }
-        }
-    }
-
-    unsafe fn post_gc(&self, _manager: &M) {
-        // Nothing to do
     }
 }
 

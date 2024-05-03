@@ -44,7 +44,7 @@ use super::STAT_COUNTERS;
 /// function simply calls [`apply_not_rec()`].
 fn apply_not<M>(manager: &M, depth: u32, f: Borrowed<M::Edge>) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = BDDTerminal> + HasApplyCache<M, Operator = BDDOp> + WorkerManager,
+    M: Manager<Terminal = BDDTerminal> + HasApplyCache<M, BDDOp> + WorkerManager,
     M::InnerNode: HasLevel,
     M::Edge: Send + Sync,
 {
@@ -100,7 +100,7 @@ fn apply_bin<M, const OP: u8>(
     g: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = BDDTerminal> + HasApplyCache<M, Operator = BDDOp> + WorkerManager,
+    M: Manager<Terminal = BDDTerminal> + HasApplyCache<M, BDDOp> + WorkerManager,
     M::InnerNode: HasLevel,
     M::Edge: Send + Sync,
 {
@@ -178,7 +178,7 @@ fn apply_ite<M>(
     h: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = BDDTerminal> + HasApplyCache<M, Operator = BDDOp> + WorkerManager,
+    M: Manager<Terminal = BDDTerminal> + HasApplyCache<M, BDDOp> + WorkerManager,
     M::InnerNode: HasLevel,
     M::Edge: Send + Sync,
 {
@@ -286,7 +286,7 @@ fn restrict<M>(
     vars: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = BDDTerminal> + HasApplyCache<M, Operator = BDDOp> + WorkerManager,
+    M: Manager<Terminal = BDDTerminal> + HasApplyCache<M, BDDOp> + WorkerManager,
     M::InnerNode: HasLevel,
     M::Edge: Send + Sync,
 {
@@ -354,7 +354,7 @@ fn quant<M, const Q: u8>(
     vars: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = BDDTerminal> + HasApplyCache<M, Operator = BDDOp> + WorkerManager,
+    M: Manager<Terminal = BDDTerminal> + HasApplyCache<M, BDDOp> + WorkerManager,
     M::InnerNode: HasLevel,
     M::Edge: Send + Sync,
 {

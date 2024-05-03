@@ -29,6 +29,7 @@ use bitvec::vec::BitVec;
 use crossbeam_utils::CachePadded;
 use linear_hashtbl::raw::RawTable;
 use oxidd_core::function::EdgeOfFunc;
+use oxidd_core::util::GCContainer;
 use parking_lot::Condvar;
 use parking_lot::Mutex;
 use parking_lot::MutexGuard;
@@ -41,7 +42,6 @@ use oxidd_core::util::AllocResult;
 use oxidd_core::util::Borrowed;
 use oxidd_core::util::DropWith;
 use oxidd_core::util::OutOfMemory;
-use oxidd_core::ApplyCache;
 use oxidd_core::DiagramRules;
 use oxidd_core::InnerNode;
 use oxidd_core::LevelNo;
@@ -99,9 +99,7 @@ pub trait ManagerDataCons<
     type T<'id>: Send
         + Sync
         + DropWith<Edge<'id, NC::T<'id>, ET>>
-        + oxidd_core::HasApplyCache<
-            Manager<'id, NC::T<'id>, ET, TMC::T<'id>, RC::T<'id>, Self::T<'id>, TERMINALS>,
-        >;
+        + GCContainer<Manager<'id, NC::T<'id>, ET, TMC::T<'id>, RC::T<'id>, Self::T<'id>, TERMINALS>>;
 }
 
 // === Manager & Edges =========================================================
@@ -915,7 +913,7 @@ where
     ET: Tag,
     TM: TerminalManager<'id, N, ET, TERMINALS>,
     R: oxidd_core::DiagramRules<Edge<'id, N, ET>, N, TM::TerminalNode>,
-    MD: DropWith<Edge<'id, N, ET>> + oxidd_core::HasApplyCache<Self>,
+    MD: DropWith<Edge<'id, N, ET>> + GCContainer<Self>,
 {
     type Edge = Edge<'id, N, ET>;
     type EdgeTag = ET;
@@ -1026,7 +1024,7 @@ where
                 .as_secs()
         );
 
-        self.data.apply_cache().pre_gc(self);
+        self.data.pre_gc(self);
 
         let store = self.store();
         let mut collected = 0;
@@ -1041,7 +1039,7 @@ where
         collected += store.terminal_manager.gc();
 
         // SAFETY: We called `pre_gc`, the garbage collection is done.
-        unsafe { self.data.apply_cache().post_gc(self) };
+        unsafe { self.data.post_gc(self) };
         self.gc_ongoing.unlock();
         guard.defuse();
 
@@ -1059,10 +1057,10 @@ where
 
     fn reorder<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T {
         let guard = AbortOnDrop("Reordering panicked.");
-        self.data.apply_cache().pre_gc(self);
+        self.data.pre_gc(self);
         let res = f(self);
         // SAFETY: We called `pre_gc`, the reordering is done.
-        unsafe { self.data.apply_cache().post_gc(self) };
+        unsafe { self.data.post_gc(self) };
         guard.defuse();
         self.reorder_count += 1;
         res
@@ -1081,7 +1079,7 @@ where
     ET: Tag + Send + Sync,
     TM: TerminalManager<'id, N, ET, TERMINALS> + Send + Sync,
     R: oxidd_core::DiagramRules<Edge<'id, N, ET>, N, TM::TerminalNode>,
-    MD: DropWith<Edge<'id, N, ET>> + oxidd_core::HasApplyCache<Self> + Send + Sync,
+    MD: DropWith<Edge<'id, N, ET>> + GCContainer<Self> + Send + Sync,
 {
     #[inline]
     fn current_num_threads(&self) -> usize {
@@ -2397,11 +2395,11 @@ impl<
         ET: Tag,
         TM: TerminalManager<'id, N, ET, TERMINALS>,
         R: DiagramRules<Edge<'id, N, ET>, N, TM::TerminalNode>,
-        MD: oxidd_core::HasApplyCache<Self> + DropWith<Edge<'id, N, ET>>,
+        MD: oxidd_core::HasApplyCache<Self, O> + GCContainer<Self> + DropWith<Edge<'id, N, ET>>,
+        O: Copy,
         const TERMINALS: usize,
-    > oxidd_core::HasApplyCache<Self> for Manager<'id, N, ET, TM, R, MD, TERMINALS>
+    > oxidd_core::HasApplyCache<Self, O> for Manager<'id, N, ET, TM, R, MD, TERMINALS>
 {
-    type Operator = MD::Operator;
     type ApplyCache = MD::ApplyCache;
 
     #[inline]

@@ -36,6 +36,7 @@ use arcslab::IntHandle;
 use bitvec::bitvec;
 use bitvec::vec::BitVec;
 use linear_hashtbl::raw::RawTable;
+use oxidd_core::util::GCContainer;
 use parking_lot::Mutex;
 use parking_lot::MutexGuard;
 use rustc_hash::FxHasher;
@@ -45,7 +46,6 @@ use oxidd_core::util::AbortOnDrop;
 use oxidd_core::util::AllocResult;
 use oxidd_core::util::Borrowed;
 use oxidd_core::util::DropWith;
-use oxidd_core::ApplyCache;
 use oxidd_core::DiagramRules;
 use oxidd_core::HasApplyCache;
 use oxidd_core::InnerNode;
@@ -117,7 +117,7 @@ pub trait ManagerDataCons<
 >: Sized
 {
     type T<'id>: DropWith<Edge<'id, NC::T<'id>, ET, TAG_BITS>>
-        + HasApplyCache<
+        + GCContainer<
             Manager<
                 'id,
                 NC::T<'id>,
@@ -611,7 +611,7 @@ where
     ET: Tag,
     TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
     R: DiagramRules<Edge<'id, N, ET, TAG_BITS>, N, TM::TerminalNode>,
-    MD: DropWith<Edge<'id, N, ET, TAG_BITS>> + HasApplyCache<Self>,
+    MD: DropWith<Edge<'id, N, ET, TAG_BITS>> + GCContainer<Self>,
 {
     type Edge = Edge<'id, N, ET, TAG_BITS>;
     type EdgeTag = ET;
@@ -738,7 +738,7 @@ where
             return 0;
         }
         let guard = AbortOnDrop("Garbage collection panicked.");
-        self.data.apply_cache().pre_gc(self);
+        self.data.pre_gc(self);
 
         let mut collected = 0;
         for level in &self.unique_table {
@@ -752,7 +752,7 @@ where
         collected += unsafe { &*self.terminal_manager() }.gc();
 
         // SAFETY: We called `pre_gc()` and the garbage collection is done.
-        unsafe { self.data.apply_cache().post_gc(self) };
+        unsafe { self.data.post_gc(self) };
         self.gc_ongoing.unlock();
         guard.defuse();
         collected
@@ -760,10 +760,10 @@ where
 
     fn reorder<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T {
         let guard = AbortOnDrop("Reordering panicked.");
-        self.data.apply_cache().pre_gc(self);
+        self.data.pre_gc(self);
         let res = f(self);
         // SAFETY: We called `pre_gc()` and the reordering is done.
-        unsafe { self.data.apply_cache().post_gc(self) };
+        unsafe { self.data.post_gc(self) };
         guard.defuse();
         self.reorder_count += 1;
         res
@@ -782,7 +782,7 @@ where
     ET: Tag + Send + Sync,
     TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS> + Send + Sync,
     R: DiagramRules<Edge<'id, N, ET, TAG_BITS>, N, TM::TerminalNode>,
-    MD: DropWith<Edge<'id, N, ET, TAG_BITS>> + HasApplyCache<Self> + Send + Sync,
+    MD: DropWith<Edge<'id, N, ET, TAG_BITS>> + GCContainer<Self> + Send + Sync,
 {
     fn current_num_threads(&self) -> usize {
         self.workers.current_num_threads()
@@ -1226,7 +1226,7 @@ where
     TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
     R: DiagramRules<Edge<'id, N, ET, TAG_BITS>, N, TM::TerminalNode>,
     MD: DropWith<Edge<'id, N, ET, TAG_BITS>>
-        + HasApplyCache<Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>>,
+        + GCContainer<Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>>,
 {
     type Iterator<'b> = LevelViewIter<'b, 'id, N, ET, TAG_BITS>
     where
@@ -1342,7 +1342,7 @@ where
     TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
     R: DiagramRules<Edge<'id, N, ET, TAG_BITS>, N, TM::TerminalNode>,
     MD: DropWith<Edge<'id, N, ET, TAG_BITS>>
-        + HasApplyCache<Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>>,
+        + GCContainer<Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>>,
 {
     type Iterator<'b> = LevelViewIter<'b, 'id, N, ET, TAG_BITS>
     where
@@ -2111,12 +2111,12 @@ impl<
         ET: Tag,
         TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
         R: DiagramRules<Edge<'id, N, ET, TAG_BITS>, N, TM::TerminalNode>,
-        MD: HasApplyCache<Self> + DropWith<Edge<'id, N, ET, TAG_BITS>>,
+        MD: HasApplyCache<Self, O> + GCContainer<Self> + DropWith<Edge<'id, N, ET, TAG_BITS>>,
+        O: Copy,
         const PAGE_SIZE: usize,
         const TAG_BITS: u32,
-    > HasApplyCache<Self> for Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
+    > HasApplyCache<Self, O> for Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
 {
-    type Operator = MD::Operator;
     type ApplyCache = MD::ApplyCache;
 
     #[inline]

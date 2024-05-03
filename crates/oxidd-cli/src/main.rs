@@ -4,9 +4,11 @@ use std::borrow::Cow;
 use std::fmt;
 use std::fs;
 use std::hash::BuildHasherDefault;
+use std::hash::Hash;
 use std::io;
 use std::io::Seek;
 use std::io::Write;
+use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
@@ -215,8 +217,10 @@ where
 {
     fn prop_rec<B: BooleanFunction>(manager: &B::Manager<'_>, prop: &Prop, vars: &[B]) -> B {
         match prop {
-            Prop::Lit(v, false) => vars[(v.get() - 1) as usize].clone(),
-            Prop::Lit(v, true) => vars[(v.get() - 1) as usize].not().expect(OOM_MSG),
+            Prop::Lit(v, false) => vars[(NonZeroU32::get(*v) - 1) as usize].clone(),
+            Prop::Lit(v, true) => vars[(NonZeroU32::get(*v) - 1) as usize]
+                .not()
+                .expect(OOM_MSG),
             Prop::Neg(p) => prop_rec(manager, p, vars).not().expect(OOM_MSG),
             Prop::And(ps) => ps.iter().fold(B::t(manager), |b, p| {
                 b.and(&prop_rec(manager, p, vars)).expect(OOM_MSG)
@@ -350,9 +354,11 @@ where
     func
 }
 
-fn background_stats<MR: ManagerRef + Send + 'static>(mref: MR, interval: Duration)
+fn background_stats<MR, O>(mref: MR, interval: Duration)
 where
-    for<'id> MR::Manager<'id>: HasApplyCache<MR::Manager<'id>>,
+    MR: ManagerRef + Send + 'static,
+    for<'id> MR::Manager<'id>: HasApplyCache<MR::Manager<'id>, O>,
+    O: Copy + Ord + Hash,
 {
     if interval.is_zero() {
         return; // statistics report disabled
@@ -374,15 +380,16 @@ where
     });
 }
 
-fn bool_dd_main<B>(cli: &Cli, mref: B::ManagerRef)
+fn bool_dd_main<B, O>(cli: &Cli, mref: B::ManagerRef)
 where
     B: BooleanFunction + Send + 'static,
     B::ManagerRef: Send + 'static,
     for<'id> B: dot::DotStyle<<B::Manager<'id> as Manager>::EdgeTag>,
-    for<'id> B::Manager<'id>: WorkerManager + HasApplyCache<B::Manager<'id>>,
+    for<'id> B::Manager<'id>: WorkerManager + HasApplyCache<B::Manager<'id>, O>,
     for<'id> <B::Manager<'id> as Manager>::InnerNode: HasLevel,
     for<'id> <B::Manager<'id> as Manager>::EdgeTag: fmt::Debug,
     for<'id> <B::Manager<'id> as Manager>::Terminal: FromStr + fmt::Display + dddmp::AsciiDisplay,
+    O: Copy + Ord + Hash,
 {
     let parse_options = ParseOptionsBuilder::default()
         .orders(cli.read_var_order | (cli.cnf_build_order == CNFBuildOrder::File))
@@ -392,7 +399,7 @@ where
     let mut vars: FxHashMap<String, B> = Default::default();
     let mut funcs: Vec<(B, String)> = Vec::new();
 
-    background_stats::<B::ManagerRef>(mref.clone(), Duration::from_secs(cli.stats_secs));
+    background_stats::<B::ManagerRef, O>(mref.clone(), Duration::from_secs(cli.stats_secs));
 
     let report_dd_node_count = || {
         mref.with_manager_shared(|manager| {
@@ -626,7 +633,7 @@ fn main() {
         DDType::BDD => {
             let mref =
                 oxidd::bdd::new_manager(inner_node_capacity, cli.apply_cache_capacity, cli.threads);
-            bool_dd_main::<oxidd::bdd::BDDFunction>(&cli, mref);
+            bool_dd_main::<oxidd::bdd::BDDFunction, _>(&cli, mref);
         }
         DDType::BCDD => {
             let mref = oxidd::bcdd::new_manager(
@@ -634,7 +641,7 @@ fn main() {
                 cli.apply_cache_capacity,
                 cli.threads,
             );
-            bool_dd_main::<oxidd::bcdd::BCDDFunction>(&cli, mref);
+            bool_dd_main::<oxidd::bcdd::BCDDFunction, _>(&cli, mref);
         }
         DDType::ZBDD => todo!(),
     }

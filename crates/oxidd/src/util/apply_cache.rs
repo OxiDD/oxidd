@@ -66,14 +66,4 @@ impl<M: Manager, O: Copy, const ARITY: usize> oxidd_core::ApplyCache<M, O>
     fn clear(&self, _manager: &M) {
         // Nothing to do
     }
-
-    #[inline(always)]
-    fn pre_gc(&self, _manager: &M) {
-        // Nothing to do
-    }
-
-    #[inline(always)]
-    unsafe fn post_gc(&self, _manager: &M) {
-        // Nothing to do
-    }
 }

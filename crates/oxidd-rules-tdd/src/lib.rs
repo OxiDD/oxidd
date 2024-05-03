@@ -304,8 +304,8 @@ fn terminal_bin<'a, M: Manager<Terminal = TDDTerminal>, const OP: u8>(
 // --- Function Interface ------------------------------------------------------
 
 /// Workaround for https://github.com/rust-lang/rust/issues/49601
-trait HasTDDOpApplyCache<M: Manager>: HasApplyCache<M, Operator = TDDOp> {}
-impl<M: Manager + HasApplyCache<M, Operator = TDDOp>> HasTDDOpApplyCache<M> for M {}
+trait HasTDDOpApplyCache<M: Manager>: HasApplyCache<M, TDDOp> {}
+impl<M: Manager + HasApplyCache<M, TDDOp>> HasTDDOpApplyCache<M> for M {}
 
 //#[cfg(feature = "multi-threading")]
 //pub use apply_rec_mt::TDDFunctionMT;

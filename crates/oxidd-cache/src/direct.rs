@@ -8,6 +8,7 @@ use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
 use std::mem::MaybeUninit;
 
+use oxidd_core::util::GCContainer;
 use parking_lot::lock_api::RawMutex;
 
 use oxidd_core::util::Borrowed;
@@ -202,8 +203,8 @@ where
     /// # Safety
     ///
     /// The apply cache must only be used inside a manager that guarantees all
-    /// node deletions to be wrapped inside an [`ApplyCache::pre_gc()`] /
-    /// [`ApplyCache::post_gc()`] pair.
+    /// node deletions to be wrapped inside an [`GCContainer::pre_gc()`] /
+    /// [`GCContainer::post_gc()`] pair.
     pub unsafe fn with_capacity(capacity: usize) -> Self {
         let _ = Self::CHECK_ARITY;
         let buckets = capacity
@@ -308,7 +309,14 @@ where
             entry.lock().clear();
         }
     }
+}
 
+impl<M, O, H, const ARITY: usize> GCContainer<M> for DMApplyCache<M, O, H, ARITY>
+where
+    M: Manager,
+    O: Copy + Hash + Ord,
+    H: Hasher + Default,
+{
     fn pre_gc(&self, _manager: &M) {
         // FIXME: We should probably do something smarter than clearing the
         // entire cache.

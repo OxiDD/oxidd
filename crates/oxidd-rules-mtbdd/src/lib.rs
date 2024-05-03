@@ -220,8 +220,8 @@ fn terminal_bin<'a, M: Manager<Terminal = T>, T: NumberBase, const OP: u8>(
 // --- Function Interface ------------------------------------------------------
 
 /// Workaround for https://github.com/rust-lang/rust/issues/49601
-trait HasMTBDDOpApplyCache<M: Manager>: HasApplyCache<M, Operator = MTBDDOp> {}
-impl<M: Manager + HasApplyCache<M, Operator = MTBDDOp>> HasMTBDDOpApplyCache<M> for M {}
+trait HasMTBDDOpApplyCache<M: Manager>: HasApplyCache<M, MTBDDOp> {}
+impl<M: Manager + HasApplyCache<M, MTBDDOp>> HasMTBDDOpApplyCache<M> for M {}
 
 //#[cfg(feature = "multi-threading")]
 //pub use apply_rec_mt::MTBDDFunctionMT;

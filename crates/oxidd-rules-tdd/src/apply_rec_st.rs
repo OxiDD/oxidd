@@ -34,7 +34,7 @@ use super::STAT_COUNTERS;
 /// Recursively apply the 'not' operator to `f`
 pub(super) fn apply_not<M>(manager: &M, f: Borrowed<M::Edge>) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = TDDTerminal> + HasApplyCache<M, Operator = TDDOp>,
+    M: Manager<Terminal = TDDTerminal> + HasApplyCache<M, TDDOp>,
     M::InnerNode: HasLevel,
 {
     stat!(call TDDOp::Not);
@@ -86,7 +86,7 @@ pub(super) fn apply_bin<M, const OP: u8>(
     g: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = TDDTerminal> + HasApplyCache<M, Operator = TDDOp>,
+    M: Manager<Terminal = TDDTerminal> + HasApplyCache<M, TDDOp>,
     M::InnerNode: HasLevel,
 {
     stat!(call OP);
@@ -154,7 +154,7 @@ pub(super) fn apply_ite_rec<M>(
     h: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = TDDTerminal> + HasApplyCache<M, Operator = TDDOp>,
+    M: Manager<Terminal = TDDTerminal> + HasApplyCache<M, TDDOp>,
     M::InnerNode: HasLevel,
 {
     use TDDTerminal::*;

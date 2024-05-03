@@ -55,7 +55,7 @@ fn apply_bin<M, const OP: u8>(
 ) -> AllocResult<M::Edge>
 where
     M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal>
-        + HasApplyCache<M, Operator = BCDDOp>
+        + HasApplyCache<M, BCDDOp>
         + WorkerManager,
     M::InnerNode: HasLevel,
     M::Edge: Send + Sync,
@@ -151,7 +151,7 @@ fn apply_and<M>(
 ) -> AllocResult<M::Edge>
 where
     M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal>
-        + HasApplyCache<M, Operator = BCDDOp>
+        + HasApplyCache<M, BCDDOp>
         + WorkerManager,
     M::InnerNode: HasLevel,
     M::Edge: Send + Sync,
@@ -173,7 +173,7 @@ fn apply_ite<M>(
 ) -> AllocResult<M::Edge>
 where
     M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal>
-        + HasApplyCache<M, Operator = BCDDOp>
+        + HasApplyCache<M, BCDDOp>
         + WorkerManager,
     M::InnerNode: HasLevel,
     M::Edge: Send + Sync,
@@ -299,7 +299,7 @@ fn restrict<M>(
 ) -> AllocResult<M::Edge>
 where
     M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag>
-        + HasApplyCache<M, Operator = BCDDOp>
+        + HasApplyCache<M, BCDDOp>
         + WorkerManager,
     M::InnerNode: HasLevel,
     M::Edge: Send + Sync,
@@ -398,7 +398,7 @@ fn quant<M, const Q: u8>(
 ) -> AllocResult<M::Edge>
 where
     M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag>
-        + HasApplyCache<M, Operator = BCDDOp>
+        + HasApplyCache<M, BCDDOp>
         + WorkerManager,
     M::InnerNode: HasLevel,
     M::Edge: Send + Sync,

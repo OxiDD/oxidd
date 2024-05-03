@@ -42,10 +42,24 @@ macro_rules! manager_data {
             }
         }
 
-        impl<'id> ::oxidd_core::HasApplyCache<<$dd as $crate::util::type_cons::DD>::Manager<'id>>
+        impl<'id>
+            ::oxidd_core::util::GCContainer<<$dd as $crate::util::type_cons::DD>::Manager<'id>>
             for $name<'id>
         {
-            type Operator = $op;
+            #[inline]
+            fn pre_gc(&self, manager: &<$dd as $crate::util::type_cons::DD>::Manager<'id>) {
+                self.apply_cache.pre_gc(manager)
+            }
+            #[inline]
+            unsafe fn post_gc(&self, manager: &<$dd as $crate::util::type_cons::DD>::Manager<'id>) {
+                // SAFETY: inherited from outer
+                unsafe { self.apply_cache.post_gc(manager) }
+            }
+        }
+        impl<'id>
+            ::oxidd_core::HasApplyCache<<$dd as $crate::util::type_cons::DD>::Manager<'id>, $op>
+            for $name<'id>
+        {
             type ApplyCache = $crate::util::apply_cache::ApplyCache<
                 <$dd as $crate::util::type_cons::DD>::Manager<'id>,
                 $op,

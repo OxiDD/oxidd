@@ -316,8 +316,8 @@ pub fn print_stats() {
 // --- Function Interface ------------------------------------------------------
 
 /// Workaround for https://github.com/rust-lang/rust/issues/49601
-trait HasBDDOpApplyCache<M: Manager>: HasApplyCache<M, Operator = BDDOp> {}
-impl<M: Manager + HasApplyCache<M, Operator = BDDOp>> HasBDDOpApplyCache<M> for M {}
+trait HasBDDOpApplyCache<M: Manager>: HasApplyCache<M, BDDOp> {}
+impl<M: Manager + HasApplyCache<M, BDDOp>> HasBDDOpApplyCache<M> for M {}
 
 #[cfg(feature = "multi-threading")]
 pub use apply_rec_mt::BDDFunctionMT;

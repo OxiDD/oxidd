@@ -31,8 +31,8 @@ macro_rules! manager_data {
         impl<'id, $($($gen),*)?> $name<'id, $($($gen),*)?> $(where $($where)*)? {
             /// SAFETY: The manager data must only be used inside a manager that
             /// guarantees all node deletions to be wrapped inside a
-            /// [`oxidd_core::ApplyCache::pre_gc()`] /
-            /// [`oxidd_core::ApplyCache::post_gc()`]
+            /// [`oxidd_core::util::GCContainer::pre_gc()`] /
+            /// [`oxidd_core::util::GCContainer::post_gc()`]
             /// pair for the contained apply cache.
             unsafe fn new(apply_cache_capacity: usize) -> Self {
                 Self {
@@ -55,10 +55,23 @@ macro_rules! manager_data {
             }
         }
 
-        impl<'id, $($($gen),*)?> ::oxidd_core::HasApplyCache<<$dd$(<$($dd_gen),*>)? as $crate::util::type_cons::DD>::Manager<'id>>
+        impl<'id, $($($gen),*)?> ::oxidd_core::util::GCContainer<<$dd$(<$($dd_gen),*>)? as $crate::util::type_cons::DD>::Manager<'id>>
             for $name<'id, $($($gen),*)?> $(where $($where)*)?
         {
-            type Operator = $op;
+            #[inline]
+            fn pre_gc(&self, manager: &<$dd$(<$($dd_gen),*>)? as $crate::util::type_cons::DD>::Manager<'id>) {
+                self.apply_cache.pre_gc(manager)
+            }
+            #[inline]
+            unsafe fn post_gc(&self, manager: &<$dd$(<$($dd_gen),*>)? as $crate::util::type_cons::DD>::Manager<'id>) {
+                // SAFETY: inherited from outer
+                unsafe { self.apply_cache.post_gc(manager) }
+            }
+        }
+
+        impl<'id, $($($gen),*)?> ::oxidd_core::HasApplyCache<<$dd$(<$($dd_gen),*>)? as $crate::util::type_cons::DD>::Manager<'id>, $op>
+            for $name<'id, $($($gen),*)?> $(where $($where)*)?
+        {
             type ApplyCache = $crate::util::apply_cache::ApplyCache<
                 <$dd$(<$($dd_gen),*>)? as $crate::util::type_cons::DD>::Manager<'id>,
                 $op,

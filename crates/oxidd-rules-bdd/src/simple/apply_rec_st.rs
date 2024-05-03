@@ -42,7 +42,7 @@ use super::STAT_COUNTERS;
 /// Recursively apply the 'not' operator to `f`
 pub(super) fn apply_not<M>(manager: &M, f: Borrowed<M::Edge>) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = BDDTerminal> + HasApplyCache<M, Operator = BDDOp>,
+    M: Manager<Terminal = BDDTerminal> + HasApplyCache<M, BDDOp>,
     M::InnerNode: HasLevel,
 {
     stat!(call BDDOp::Not);
@@ -86,7 +86,7 @@ pub(super) fn apply_bin<M, const OP: u8>(
     g: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = BDDTerminal> + HasApplyCache<M, Operator = BDDOp>,
+    M: Manager<Terminal = BDDTerminal> + HasApplyCache<M, BDDOp>,
     M::InnerNode: HasLevel,
 {
     stat!(call OP);
@@ -146,7 +146,7 @@ pub(super) fn apply_ite<M>(
     h: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = BDDTerminal> + HasApplyCache<M, Operator = BDDOp>,
+    M: Manager<Terminal = BDDTerminal> + HasApplyCache<M, BDDOp>,
     M::InnerNode: HasLevel,
 {
     use BDDTerminal::*;
@@ -339,7 +339,7 @@ pub(super) fn restrict<M>(
     vars: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = BDDTerminal> + HasApplyCache<M, Operator = BDDOp>,
+    M: Manager<Terminal = BDDTerminal> + HasApplyCache<M, BDDOp>,
     M::InnerNode: HasLevel,
 {
     stat!(call BDDOp::Restrict);
@@ -397,7 +397,7 @@ pub(super) fn quant<M, const Q: u8>(
     vars: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = BDDTerminal> + HasApplyCache<M, Operator = BDDOp>,
+    M: Manager<Terminal = BDDTerminal> + HasApplyCache<M, BDDOp>,
     M::InnerNode: HasLevel,
 {
     let operator = match () {

@@ -56,7 +56,7 @@ pub(super) fn apply_bin<M, const OP: u8>(
     g: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal> + HasApplyCache<M, Operator = BCDDOp>,
+    M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal> + HasApplyCache<M, BCDDOp>,
     M::InnerNode: HasLevel,
 {
     stat!(call OP);
@@ -131,7 +131,7 @@ where
 #[inline(always)]
 fn apply_and<M>(manager: &M, f: Borrowed<M::Edge>, g: Borrowed<M::Edge>) -> AllocResult<M::Edge>
 where
-    M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal> + HasApplyCache<M, Operator = BCDDOp>,
+    M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal> + HasApplyCache<M, BCDDOp>,
     M::InnerNode: HasLevel,
 {
     apply_bin::<M, { BCDDOp::And as u8 }>(manager, f, g)
@@ -145,7 +145,7 @@ pub(super) fn apply_ite<M>(
     h: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal> + HasApplyCache<M, Operator = BCDDOp>,
+    M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal> + HasApplyCache<M, BCDDOp>,
     M::InnerNode: HasLevel,
 {
     stat!(call BCDDOp::Ite);
@@ -414,7 +414,7 @@ pub(super) fn restrict<M>(
     vars: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag> + HasApplyCache<M, Operator = BCDDOp>,
+    M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag> + HasApplyCache<M, BCDDOp>,
     M::InnerNode: HasLevel,
 {
     stat!(call BCDDOp::Restrict);
@@ -494,7 +494,7 @@ pub(super) fn quant<M, const Q: u8>(
     vars: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag> + HasApplyCache<M, Operator = BCDDOp>,
+    M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag> + HasApplyCache<M, BCDDOp>,
     M::InnerNode: HasLevel,
 {
     let operator = match () {

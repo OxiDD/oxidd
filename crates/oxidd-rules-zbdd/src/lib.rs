@@ -373,8 +373,8 @@ where
 // --- Function Interface ------------------------------------------------------
 
 /// Workaround for https://github.com/rust-lang/rust/issues/49601
-trait HasZBDDOpApplyCache<M: Manager>: HasApplyCache<M, Operator = ZBDDOp> {}
-impl<M: Manager + HasApplyCache<M, Operator = ZBDDOp>> HasZBDDOpApplyCache<M> for M {}
+trait HasZBDDOpApplyCache<M: Manager>: HasApplyCache<M, ZBDDOp> {}
+impl<M: Manager + HasApplyCache<M, ZBDDOp>> HasZBDDOpApplyCache<M> for M {}
 
 #[cfg(feature = "multi-threading")]
 pub use apply_rec_mt::ZBDDFunctionMT;

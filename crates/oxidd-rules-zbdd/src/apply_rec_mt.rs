@@ -51,7 +51,7 @@ fn subset<M, const VAL: i8>(
     var_level: LevelNo,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, Operator = ZBDDOp> + WorkerManager,
+    M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, ZBDDOp> + WorkerManager,
     M::InnerNode: HasLevel,
     M::Edge: Send + Sync,
 {
@@ -126,7 +126,7 @@ fn apply_union<M>(
     g: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, Operator = ZBDDOp> + WorkerManager,
+    M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, ZBDDOp> + WorkerManager,
     M::InnerNode: HasLevel,
     M::Edge: Send + Sync,
 {
@@ -208,7 +208,7 @@ fn apply_intsec<M>(
     g: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, Operator = ZBDDOp> + WorkerManager,
+    M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, ZBDDOp> + WorkerManager,
     M::InnerNode: HasLevel,
     M::Edge: Send + Sync,
 {
@@ -289,7 +289,7 @@ fn apply_diff<M>(
     g: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, Operator = ZBDDOp> + WorkerManager,
+    M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, ZBDDOp> + WorkerManager,
     M::InnerNode: HasLevel,
     M::Edge: Send + Sync,
 {
@@ -367,7 +367,7 @@ fn apply_symm_diff<M>(
     g: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, Operator = ZBDDOp> + WorkerManager,
+    M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, ZBDDOp> + WorkerManager,
     M::InnerNode: HasLevel,
     M::Edge: Send + Sync,
 {
@@ -454,7 +454,7 @@ fn apply_ite<M>(
 ) -> AllocResult<M::Edge>
 where
     M: Manager<Terminal = ZBDDTerminal>
-        + HasApplyCache<M, Operator = ZBDDOp>
+        + HasApplyCache<M, ZBDDOp>
         + HasZBDDCache<M::Edge>
         + WorkerManager,
     M::InnerNode: HasLevel,
