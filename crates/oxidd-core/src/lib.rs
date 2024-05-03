@@ -863,7 +863,13 @@ pub unsafe trait LevelView<E: Edge, N: InnerNode<E>> {
 pub trait ApplyCache<M: Manager, O: Copy>: DropWith<M::Edge> {
     /// Get the result of `operation`, if cached
     #[must_use]
-    fn get(&self, manager: &M, operator: O, operands: &[Borrowed<M::Edge>]) -> Option<M::Edge>;
+    fn get_with_numeric(
+        &self,
+        manager: &M,
+        operator: O,
+        operands: &[Borrowed<M::Edge>],
+        numeric_operands: &[u32],
+    ) -> Option<M::Edge>;
 
     /// Add the result of `operation` to this cache
     ///
@@ -872,13 +878,33 @@ pub trait ApplyCache<M: Manager, O: Copy>: DropWith<M::Edge> {
     /// operations.) If the cache already contains a key equal to `operation`,
     /// there is no need to update its value. (Again, we can elide clone and
     /// drop operations.)
+    fn add_with_numeric(
+        &self,
+        manager: &M,
+        operator: O,
+        operands: &[Borrowed<M::Edge>],
+        numeric_operands: &[u32],
+        value: Borrowed<M::Edge>,
+    );
+
+    /// Shorthand for [`Self::get_with_numeric()`] without numeric operands
+    #[inline(always)]
+    #[must_use]
+    fn get(&self, manager: &M, operator: O, operands: &[Borrowed<M::Edge>]) -> Option<M::Edge> {
+        self.get_with_numeric(manager, operator, operands, &[])
+    }
+
+    /// Shorthand for [`Self::add_with_numeric()`] without numeric operands
+    #[inline(always)]
     fn add(
         &self,
         manager: &M,
         operator: O,
         operands: &[Borrowed<M::Edge>],
         value: Borrowed<M::Edge>,
-    );
+    ) {
+        self.add_with_numeric(manager, operator, operands, &[], value)
+    }
 
     /// Remove all entries from the cache
     fn clear(&self, manager: &M);

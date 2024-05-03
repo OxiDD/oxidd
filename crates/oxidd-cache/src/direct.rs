@@ -37,16 +37,52 @@ where
     }
 }
 
+union Operand<E> {
+    edge: ManuallyDrop<E>,
+    numeric: u32,
+    uninit: (),
+}
+
+impl<E> Operand<E> {
+    const UNINIT: Self = Self { uninit: () };
+
+    /// SAFETY: `self` must be initialized as `edge`
+    unsafe fn assume_edge_ref(&self) -> &E {
+        // SAFETY: see above
+        unsafe { &self.edge }
+    }
+
+    /// SAFETY: `self` must be initialized as `numeric`
+    unsafe fn assume_numeric(&self) -> u32 {
+        // SAFETY: see above
+        unsafe { self.numeric }
+    }
+
+    fn write_edge(&mut self, edge: Borrowed<E>) {
+        // SAFETY: The referenced node lives at least until the next garbage
+        // collection / reordering. Before this operation garbage
+        // collection, we clear the entire cache.
+        self.edge = unsafe { Borrowed::into_inner(edge) };
+    }
+
+    fn write_numeric(&mut self, num: u32) {
+        self.numeric = num;
+    }
+}
+
 /// Entry containing key and value
 struct Entry<M: Manager, O, const ARITY: usize> {
     /// Mutex for all the `UnsafeCell`s in here
     mutex: crate::util::RawMutex,
-    /// Arity of the operator. If 0, this entry is not occupied.
-    arity: UnsafeCell<u8>,
-    /// Operator of the key. Initialized if `arity != 0`.
+    /// Count of edge operands. If 0, this entry is not occupied.
+    edge_operands: UnsafeCell<u8>,
+    /// Count of numeric operands
+    numeric_operands: UnsafeCell<u8>,
+    /// Operator of the key. Initialized if `edge_operands != 0`.
     operator: UnsafeCell<MaybeUninit<O>>,
-    /// Operands of the key. The first `arity` elements are initialized.
-    operands: UnsafeCell<[MaybeUninit<M::Edge>; ARITY]>,
+    /// Operands of the key. The first `edge_operands` elements are edges, the
+    /// following `numeric_operands` are numeric.
+    operands: UnsafeCell<[Operand<M::Edge>; ARITY]>,
     /// Initialized if `arity != 0`
     value: UnsafeCell<MaybeUninit<M::Edge>>,
 }
@@ -58,15 +94,14 @@ unsafe impl<M: Manager, O: Send, const ARITY: usize> Send for Entry<M, O, ARITY>
 unsafe impl<M: Manager, O: Send, const ARITY: usize> Sync for Entry<M, O, ARITY> where M::Edge: Send {}
 
 impl<M: Manager, O: Copy + Eq, const ARITY: usize> Entry<M, O, ARITY> {
-    const UNINIT_OPERAND: MaybeUninit<M::Edge> = MaybeUninit::uninit();
-
     #[inline]
     fn new() -> Self {
         Self {
             mutex: crate::util::RawMutex::INIT,
             operator: UnsafeCell::new(MaybeUninit::uninit()),
-            arity: UnsafeCell::new(0),
-            operands: UnsafeCell::new([Self::UNINIT_OPERAND; ARITY]),
+            edge_operands: UnsafeCell::new(0),
+            numeric_operands: UnsafeCell::new(0),
+            operands: UnsafeCell::new([Operand::UNINIT; ARITY]),
             value: UnsafeCell::new(MaybeUninit::uninit()),
         }
     }
@@ -103,20 +138,31 @@ where
     #[inline]
     fn is_occupied(&self) -> bool {
         // SAFETY: The entry is locked.
-        unsafe { *self.0.arity.get() != 0 }
+        unsafe { *self.0.edge_operands.get() != 0 }
     }
 
     /// Get the value of this entry if it is occupied and the key (`operator`
     /// and `operands`) matches
     #[inline]
-    fn get(&self, manager: &M, operator: O, operands: &[Borrowed<M::Edge>]) -> Option<M::Edge> {
+    fn get(
+        &self,
+        manager: &M,
+        operator: O,
+        operands: &[Borrowed<M::Edge>],
+        numeric_operands: &[u32],
+    ) -> Option<M::Edge> {
         debug_assert_ne!(operands.len(), 0);
 
         #[cfg(feature = "statistics")]
         STAT_ACCESSES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
+        let num_edge_operands = operands.len();
+        let num_numeric_operands = numeric_operands.len();
+
         // SAFETY: The entry is locked.
-        if operands.len() != unsafe { *self.0.arity.get() } as usize {
+        if num_edge_operands != unsafe { *self.0.edge_operands.get() } as usize
+            || numeric_operands.len() != unsafe { *self.0.numeric_operands.get() } as usize
+        {
             return None;
         }
         // SAFETY: The entry is locked and occupied.
@@ -124,10 +170,21 @@ where
             return None;
         }
         // SAFETY: The entry is locked.
-        for (o1, o2) in operands.iter().zip(unsafe { &*self.0.operands.get() }) {
-            // SAFETY: The first arity = `operands.len()` operands are initialized
-            let o2 = unsafe { o2.assume_init_ref() };
-            if &**o1 != o2 {
+        let (entry_operands, remaining) =
+            unsafe { &*self.0.operands.get() }.split_at(num_edge_operands);
+        let entry_numeric_operands = &remaining[..num_numeric_operands];
+
+        for (o1, o2) in operands.iter().zip(entry_operands) {
+            // SAFETY: The first `num_edge_operands` operands are edges
+            if &**o1 != unsafe { o2.assume_edge_ref() } {
+                return None;
+            }
+        }
+        for (o1, o2) in numeric_operands.iter().zip(entry_numeric_operands) {
+            // SAFETY: The operands in range
+            // `num_edge_operands..num_edge_operands + num_numeric_operands`
+            // operands are numeric
+            if *o1 != unsafe { o2.assume_numeric() } {
                 return None;
             }
         }
@@ -143,12 +200,15 @@ where
     ///
     /// If `self` is already occupied and the key matches, the entry is not
     /// updated (`operands` and `value` are not cloned).
+    ///
+    /// Assumes that `operands.len() + numeric_operands.len() <= ARITY`
     #[inline]
     fn set(
         &mut self,
         _manager: &M,
         operator: O,
         operands: &[Borrowed<M::Edge>],
+        numeric_operands: &[u32],
         value: Borrowed<M::Edge>,
     ) {
         debug_assert_ne!(operands.len(), 0);
@@ -157,31 +217,40 @@ where
         #[cfg(feature = "statistics")]
         STAT_INSERTIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        let arity = operands.len();
-        // SAFETY (next 4 `.get()` calls): The entry is locked.
+        let num_edge_operands = operands.len();
+        let num_numeric_operands = numeric_operands.len();
+
+        // SAFETY (next 2 `.get()` calls): The entry is locked.
         unsafe { &mut *self.0.operator.get() }.write(operator);
-        for (src, dst) in operands.iter().zip(unsafe { &mut *self.0.operands.get() }) {
-            // SAFETY: The referenced node lives at least until the next garbage
-            // collection / reordering. Before this operation garbage
-            // collection, we clear the entire cache.
-            dst.write(ManuallyDrop::into_inner(unsafe {
-                Borrowed::into_inner(src.borrowed())
-            }));
+        let (entry_operands, remaining) =
+            unsafe { &mut *self.0.operands.get() }.split_at_mut(num_edge_operands);
+        let entry_numeric_operands = &mut remaining[..num_numeric_operands];
+
+        for (src, dst) in operands.iter().zip(entry_operands) {
+            dst.write_edge(src.borrowed());
         }
-        // SAFETY: as above
+        for (src, dst) in numeric_operands.iter().zip(entry_numeric_operands) {
+            dst.write_numeric(*src);
+        }
+
+        // SAFETY: The referenced node lives at least until the next garbage
+        // collection / reordering. Before this operation garbage
+        // collection, we clear the entire cache.
         let value = unsafe { Borrowed::into_inner(value) };
+        // SAFETY (next 3 `.get()` calls): The entry is locked.
         unsafe { &mut *self.0.value.get() }.write(ManuallyDrop::into_inner(value));
         // Important: Set the arity last for exception safety (the functions above might
         // panic).
-        unsafe { *self.0.arity.get() = arity as u8 };
+        unsafe { *self.0.edge_operands.get() = num_edge_operands as u8 };
+        unsafe { *self.0.numeric_operands.get() = num_numeric_operands as u8 };
     }
 
     /// Clear this entry
     #[inline(always)]
     fn clear(&mut self) {
         // SAFETY: The entry is locked.
-        unsafe { *self.0.arity.get() = 0 };
-        // `Edge`s are just borrowed, so nothing to do.
+        unsafe { *self.0.edge_operands.get() = 0 };
+        // `Edge`s are just borrowed, so nothing else to do.
     }
 }
 
@@ -279,28 +348,38 @@ where
     H: Hasher + Default,
 {
     #[inline(always)]
-    fn get(&self, manager: &M, operator: O, operands: &[Borrowed<M::Edge>]) -> Option<M::Edge> {
-        if operands.is_empty() || operands.len() > ARITY {
-            return None;
-        }
-        self.bucket(operator, operands)
-            .try_lock()?
-            .get(manager, operator, operands)
-    }
-
-    #[inline(always)]
-    fn add(
+    fn get_with_numeric(
         &self,
         manager: &M,
         operator: O,
         operands: &[Borrowed<M::Edge>],
+        numeric_operands: &[u32],
+    ) -> Option<M::Edge> {
+        if operands.is_empty() || operands.len() + numeric_operands.len() > ARITY {
+            return None;
+        }
+        self.bucket(operator, operands).try_lock()?.get(
+            manager,
+            operator,
+            operands,
+            numeric_operands,
+        )
+    }
+
+    #[inline(always)]
+    fn add_with_numeric(
+        &self,
+        manager: &M,
+        operator: O,
+        operands: &[Borrowed<M::Edge>],
+        numeric_operands: &[u32],
         value: Borrowed<M::Edge>,
     ) {
-        if operands.is_empty() || operands.len() > ARITY {
+        if operands.is_empty() || operands.len() + numeric_operands.len() > ARITY {
             return;
         }
         if let Some(mut entry) = self.bucket(operator, operands).try_lock() {
-            entry.set(manager, operator, operands, value);
+            entry.set(manager, operator, operands, numeric_operands, value);
         }
     }
 
@@ -365,21 +444,21 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // SAFETY: The entry is locked.
-        let arity = unsafe { *self.0.arity.get() } as usize;
-        if arity == 0 {
+        let edge_operands = unsafe { *self.0.edge_operands.get() } as usize;
+        if edge_operands == 0 {
             write!(f, "None")
         } else {
             // SAFETY: The entry is locked and occupied.
             let operator = unsafe { (*self.0.operator.get()).assume_init() };
             // SAFETY: The entry is locked.
-            let operands = unsafe { &(*self.0.operands.get())[..arity] };
+            let operands = unsafe { &(*self.0.operands.get())[..edge_operands] };
             // SAFETY: The first `arity` (> 0) operands are initialized.
             write!(f, "{{{{ {operator:?}({:?}", unsafe {
-                operands[0].assume_init_ref()
+                operands[0].assume_edge_ref()
             })?;
             for operand in &operands[1..] {
                 // SAFETY: The first `arity` operands are initialized.
-                write!(f, ", {:?}", unsafe { operand.assume_init_ref() })?;
+                write!(f, ", {:?}", unsafe { operand.assume_edge_ref() })?;
             }
             // SAFETY: The entry is locked and occupied.
             let value = unsafe { (*self.0.value.get()).assume_init_ref() };
