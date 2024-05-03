@@ -40,10 +40,6 @@ statistics = []
 
 ## Enable the direct mapped apply cache implementation
 direct = []
-## Enable the FIFO apply cache implementation
-fifo = []
-## Enable the LFU apply cache implementation
-lfu = []
 
 ## Check that an apply cache is never dropped via its `Drop` implementation.
 ## This is done by adding a function call to a non-existing external function to

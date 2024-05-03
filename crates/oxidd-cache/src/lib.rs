@@ -11,10 +11,6 @@
 
 #[cfg(feature = "direct")]
 pub mod direct;
-#[cfg(feature = "fifo")]
-pub mod fifo;
-#[cfg(feature = "lfu")]
-pub mod lfu;
 
 /// Trait for generating and printing statistics
 ///
