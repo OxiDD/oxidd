@@ -75,6 +75,7 @@ isort
 Javadoc
 Köhl
 levelized
+libc
 liboxidd
 linenos
 madvise
