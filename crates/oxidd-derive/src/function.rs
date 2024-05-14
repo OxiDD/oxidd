@@ -258,7 +258,7 @@ impl Method {
                 quote! {
                     #[inline]
                     fn #method<'__id>(manager: &mut #manager_ty) -> ::oxidd_core::util::AllocResult<Self> {
-                        Ok(#func)
+                        ::std::result::Result::Ok(#func)
                     }
                 }
             }
@@ -271,7 +271,7 @@ impl Method {
                 quote! {
                     #[inline]
                     fn #method(&self) -> ::oxidd_core::util::AllocResult<Self> {
-                        Ok(#func)
+                        ::std::result::Result::Ok(#func)
                     }
                     #[inline]
                     fn #method_edge<'__id>(manager: &#manager_ty, edge: &#edge_ty) -> ::oxidd_core::util::AllocResult<#edge_ty> {
@@ -288,7 +288,7 @@ impl Method {
                 quote! {
                     #[inline]
                     fn #method(self) -> ::oxidd_core::util::AllocResult<Self> {
-                        Ok(#func)
+                        ::std::result::Result::Ok(#func)
                     }
                     #[inline]
                     fn #method_edge<'__id>(manager: &#manager_ty, edge: #edge_ty) -> ::oxidd_core::util::AllocResult<#edge_ty> {
@@ -306,7 +306,7 @@ impl Method {
                 quote! {
                     #[inline]
                     fn #method(&self, rhs: &Self) -> ::oxidd_core::util::AllocResult<Self> {
-                        Ok(#func)
+                        ::std::result::Result::Ok(#func)
                     }
                     #[inline]
                     fn #method_edge<'__id>(manager: &#manager_ty, lhs: &#edge_ty, rhs: &#edge_ty) -> ::oxidd_core::util::AllocResult<#edge_ty> {
@@ -325,7 +325,7 @@ impl Method {
                 quote! {
                     #[inline]
                     fn #method(&self, f1: &Self, f2: &Self) -> ::oxidd_core::util::AllocResult<Self> {
-                        Ok(#func)
+                        ::std::result::Result::Ok(#func)
                     }
                     #[inline]
                     fn #method_edge<'__id>(manager: &#manager_ty, e0: &#edge_ty, e1: &#edge_ty, e2: &#edge_ty) -> ::oxidd_core::util::AllocResult<#edge_ty> {
@@ -625,7 +625,7 @@ pub fn derive_pseudo_boolean_function(input: syn::DeriveInput) -> TokenStream {
 
                 #[inline]
                 fn constant<'__id>(manager: &#manager_ty, value: <Self as #trait_path>::Number) -> ::oxidd_core::util::AllocResult<Self> {
-                    Ok(#constant_func)
+                    ::std::result::Result::Ok(#constant_func)
                 }
                 #[inline]
                 fn constant_edge<'__id>(manager: &#manager_ty, value: <Self as #trait_path>::Number) -> ::oxidd_core::util::AllocResult<#edge_ty> {

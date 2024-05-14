@@ -139,7 +139,7 @@ where
 }
 
 /// Recursively apply the if-then-else operator (`if f { g } else { h }`)
-pub(super) fn apply_ite_rec<M>(
+pub(super) fn apply_ite<M>(
     manager: &M,
     f: Borrowed<M::Edge>,
     g: Borrowed<M::Edge>,
@@ -225,8 +225,8 @@ where
         (h.borrowed(), h.borrowed())
     };
 
-    let t = EdgeDropGuard::new(manager, apply_ite_rec(manager, ft, gt, ht)?);
-    let e = EdgeDropGuard::new(manager, apply_ite_rec(manager, fe, ge, he)?);
+    let t = EdgeDropGuard::new(manager, apply_ite(manager, ft, gt, ht)?);
+    let e = EdgeDropGuard::new(manager, apply_ite(manager, fe, ge, he)?);
     let res = reduce(manager, level, t.into_edge(), e.into_edge(), BDDOp::Ite)?;
 
     manager
@@ -602,7 +602,7 @@ where
         then_edge: &EdgeOfFunc<'id, Self>,
         else_edge: &EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_ite_rec(
+        apply_ite(
             manager,
             if_edge.borrowed(),
             then_edge.borrowed(),

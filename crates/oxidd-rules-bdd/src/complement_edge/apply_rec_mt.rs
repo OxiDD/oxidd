@@ -291,7 +291,7 @@ where
     Ok(res)
 }
 
-pub(super) fn restrict<M>(
+fn restrict<M>(
     manager: &M,
     depth: u32,
     f: Borrowed<M::Edge>,

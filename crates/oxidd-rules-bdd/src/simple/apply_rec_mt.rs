@@ -184,7 +184,7 @@ where
 {
     use BDDTerminal::*;
     if depth == 0 {
-        return apply_rec_st::apply_ite_rec(manager, f, g, h);
+        return apply_rec_st::apply_ite(manager, f, g, h);
     }
     stat!(call BDDOp::Ite);
 

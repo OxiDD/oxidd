@@ -751,14 +751,17 @@ where
         Ok(Self::from_edge(manager, edge))
     }
 
+    #[inline]
     fn f_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self> {
         manager.get_terminal(ZBDDTerminal::Empty).unwrap()
     }
 
+    #[inline]
     fn t_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self> {
         manager.clone_edge(manager.zbdd_cache().tautology(0))
     }
 
+    #[inline]
     fn not_edge<'id>(
         manager: &Self::Manager<'id>,
         edge: &EdgeOfFunc<'id, Self>,
@@ -768,6 +771,7 @@ where
         apply_diff(manager, depth, taut.borrowed(), edge.borrowed())
     }
 
+    #[inline]
     fn and_edge<'id>(
         manager: &Self::Manager<'id>,
         lhs: &EdgeOfFunc<'id, Self>,
@@ -776,6 +780,7 @@ where
         let depth = Self::init_depth(manager);
         apply_intsec(manager, depth, lhs.borrowed(), rhs.borrowed())
     }
+    #[inline]
     fn or_edge<'id>(
         manager: &Self::Manager<'id>,
         lhs: &EdgeOfFunc<'id, Self>,
@@ -784,6 +789,7 @@ where
         let depth = Self::init_depth(manager);
         apply_union(manager, depth, lhs.borrowed(), rhs.borrowed())
     }
+    #[inline]
     fn nand_edge<'id>(
         manager: &Self::Manager<'id>,
         lhs: &EdgeOfFunc<'id, Self>,
@@ -792,6 +798,7 @@ where
         let and = Self::and_edge(manager, lhs, rhs)?;
         Self::not_edge(manager, &*EdgeDropGuard::new(manager, and))
     }
+    #[inline]
     fn nor_edge<'id>(
         manager: &Self::Manager<'id>,
         lhs: &EdgeOfFunc<'id, Self>,
@@ -800,6 +807,7 @@ where
         let or = Self::or_edge(manager, lhs, rhs)?;
         Self::not_edge(manager, &*EdgeDropGuard::new(manager, or))
     }
+    #[inline]
     fn xor_edge<'id>(
         manager: &Self::Manager<'id>,
         lhs: &EdgeOfFunc<'id, Self>,
@@ -808,6 +816,7 @@ where
         let depth = Self::init_depth(manager);
         apply_symm_diff(manager, depth, lhs.borrowed(), rhs.borrowed())
     }
+    #[inline]
     fn equiv_edge<'id>(
         manager: &Self::Manager<'id>,
         lhs: &EdgeOfFunc<'id, Self>,
@@ -816,6 +825,7 @@ where
         let xor = Self::xor_edge(manager, lhs, rhs)?;
         Self::not_edge(manager, &*EdgeDropGuard::new(manager, xor))
     }
+    #[inline]
     fn imp_edge<'id>(
         manager: &Self::Manager<'id>,
         lhs: &EdgeOfFunc<'id, Self>,
@@ -823,6 +833,7 @@ where
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         Self::ite_edge(manager, lhs, rhs, manager.zbdd_cache().tautology(0))
     }
+    #[inline]
     fn imp_strict_edge<'id>(
         manager: &Self::Manager<'id>,
         lhs: &EdgeOfFunc<'id, Self>,
@@ -832,6 +843,7 @@ where
         apply_diff(manager, depth, rhs.borrowed(), lhs.borrowed())
     }
 
+    #[inline]
     fn ite_edge<'id>(
         manager: &Self::Manager<'id>,
         f: &EdgeOfFunc<'id, Self>,
