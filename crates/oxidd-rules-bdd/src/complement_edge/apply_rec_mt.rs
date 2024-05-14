@@ -35,6 +35,8 @@ use super::BCDDOp;
 use super::BCDDTerminal;
 use super::EdgeTag;
 use super::NodesOrDone;
+#[cfg(feature = "statistics")]
+use super::STAT_COUNTERS;
 
 // spell-checker:ignore fnode,gnode,hnode,vnode,flevel,glevel,hlevel,vlevel
 

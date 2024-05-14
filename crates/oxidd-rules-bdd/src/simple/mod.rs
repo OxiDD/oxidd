@@ -82,6 +82,18 @@ where
     tmp.then_insert(manager, level)
 }
 
+/// Collect the two children of a binary node
+#[inline]
+#[must_use]
+fn collect_children<E: Edge, N: InnerNode<E>>(node: &N) -> (Borrowed<E>, Borrowed<E>) {
+    debug_assert_eq!(N::ARITY, 2);
+    let mut it = node.children();
+    let f_then = it.next().unwrap();
+    let f_else = it.next().unwrap();
+    debug_assert!(it.next().is_none());
+    (f_then, f_else)
+}
+
 // --- Terminal Type -----------------------------------------------------------
 
 /// Terminal nodes in simple binary decision diagrams
@@ -138,82 +150,6 @@ impl std::ops::Not for BDDTerminal {
             BDDTerminal::True => BDDTerminal::False,
         }
     }
-}
-
-// --- Operations & Apply Implementation ---------------------------------------
-
-/// Native operators of this BDD implementation
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Hash, Ord, Debug)]
-#[repr(u8)]
-#[allow(missing_docs)]
-pub enum BDDOp {
-    Not,
-    And,
-    Or,
-    Nand,
-    Nor,
-    Xor,
-    Equiv,
-    Imp,
-    ImpStrict,
-
-    /// If-then-else
-    Ite,
-
-    Restrict,
-    /// Forall quantification
-    Forall,
-    /// Existential quantification
-    Exist,
-    /// Unique quantification
-    Unique,
-}
-
-enum Operation<'a, E: 'a + Edge> {
-    Binary(BDDOp, Borrowed<'a, E>, Borrowed<'a, E>),
-    Not(Borrowed<'a, E>),
-    Done(E),
-}
-
-#[cfg(feature = "statistics")]
-static STAT_COUNTERS: [crate::StatCounters; 14] = [crate::StatCounters::INIT; 14];
-
-#[cfg(feature = "statistics")]
-/// Print statistics to stderr
-pub fn print_stats() {
-    eprintln!("[oxidd_rules_bdd::simple]");
-    // FIXME: we should auto generate the labels
-    crate::StatCounters::print(
-        &STAT_COUNTERS,
-        &[
-            "Not",
-            "And",
-            "Or",
-            "Nand",
-            "Nor",
-            "Xor",
-            "Equiv",
-            "Imp",
-            "ImpStrict",
-            "Ite",
-            "Restrict",
-            "Forall",
-            "Exist",
-            "Unique",
-        ],
-    );
-}
-
-/// Collect the two children of a binary node
-#[inline]
-#[must_use]
-fn collect_children<E: Edge, N: InnerNode<E>>(node: &N) -> (Borrowed<E>, Borrowed<E>) {
-    debug_assert_eq!(N::ARITY, 2);
-    let mut it = node.children();
-    let f_then = it.next().unwrap();
-    let f_else = it.next().unwrap();
-    debug_assert!(it.next().is_none());
-    (f_then, f_else)
 }
 
 /// Terminal case for binary operators
@@ -329,6 +265,52 @@ fn terminal_bin<'a, M: Manager<Terminal = BDDTerminal>, const OP: u8>(
     } else {
         unreachable!("invalid binary operator")
     }
+}
+
+// --- Operations & Apply Implementation ---------------------------------------
+
+/// Native operators of this BDD implementation
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Hash, Ord, Countable, Debug)]
+#[repr(u8)]
+#[allow(missing_docs)]
+pub enum BDDOp {
+    Not,
+    And,
+    Or,
+    Nand,
+    Nor,
+    Xor,
+    Equiv,
+    Imp,
+    ImpStrict,
+
+    /// If-then-else
+    Ite,
+
+    Restrict,
+    /// Forall quantification
+    Forall,
+    /// Existential quantification
+    Exist,
+    /// Unique quantification
+    Unique,
+}
+
+enum Operation<'a, E: 'a + Edge> {
+    Binary(BDDOp, Borrowed<'a, E>, Borrowed<'a, E>),
+    Not(Borrowed<'a, E>),
+    Done(E),
+}
+
+#[cfg(feature = "statistics")]
+static STAT_COUNTERS: [crate::StatCounters; <BDDOp as oxidd_core::Countable>::MAX_VALUE + 1] =
+    [crate::StatCounters::INIT; <BDDOp as oxidd_core::Countable>::MAX_VALUE + 1];
+
+#[cfg(feature = "statistics")]
+/// Print statistics to stderr
+pub fn print_stats() {
+    eprintln!("[oxidd_rules_bdd::simple]");
+    crate::StatCounters::print::<BDDOp>(&STAT_COUNTERS);
 }
 
 // --- Function Interface ------------------------------------------------------

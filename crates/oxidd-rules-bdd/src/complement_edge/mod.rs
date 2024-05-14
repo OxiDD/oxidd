@@ -339,7 +339,7 @@ where
 // --- Operations & Apply Implementation ---------------------------------------
 
 /// Native operators of this BDD implementation
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Countable, Debug)]
 #[repr(u8)]
 #[allow(missing_docs)]
 pub enum BCDDOp {
@@ -364,17 +364,14 @@ enum NodesOrDone<'a, E, N> {
 }
 
 #[cfg(feature = "statistics")]
-static STAT_COUNTERS: [crate::StatCounters; 7] = [crate::StatCounters::INIT; 7];
+static STAT_COUNTERS: [crate::StatCounters; <BCDDOp as oxidd_core::Countable>::MAX_VALUE + 1] =
+    [crate::StatCounters::INIT; <BCDDOp as oxidd_core::Countable>::MAX_VALUE + 1];
 
 #[cfg(feature = "statistics")]
 /// Print statistics to stderr
 pub fn print_stats() {
     eprintln!("[oxidd_rules_bdd::complement_edge]");
-    // FIXME: we should auto generate the labels
-    crate::StatCounters::print(
-        &STAT_COUNTERS,
-        &["And", "Xor", "Ite", "Restrict", "Forall", "Exist", "Unique"],
-    );
+    crate::StatCounters::print::<BCDDOp>(&STAT_COUNTERS);
 }
 
 // --- Function Interface ------------------------------------------------------

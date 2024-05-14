@@ -34,6 +34,8 @@ use super::reduce;
 use super::BDDOp;
 use super::BDDTerminal;
 use super::Operation;
+#[cfg(feature = "statistics")]
+use super::STAT_COUNTERS;
 
 // spell-checker:ignore fnode,gnode,hnode,vnode,flevel,glevel,hlevel,vlevel
 

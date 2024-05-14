@@ -22,6 +22,8 @@ use super::reduce;
 use super::stat;
 use super::MTBDDOp;
 use super::Operation;
+#[cfg(feature = "statistics")]
+use super::STAT_COUNTERS;
 
 // spell-checker:ignore fnode,gnode,flevel,glevel
 

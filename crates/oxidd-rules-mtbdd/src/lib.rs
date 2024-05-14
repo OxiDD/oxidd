@@ -83,7 +83,7 @@ fn reduce<M: Manager>(
 // --- Operations & Apply Implementation ---------------------------------------
 
 /// Native operations of this MTBDD implementation
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Countable, Debug)]
 #[repr(u8)]
 #[allow(missing_docs)]
 pub enum MTBDDOp {
@@ -239,6 +239,7 @@ struct StatCounters {
 
 #[cfg(feature = "statistics")]
 impl StatCounters {
+    #[allow(clippy::declare_interior_mutable_const)]
     const INIT: StatCounters = StatCounters {
         calls: std::sync::atomic::AtomicI64::new(0),
         cache_queries: std::sync::atomic::AtomicI64::new(0),
@@ -246,9 +247,9 @@ impl StatCounters {
         reduced: std::sync::atomic::AtomicI64::new(0),
     };
 
-    fn print(counters: &[Self], labels: &[&str]) {
+    fn print(counters: &[Self]) {
         // spell-checker:ignore ctrs
-        for (ctrs, op) in counters.iter().zip(labels) {
+        for (i, ctrs) in counters.iter().enumerate() {
             let calls = ctrs.calls.swap(0, std::sync::atomic::Ordering::Relaxed);
             let cache_queries = ctrs
                 .cache_queries
@@ -264,55 +265,53 @@ impl StatCounters {
 
             let terminal_percent = (calls - cache_queries) as f32 / calls as f32 * 100.0;
             let cache_hit_percent = cache_hits as f32 / cache_queries as f32 * 100.0;
-            eprintln!("  {op}: calls: {calls}, cache queries: {cache_queries} ({terminal_percent} % terminal cases), cache hits: {cache_hits} ({cache_hit_percent} %), reduced: {reduced}");
+            let op = <MTBDDOp as oxidd_core::Countable>::from_usize(i);
+            eprintln!("  {op:?}: calls: {calls}, cache queries: {cache_queries} ({terminal_percent} % terminal cases), cache hits: {cache_hits} ({cache_hit_percent} %), reduced: {reduced}");
         }
     }
 }
 
 #[cfg(feature = "statistics")]
-static STAT_COUNTERS: [crate::StatCounters; 7] = [crate::StatCounters::INIT; 7];
+static STAT_COUNTERS: [crate::StatCounters; <MTBDDOp as oxidd_core::Countable>::MAX_VALUE + 1] =
+    [crate::StatCounters::INIT; <MTBDDOp as oxidd_core::Countable>::MAX_VALUE + 1];
 
 #[cfg(feature = "statistics")]
 /// Print statistics to stderr
 pub fn print_stats() {
     eprintln!("[oxidd_rules_mtbdd]");
-    // FIXME: we should auto generate the labels
-    crate::StatCounters::print(
-        &STAT_COUNTERS,
-        &["Add", "Sub", "Mul", "Div", "Min", "Max", "Ite"],
-    );
+    crate::StatCounters::print(&STAT_COUNTERS);
 }
 
-#[cfg(not(feature = "statistics"))]
-macro_rules! stat {
-    (call $op:expr) => {};
-    (cache_query $op:expr) => {};
-    (cache_hit $op:expr) => {};
-    (reduced $op:expr) => {};
-}
-
-#[cfg(feature = "statistics")]
 macro_rules! stat {
     (call $op:expr) => {
+        let _ = $op as usize;
+        #[cfg(feature = "statistics")]
         STAT_COUNTERS[$op as usize]
             .calls
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            .fetch_add(1, ::std::sync::atomic::Ordering::Relaxed);
     };
     (cache_query $op:expr) => {
+        let _ = $op as usize;
+        #[cfg(feature = "statistics")]
         STAT_COUNTERS[$op as usize]
             .cache_queries
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            .fetch_add(1, ::std::sync::atomic::Ordering::Relaxed);
     };
     (cache_hit $op:expr) => {
+        let _ = $op as usize;
+        #[cfg(feature = "statistics")]
         STAT_COUNTERS[$op as usize]
             .cache_hits
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            .fetch_add(1, ::std::sync::atomic::Ordering::Relaxed);
     };
     (reduced $op:expr) => {
+        let _ = $op as usize;
+        #[cfg(feature = "statistics")]
         STAT_COUNTERS[$op as usize]
             .reduced
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            .fetch_add(1, ::std::sync::atomic::Ordering::Relaxed);
     };
 }
 
+use oxidd_derive::Countable;
 pub(crate) use stat;

@@ -35,6 +35,8 @@ use super::HasZBDDCache;
 use super::ZBDDCache;
 use super::ZBDDOp;
 use super::ZBDDTerminal;
+#[cfg(feature = "statistics")]
+use super::STAT_COUNTERS;
 
 // spell-checker:ignore fnode,gnode,hnode,flevel,glevel,hlevel,ghlevel
 // spell-checker:ignore hitask,symm

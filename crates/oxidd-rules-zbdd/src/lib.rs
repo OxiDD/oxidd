@@ -256,7 +256,7 @@ impl<E: Edge> Default for ZBDDCache<E> {
 // --- Operations & Apply Implementation ---------------------------------------
 
 /// Native operations of this ZBDD implementation
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Countable, Debug)]
 #[repr(u8)]
 #[allow(missing_docs)]
 pub enum ZBDDOp {
@@ -392,6 +392,7 @@ struct StatCounters {
 
 #[cfg(feature = "statistics")]
 impl StatCounters {
+    #[allow(clippy::declare_interior_mutable_const)]
     const INIT: StatCounters = StatCounters {
         calls: std::sync::atomic::AtomicI64::new(0),
         cache_queries: std::sync::atomic::AtomicI64::new(0),
@@ -399,9 +400,9 @@ impl StatCounters {
         reduced: std::sync::atomic::AtomicI64::new(0),
     };
 
-    fn print(counters: &[Self], labels: &[&str]) {
+    fn print(counters: &[Self]) {
         // spell-checker:ignore ctrs
-        for (ctrs, op) in counters.iter().zip(labels) {
+        for (i, ctrs) in counters.iter().enumerate() {
             let calls = ctrs.calls.swap(0, std::sync::atomic::Ordering::Relaxed);
             let cache_queries = ctrs
                 .cache_queries
@@ -417,67 +418,51 @@ impl StatCounters {
 
             let terminal_percent = (calls - cache_queries) as f32 / calls as f32 * 100.0;
             let cache_hit_percent = cache_hits as f32 / cache_queries as f32 * 100.0;
-            eprintln!("  {op}: calls: {calls}, cache queries: {cache_queries} ({terminal_percent} % terminal cases), cache hits: {cache_hits} ({cache_hit_percent} %), reduced: {reduced}");
+            let op = <ZBDDOp as oxidd_core::Countable>::from_usize(i);
+            eprintln!("  {op:?}: calls: {calls}, cache queries: {cache_queries} ({terminal_percent} % terminal cases), cache hits: {cache_hits} ({cache_hit_percent} %), reduced: {reduced}");
         }
     }
 }
 
 #[cfg(feature = "statistics")]
-static STAT_COUNTERS: [crate::StatCounters; 12] = [crate::StatCounters::INIT; 12];
+static STAT_COUNTERS: [crate::StatCounters; <ZBDDOp as oxidd_core::Countable>::MAX_VALUE + 1] =
+    [crate::StatCounters::INIT; <ZBDDOp as oxidd_core::Countable>::MAX_VALUE + 1];
 
 #[cfg(feature = "statistics")]
 /// Print statistics to stderr
 pub fn print_stats() {
     eprintln!("[oxidd_rules_zbdd]");
-    // FIXME: we should auto generate the labels
-    crate::StatCounters::print(
-        &STAT_COUNTERS,
-        &[
-            "Subset0",
-            "Subset1",
-            "Change",
-            "Union",
-            "Intsec",
-            "Diff",
-            "And",
-            "Or",
-            "Xor",
-            "ImpStrict",
-            "Ite",
-            "MkNode",
-        ],
-    );
+    crate::StatCounters::print(&STAT_COUNTERS);
 }
 
-#[cfg(not(feature = "statistics"))]
-macro_rules! stat {
-    (call $op:expr) => {};
-    (cache_query $op:expr) => {};
-    (cache_hit $op:expr) => {};
-    (reduced $op:expr) => {};
-}
-
-#[cfg(feature = "statistics")]
 macro_rules! stat {
     (call $op:expr) => {
+        let _ = $op as usize;
+        #[cfg(feature = "statistics")]
         STAT_COUNTERS[$op as usize]
             .calls
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            .fetch_add(1, ::std::sync::atomic::Ordering::Relaxed);
     };
     (cache_query $op:expr) => {
+        let _ = $op as usize;
+        #[cfg(feature = "statistics")]
         STAT_COUNTERS[$op as usize]
             .cache_queries
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            .fetch_add(1, ::std::sync::atomic::Ordering::Relaxed);
     };
     (cache_hit $op:expr) => {
+        let _ = $op as usize;
+        #[cfg(feature = "statistics")]
         STAT_COUNTERS[$op as usize]
             .cache_hits
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            .fetch_add(1, ::std::sync::atomic::Ordering::Relaxed);
     };
     (reduced $op:expr) => {
+        let _ = $op as usize;
+        #[cfg(feature = "statistics")]
         STAT_COUNTERS[$op as usize]
             .reduced
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            .fetch_add(1, ::std::sync::atomic::Ordering::Relaxed);
     };
 }
 

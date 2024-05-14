@@ -26,6 +26,8 @@ use super::terminal_bin;
 use super::Operation;
 use super::TDDOp;
 use super::TDDTerminal;
+#[cfg(feature = "statistics")]
+use super::STAT_COUNTERS;
 
 // spell-checker:ignore fnode,gnode,hnode,flevel,glevel,hlevel,ghlevel
 

@@ -64,6 +64,7 @@ struct StatCounters {
 
 #[cfg(feature = "statistics")]
 impl StatCounters {
+    #[allow(clippy::declare_interior_mutable_const)]
     const INIT: StatCounters = StatCounters {
         calls: std::sync::atomic::AtomicI64::new(0),
         cache_queries: std::sync::atomic::AtomicI64::new(0),
@@ -71,9 +72,9 @@ impl StatCounters {
         reduced: std::sync::atomic::AtomicI64::new(0),
     };
 
-    fn print(counters: &[Self], labels: &[&str]) {
+    fn print<O: oxidd_core::Countable + std::fmt::Debug>(counters: &[Self]) {
         // spell-checker:ignore ctrs
-        for (ctrs, op) in counters.iter().zip(labels) {
+        for (i, ctrs) in counters.iter().enumerate() {
             let calls = ctrs.calls.swap(0, std::sync::atomic::Ordering::Relaxed);
             let cache_queries = ctrs
                 .cache_queries
@@ -89,40 +90,40 @@ impl StatCounters {
 
             let terminal_percent = (calls - cache_queries) as f32 / calls as f32 * 100.0;
             let cache_hit_percent = cache_hits as f32 / cache_queries as f32 * 100.0;
-            eprintln!("  {op}: calls: {calls}, cache queries: {cache_queries} ({terminal_percent} % terminal cases), cache hits: {cache_hits} ({cache_hit_percent} %), reduced: {reduced}");
+            let op = <O as oxidd_core::Countable>::from_usize(i);
+            eprintln!("  {op:?}: calls: {calls}, cache queries: {cache_queries} ({terminal_percent} % terminal cases), cache hits: {cache_hits} ({cache_hit_percent} %), reduced: {reduced}");
         }
     }
 }
 
-#[cfg(not(feature = "statistics"))]
-macro_rules! stat {
-    (call $op:expr) => {};
-    (cache_query $op:expr) => {};
-    (cache_hit $op:expr) => {};
-    (reduced $op:expr) => {};
-}
-
-#[cfg(feature = "statistics")]
 macro_rules! stat {
     (call $op:expr) => {
+        let _ = $op as usize;
+        #[cfg(feature = "statistics")]
         STAT_COUNTERS[$op as usize]
             .calls
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            .fetch_add(1, ::std::sync::atomic::Ordering::Relaxed);
     };
     (cache_query $op:expr) => {
+        let _ = $op as usize;
+        #[cfg(feature = "statistics")]
         STAT_COUNTERS[$op as usize]
             .cache_queries
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            .fetch_add(1, ::std::sync::atomic::Ordering::Relaxed);
     };
     (cache_hit $op:expr) => {
+        let _ = $op as usize;
+        #[cfg(feature = "statistics")]
         STAT_COUNTERS[$op as usize]
             .cache_hits
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            .fetch_add(1, ::std::sync::atomic::Ordering::Relaxed);
     };
     (reduced $op:expr) => {
+        let _ = $op as usize;
+        #[cfg(feature = "statistics")]
         STAT_COUNTERS[$op as usize]
             .reduced
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            .fetch_add(1, ::std::sync::atomic::Ordering::Relaxed);
     };
 }
 
