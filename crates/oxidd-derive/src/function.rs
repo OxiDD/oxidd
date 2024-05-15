@@ -383,6 +383,50 @@ fn derive_function_trait(
     }
 }
 
+pub fn derive_function_subst(input: syn::DeriveInput) -> TokenStream {
+    derive_function_trait(input, "FunctionSubst", &[], |ctx| {
+        let CustomMethodsCtx {
+            trait_path,
+            manager_ty,
+            edge_ty,
+            struct_field,
+        } = ctx;
+        let field = &struct_field.ident;
+        let inner = &struct_field.ty;
+
+        let from_res = struct_field.gen_from_inner(quote!(res));
+
+        quote! {
+            #[inline]
+            fn substitute<'__a>(
+                &'__a self,
+                substitution: impl ::oxidd_core::util::Substitution<Var = &'__a Self, Replacement = &'__a Self>,
+            ) -> ::oxidd_core::util::AllocResult<Self> {
+                let res = <#inner as #trait_path>::substitute(
+                    &self.#field,
+                    ::oxidd_core::util::Substitution::map(
+                        &substitution,
+                        |(v, r)| (&v.#field, &r.#field),
+                    ),
+                )?;
+                ::std::result::Result::Ok(#from_res)
+            }
+
+            #[inline]
+            fn substitute_edge<'__id, '__a>(
+                manager: &'__a #manager_ty,
+                edge: &'__a #edge_ty,
+                substitution: impl ::oxidd_core::util::Substitution<
+                    Var = ::oxidd_core::util::Borrowed<'__a, #edge_ty>,
+                    Replacement = ::oxidd_core::util::Borrowed<'__a, #edge_ty>,
+                >,
+            ) -> ::oxidd_core::util::AllocResult<#edge_ty> {
+                <#inner as #trait_path>::substitute_edge(manager, edge, substitution)
+            }
+        }
+    })
+}
+
 pub fn derive_boolean_function(input: syn::DeriveInput) -> TokenStream {
     use Method::*;
     derive_function_trait(
@@ -525,7 +569,7 @@ pub fn derive_boolean_function(input: syn::DeriveInput) -> TokenStream {
 
                 #[inline]
                 fn pick_cube_uniform_edge<'__id, '__a, I, S>(
-                    manager: &'__a Self::Manager<'__id>,
+                    manager: &'__a #manager_ty,
                     edge: &'__a #edge_ty,
                     order: impl ::std::iter::IntoIterator<IntoIter = I>,
                     cache: &mut ::oxidd_core::util::SatCountCache<::oxidd_core::util::num::F64, S>,

@@ -10,7 +10,17 @@
 #include <initializer_list>
 #include <iterator>
 #include <optional>
+#include <tuple>
 #include <vector>
+#include <version>
+
+#ifdef __cpp_lib_concepts
+#include <concepts>
+#endif // __cpp_lib_concepts
+
+#ifdef __cpp_lib_ranges
+#include <ranges>
+#endif // __cpp_lib_ranges
 
 #include <oxidd/capi.h>
 
@@ -274,6 +284,70 @@ public:
   /// Conversion operator to `std::vector<opt_bool>`
   operator std::vector<opt_bool>() const { return vec(); }
 };
+
+/// @see `size_hint(IT, IT, std::input_iterator_tag)`
+template <typename IT>
+inline std::size_t size_hint(IT begin, IT end,
+                             std::forward_iterator_tag /*tag*/) {
+  return std::distance(begin, end);
+}
+
+/// Helper function to get a size hint for an iterator
+///
+/// This function uses `std::distance()` to compute the size hint if the
+/// iterator allows for multiple passes (i.e., it is a `std::forward_iterator`),
+/// and otherwise simply returns 0.
+///
+/// This function uses tag dispatch. The tag argument must be
+/// `std::iterator_traits<IT>::iterator_category()`.
+///
+/// Behavior is undefined if `end` is not reachable from `begin`. Moreover, if
+/// `IT` is a random access iterator, then behavior is also undefined if `begin`
+/// is not reachable from `end`.
+template <typename IT>
+inline std::size_t size_hint(IT /*begin*/, IT /*end*/,
+                             std::input_iterator_tag /*tag*/) {
+  return 0;
+}
+
+#ifdef __cpp_lib_ranges
+
+/// Helper function to get a size hint for a range
+///
+/// This function uses `std::ranges::distance()` to compute the size hint if the
+/// iterator allows for multiple passes (i.e., it is a
+/// `std::ranges::forward_range` or `std::ranges::sized_range`), and otherwise
+/// simply returns 0.
+template <std::ranges::input_range R> inline std::size_t size_hint(R &&range) {
+  if constexpr (std::ranges::forward_range<R> || std::ranges::sized_range<R>) {
+    const auto d = std::ranges::distance(std::forward<R>(range));
+    return d >= 0 ? d : 0; // d is signed
+  } else {
+    return 0;
+  }
+}
+
+#endif // __cpp_lib_ranges
+
+#ifdef __cpp_lib_concepts
+
+/// Type that behaves like a pair `(T, U)`
+///
+/// - `std::tuple_element` is defined
+/// - `std::tuple_size` is 2
+/// - `std::get` can be used to extract the components
+///
+/// @see https://en.cppreference.com/w/cpp/utility/tuple/tuple-like
+template <typename P, typename T, typename U>
+concept pair_like =
+    std::convertible_to<std::tuple_element_t<0, P>, T> &&
+    std::convertible_to<std::tuple_element_t<1, P>, U> &&
+    std::tuple_size_v<std::remove_cvref_t<P>> == 2 && requires(P pair) {
+      { std::get<0>(pair) } -> std::convertible_to<T>;
+      { std::get<1>(pair) } -> std::convertible_to<U>;
+    };
+
+#endif // __cpp_lib_concepts
 
 } // namespace util
 

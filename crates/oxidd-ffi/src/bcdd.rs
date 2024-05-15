@@ -13,6 +13,7 @@ use oxidd::BooleanFunction;
 use oxidd::BooleanFunctionQuant;
 use oxidd::Edge;
 use oxidd::Function;
+use oxidd::FunctionSubst;
 use oxidd::Manager;
 use oxidd::ManagerRef;
 use oxidd::RawFunction;
@@ -255,7 +256,7 @@ pub unsafe extern "C" fn oxidd_bcdd_num_inner_nodes(manager: oxidd_bcdd_manager_
         .with_manager_shared(|manager| manager.num_inner_nodes())
 }
 
-/// Get a fresh variable, i.e. a function that is true if and only if the
+/// Get a fresh variable, i.e., a function that is true if and only if the
 /// variable is true. This adds a new level to a decision diagram.
 ///
 /// Locking behavior: acquires the manager's lock for exclusive access.
@@ -470,6 +471,105 @@ pub unsafe extern "C" fn oxidd_bcdd_ite(
     else_case: oxidd_bcdd_t,
 ) -> oxidd_bcdd_t {
     op3(cond, then_case, else_case, BCDDFunction::ite)
+}
+
+/// Substitute variables in the BCDD `f` according to `substitution`
+///
+/// The substitution is performed in a parallel fashion, e.g.:
+/// `(¬x ∧ ¬y)[x ↦ ¬x ∧ ¬y, y ↦ ⊥] = ¬(¬x ∧ ¬y) ∧ ¬⊥ = x ∨ y`
+///
+/// To create the substitution, use oxidd_bcdd_substitution_new() and
+/// oxidd_bcdd_substitution_add_pair().
+///
+/// Locking behavior: acquires the manager's lock for shared access.
+///
+/// @returns  The BCDD function with its own reference count
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bcdd_substitute(
+    f: oxidd_bcdd_t,
+    substitution: *const oxidd_bcdd_substitution_t,
+) -> oxidd_bcdd_t {
+    if substitution.is_null() {
+        return oxidd_bcdd_t::INVALID;
+    }
+    f.get()
+        .and_then(|f| {
+            let subst = &*substitution;
+
+            f.substitute(crate::util::Subst {
+                id: subst.id,
+                pairs: &subst.pairs,
+            })
+        })
+        .into()
+}
+
+/// Substitution mapping variables to replacement functions
+///
+/// The intent behind this struct is to optimize the case where the same
+/// substitution is applied multiple times. We would like to re-use apply
+/// cache entries across these operations, and therefore, we need a compact
+/// identifier for the substitution.
+pub struct oxidd_bcdd_substitution_t {
+    id: u32,
+    pairs: Vec<(BCDDFunction, BCDDFunction)>,
+}
+
+/// Create a new substitution, capable of holding at least `capacity` pairs
+/// without reallocating
+///
+/// Before applying the substitution via oxidd_bcdd_substitute(), add all the
+/// pairs via oxidd_bcdd_substitution_add_pair(). Do not add more pairs after
+/// the first oxidd_bcdd_substitute() call with this substitution as it may lead
+/// to incorrect results.
+///
+/// @returns  The substitution, to be freed via oxidd_bcdd_substitution_free()
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bcdd_substitution_new(
+    capacity: usize,
+) -> *mut oxidd_bcdd_substitution_t {
+    Box::into_raw(Box::new(oxidd_bcdd_substitution_t {
+        id: oxidd_core::util::new_substitution_id(),
+        pairs: Vec::with_capacity(capacity),
+    }))
+}
+
+/// Add a pair of a variable `var` and a replacement function `replacement` to
+/// `substitution`
+///
+/// `var` and `replacement` must be valid BCDD functions. This function
+/// increments the reference counters of both `var` and `replacement` (and they
+/// are decremented by oxidd_bcdd_substitution_free()). The order in which the
+/// pairs are added is irrelevant.
+///
+/// Note that adding a new pair after applying the substitution may lead to
+/// incorrect results when applying the substitution again.
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bcdd_substitution_add_pair(
+    substitution: *mut oxidd_bcdd_substitution_t,
+    var: oxidd_bcdd_t,
+    replacement: oxidd_bcdd_t,
+) {
+    assert!(!substitution.is_null(), "substitution must not be NULL");
+    let v = var.get().expect("the variable function is invalid");
+    let r = replacement
+        .get()
+        .expect("the replacement function is invalid");
+
+    let subst = &mut *substitution;
+    subst.pairs.push(((*v).clone(), (*r).clone()))
+}
+
+/// Free the given substitution
+///
+/// If `substitution` is `NULL`, this is a no-op.
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bcdd_substitution_free(
+    substitution: *mut oxidd_bcdd_substitution_t,
+) {
+    if !substitution.is_null() {
+        drop(Box::from_raw(substitution))
+    }
 }
 
 /// Compute the BCDD for `f` with its variables restricted to constant values

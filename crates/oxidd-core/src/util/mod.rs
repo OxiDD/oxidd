@@ -18,6 +18,8 @@ use crate::NodeID;
 pub mod edge_hash_map;
 pub use edge_hash_map::EdgeHashMap;
 pub mod num;
+mod substitution;
+pub use substitution::*;
 
 pub use nanorand::WyRand as Rng;
 

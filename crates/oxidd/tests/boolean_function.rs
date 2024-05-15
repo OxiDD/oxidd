@@ -5,6 +5,7 @@
 mod boolean_prop;
 mod util;
 
+use oxidd_core::function::FunctionSubst;
 use rustc_hash::FxHashMap;
 
 use oxidd::bcdd::BCDDFunction;
@@ -274,39 +275,26 @@ fn zbdd_simple_formulas_t2() {
 }
 
 /// Works for BDDs & BCDDs
-fn bdd_3_vars<B: BooleanFunction>(mref: &B::ManagerRef) -> [B; 3] {
-    mref.with_manager_exclusive(|manager| {
-        [
-            B::new_var(manager).unwrap(),
-            B::new_var(manager).unwrap(),
-            B::new_var(manager).unwrap(),
-        ]
-    })
+fn bdd_vars<B: BooleanFunction>(mref: &B::ManagerRef, n: usize) -> Vec<B> {
+    mref.with_manager_exclusive(|manager| (0..n).map(|_| B::new_var(manager).unwrap()).collect())
 }
 
-fn zbdd_3_singletons_vars(mref: &ZBDDManagerRef) -> ([ZBDDFunction; 3], [ZBDDFunction; 3]) {
-    let singletons = mref.with_manager_exclusive(|manager| {
-        [
-            ZBDDFunction::new_singleton(manager).unwrap(),
-            ZBDDFunction::new_singleton(manager).unwrap(),
-            ZBDDFunction::new_singleton(manager).unwrap(),
-        ]
+fn zbdd_singletons_vars(mref: &ZBDDManagerRef, n: usize) -> (Vec<ZBDDFunction>, Vec<ZBDDFunction>) {
+    let singletons: Vec<ZBDDFunction> = mref.with_manager_exclusive(|manager| {
+        (0..n)
+            .map(|_| ZBDDFunction::new_singleton(manager).unwrap())
+            .collect()
     });
     let vars = mref.with_manager_shared(|manager| {
-        [
-            ZBDDFunction::from_edge(
-                manager,
-                oxidd::zbdd::var_boolean_function(manager, singletons[0].as_edge(manager)).unwrap(),
-            ),
-            ZBDDFunction::from_edge(
-                manager,
-                oxidd::zbdd::var_boolean_function(manager, singletons[1].as_edge(manager)).unwrap(),
-            ),
-            ZBDDFunction::from_edge(
-                manager,
-                oxidd::zbdd::var_boolean_function(manager, singletons[2].as_edge(manager)).unwrap(),
-            ),
-        ]
+        singletons
+            .iter()
+            .map(|s| {
+                ZBDDFunction::from_edge(
+                    manager,
+                    oxidd::zbdd::var_boolean_function(manager, s.as_edge(manager)).unwrap(),
+                )
+            })
+            .collect()
     });
     (singletons, vars)
 }
@@ -314,7 +302,7 @@ fn zbdd_3_singletons_vars(mref: &ZBDDManagerRef) -> ([ZBDDFunction; 3], [ZBDDFun
 #[test]
 fn bcdd_restrict() {
     let mref = oxidd::bcdd::new_manager(1024, 1024, 2);
-    let vars = bdd_3_vars::<BCDDFunction>(&mref);
+    let vars = bdd_vars::<BCDDFunction>(&mref, 3);
     use Prop::*;
     let formulas = [
         Restrict(
@@ -381,7 +369,7 @@ fn test_prop_depth2_quant<B: BooleanFunctionQuant>(
 #[ignore]
 fn bdd_prop_depth2_3vars_t1() {
     let mref = oxidd::bdd::new_manager(65536, 1024, 1);
-    let vars = bdd_3_vars::<BDDFunction>(&mref);
+    let vars = bdd_vars::<BDDFunction>(&mref, 3);
     test_prop_depth2_quant(&mref, &vars, &vars);
 }
 
@@ -389,7 +377,7 @@ fn bdd_prop_depth2_3vars_t1() {
 #[ignore]
 fn bdd_prop_depth2_3vars_t2() {
     let mref = oxidd::bdd::new_manager(65536, 1024, 2);
-    let vars = bdd_3_vars::<BDDFunction>(&mref);
+    let vars = bdd_vars::<BDDFunction>(&mref, 3);
     test_prop_depth2_quant(&mref, &vars, &vars);
 }
 
@@ -397,7 +385,7 @@ fn bdd_prop_depth2_3vars_t2() {
 #[ignore]
 fn bcdd_prop_depth2_3vars_t1() {
     let mref = oxidd::bcdd::new_manager(65536, 1024, 1);
-    let vars = bdd_3_vars::<BCDDFunction>(&mref);
+    let vars = bdd_vars::<BCDDFunction>(&mref, 3);
     test_prop_depth2_quant(&mref, &vars, &vars);
 }
 
@@ -405,7 +393,7 @@ fn bcdd_prop_depth2_3vars_t1() {
 #[ignore]
 fn bcdd_prop_depth2_3vars_t2() {
     let mref = oxidd::bcdd::new_manager(65536, 1024, 2);
-    let vars = bdd_3_vars::<BCDDFunction>(&mref);
+    let vars = bdd_vars::<BCDDFunction>(&mref, 3);
     test_prop_depth2_quant(&mref, &vars, &vars);
 }
 
@@ -413,7 +401,7 @@ fn bcdd_prop_depth2_3vars_t2() {
 #[ignore]
 fn zbdd_prop_depth2_3vars_t1() {
     let mref = oxidd::zbdd::new_manager(65536, 1024, 1);
-    let (singletons, vars) = zbdd_3_singletons_vars(&mref);
+    let (singletons, vars) = zbdd_singletons_vars(&mref, 3);
     test_prop_depth2(&mref, &vars, &singletons);
 }
 
@@ -421,7 +409,7 @@ fn zbdd_prop_depth2_3vars_t1() {
 #[ignore]
 fn zbdd_prop_depth2_3vars_t2() {
     let mref = oxidd::zbdd::new_manager(65536, 1024, 2);
-    let (singletons, vars) = zbdd_3_singletons_vars(&mref);
+    let (singletons, vars) = zbdd_singletons_vars(&mref, 3);
     test_prop_depth2(&mref, &vars, &singletons);
 }
 
@@ -432,12 +420,17 @@ type ExplicitBFunc = u32;
 struct TestAllBooleanFunctions<'a, B: BooleanFunction> {
     mref: &'a B::ManagerRef,
     vars: &'a [B],
+    var_handles: &'a [B],
     /// Stores all possible Boolean functions with `vars.len()` vars
     boolean_functions: Vec<B>,
     dd_to_boolean_func: FxHashMap<B, ExplicitBFunc>,
 }
 
 impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
+    /// Initialize the test, generating DDs for all Boolean functions for the
+    /// given variable set. `vars` are the Boolean functions representing the
+    /// variables identified by `var_handles`. For BDDs, the two coincide, but
+    /// not for ZBDDs.
     pub fn init(mref: &'a B::ManagerRef, vars: &'a [B], var_handles: &'a [B]) -> Self {
         assert_eq!(vars.len(), var_handles.len());
         assert!(
@@ -496,13 +489,13 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
         Self {
             mref,
             vars,
+            var_handles,
             boolean_functions,
             dd_to_boolean_func,
         }
     }
 
-    /// Test basic operations on all Boolean function with the given variable
-    /// set
+    /// Test basic operations on all Boolean functions
     pub fn basic(&self) {
         let nvars = self.vars.len() as u32;
         let num_assignments = 1u32 << nvars;
@@ -592,9 +585,65 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
     }
 }
 
+impl<'a, B: BooleanFunction + FunctionSubst> TestAllBooleanFunctions<'a, B> {
+    /// Test all possible substitutions
+    pub fn subst(&self) {
+        self.subst_rec(&mut vec![None; self.vars.len()], 0);
+    }
+
+    fn subst_rec(&self, replacements: &mut [Option<ExplicitBFunc>], current_var: u32) {
+        debug_assert_eq!(replacements.len(), self.vars.len());
+        if (current_var as usize) < self.vars.len() {
+            replacements[current_var as usize] = None;
+            self.subst_rec(replacements, current_var + 1);
+            for f in 0..self.boolean_functions.len() as ExplicitBFunc {
+                replacements[current_var as usize] = Some(f);
+                self.subst_rec(replacements, current_var + 1);
+            }
+        } else {
+            let nvars = self.vars.len() as u32;
+            let num_assignments = 1u32 << nvars;
+
+            let mut subst_vars = Vec::with_capacity(self.vars.len());
+            let mut subst_repl = Vec::with_capacity(self.vars.len());
+            for (i, &repl) in replacements.iter().enumerate() {
+                if let Some(repl) = repl {
+                    subst_vars.push(self.var_handles[i].clone());
+                    subst_repl.push(self.boolean_functions[repl as usize].clone());
+                }
+            }
+            let subst = oxidd_core::util::Subst::new(&subst_vars, &subst_repl);
+
+            for (f_explicit, f) in self.boolean_functions.iter().enumerate() {
+                let f_explicit = f_explicit as ExplicitBFunc;
+
+                let mut expected = 0;
+                // To compute the expected truth table, we first compute a
+                // mapped assignment that we look up in the truth table for `f`
+                for assignment in 0..num_assignments {
+                    let mut mapped_assignment = 0;
+                    for (var, repl) in replacements.iter().enumerate() {
+                        let val = if let Some(repl) = repl {
+                            // replacement function evaluated for `assignment`
+                            repl >> assignment
+                        } else {
+                            // `var` is set in `assignment`?
+                            assignment >> var
+                        } & 1;
+                        mapped_assignment |= val << var;
+                    }
+                    expected |= ((f_explicit >> mapped_assignment) & 1) << assignment;
+                }
+
+                let actual = self.dd_to_boolean_func[&f.substitute(subst).unwrap()];
+                assert_eq!(actual, expected);
+            }
+        }
+    }
+}
+
 impl<'a, B: BooleanFunctionQuant> TestAllBooleanFunctions<'a, B> {
-    /// Test quantification operations on all Boolean function with the given
-    /// variable set
+    /// Test quantification operations on all Boolean function
     pub fn quant(&self) {
         let nvars = self.vars.len() as ExplicitBFunc;
         let num_assignments = 1u32 << nvars;
@@ -699,59 +748,63 @@ impl<'a, B: BooleanFunctionQuant> TestAllBooleanFunctions<'a, B> {
 }
 
 #[test]
-#[cfg_attr(miri, ignore)]
-fn bdd_all_boolean_functions_3vars_t1() {
+//#[cfg_attr(miri, ignore)]
+fn bdd_all_boolean_functions_2vars_t1() {
     let mref = oxidd::bdd::new_manager(65536, 1024, 1);
-    let vars = bdd_3_vars::<BDDFunction>(&mref);
+    let vars = bdd_vars::<BDDFunction>(&mref, 2);
     let test = TestAllBooleanFunctions::init(&mref, &vars, &vars);
     test.basic();
+    test.subst();
     test.quant();
 }
 
 #[test]
-#[cfg_attr(any(miri, debug_assertions), ignore)]
-fn bdd_all_boolean_functions_3vars_t2() {
+#[cfg_attr(miri, ignore)]
+fn bdd_all_boolean_functions_2vars_t2() {
     let mref = oxidd::bdd::new_manager(65536, 1024, 2);
-    let vars = bdd_3_vars::<BDDFunction>(&mref);
+    let vars = bdd_vars::<BDDFunction>(&mref, 2);
     let test = TestAllBooleanFunctions::init(&mref, &vars, &vars);
     test.basic();
+    test.subst();
     test.quant();
 }
 
 #[test]
 #[cfg_attr(miri, ignore)]
-fn bcdd_all_boolean_functions_3vars_t1() {
+fn bcdd_all_boolean_functions_2vars_t1() {
     let mref = oxidd::bcdd::new_manager(65536, 1024, 1);
-    let vars = bdd_3_vars::<BCDDFunction>(&mref);
+    let vars = bdd_vars::<BCDDFunction>(&mref, 2);
     let test = TestAllBooleanFunctions::init(&mref, &vars, &vars);
     test.basic();
-    test.quant();
-}
-
-#[test]
-#[cfg_attr(any(miri, debug_assertions), ignore)]
-fn bcdd_all_boolean_functions_3vars_t2() {
-    let mref = oxidd::bcdd::new_manager(65536, 1024, 2);
-    let vars = bdd_3_vars::<BCDDFunction>(&mref);
-    let test = TestAllBooleanFunctions::init(&mref, &vars, &vars);
-    test.basic();
+    test.subst();
     test.quant();
 }
 
 #[test]
 #[cfg_attr(miri, ignore)]
-fn zbdd_all_boolean_functions_3vars_t1() {
+fn bcdd_all_boolean_functions_2vars_t2() {
+    let mref = oxidd::bcdd::new_manager(65536, 1024, 2);
+    let vars = bdd_vars::<BCDDFunction>(&mref, 2);
+    let test = TestAllBooleanFunctions::init(&mref, &vars, &vars);
+    test.basic();
+    test.subst();
+    test.quant();
+}
+
+#[test]
+#[cfg_attr(miri, ignore)]
+fn zbdd_all_boolean_functions_2vars_t1() {
     let mref = oxidd::zbdd::new_manager(65536, 1024, 1);
-    let (singletons, vars) = zbdd_3_singletons_vars(&mref);
+    let (singletons, vars) = zbdd_singletons_vars(&mref, 2);
     let test = TestAllBooleanFunctions::init(&mref, &vars, &singletons);
     test.basic();
 }
 
 #[test]
-#[cfg_attr(any(miri, debug_assertions), ignore)]
-fn zbdd_all_boolean_functions_3vars_t2() {
+#[cfg_attr(miri, ignore)]
+fn zbdd_all_boolean_functions_2vars_t2() {
     let mref = oxidd::zbdd::new_manager(65536, 1024, 2);
-    let (singletons, vars) = zbdd_3_singletons_vars(&mref);
+    let (singletons, vars) = zbdd_singletons_vars(&mref, 2);
     let test = TestAllBooleanFunctions::init(&mref, &vars, &singletons);
     test.basic();
 }

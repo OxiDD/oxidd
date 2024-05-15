@@ -8,9 +8,11 @@ use oxidd_core::function::BooleanFunction;
 use oxidd_core::function::BooleanFunctionQuant;
 use oxidd_core::function::EdgeOfFunc;
 use oxidd_core::function::Function;
+use oxidd_core::function::FunctionSubst;
 use oxidd_core::util::AllocResult;
 use oxidd_core::util::Borrowed;
 use oxidd_core::util::EdgeDropGuard;
+use oxidd_core::util::EdgeVecDropGuard;
 use oxidd_core::util::OptBool;
 use oxidd_core::util::SatCountCache;
 use oxidd_core::util::SatCountNumber;
@@ -242,6 +244,109 @@ where
     manager
         .apply_cache()
         .add(manager, BCDDOp::Ite, &[f, g, h], res.borrowed());
+
+    Ok(res)
+}
+
+/// Prepare a substitution
+///
+/// The result is a vector that maps levels to replacement functions. The levels
+/// below the lowest variable (of `vars`) are ignored. Levels above which are
+/// not referenced from `vars` are mapped to the function representing the
+/// variable at that level. The latter is the reason why we return the owned
+/// edges.
+pub(super) fn substitute_prepare<'a, M>(
+    manager: &'a M,
+    pairs: impl Iterator<Item = (Borrowed<'a, M::Edge>, Borrowed<'a, M::Edge>)>,
+) -> AllocResult<EdgeVecDropGuard<'a, M>>
+where
+    M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag>,
+    M::Edge: 'a,
+    M::InnerNode: HasLevel,
+{
+    let mut subst = Vec::with_capacity(manager.num_levels() as usize);
+    for (v, r) in pairs {
+        let level = super::var_level(manager, v) as usize;
+        if level >= subst.len() {
+            subst.resize_with(level + 1, || None);
+        }
+        debug_assert!(
+            subst[level].is_none(),
+            "Variable at level {level} occurs twice in the substitution, but a \
+            substitution should be a mapping from variables to replacement \
+            functions"
+        );
+        subst[level] = Some(r);
+    }
+
+    let mut res = EdgeVecDropGuard::new(manager, Vec::with_capacity(subst.len()));
+    for (level, e) in subst.into_iter().enumerate() {
+        use oxidd_core::LevelView;
+
+        res.push(if let Some(e) = e {
+            manager.clone_edge(&e)
+        } else {
+            let t = get_terminal(manager, true);
+            let e = get_terminal(manager, false);
+            manager
+                .level(level as LevelNo)
+                .get_or_insert(InnerNode::new(level as LevelNo, [t, e]))?
+        });
+    }
+
+    Ok(res)
+}
+
+pub(super) fn substitute<M>(
+    manager: &M,
+    f: Borrowed<M::Edge>,
+    subst: &[M::Edge],
+    cache_id: u32,
+) -> AllocResult<M::Edge>
+where
+    M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal> + HasApplyCache<M, BCDDOp>,
+    M::InnerNode: HasLevel,
+{
+    stat!(call BCDDOp::Substitute);
+
+    let Node::Inner(node) = manager.get_node(&f) else {
+        return Ok(manager.clone_edge(&f));
+    };
+    let level = node.level();
+    if level as usize >= subst.len() {
+        return Ok(manager.clone_edge(&f));
+    }
+
+    // Query apply cache
+    stat!(cache_query BCDDOp::Substitute);
+    if let Some(h) = manager.apply_cache().get_with_numeric(
+        manager,
+        BCDDOp::Substitute,
+        &[f.borrowed()],
+        &[cache_id],
+    ) {
+        stat!(cache_hit BCDDOp::Substitute);
+        return Ok(h);
+    }
+
+    let (t, e) = collect_cofactors(f.tag(), node);
+    let t = EdgeDropGuard::new(manager, substitute(manager, t, subst, cache_id)?);
+    let e = EdgeDropGuard::new(manager, substitute(manager, e, subst, cache_id)?);
+    let res = apply_ite(
+        manager,
+        subst[level as usize].borrowed(),
+        t.borrowed(),
+        e.borrowed(),
+    )?;
+
+    // Insert into apply cache
+    manager.apply_cache().add_with_numeric(
+        manager,
+        BCDDOp::Substitute,
+        &[f.borrowed()],
+        &[cache_id],
+        res.borrowed(),
+    );
 
     Ok(res)
 }
@@ -602,6 +707,25 @@ impl<F: Function> BCDDFunction<F> {
     #[inline(always)]
     pub fn into_inner(self) -> F {
         self.0
+    }
+}
+
+impl<F: Function> FunctionSubst for BCDDFunction<F>
+where
+    for<'id> F::Manager<'id>: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag>
+        + super::HasBCDDOpApplyCache<F::Manager<'id>>,
+    for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
+{
+    fn substitute_edge<'id, 'a>(
+        manager: &'a Self::Manager<'id>,
+        edge: &'a EdgeOfFunc<'id, Self>,
+        substitution: impl oxidd_core::util::Substitution<
+            Var = Borrowed<'a, EdgeOfFunc<'id, Self>>,
+            Replacement = Borrowed<'a, EdgeOfFunc<'id, Self>>,
+        >,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        let subst = substitute_prepare(manager, substitution.pairs())?;
+        substitute(manager, edge.borrowed(), &subst, substitution.id())
     }
 }
 

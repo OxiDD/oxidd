@@ -1,6 +1,6 @@
 ---
 # spell-checker:ignore cppcoreguidelines
-Checks: 'bugprone-*,-bugprone-easily-swappable-parameters,cppcoreguidelines-*,modernize-*,-modernize-use-trailing-return-type,misc-*,-misc-include-cleaner,readability-*,performance-*,portability-*,-readability-braces-around-statements,-readability-function-cognitive-complexity,-readability-identifier-length,-readability-isolate-declaration'
+Checks: 'bugprone-*,-bugprone-easily-swappable-parameters,cppcoreguidelines-*,modernize-*,-modernize-use-trailing-return-type,misc-*,-misc-include-cleaner,-misc-no-recursion,readability-*,performance-*,portability-*,-readability-braces-around-statements,-readability-function-cognitive-complexity,-readability-identifier-length,-readability-isolate-declaration'
 FormatStyle: file
 CheckOptions:
   readability-identifier-naming.PrivateMemberPrefix: '_'

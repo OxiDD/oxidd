@@ -6,9 +6,15 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <version>
+
+#ifdef __cpp_lib_concepts
+#include <concepts>
+#endif // __cpp_lib_concepts
 
 #include <oxidd/capi.h>
 #include <oxidd/util.hpp>
@@ -16,6 +22,7 @@
 namespace oxidd {
 
 class bdd_function;
+class bdd_substitution;
 
 /// Manager for binary decision diagrams (without complement edges)
 ///
@@ -176,6 +183,7 @@ class bdd_function {
   capi::oxidd_bdd_t _func = {._p = nullptr};
 
   friend class bdd_manager;
+  friend class bdd_substitution;
   friend struct std::hash<bdd_function>;
 
   /// Create a new `bdd_function` from a BDD function instance of the CAPI
@@ -184,6 +192,8 @@ class bdd_function {
 public:
   /// Associated manager type
   using manager = bdd_manager;
+  /// Associated substitution type
+  using substitution = bdd_substitution;
 
   /// Default constructor, yields an invalid BCDD function
   bdd_function() noexcept = default;
@@ -469,6 +479,18 @@ public:
     return capi::oxidd_bdd_ite(_func, t._func, e._func);
   }
 
+  /// Substitute `vars` in the BDD `f` by `replacement`
+  ///
+  /// The substitution is performed in a parallel fashion, e.g.:
+  /// `(¬x ∧ ¬y)[x ↦ ¬x ∧ ¬y, y ↦ ⊥] = ¬(¬x ∧ ¬y) ∧ ¬⊥ = x ∨ y`
+  ///
+  /// Locking behavior: acquires the manager's lock for shared access.
+  ///
+  /// @returns  The BDD function (may be invalid if the operation runs out of
+  ///           memory)
+  [[nodiscard]] bdd_function
+  substitute(const bdd_substitution &substitution) const noexcept;
+
   /// Compute the BDD for the universal quantification over `vars`
   ///
   /// `vars` is a set of variables, which in turn is just the conjunction of the
@@ -641,6 +663,91 @@ inline bdd_function bdd_manager::t() const noexcept {
 inline bdd_function bdd_manager::f() const noexcept {
   assert(_manager._p);
   return capi::oxidd_bdd_false(_manager);
+}
+
+/// Substitution mapping variables to replacement functions
+///
+/// Models `oxidd::concepts::substitution`
+class bdd_substitution {
+  /// Wrapped substitution
+  capi::oxidd_bdd_substitution_t *_subst = nullptr;
+
+  friend class bdd_function;
+
+public:
+  /// Associated function type
+  using function = bdd_function;
+
+  /// Create an invalid substitution
+  bdd_substitution() = default;
+  bdd_substitution(const bdd_substitution &other) = delete;
+  /// Move constructor: invalidates `other`
+  bdd_substitution(bdd_substitution &&other) noexcept : _subst(other._subst) {
+    other._subst = nullptr;
+  }
+
+  bdd_substitution &operator=(const bdd_substitution &) = delete;
+  /// Move assignment operator: invalidates `rhs`
+  bdd_substitution &operator=(bdd_substitution &&rhs) noexcept {
+    assert(this != &rhs || !rhs._subst);
+    capi::oxidd_bdd_substitution_free(_subst);
+    _subst = rhs._subst;
+    rhs._subst = nullptr;
+    return *this;
+  }
+
+  ~bdd_substitution() noexcept { capi::oxidd_bdd_substitution_free(_subst); }
+
+  /// Create a BDD substitution from an iterator of pairs
+  /// `(const bdd_function &var, const bdd_function &replacement)`
+#ifdef __cpp_lib_concepts
+  template <std::input_iterator IT>
+    requires(std::equality_comparable<IT> &&
+             util::pair_like<std::iter_value_t<IT>, const bdd_function &,
+                             const bdd_function &>)
+#else  // __cpp_lib_concepts
+  template <typename IT>
+#endif // __cpp_lib_concepts
+  bdd_substitution(IT begin, IT end)
+      : _subst(capi::oxidd_bdd_substitution_new(util::size_hint(
+            begin, end,
+            typename std::iterator_traits<IT>::iterator_category()))) {
+    for (; begin != end; ++begin) {
+      const auto &pair = *begin;
+      const bdd_function &var = std::get<0>(pair);
+      const bdd_function &replacement = std::get<1>(pair);
+      assert(var._func._p);
+      assert(replacement._func._p);
+      capi::oxidd_bdd_substitution_add_pair(_subst, var._func,
+                                            replacement._func);
+    }
+  }
+
+#if defined(__cpp_lib_ranges) && defined(__cpp_lib_concepts)
+  /// Create a BDD substitution from a range of pairs
+  /// `(const bdd_function &var, const bdd_function &replacement)`
+  template <std::ranges::input_range R>
+    requires(util::pair_like<std::ranges::range_value_t<R>,
+                             const bdd_function &, const bdd_function &>)
+  bdd_substitution(R &&range)
+      : _subst(capi::oxidd_bdd_substitution_new(util::size_hint(range))) {
+    for (const auto &[var, replacement] : std::forward<R>(range)) {
+      assert(var._func._p);
+      assert(replacement._func._p);
+      capi::oxidd_bdd_substitution_add_pair(_subst, var._func,
+                                            replacement._func);
+    }
+  }
+#endif // defined(__cpp_lib_ranges) && defined(__cpp_lib_concepts)
+
+  /// Check if this substitution is invalid
+  [[nodiscard]] bool is_invalid() const { return _subst == nullptr; }
+};
+
+inline bdd_function
+bdd_function::substitute(const bdd_substitution &substitution) const noexcept {
+  assert(substitution._subst);
+  return capi::oxidd_bdd_substitute(_func, substitution._subst);
 }
 
 } // namespace oxidd

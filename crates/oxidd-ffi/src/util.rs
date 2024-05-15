@@ -1,3 +1,5 @@
+use oxidd_core::util::Substitution;
+
 /// Level number type
 #[allow(non_camel_case_types)]
 pub type oxidd_level_no_t = u32;
@@ -33,5 +35,24 @@ pub unsafe extern "C" fn oxidd_assignment_free(assignment: oxidd_assignment_t) {
             assignment.len,
             assignment.len,
         ))
+    }
+}
+
+pub(crate) struct Subst<'a, V, R> {
+    pub id: u32,
+    pub pairs: &'a [(V, R)],
+}
+
+impl<'a, V, R> Substitution for Subst<'a, V, R> {
+    type Var = &'a V;
+    type Replacement = &'a R;
+
+    #[inline]
+    fn id(&self) -> u32 {
+        self.id
+    }
+    #[inline]
+    fn pairs(&self) -> impl ExactSizeIterator<Item = (&'a V, &'a R)> {
+        self.pairs.iter().map(|(v, r)| (v, r))
     }
 }

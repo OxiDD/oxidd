@@ -68,6 +68,8 @@ ilog
 impl
 implib
 impls
+initializable
+injective
 intptr
 intsec
 isize

@@ -13,6 +13,7 @@ use oxidd::BooleanFunction;
 use oxidd::BooleanFunctionQuant;
 use oxidd::Edge;
 use oxidd::Function;
+use oxidd::FunctionSubst;
 use oxidd::Manager;
 use oxidd::ManagerRef;
 use oxidd::RawFunction;
@@ -464,6 +465,103 @@ pub unsafe extern "C" fn oxidd_bdd_ite(
     else_case: oxidd_bdd_t,
 ) -> oxidd_bdd_t {
     op3(cond, then_case, else_case, BDDFunction::ite)
+}
+
+/// Substitute `vars` in the BDD `f` by `replacement`
+///
+/// The substitution is performed in a parallel fashion, e.g.:
+/// `(¬x ∧ ¬y)[x ↦ ¬x ∧ ¬y, y ↦ ⊥] = ¬(¬x ∧ ¬y) ∧ ¬⊥ = x ∨ y`
+///
+/// To create the substitution, use oxidd_bdd_substitution_new() and
+/// oxidd_bdd_substitution_add_pair().
+///
+/// Locking behavior: acquires the manager's lock for shared access.
+///
+/// @returns  The BDD function with its own reference count
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_substitute(
+    f: oxidd_bdd_t,
+    substitution: *const oxidd_bdd_substitution_t,
+) -> oxidd_bdd_t {
+    if substitution.is_null() {
+        return oxidd_bdd_t::INVALID;
+    }
+    f.get()
+        .and_then(|f| {
+            let subst = &*substitution;
+
+            f.substitute(crate::util::Subst {
+                id: subst.id,
+                pairs: &subst.pairs,
+            })
+        })
+        .into()
+}
+
+/// Substitution mapping variables to replacement functions
+///
+/// The intent behind this struct is to optimize the case where the same
+/// substitution is applied multiple times. We would like to re-use apply
+/// cache entries across these operations, and therefore, we need a compact
+/// identifier for the substitution.
+pub struct oxidd_bdd_substitution_t {
+    id: u32,
+    pairs: Vec<(BDDFunction, BDDFunction)>,
+}
+
+/// Create a new substitution, capable of holding at least `capacity` pairs
+/// without reallocating
+///
+/// Before applying the substitution via oxidd_bdd_substitute(), add all the
+/// pairs via oxidd_bdd_substitution_add_pair(). Do not add more pairs after the
+/// first oxidd_bdd_substitute() call with this substitution as it may lead to
+/// incorrect results.
+///
+/// @returns  The substitution, to be freed via oxidd_bdd_substitution_free()
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_substitution_new(
+    capacity: usize,
+) -> *mut oxidd_bdd_substitution_t {
+    Box::into_raw(Box::new(oxidd_bdd_substitution_t {
+        id: oxidd_core::util::new_substitution_id(),
+        pairs: Vec::with_capacity(capacity),
+    }))
+}
+
+/// Add a pair of a variable `var` and a replacement function `replacement` to
+/// `substitution`
+///
+/// `var` and `replacement` must be valid BDD functions. This function
+/// increments the reference counters of both `var` and `replacement` (and they
+/// are decremented by oxidd_bdd_substitution_free()). The order in which the
+/// pairs are added is irrelevant.
+///
+/// Note that adding a new pair after applying the substitution may lead to
+/// incorrect results when applying the substitution again.
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_substitution_add_pair(
+    substitution: *mut oxidd_bdd_substitution_t,
+    var: oxidd_bdd_t,
+    replacement: oxidd_bdd_t,
+) {
+    assert!(!substitution.is_null(), "substitution must not be NULL");
+    let v = var.get().expect("the variable function is invalid");
+    let r = replacement
+        .get()
+        .expect("the replacement function is invalid");
+
+    let subst = &mut *substitution;
+    subst.pairs.push(((*v).clone(), (*r).clone()))
+}
+
+/// Free the given substitution
+///
+/// If `substitution` is `NULL`, this is a no-op.
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_substitution_free(substitution: *mut oxidd_bdd_substitution_t) {
+    if !substitution.is_null() {
+        drop(Box::from_raw(substitution))
+    }
 }
 
 /// Compute the BDD for `f` with its variables restricted to constant values

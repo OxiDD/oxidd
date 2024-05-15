@@ -76,6 +76,7 @@ mod index {
         Ord,
         Hash,
         oxidd_derive::Function,
+        oxidd_derive::FunctionSubst,
         oxidd_derive::BooleanFunction,
         oxidd_derive::BooleanFunctionQuant,
     )]
@@ -125,6 +126,7 @@ mod pointer {
         Ord,
         Hash,
         oxidd_derive::Function,
+        oxidd_derive::FunctionSubst,
         oxidd_derive::BooleanFunction,
         oxidd_derive::BooleanFunctionQuant,
     )]

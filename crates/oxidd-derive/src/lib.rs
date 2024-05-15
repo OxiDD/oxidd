@@ -25,7 +25,7 @@ pub fn derive_countable(input: proc_macro::TokenStream) -> proc_macro::TokenStre
     proc_macro::TokenStream::from(expanded)
 }
 
-/// Derive the `Function` trait from `oxidd_core`
+/// Derive the `Function` trait from `oxidd_core::function`
 ///
 /// This trait can be derived for `struct`s that wrap another `Function`
 /// implementation. Currently, this macro is restricted to `struct`s with a
@@ -41,7 +41,19 @@ pub fn derive_function(input: proc_macro::TokenStream) -> proc_macro::TokenStrea
     proc_macro::TokenStream::from(expanded)
 }
 
-/// Derive the `BooleanFunction` trait from `oxidd_core`
+/// Derive the `FunctionSubst` trait from `oxidd_core::function`
+///
+/// This trait can be derived for `struct`s that wrap another `FunctionSubst`
+/// implementation. The same restrictions apply as for deriving [`Function`].
+#[proc_macro_error::proc_macro_error]
+#[proc_macro_derive(FunctionSubst)]
+pub fn derive_function_subst(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+    let expanded = function::derive_function_subst(input);
+    proc_macro::TokenStream::from(expanded)
+}
+
+/// Derive the `BooleanFunction` trait from `oxidd_core::function`
 ///
 /// This trait can be derived for `struct`s that wrap another `BooleanFunction`
 /// implementation. The same restrictions apply as for deriving [`Function`].
@@ -53,7 +65,7 @@ pub fn derive_boolean_function(input: proc_macro::TokenStream) -> proc_macro::To
     proc_macro::TokenStream::from(expanded)
 }
 
-/// Derive the `BooleanFunctionQuant` trait from `oxidd_core`
+/// Derive the `BooleanFunctionQuant` trait from `oxidd_core::function`
 ///
 /// This trait can be derived for `struct`s that wrap another
 /// `BooleanFunctionQuant` implementation. The same restrictions apply as for
@@ -66,7 +78,7 @@ pub fn derive_boolean_function_quant(input: proc_macro::TokenStream) -> proc_mac
     proc_macro::TokenStream::from(expanded)
 }
 
-/// Derive the `BooleanVecSet` trait from `oxidd_core`
+/// Derive the `BooleanVecSet` trait from `oxidd_core::function`
 ///
 /// This trait can be derived for `struct`s that wrap another `BooleanVecSet`
 /// implementation. The same restrictions apply as for deriving [`Function`].
@@ -78,7 +90,7 @@ pub fn derive_boolean_vec_set(input: proc_macro::TokenStream) -> proc_macro::Tok
     proc_macro::TokenStream::from(expanded)
 }
 
-/// Derive the `PseudoBooleanFunction` trait from `oxidd_core`
+/// Derive the `PseudoBooleanFunction` trait from `oxidd_core::function`
 ///
 /// This trait can be derived for `struct`s that wrap another
 /// `PseudoBooleanFunction` implementation. The same restrictions apply as for
@@ -91,7 +103,7 @@ pub fn derive_pseudo_boolean_function(input: proc_macro::TokenStream) -> proc_ma
     proc_macro::TokenStream::from(expanded)
 }
 
-/// Derive the `TVLFunction` trait from `oxidd_core`
+/// Derive the `TVLFunction` trait from `oxidd_core::function`
 ///
 /// This trait can be derived for `struct`s that wrap another `TVLFunction`
 /// implementation. The same restrictions apply as for deriving [`Function`].

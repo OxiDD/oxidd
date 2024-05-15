@@ -560,6 +560,7 @@ name = "oxidd-ffi"
 version = "0.6.0"
 dependencies = [
  "oxidd",
+ "oxidd-core",
  "rustc-hash",
 ]
 

@@ -16,6 +16,7 @@ pub use oxidd_core::function::BooleanFunction;
 pub use oxidd_core::function::BooleanFunctionQuant;
 pub use oxidd_core::function::BooleanVecSet;
 pub use oxidd_core::function::Function;
+pub use oxidd_core::function::FunctionSubst;
 pub use oxidd_core::function::NumberBase;
 pub use oxidd_core::function::PseudoBooleanFunction;
 pub use oxidd_core::function::TVLFunction;

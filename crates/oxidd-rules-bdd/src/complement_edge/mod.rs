@@ -11,6 +11,7 @@ use oxidd_core::util::Borrowed;
 use oxidd_core::DiagramRules;
 use oxidd_core::Edge;
 use oxidd_core::HasApplyCache;
+use oxidd_core::HasLevel;
 use oxidd_core::InnerNode;
 use oxidd_core::LevelNo;
 use oxidd_core::Manager;
@@ -349,6 +350,8 @@ pub enum BCDDOp {
     /// If-then-else
     Ite,
 
+    Substitute,
+
     Restrict,
     /// Forall quantification
     Forall,
@@ -372,6 +375,35 @@ static STAT_COUNTERS: [crate::StatCounters; <BCDDOp as oxidd_core::Countable>::M
 pub fn print_stats() {
     eprintln!("[oxidd_rules_bdd::complement_edge]");
     crate::StatCounters::print::<BCDDOp>(&STAT_COUNTERS);
+}
+
+// --- Utility Functions -------------------------------------------------------
+
+#[inline]
+fn is_var<M>(manager: &M, node: &M::InnerNode) -> bool
+where
+    M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag>,
+{
+    let t = node.child(0);
+    let e = node.child(1);
+    t.tag() == EdgeTag::None
+        && e.tag() == EdgeTag::Complemented
+        && manager.get_node(&t).is_any_terminal()
+        && manager.get_node(&e).is_any_terminal()
+}
+
+#[inline]
+#[track_caller]
+fn var_level<M>(manager: &M, e: Borrowed<M::Edge>) -> LevelNo
+where
+    M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag>,
+    M::InnerNode: HasLevel,
+{
+    let node = manager
+        .get_node(&e)
+        .expect_inner("Expected a variable but got a terminal node");
+    debug_assert!(is_var(manager, node));
+    node.level()
 }
 
 // --- Function Interface ------------------------------------------------------

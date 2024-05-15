@@ -13,6 +13,7 @@ use crate::util::NodeSet;
 use crate::util::OptBool;
 use crate::util::SatCountCache;
 use crate::util::SatCountNumber;
+use crate::util::Substitution;
 use crate::DiagramRules;
 use crate::Edge;
 use crate::InnerNode;
@@ -166,6 +167,50 @@ pub unsafe trait Function: Clone + Ord + Hash {
             set.len()
         })
     }
+}
+
+/// Substitution extension for [`Function`]
+pub trait FunctionSubst: Function {
+    /// Substitute variables in `self` according to `substitution`
+    ///
+    /// The substitution is performed in a parallel fashion, e.g.:
+    /// `(¬x ∧ ¬y)[x ↦ ¬x ∧ ¬y, y ↦ ⊥] = ¬(¬x ∧ ¬y) ∧ ¬⊥ = x ∨ y`
+    ///
+    /// Locking behavior: acquires the manager's lock for shared access.
+    ///
+    /// Panics if `self` and the function in `substitution` don't belong to the
+    /// same manager.
+    fn substitute<'a>(
+        &'a self,
+        substitution: impl Substitution<Var = &'a Self, Replacement = &'a Self>,
+    ) -> AllocResult<Self> {
+        if substitution.pairs().len() == 0 {
+            return Ok(self.clone());
+        }
+        self.with_manager_shared(|manager, edge| {
+            Ok(Self::from_edge(
+                manager,
+                Self::substitute_edge(
+                    manager,
+                    edge,
+                    substitution.map(|(v, r)| {
+                        (v.as_edge(manager).borrowed(), r.as_edge(manager).borrowed())
+                    }),
+                )?,
+            ))
+        })
+    }
+
+    /// `Edge` version of [`Self::substitute()`]
+    #[must_use]
+    fn substitute_edge<'id, 'a>(
+        manager: &'a Self::Manager<'id>,
+        edge: &'a EdgeOfFunc<'id, Self>,
+        substitution: impl Substitution<
+            Var = Borrowed<'a, EdgeOfFunc<'id, Self>>,
+            Replacement = Borrowed<'a, EdgeOfFunc<'id, Self>>,
+        >,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 }
 
 /// Boolean functions 𝔹ⁿ → 𝔹

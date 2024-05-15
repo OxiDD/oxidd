@@ -2,7 +2,9 @@
 /// @brief C++20 concepts
 
 #pragma once
-#if __cplusplus >= 202002L
+
+#include <version> // for __cpp_lib_concepts
+#ifdef __cpp_lib_concepts
 
 #include <concepts>
 #include <cstddef>
@@ -10,10 +12,50 @@
 #include <functional>
 #include <utility>
 
+#ifdef __cpp_lib_ranges
+#include <ranges>
+#endif // __cpp_lib_ranges
+
 #include <oxidd/util.hpp>
 
 /// C++20 concepts to ease meta-programming
 namespace oxidd::concepts {
+
+/// @cond
+
+namespace detail {
+
+// Dummy input_iterator and input_range to specify the substitution concept
+
+template <typename T> struct input_iterator {
+  using difference_type = std::ptrdiff_t;
+  using value_type = T;
+
+  const T &operator*() const;
+
+  input_iterator &operator++();
+  void operator++(int);
+
+  bool operator==(const input_iterator &) const;
+};
+
+static_assert(std::input_iterator<input_iterator<int>>);
+static_assert(std::equality_comparable<input_iterator<int>>);
+
+#ifdef __cpp_lib_ranges
+
+template <typename T> struct input_range {
+  input_iterator<T> begin();
+  input_iterator<T> end();
+};
+
+static_assert(std::ranges::input_range<input_range<int>>);
+
+#endif // __cpp_lib_ranges
+
+} // namespace detail
+
+/// @endcond
 
 /// Function represented as decision diagram
 ///
@@ -113,6 +155,55 @@ concept function = (
 template <class M>
 concept manager = function<typename M::function> &&
                   std::same_as<typename M::function::manager, M>;
+
+/// Substitution extension for `oxidd::concepts::function`
+///
+/// For every implementation `F` of this concept and every `F f`:
+/// - `f.substitute(subst)` computes `f` with variables according to `subst`,
+///   where `subst` is of type `F::substitution`.
+/// - `F::substitution` models `oxidd::concepts::substitution`.
+///
+/// See `oxidd::concepts::substitution` for more details on the motivation
+/// behind substitution classes.
+template <class F>
+concept function_subst =
+    function<F> && std::same_as<typename F::substitution::function, F> &&
+    requires(const F &f, const typename F::substitution &s) {
+      { f.substitute(s) } -> std::same_as<F>;
+    } &&
+    // substitution requirements
+    std::movable<typename F::substitution> &&
+    std::default_initializable<typename F::substitution> &&
+    std::constructible_from<
+        typename F::substitution,
+        detail::input_iterator<std::tuple<const F &, const F &>>,
+        detail::input_iterator<std::tuple<const F &, const F &>>> &&
+#ifdef __cpp_lib_ranges
+    std::constructible_from<
+        typename F::substitution,
+        detail::input_range<std::tuple<const F &, const F &>>> &&
+#endif // __cpp_lib_ranges
+    requires(const typename F::substitution &s) {
+      { s.is_invalid() } -> std::same_as<bool>;
+    };
+
+/// Substitution mapping variables to replacement functions
+///
+/// The intent behind substitution classes is to optimize the case where the
+/// same substitution is applied multiple times. We would like to re-use apply
+/// cache entries across these operations, and therefore, we need a compact
+/// identifier for the substitution.
+///
+/// Every substitution implementation `S` has an associated type `S::function`
+/// modelling `oxidd::concepts::function_subst`. Substitutions can be
+/// constructed from iterators and ranges over pairs `(const typename
+/// S::function &var, const typename S::function &replacement)`.
+///
+/// This behaves like a `std::unique_ptr` with respect to default/move
+/// construction and assignment.
+template <class S>
+concept substitution = function_subst<typename S::function> &&
+                       std::same_as<typename S::function::substitution, S>;
 
 /// Boolean function 𝔹ⁿ → 𝔹 represented as decision diagram
 ///
@@ -237,4 +328,4 @@ concept boolean_function_quant = boolean_function<F> && requires(const F &f) {
 
 } // namespace oxidd::concepts
 
-#endif // __cplusplus >= 202002L
+#endif // __cpp_lib_concepts
