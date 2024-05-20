@@ -173,7 +173,7 @@ public:
 ///
 /// This class has no copy constructor to avoid additional calls into the FFI.
 /// Use vec() instead.
-class assignment { // NOLINT(*-special-member-functions)
+class assignment {
 public:
   /// Container element type
   using value_type = opt_bool;
@@ -202,7 +202,7 @@ private:
   capi::oxidd_assignment_t _assignment;
 
 public:
-  assignment(assignment &other) = delete; // use vec() to copy
+  assignment(const assignment &) = delete; // use vec() to copy
 
   /// Construct an assignment from a capi::oxidd_assignment_t taking ownership
   /// of it
@@ -214,7 +214,18 @@ public:
     other._assignment.len = 0;
   }
 
-  ~assignment() noexcept { oxidd_assignment_free(_assignment); }
+  assignment &operator=(const assignment &) = delete;
+  /// Move assignment operator: empties `rhs`
+  assignment &operator=(assignment &&rhs) noexcept {
+    assert(this != &rhs || !rhs._assignment.data);
+    capi::oxidd_assignment_free(_assignment);
+    _assignment = rhs._assignment;
+    rhs._assignment.data = nullptr;
+    rhs._assignment.len = 0;
+    return *this;
+  }
+
+  ~assignment() noexcept { capi::oxidd_assignment_free(_assignment); }
 
   /// Get a pointer to the underlying data
   [[nodiscard]] const opt_bool *data() const noexcept {

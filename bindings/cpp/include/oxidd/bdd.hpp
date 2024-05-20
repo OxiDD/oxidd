@@ -64,16 +64,17 @@ public:
 
   /// Copy assignment operator
   bdd_manager &operator=(const bdd_manager &rhs) noexcept {
-    if (_manager._p != nullptr)
+    if (this != &rhs) {
       capi::oxidd_bdd_manager_unref(_manager);
-    _manager = rhs._manager;
-    capi::oxidd_bdd_manager_ref(_manager);
+      _manager = rhs._manager;
+      capi::oxidd_bdd_manager_ref(_manager);
+    }
     return *this;
   }
-  /// Move assignment operator
+  /// Move assignment operator: invalidates `rhs`
   bdd_manager &operator=(bdd_manager &&rhs) noexcept {
-    if (_manager._p != nullptr)
-      capi::oxidd_bdd_manager_unref(_manager);
+    assert(this != &rhs || !rhs._manager._p);
+    capi::oxidd_bdd_manager_unref(_manager);
     _manager = rhs._manager;
     rhs._manager._p = nullptr;
     return *this;
@@ -203,17 +204,17 @@ public:
 
   /// Copy assignment operator
   bdd_function &operator=(const bdd_function &rhs) noexcept {
-    if (_func._p != nullptr)
+    if (this != &rhs) {
       capi::oxidd_bdd_unref(_func);
-    _func = rhs._func;
-    if (_func._p != nullptr)
+      _func = rhs._func;
       capi::oxidd_bdd_ref(_func);
+    }
     return *this;
   }
-  /// Move assignment operator
+  /// Move assignment operator: invalidates `rhs`
   bdd_function &operator=(bdd_function &&rhs) noexcept {
-    if (_func._p != nullptr)
-      capi::oxidd_bdd_unref(_func);
+    assert(this != &rhs || !rhs._func._p);
+    capi::oxidd_bdd_unref(_func);
     _func = rhs._func;
     rhs._func._p = nullptr;
     return *this;

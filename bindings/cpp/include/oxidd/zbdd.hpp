@@ -58,23 +58,21 @@ public:
     other._manager._p = nullptr;
   }
 
-  ~zbdd_manager() noexcept {
-    if (_manager._p != nullptr)
-      capi::oxidd_zbdd_manager_unref(_manager);
-  }
+  ~zbdd_manager() noexcept { capi::oxidd_zbdd_manager_unref(_manager); }
 
   /// Copy assignment operator
   zbdd_manager &operator=(const zbdd_manager &rhs) noexcept {
-    if (_manager._p != nullptr)
+    if (this != &rhs) {
       capi::oxidd_zbdd_manager_unref(_manager);
-    _manager = rhs._manager;
-    capi::oxidd_zbdd_manager_ref(_manager);
+      _manager = rhs._manager;
+      capi::oxidd_zbdd_manager_ref(_manager);
+    }
     return *this;
   }
-  /// Move assignment operator
+  /// Move assignment operator: invalidates `rhs`
   zbdd_manager &operator=(zbdd_manager &&rhs) noexcept {
-    if (_manager._p != nullptr)
-      capi::oxidd_zbdd_manager_unref(_manager);
+    assert(this != &rhs || !rhs._manager._p);
+    capi::oxidd_zbdd_manager_unref(_manager);
     _manager = rhs._manager;
     rhs._manager._p = nullptr;
     return *this;
@@ -216,24 +214,21 @@ public:
     other._func._p = nullptr;
   }
 
-  ~zbdd_function() noexcept {
-    if (_func._p != nullptr)
-      capi::oxidd_zbdd_unref(_func);
-  }
+  ~zbdd_function() noexcept { capi::oxidd_zbdd_unref(_func); }
 
   /// Copy assignment operator
   zbdd_function &operator=(const zbdd_function &rhs) noexcept {
-    if (_func._p != nullptr)
+    if (this != &rhs) {
       capi::oxidd_zbdd_unref(_func);
-    _func = rhs._func;
-    if (_func._p != nullptr)
+      _func = rhs._func;
       capi::oxidd_zbdd_ref(_func);
+    }
     return *this;
   }
-  /// Move assignment operator
+  /// Move assignment operator: invalidates `rhs`
   zbdd_function &operator=(zbdd_function &&rhs) noexcept {
-    if (_func._p != nullptr)
-      capi::oxidd_zbdd_unref(_func);
+    assert(this != &rhs || !rhs._func._p);
+    capi::oxidd_zbdd_unref(_func);
     _func = rhs._func;
     rhs._func._p = nullptr;
     return *this;

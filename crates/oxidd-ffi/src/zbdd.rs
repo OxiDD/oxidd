@@ -40,6 +40,7 @@ pub struct oxidd_zbdd_manager_t {
 }
 
 impl oxidd_zbdd_manager_t {
+    #[inline]
     unsafe fn get(self) -> ManuallyDrop<ZBDDManagerRef> {
         assert!(!self._p.is_null(), "the given manager is invalid");
         ManuallyDrop::new(ZBDDManagerRef::from_raw(self._p))
@@ -76,6 +77,7 @@ impl oxidd_zbdd_t {
         _i: 0,
     };
 
+    #[inline]
     unsafe fn get(self) -> AllocResult<ManuallyDrop<ZBDDFunction>> {
         if self._p.is_null() {
             Err(OutOfMemory)
@@ -86,6 +88,7 @@ impl oxidd_zbdd_t {
 }
 
 impl From<ZBDDFunction> for oxidd_zbdd_t {
+    #[inline]
     fn from(value: ZBDDFunction) -> Self {
         let (_p, _i) = value.into_raw();
         Self { _p, _i }
@@ -93,6 +96,7 @@ impl From<ZBDDFunction> for oxidd_zbdd_t {
 }
 
 impl From<AllocResult<ZBDDFunction>> for oxidd_zbdd_t {
+    #[inline]
     fn from(value: AllocResult<ZBDDFunction>) -> Self {
         match value {
             Ok(f) => {
@@ -104,6 +108,7 @@ impl From<AllocResult<ZBDDFunction>> for oxidd_zbdd_t {
     }
 }
 impl From<Option<ZBDDFunction>> for oxidd_zbdd_t {
+    #[inline]
     fn from(value: Option<ZBDDFunction>) -> Self {
         match value {
             Some(f) => {
@@ -124,6 +129,7 @@ pub struct oxidd_zbdd_pair_t {
     second: oxidd_zbdd_t,
 }
 
+#[inline]
 unsafe fn op1(
     f: oxidd_zbdd_t,
     op: impl FnOnce(&ZBDDFunction) -> AllocResult<ZBDDFunction>,
@@ -131,6 +137,7 @@ unsafe fn op1(
     f.get().and_then(|f| op(&f)).into()
 }
 
+#[inline]
 unsafe fn op2(
     lhs: oxidd_zbdd_t,
     rhs: oxidd_zbdd_t,
@@ -139,6 +146,7 @@ unsafe fn op2(
     lhs.get().and_then(|lhs| op(&lhs, &*rhs.get()?)).into()
 }
 
+#[inline]
 unsafe fn op3(
     f1: oxidd_zbdd_t,
     f2: oxidd_zbdd_t,
@@ -174,23 +182,33 @@ pub extern "C" fn oxidd_zbdd_manager_new(
 
 /// Increment the manager reference counter
 ///
+/// No-op if `manager` is invalid.
+///
 /// @returns  `manager`
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_zbdd_manager_ref(
     manager: oxidd_zbdd_manager_t,
 ) -> oxidd_zbdd_manager_t {
-    std::mem::forget(manager.get().clone());
+    if !manager._p.is_null() {
+        std::mem::forget(manager.get().clone());
+    }
     manager
 }
 
 /// Decrement the manager reference counter
+///
+/// No-op if `manager` is invalid.
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_zbdd_manager_unref(manager: oxidd_zbdd_manager_t) {
-    drop(ZBDDManagerRef::from_raw(manager._p));
+    if !manager._p.is_null() {
+        drop(ZBDDManagerRef::from_raw(manager._p));
+    }
 }
 
 /// Increment the reference counter of the node referenced by `f` as well as
 /// the manager storing the node
+///
+/// No-op if `f` is invalid.
 ///
 /// @returns  `f`
 #[no_mangle]
@@ -201,9 +219,13 @@ pub unsafe extern "C" fn oxidd_zbdd_ref(f: oxidd_zbdd_t) -> oxidd_zbdd_t {
 
 /// Decrement the reference counter of the node referenced by `f` as well as the
 /// manager storing the node
+///
+/// No-op if `f` is invalid.
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_zbdd_unref(f: oxidd_zbdd_t) {
-    drop(ZBDDFunction::from_raw(f._p, f._i));
+    if !f._p.is_null() {
+        drop(ZBDDFunction::from_raw(f._p, f._i));
+    }
 }
 
 /// Get the manager that stores `f`

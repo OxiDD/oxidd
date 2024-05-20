@@ -21,7 +21,10 @@ pub struct oxidd_assignment_t {
 /// Free the given assignment
 ///
 /// To uphold Rust's invariants, all values in the assignment must be 0, 1, or
-/// -1. `assignment.data` (i.e. the pointer value itself) and
+/// -1. `assignment.data` (i.e., the pointer value itself) and
+/// `assignment.length` must not be modified.
+///
+/// In case `assignment.data` is `NULL`, this is a no-op.
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_assignment_free(assignment: oxidd_assignment_t) {
     if !assignment.data.is_null() {

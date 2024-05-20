@@ -40,6 +40,7 @@ pub struct oxidd_bdd_manager_t {
 }
 
 impl oxidd_bdd_manager_t {
+    #[inline]
     unsafe fn get(self) -> ManuallyDrop<BDDManagerRef> {
         assert!(!self._p.is_null(), "the given manager is invalid");
         ManuallyDrop::new(BDDManagerRef::from_raw(self._p))
@@ -76,6 +77,7 @@ impl oxidd_bdd_t {
         _i: 0,
     };
 
+    #[inline]
     unsafe fn get(self) -> AllocResult<ManuallyDrop<BDDFunction>> {
         if self._p.is_null() {
             Err(OutOfMemory)
@@ -93,6 +95,7 @@ impl From<BDDFunction> for oxidd_bdd_t {
 }
 
 impl From<AllocResult<BDDFunction>> for oxidd_bdd_t {
+    #[inline]
     fn from(value: AllocResult<BDDFunction>) -> Self {
         match value {
             Ok(f) => {
@@ -104,6 +107,7 @@ impl From<AllocResult<BDDFunction>> for oxidd_bdd_t {
     }
 }
 impl From<Option<BDDFunction>> for oxidd_bdd_t {
+    #[inline]
     fn from(value: Option<BDDFunction>) -> Self {
         match value {
             Some(f) => {
@@ -124,6 +128,7 @@ pub struct oxidd_bdd_pair_t {
     second: oxidd_bdd_t,
 }
 
+#[inline]
 unsafe fn op1(
     f: oxidd_bdd_t,
     op: impl FnOnce(&BDDFunction) -> AllocResult<BDDFunction>,
@@ -131,6 +136,7 @@ unsafe fn op1(
     f.get().and_then(|f| op(&f)).into()
 }
 
+#[inline]
 unsafe fn op2(
     lhs: oxidd_bdd_t,
     rhs: oxidd_bdd_t,
@@ -139,6 +145,7 @@ unsafe fn op2(
     lhs.get().and_then(|lhs| op(&lhs, &*rhs.get()?)).into()
 }
 
+#[inline]
 unsafe fn op3(
     f1: oxidd_bdd_t,
     f2: oxidd_bdd_t,
@@ -174,16 +181,22 @@ pub extern "C" fn oxidd_bdd_manager_new(
 
 /// Increment the manager reference counter
 ///
+/// No-op if `manager` is invalid.
+///
 /// @returns  `manager`
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_bdd_manager_ref(
     manager: oxidd_bdd_manager_t,
 ) -> oxidd_bdd_manager_t {
-    std::mem::forget(manager.get().clone());
+    if !manager._p.is_null() {
+        std::mem::forget(manager.get().clone());
+    }
     manager
 }
 
 /// Decrement the manager reference counter
+///
+/// No-op if `manager` is invalid.
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_bdd_manager_unref(manager: oxidd_bdd_manager_t) {
     if !manager._p.is_null() {
@@ -194,6 +207,8 @@ pub unsafe extern "C" fn oxidd_bdd_manager_unref(manager: oxidd_bdd_manager_t) {
 /// Increment the reference counter of the node referenced by `f` as well as
 /// the manager storing the node
 ///
+/// No-op if `f` is invalid.
+///
 /// @returns  `f`
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_bdd_ref(f: oxidd_bdd_t) -> oxidd_bdd_t {
@@ -203,6 +218,8 @@ pub unsafe extern "C" fn oxidd_bdd_ref(f: oxidd_bdd_t) -> oxidd_bdd_t {
 
 /// Decrement the reference counter of the node referenced by `f` as well as
 /// the manager storing the node
+///
+/// No-op if `f` is invalid.
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_bdd_unref(f: oxidd_bdd_t) {
     if !f._p.is_null() {
