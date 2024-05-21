@@ -36,12 +36,10 @@ include(CTest)
 # Use FetchContent to acquire Corrosion for the cmake integration of Rust projects.
 include(FetchContent)
 
-FetchContent_Declare(
-    Corrosion
+FetchContent_Declare(corrosion
     GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
-    GIT_TAG v0.4.7 # Optionally specify a commit hash, version tag or branch here
-)
-FetchContent_MakeAvailable(Corrosion)
+    GIT_TAG v0.5.0)
+FetchContent_MakeAvailable(corrosion)
 
 # Generate the cbindgen headers automatically after compilation.
 find_program(CBINDGEN_EXECUTABLE NAMES cbindgen DOC "Requires cbindgen to generate the OxiDD headers")
@@ -69,12 +67,12 @@ corrosion_import_crate(
     PROFILE ${OXIDD_CARGO_PROFILE}
     CRATES oxidd-ffi
     CRATE_TYPES cdylib staticlib)
-add_dependencies(oxidd-ffi oxidd-capi-header)
-target_include_directories(oxidd-ffi INTERFACE
+add_dependencies(oxidd_ffi oxidd-capi-header)
+target_include_directories(oxidd_ffi INTERFACE
     ${oxidd_capi_include}
     ${PROJECT_SOURCE_DIR}/bindings/cpp/include)
 
-add_library(oxidd ALIAS oxidd-ffi)
+add_library(oxidd ALIAS oxidd_ffi)
 
 add_subdirectory(bindings/cpp/tests EXCLUDE_FROM_ALL)
 
