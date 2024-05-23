@@ -17,9 +17,12 @@ namespace oxidd::concepts {
 
 /// Function represented as decision diagram
 ///
-/// A function is the combination of a reference to an oxidd::concepts::manager
-/// and a (possibly tagged) edge pointing to a node. Obtaining the manager
-/// reference is possible via the `containing_manager()` method.
+/// A function is the combination of a reference to an
+/// `oxidd::concepts::manager` and a (possibly tagged) edge pointing to a node.
+/// Obtaining the manager reference is possible via the `containing_manager()`
+/// method. Every function implementation `F` has an associated manager type
+/// `F::manager` modelling `oxidd::concepts::manager`, and
+/// `containing_manager()` returns an instance thereof.
 ///
 /// ### Reference Counting
 ///
@@ -60,15 +63,26 @@ namespace oxidd::concepts {
 /// - `f.node_count()` counts the descendant nodes including terminal nodes. `f`
 ///   must be valid. Acquires a shared manager lock.
 template <class F>
-concept function =
-    std::regular<F> && std::totally_ordered<F> && requires(const F f) {
-      { f.is_invalid() } -> std::same_as<bool>;
-      { f.containing_manager() } -> std::same_as<typename F::manager>;
+concept function = (
+  std::regular<F> &&
+  std::totally_ordered<F> &&
+  std::same_as<typename F::manager::function, F> &&
+  requires(const F &f) {
+    { f.is_invalid() } -> std::same_as<bool>;
+    { f.containing_manager() } -> std::same_as<typename F::manager>;
 
-      { std::hash<F>{}(f) } -> std::convertible_to<std::size_t>;
+    { std::hash<F>{}(f) } -> std::convertible_to<std::size_t>;
 
-      { f.node_count() } -> std::same_as<std::size_t>;
-    };
+    { f.node_count() } -> std::same_as<std::size_t>;
+  } &&
+  // manager requirements
+  std::regular<typename F::manager> &&
+  requires(const typename F::manager &m) {
+    { m.is_invalid() } -> std::same_as<bool>;
+
+    { m.num_inner_nodes() } -> std::same_as<size_t>;
+  }
+);
 
 /// Manager storing nodes and ensuring their uniqueness
 ///
@@ -76,7 +90,7 @@ concept function =
 /// their uniqueness. It also defines the variable order.
 ///
 /// Every manager implementation `M` has an associated type `M::function`
-/// modelling the oxidd::concepts::function concept.
+/// modelling the `oxidd::concepts::function` concept.
 ///
 /// ### Reference Counting
 ///
@@ -97,13 +111,8 @@ concept function =
 /// - `m.num_inner_nodes()` returns the count of inner nodes. `m` must be valid.
 ///   Acquires the manager's lock for shared access.
 template <class M>
-concept manager =
-    std::regular<M> && function<typename M::function> &&
-    std::same_as<typename M::function::manager, M> && requires(const M m) {
-      { m.is_invalid() } -> std::same_as<bool>;
-
-      { m.num_inner_nodes() } -> std::same_as<size_t>;
-    };
+concept manager = function<typename M::function> &&
+                  std::same_as<typename M::function::manager, M>;
 
 /// Boolean function 𝔹ⁿ → 𝔹 represented as decision diagram
 ///
@@ -115,7 +124,7 @@ concept manager =
 /// - `f &= g` is shorthand for `f = f & g`
 /// - `f | g` computes the disjunction `f ∨ g`
 /// - `f |= g` is shorthand for `f = f | g`
-/// - `f ^ g` computes the disjunction `f ⊕ g`
+/// - `f ^ g` computes the exclusive disjunction `f ⊕ g`
 /// - `f ^= g` is shorthand for `f = f ^ g`
 /// - `f.nand(g)` computes the negated conjunction `f ⊼ g`
 /// - `f.nor(g)` computes the negated disjunction `f ⊽ g`
@@ -129,8 +138,8 @@ concept manager =
 ///   must be valid.
 /// - `f.sat_count_double(vars)` computes the count of satisfying assignments
 ///   assuming the domain of `f` has `vars` many variables. `f` must be valid.
-/// - `f.pick_cube()` returns a satisfying oxidd::util::assignment if `f` is
-///   satisfiable, or an empty oxidd::util::assignment otherwise. `f` must be
+/// - `f.pick_cube()` returns a satisfying `oxidd::util::assignment` if `f` is
+///   satisfiable, or an empty `oxidd::util::assignment` otherwise. `f` must be
 ///   valid.
 /// - `f.eval(args)` evaluates the Boolean function `f` with arguments `args`
 ///   and returns the respective result. `args` determines the valuation for all
@@ -140,51 +149,75 @@ concept manager =
 ///
 /// All of the operations above acquire the manager's lock for shared access.
 ///
-/// @see oxidd::concepts::function
+/// This extends `oxidd::concepts::function`.
 template <class F>
 concept boolean_function =
-    function<F> && requires(const F bf, F mut_bf, level_no_t levels,
-                            util::slice<std::pair<F, bool>> args) {
+    function<F> &&
+    requires(const F &f, F &mut_f, level_no_t levels,
+             util::slice<std::pair<F, bool>> args) {
       // cofactors
-      { bf.cofactors() } -> std::same_as<std::pair<F, F>>;
-      { bf.cofactor_true() } -> std::same_as<F>;
-      { bf.cofactor_false() } -> std::same_as<F>;
+      { f.cofactors() } -> std::same_as<std::pair<F, F>>;
+      { f.cofactor_true() } -> std::same_as<F>;
+      { f.cofactor_false() } -> std::same_as<F>;
 
       // negation
-      { ~bf } -> std::same_as<F>;
+      { ~f } -> std::same_as<F>;
       // conjunction
-      { bf &bf } -> std::same_as<F>;
-      { mut_bf &= bf } -> std::same_as<F &>;
+      { f &f } -> std::same_as<F>;
+      { mut_f &= f } -> std::same_as<F &>;
       // disjunction
-      { bf | bf } -> std::same_as<F>;
-      { mut_bf |= bf } -> std::same_as<F &>;
+      { f | f } -> std::same_as<F>;
+      { mut_f |= f } -> std::same_as<F &>;
       // exclusive disjunction
-      { bf ^ bf } -> std::same_as<F>;
-      { mut_bf ^= bf } -> std::same_as<F &>;
+      { f ^ f } -> std::same_as<F>;
+      { mut_f ^= f } -> std::same_as<F &>;
       // negated conjunction
-      { bf.nand(bf) } -> std::same_as<F>;
+      { f.nand(f) } -> std::same_as<F>;
       // negated disjunction
-      { bf.nor(bf) } -> std::same_as<F>;
+      { f.nor(f) } -> std::same_as<F>;
       // equivalence
-      { bf.equiv(bf) } -> std::same_as<F>;
+      { f.equiv(f) } -> std::same_as<F>;
       // implication
-      { bf.imp(bf) } -> std::same_as<F>;
+      { f.imp(f) } -> std::same_as<F>;
       // strict implication
-      { bf.imp_strict(bf) } -> std::same_as<F>;
+      { f.imp_strict(f) } -> std::same_as<F>;
       // if-then-else
-      { bf.ite(bf, bf) } -> std::same_as<F>;
+      { f.ite(f, f) } -> std::same_as<F>;
 
-      { bf.satisfiable() } -> std::same_as<bool>;
-      { bf.valid() } -> std::same_as<bool>;
+      { f.satisfiable() } -> std::same_as<bool>;
+      { f.valid() } -> std::same_as<bool>;
 
-      { bf.sat_count_double(levels) } -> std::same_as<double>;
+      { f.sat_count_double(levels) } -> std::same_as<double>;
 
-      { bf.pick_cube() } -> std::same_as<util::assignment>;
+      { f.pick_cube() } -> std::same_as<util::assignment>;
 
-      { bf.eval(args) } -> std::same_as<bool>;
+      { f.eval(args) } -> std::same_as<bool>;
+    } &&
+    // manager requirements
+    requires(const typename F::manager &m, typename F::manager &mut_m) {
+      { mut_m.new_var() } -> std::same_as<F>;
+      { m.t() } -> std::same_as<F>;
+      { m.f() } -> std::same_as<F>;
     };
 
-/// Quantification extension for oxidd::concepts::boolean_function
+/// Manager for Boolean functions
+///
+/// For every implementation `M` of this concept and every `M m`:
+/// - `M::function` models `oxidd::concepts::boolean_function`.
+/// - `m.new_var()` creates a fresh variable, i.e., a function that is true iff
+///   the variable is true. This adds a new level to the decision diagram. `m`
+///   must be valid. Acquires the manager's lock for exclusive access.
+/// - `m.t()` returns the constant true Boolean function ⊤. `m` must be valid.
+///   Acquires the manager's lock for shared access.
+/// - `m.f()` returns the constant false Boolean function ⊥. `m` must be valid.
+///   Acquires the manager's lock for shared access.
+///
+/// @see , oxidd::concepts::boolean_function
+template <class M>
+concept boolean_function_manager =
+    manager<M> && boolean_function<typename M::function>;
+
+/// Quantification extension for `oxidd::concepts::boolean_function`
 ///
 /// `f.forall(vars)` computes the universal quantification, `f.exist(vars)` the
 /// existential, and `f.unique(vars)` the unique quantification over `vars`.
@@ -196,31 +229,11 @@ concept boolean_function =
 ///
 /// All operations here acquire the manager's lock for shared access.
 template <class F>
-concept boolean_function_quant = boolean_function<F> && requires(const F bf) {
-  { bf.forall(bf) } -> std::same_as<F>;
-  { bf.exist(bf) } -> std::same_as<F>;
-  { bf.unique(bf) } -> std::same_as<F>;
+concept boolean_function_quant = boolean_function<F> && requires(const F &f) {
+  { f.forall(f) } -> std::same_as<F>;
+  { f.exist(f) } -> std::same_as<F>;
+  { f.unique(f) } -> std::same_as<F>;
 };
-
-/// Manager for Boolean functions
-///
-/// - `m.new_var()` creates a fresh variable, i.e., a function that is true iff
-///   the variable is true. This adds a new level to the decision diagram. `m`
-///   must be valid. Acquires the manager's lock for exclusive access.
-/// - `m.t()` returns the constant true Boolean function ⊤. `m` must be valid.
-///   Acquires the manager's lock for shared access.
-/// - `m.f()` returns the constant false Boolean function ⊥. `m` must be valid.
-///   Acquires the manager's lock for shared access.
-///
-/// @see oxidd::concepts::manager, oxidd::concepts::boolean_function
-template <class M>
-concept boolean_function_manager =
-    manager<M> && boolean_function<typename M::function> &&
-    requires(const M m, M mut_m) {
-      { mut_m.new_var() } -> std::same_as<typename M::function>;
-      { m.t() } -> std::same_as<typename M::function>;
-      { m.f() } -> std::same_as<typename M::function>;
-    };
 
 } // namespace oxidd::concepts
 

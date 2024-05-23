@@ -29,7 +29,7 @@ const FUNC_UNWRAP_MSG: &str = "the given function is invalid";
 ///
 /// An instance of this type contributes to the manager's reference counter.
 /// Unless explicitly stated otherwise, functions taking oxidd_bcdd_manager_t
-/// instances as arguments do not take ownership of them (i.e. do not decrement
+/// instances as arguments do not take ownership of them (i.e., do not decrement
 /// the reference counter). Returned oxidd_bcdd_manager_t instances must
 /// typically be deallocated using oxidd_bcdd_manager_unref() to avoid memory
 /// leaks.
@@ -60,7 +60,7 @@ impl oxidd_bcdd_manager_t {
 /// An instance of this type contributes to both the reference count of the
 /// referenced node and the manager that stores this node. Unless explicitly
 /// stated otherwise, functions taking oxidd_bcdd_t instances as arguments do
-/// not take ownership of them (i.e. do not decrement the reference counters).
+/// not take ownership of them (i.e., do not decrement the reference counters).
 /// Returned oxidd_bcdd_t instances must typically be deallocated using
 /// oxidd_bcdd_unref() to avoid memory leaks.
 #[derive(Copy, Clone)]
@@ -671,7 +671,7 @@ pub unsafe extern "C" fn oxidd_bcdd_eval(
                     let v = p.func.get().expect(FUNC_UNWRAP_MSG);
                     let borrowed = v.as_edge(manager).borrowed();
                     // SAFETY: We can extend the lifetime since the node is also referenced via
-                    // `assignment` which outlives even the `with_manager_shared` closure
+                    // `args` which outlives even the `with_manager_shared` closure
                     (extend_lifetime(borrowed), p.val)
                 }),
             )

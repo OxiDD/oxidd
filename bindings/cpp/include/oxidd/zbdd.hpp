@@ -19,9 +19,9 @@ class zbdd_function;
 
 /// Manager for zero-suppressed binary decision diagrams
 ///
-/// Models the oxidd::boolean_function_manager concept.
-///
 /// Instances can safely be sent to other threads.
+///
+/// Models `oxidd::concepts::boolean_function_manager`
 class zbdd_manager {
   /// Wrapped CAPI ZBDD manager
   capi::oxidd_zbdd_manager_t _manager = {._p = nullptr};
@@ -90,7 +90,7 @@ public:
                          const zbdd_manager &rhs) noexcept {
     return lhs._manager._p == rhs._manager._p;
   }
-  /// Same as `!(lhs == rhs)` (see @ref operator==)
+  /// Same as `!(lhs == rhs)` (see `operator==()`)
   friend bool operator!=(const zbdd_manager &lhs,
                          const zbdd_manager &rhs) noexcept {
     return !(lhs == rhs);
@@ -98,9 +98,9 @@ public:
 
   /// Check if this manager reference is invalid
   ///
-  /// A manager reference created by the default constructor zbdd_manager() is
-  /// invalid as well as a @ref zbdd_manager instance that has been moved (via
-  /// zbdd_manager(zbdd_manager &&other)).
+  /// A manager reference created by the default constructor `zbdd_manager()` is
+  /// invalid as well as a `zbdd_manager` instance that has been moved (via
+  /// `zbdd_manager(zbdd_manager &&other)`).
   ///
   /// @returns  `true` iff this manager reference is invalid
   [[nodiscard]] bool is_invalid() const noexcept {
@@ -113,7 +113,7 @@ public:
   /// Get a fresh variable in the form of a singleton set. This adds a new level
   /// to a decision diagram.
   ///
-  /// `this` must not be invalid (check via is_invalid()).
+  /// `this` must not be invalid (check via `is_invalid()`).
   ///
   /// Locking behavior: acquires the manager's lock for exclusive access.
   ///
@@ -122,7 +122,7 @@ public:
   /// Get a fresh variable, i.e., a function that is true if and only if the
   /// variable is true. This adds a new level to the decision diagram.
   ///
-  /// `this` must not be invalid (check via is_invalid()).
+  /// `this` must not be invalid (check via `is_invalid()`).
   ///
   /// Locking behavior: acquires the manager's lock for exclusive access.
   ///
@@ -131,7 +131,7 @@ public:
 
   /// Get the ZBDD set ∅
   ///
-  /// `this` must not be invalid (check via is_invalid()).
+  /// `this` must not be invalid (check via `is_invalid()`).
   ///
   /// Locking behavior: acquires the manager's lock for shared access.
   ///
@@ -139,7 +139,7 @@ public:
   [[nodiscard]] zbdd_function empty() const noexcept;
   /// Get the ZBDD set {∅}
   ///
-  /// `this` must not be invalid (check via is_invalid()).
+  /// `this` must not be invalid (check via `is_invalid()`).
   ///
   /// Locking behavior: acquires the manager's lock for shared access.
   ///
@@ -147,7 +147,7 @@ public:
   [[nodiscard]] zbdd_function base() const noexcept;
   /// Get the constant true ZBDD Boolean function ⊤
   ///
-  /// `this` must not be invalid (check via is_invalid()).
+  /// `this` must not be invalid (check via `is_invalid()`).
   ///
   /// Locking behavior: acquires the manager's lock for shared access.
   ///
@@ -157,7 +157,7 @@ public:
   [[nodiscard]] zbdd_function t() const noexcept;
   /// Get the constant false ZBDD Boolean function ⊥
   ///
-  /// `this` must not be invalid (check via is_invalid()).
+  /// `this` must not be invalid (check via `is_invalid()`).
   ///
   /// Locking behavior: acquires the manager's lock for shared access.
   ///
@@ -172,7 +172,7 @@ public:
 
   /// Get the number of inner nodes currently stored
   ///
-  /// `this` must not be invalid (check via is_invalid()).
+  /// `this` must not be invalid (check via `is_invalid()`).
   ///
   /// Locking behavior: acquires the manager's lock for shared access.
   ///
@@ -187,6 +187,8 @@ public:
 
 /// Boolean function 𝔹ⁿ → 𝔹 (or set of Boolean vectors 𝔹ⁿ) represented as
 /// zero-suppressed binary decision diagram
+///
+/// Models `oxidd::concepts::boolean_function`
 class zbdd_function {
   /// Wrapped ZBDD function
   capi::oxidd_zbdd_t _func = {._p = nullptr};
@@ -194,7 +196,7 @@ class zbdd_function {
   friend class zbdd_manager;
   friend struct std::hash<zbdd_function>;
 
-  /// Create a new @ref zbdd_function from a ZBDD function instance of the CAPI
+  /// Create a new `zbdd_function` from a ZBDD function instance of the CAPI
   zbdd_function(capi::oxidd_zbdd_t func) noexcept : _func(func) {}
 
 public:
@@ -246,7 +248,7 @@ public:
                          const zbdd_function &rhs) noexcept {
     return lhs._func._i == rhs._func._i && lhs._func._p == rhs._func._p;
   }
-  /// Same as `!(lhs == rhs)` (see @ref operator==)
+  /// Same as `!(lhs == rhs)` (see `operator==()`)
   friend bool operator!=(const zbdd_function &lhs,
                          const zbdd_function &rhs) noexcept {
     return !(lhs == rhs);
@@ -264,17 +266,17 @@ public:
     return std::tie(lhs._func._p, lhs._func._i) <
            std::tie(rhs._func._p, rhs._func._i);
   }
-  /// @ref operator< with arguments swapped
+  /// `operator<()` with arguments swapped
   friend bool operator>(const zbdd_function &lhs,
                         const zbdd_function &rhs) noexcept {
     return rhs < lhs;
   }
-  /// Same as `!(rhs < lhs)` (see @ref operator<)
+  /// Same as `!(rhs < lhs)` (see `operator<()`)
   friend bool operator<=(const zbdd_function &lhs,
                          const zbdd_function &rhs) noexcept {
     return !(rhs < lhs);
   }
-  /// Same as `!(lhs < rhs)` (see @ref operator<)
+  /// Same as `!(lhs < rhs)` (see `operator<()`)
   friend bool operator>=(const zbdd_function &lhs,
                          const zbdd_function &rhs) noexcept {
     return !(lhs < rhs);
@@ -282,10 +284,10 @@ public:
 
   /// Check if this ZBDD function is invalid
   ///
-  /// A ZBDD function created by the default constructor zbdd_function() is
-  /// invalid as well as a @ref zbdd_function instance that has been moved (via
-  /// zbdd_function(zbdd_function &&other)). Moreover, if an operation tries to
-  /// allocate new nodes but runs out of memory, then it returns an invalid
+  /// A ZBDD function created by the default constructor `zbdd_function()` is
+  /// invalid as well as a `zbdd_function` instance that has been moved (via
+  /// `zbdd_function(zbdd_function &&other)`). Moreover, if an operation tries
+  /// to allocate new nodes but runs out of memory, then it returns an invalid
   /// function.
   ///
   /// @returns  `true` iff this ZBDD function is invalid
@@ -293,7 +295,7 @@ public:
 
   /// Get the containing manager
   ///
-  /// `this` must not be invalid (check via is_invalid()).
+  /// `this` must not be invalid (check via `is_invalid()`).
   ///
   /// @returns  The bdd_manager
   [[nodiscard]] zbdd_manager containing_manager() const noexcept {
@@ -311,8 +313,8 @@ public:
   /// f<sub>false</sub>(x₁, …, xₙ) = f(⊥, x₁, …, xₙ).
   ///
   /// Structurally, the cofactors are the children. If you only need one of the
-  /// cofactors, then use cofactor_true() or cofactor_false(). These functions
-  /// are slightly more efficient then.
+  /// cofactors, then use `cofactor_true()` or `cofactor_false()`. These
+  /// functions are slightly more efficient then.
   ///
   /// Note that the domain of f is 𝔹<sup>n+1</sup> while the domain of
   /// f<sub>true</sub> and f<sub>false</sub> is 𝔹<sup>n</sup>. (Remember that,
@@ -332,7 +334,7 @@ public:
   }
   /// Get the cofactor `f_true` of `f`
   ///
-  /// This function is slightly more efficient than cofactors() in case
+  /// This function is slightly more efficient than `cofactors()` in case
   /// `f_false` is not needed.
   ///
   /// Locking behavior: acquires the manager's lock for shared access.
@@ -346,8 +348,8 @@ public:
   }
   /// Get the cofactor `f_false` of `f`
   ///
-  /// This function is slightly more efficient than cofactors() in case `f_true`
-  /// is not needed.
+  /// This function is slightly more efficient than `cofactors()` in case
+  /// `f_true` is not needed.
   ///
   /// Locking behavior: acquires the manager's lock for shared access.
   ///
@@ -551,7 +553,7 @@ public:
 
   /// Count descendant nodes
   ///
-  /// `this` must not be invalid (check via is_invalid()).
+  /// `this` must not be invalid (check via `is_invalid()`).
   ///
   /// Locking behavior: acquires the manager's lock for shared access.
   ///
@@ -563,7 +565,7 @@ public:
 
   /// Check for satisfiability
   ///
-  /// `this` must not be invalid (check via is_invalid()).
+  /// `this` must not be invalid (check via `is_invalid()`).
   ///
   /// Locking behavior: acquires the manager's lock for shared access.
   ///
@@ -576,7 +578,7 @@ public:
   /// Check for validity
   ///
   /// `this` must not be invalid (in the technical, not the mathematical sense).
-  /// Check via is_invalid().
+  /// Check via `is_invalid()`.
   ///
   /// Locking behavior: acquires the manager's lock for shared access.
   ///
@@ -591,7 +593,7 @@ public:
   /// This method assumes that the function's domain of has `vars` many
   /// variables.
   ///
-  /// `this` must not be invalid (check via is_invalid()).
+  /// `this` must not be invalid (check via `is_invalid()`).
   ///
   /// Locking behavior: acquires the manager's lock for shared access.
   ///
@@ -605,7 +607,7 @@ public:
 
   /// Pick a satisfying assignment
   ///
-  /// `this` must not be invalid (check via is_invalid()).
+  /// `this` must not be invalid (check via `is_invalid()`).
   ///
   /// Locking behavior: acquires the manager's lock for shared access.
   ///
@@ -624,7 +626,7 @@ public:
   /// it contains at least all `args` and all variables in the support of the
   /// ZBDD. Unlike BDDs, extending the domain changes the semantics of ZBDDs.
   ///
-  /// `this` must not be invalid (check via is_invalid()).
+  /// `this` must not be invalid (check via `is_invalid()`).
   ///
   /// Locking behavior: acquires the manager's lock for shared access.
   ///
@@ -686,7 +688,7 @@ inline zbdd_function zbdd_manager::f() const noexcept {
 
 /// @cond
 
-/// Partial specialization for oxidd::zbdd_function
+/// Partial specialization for `oxidd::zbdd_function`
 template <> struct std::hash<oxidd::zbdd_function> {
   std::size_t operator()(const oxidd::zbdd_function &f) const noexcept {
     return std::hash<const void *>{}(f._func._p) ^ f._func._i;

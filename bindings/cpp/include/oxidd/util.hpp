@@ -72,7 +72,7 @@ public:
   /// Construct an empty slice
   constexpr slice() = default;
 
-  /// Construct an empty slice from std::nullopt
+  /// Construct an empty slice from `std::nullopt`
   constexpr slice(std::nullopt_t /*unused*/) {}
 
   /// Construct a slice from a pointer and length
@@ -87,11 +87,11 @@ public:
   /// Construct a slice from a single element
   constexpr slice(const T &element) : _data(&element), _len(1) {}
 
-  /// Construct a slice from a std::vector<T>
+  /// Construct a slice from a `std::vector<T>`
   template <typename A>
   slice(const std::vector<T, A> &vec) : _data(vec.data()), _len(vec.size()) {}
 
-  /// Construct a slice from a std::array<T>
+  /// Construct a slice from a `std::array<T>`
   template <size_t N>
   constexpr slice(const std::array<T, N> &array)
       : _data(array.data()), _len(array.size()) {}
@@ -101,7 +101,7 @@ public:
   constexpr slice(const T (&array)[N]) // NOLINT(*-c-arrays)
       : _data(array), _len(N) {}
 
-  /// Construct a slice from a std::initializer_list<T>
+  /// Construct a slice from a `std::initializer_list<T>`
   constexpr slice(const std::initializer_list<T> &list)
       : _data(list.begin() == list.end() ? (const T *)nullptr : list.begin()),
         _len(list.size()) {}
@@ -143,7 +143,7 @@ public:
 
   /// Access the element at `index`
   ///
-  /// @param  index  The index, must be less than size(), otherwise the call
+  /// @param  index  The index, must be less than `size()`, otherwise the call
   ///                results in undefined behavior
   ///
   /// @returns  A reference to the element
@@ -161,18 +161,18 @@ public:
     return slice(_data + start, end - start);
   }
 
-  /// Copy the data into a std::vector<T>
+  /// Copy the data into a `std::vector<T>`
   [[nodiscard]] std::vector<T> vec() const {
     return std::vector<T>(begin(), end());
   }
-  /// Conversion operator to std::vector<T>
+  /// Conversion operator to `std::vector<T>`
   operator std::vector<T>() const { return vec(); }
 };
 
-/// Assignment, similar to a std::vector<opt_bool>
+/// Assignment, similar to a `std::vector<opt_bool>`
 ///
 /// This class has no copy constructor to avoid additional calls into the FFI.
-/// Use vec() instead.
+/// Use `vec()` instead.
 class assignment {
 public:
   /// Container element type
@@ -202,10 +202,10 @@ private:
   capi::oxidd_assignment_t _assignment;
 
 public:
-  assignment(const assignment &) = delete; // use vec() to copy
+  assignment(const assignment &) = delete; // use `vec()` to copy
 
-  /// Construct an assignment from a capi::oxidd_assignment_t taking ownership
-  /// of it
+  /// Construct an assignment from a `capi::oxidd_assignment_t`, taking
+  /// ownership of it
   explicit assignment(capi::oxidd_assignment_t a) noexcept : _assignment(a) {}
 
   /// Move constructor: empties `other`
@@ -253,7 +253,7 @@ public:
 
   /// Access the element at `index`
   ///
-  /// @param  index  The index, must be less than size(), otherwise the call
+  /// @param  index  The index, must be less than `size()`, otherwise the call
   ///                results in undefined behavior
   ///
   /// @returns  A reference to the element
@@ -262,16 +262,16 @@ public:
     return data()[index]; // NOLINT(*-pointer-arithmetic)
   }
 
-  /// Get a slice<opt_bool> of the data
+  /// Get a `slice<opt_bool>` of the data
   [[nodiscard]] util::slice<opt_bool> slice() const noexcept {
     return {data(), size()};
   }
-  /// Conversion operator to slice<opt_bool>
+  /// Conversion operator to `slice<opt_bool>`
   operator util::slice<opt_bool>() const noexcept { return slice(); }
 
-  /// Copy the data into a std::vector<opt_bool>
+  /// Copy the data into a `std::vector<opt_bool>`
   [[nodiscard]] std::vector<opt_bool> vec() const { return {begin(), end()}; }
-  /// Conversion operator to std::vector<opt_bool>
+  /// Conversion operator to `std::vector<opt_bool>`
   operator std::vector<opt_bool>() const { return vec(); }
 };
 

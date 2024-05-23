@@ -7,6 +7,7 @@
     "/.cspellcache",
     "/.git",
     "/.project-words.txt",
+    "/bindings/cpp/doc/header.html",
     "/build/",
     "/doc/book/book/",
     "/target/",

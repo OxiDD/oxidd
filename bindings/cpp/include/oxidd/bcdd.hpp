@@ -19,9 +19,9 @@ class bcdd_function;
 
 /// Manager for binary decision diagrams with complement edges
 ///
-/// Models the oxidd::boolean_function_manager concept.
-///
 /// Instances can safely be sent to other threads.
+///
+/// Models `oxidd::concepts::boolean_function_manager`
 class bcdd_manager {
   /// Wrapped CAPI BCDD manager
   capi::oxidd_bcdd_manager_t _manager = {._p = nullptr};
@@ -90,7 +90,7 @@ public:
                          const bcdd_manager &rhs) noexcept {
     return lhs._manager._p == rhs._manager._p;
   }
-  /// Same as `!(lhs == rhs)` (see @ref operator==)
+  /// Same as `!(lhs == rhs)` (see `operator==()`)
   friend bool operator!=(const bcdd_manager &lhs,
                          const bcdd_manager &rhs) noexcept {
     return !(lhs == rhs);
@@ -98,9 +98,9 @@ public:
 
   /// Check if this manager reference is invalid
   ///
-  /// A manager reference created by the default constructor bcdd_manager() is
-  /// invalid as well as a @ref bcdd_manager instance that has been moved (via
-  /// bcdd_manager(bcdd_manager &&other)).
+  /// A manager reference created by the default constructor `bcdd_manager()` is
+  /// invalid as well as a `bcdd_manager` instance that has been moved (via
+  /// `bcdd_manager(bcdd_manager &&other)`).
   ///
   /// @returns  `true` iff this manager reference is invalid
   [[nodiscard]] bool is_invalid() const noexcept {
@@ -113,7 +113,7 @@ public:
   /// Get a fresh variable, i.e., a function that is true if and only if the
   /// variable is true. This adds a new level to the decision diagram.
   ///
-  /// `this` must not be invalid (check via is_invalid()).
+  /// `this` must not be invalid (check via `is_invalid()`).
   ///
   /// Locking behavior: acquires the manager's lock for exclusive access.
   ///
@@ -122,7 +122,7 @@ public:
 
   /// Get the constant true BCDD function ⊤
   ///
-  /// `this` must not be invalid (check via is_invalid()).
+  /// `this` must not be invalid (check via `is_invalid()`).
   ///
   /// Locking behavior: acquires the manager's lock for shared access.
   ///
@@ -132,7 +132,7 @@ public:
   [[nodiscard]] bcdd_function t() const noexcept;
   /// Get the constant false BCDD function ⊥
   ///
-  /// `this` must not be invalid (check via is_invalid()).
+  /// `this` must not be invalid (check via `is_invalid()`).
   ///
   /// Locking behavior: acquires the manager's lock for shared access.
   ///
@@ -147,7 +147,7 @@ public:
 
   /// Get the number of inner nodes currently stored
   ///
-  /// `this` must not be invalid (check via is_invalid()).
+  /// `this` must not be invalid (check via `is_invalid()`).
   ///
   /// Locking behavior: acquires the manager's lock for shared access.
   ///
@@ -165,9 +165,10 @@ public:
 ///
 /// This is essentially a tagged reference to a BCDD node.
 ///
-/// Models the oxidd::boolean_function_quant concept.
-///
 /// Instances can safely be sent to other threads.
+///
+/// Models `oxidd::concepts::boolean_function_quant` and
+/// `oxidd::concepts::function_subst`
 class bcdd_function {
   /// Wrapped BCDD function
   capi::oxidd_bcdd_t _func = {._p = nullptr};
@@ -175,7 +176,7 @@ class bcdd_function {
   friend class bcdd_manager;
   friend struct std::hash<bcdd_function>;
 
-  /// Create a new @ref bcdd_function from a BCDD function instance of the CAPI
+  /// Create a new `bcdd_function` from a BCDD function instance of the CAPI
   bcdd_function(capi::oxidd_bcdd_t func) noexcept : _func(func) {}
 
 public:
@@ -228,7 +229,7 @@ public:
                          const bcdd_function &rhs) noexcept {
     return lhs._func._i == rhs._func._i && lhs._func._p == rhs._func._p;
   }
-  /// Same as `!(lhs == rhs)` (see @ref operator==)
+  /// Same as `!(lhs == rhs)` (see `operator==()`)
   friend bool operator!=(const bcdd_function &lhs,
                          const bcdd_function &rhs) noexcept {
     return !(lhs == rhs);
@@ -246,17 +247,17 @@ public:
     return std::tie(lhs._func._p, lhs._func._i) <
            std::tie(rhs._func._p, rhs._func._i);
   }
-  /// @ref operator< with arguments swapped
+  /// `operator<()` with arguments swapped
   friend bool operator>(const bcdd_function &lhs,
                         const bcdd_function &rhs) noexcept {
     return rhs < lhs;
   }
-  /// Same as `!(rhs < lhs)` (see @ref operator<)
+  /// Same as `!(rhs < lhs)` (see `operator<()`)
   friend bool operator<=(const bcdd_function &lhs,
                          const bcdd_function &rhs) noexcept {
     return !(rhs < lhs);
   }
-  /// Same as `!(lhs < rhs)` (see @ref operator<)
+  /// Same as `!(lhs < rhs)` (see `operator<()`)
   friend bool operator>=(const bcdd_function &lhs,
                          const bcdd_function &rhs) noexcept {
     return !(lhs < rhs);
@@ -264,18 +265,18 @@ public:
 
   /// Check if this BCDD function is invalid
   ///
-  /// A BCDD function created by the default constructor bcdd_function() is
-  /// invalid as well as a @ref bcdd_function instance that has been moved
-  /// (via bcdd_function(bcdd_function &&other)). Moreover, if an operation
-  /// tries to allocate new nodes but runs out of memory, then it returns an
-  /// invalid function.
+  /// A BCDD function created by the default constructor `bcdd_function()` is
+  /// invalid as well as a `bcdd_function` instance that has been moved (via
+  /// `bcdd_function(bcdd_function &&other)`). Moreover, if an operation tries
+  /// to allocate new nodes but runs out of memory, then it returns an invalid
+  /// function.
   ///
   /// @returns  `true` iff this BCDD function is invalid
   [[nodiscard]] bool is_invalid() const noexcept { return _func._p == nullptr; }
 
   /// Get the containing manager
   ///
-  /// `this` must not be invalid (check via is_invalid()).
+  /// `this` must not be invalid (check via `is_invalid()`).
   ///
   /// @returns  The bcdd_manager
   [[nodiscard]] bcdd_manager containing_manager() const noexcept {
@@ -294,7 +295,7 @@ public:
   ///
   /// Structurally, the cofactors are children with edge tags are adjusted
   /// accordingly. If you only need one of the cofactors, then use
-  /// cofactor_true() or cofactor_false(). These functions are slightly more
+  /// `cofactor_true()` or `cofactor_false()`. These functions are slightly more
   /// efficient then.
   ///
   /// Locking behavior: acquires the manager's lock for shared access.
@@ -310,7 +311,7 @@ public:
   }
   /// Get the cofactor `f_true` of `f`
   ///
-  /// This function is slightly more efficient than cofactors() in case
+  /// This function is slightly more efficient than `cofactors()` in case
   /// `f_false` is not needed.
   ///
   /// Locking behavior: acquires the manager's lock for shared access.
@@ -324,8 +325,8 @@ public:
   }
   /// Get the cofactor `f_false` of `f`
   ///
-  /// This function is slightly more efficient than cofactors() in case `f_true`
-  /// is not needed.
+  /// This function is slightly more efficient than `cofactors()` in case
+  /// `f_true` is not needed.
   ///
   /// Locking behavior: acquires the manager's lock for shared access.
   ///
@@ -359,7 +360,7 @@ public:
   operator&(const bcdd_function &lhs, const bcdd_function &rhs) noexcept {
     return capi::oxidd_bcdd_and(lhs._func, rhs._func);
   }
-  /// Assignment version of @ref operator&
+  /// Assignment version of `operator&()`
   bcdd_function &operator&=(const bcdd_function &rhs) noexcept {
     return (*this = *this & rhs);
   }
@@ -375,7 +376,7 @@ public:
   operator|(const bcdd_function &lhs, const bcdd_function &rhs) noexcept {
     return capi::oxidd_bcdd_or(lhs._func, rhs._func);
   }
-  /// Assignment version of @ref operator|
+  /// Assignment version of `operator|()`
   bcdd_function &operator|=(const bcdd_function &rhs) noexcept {
     return (*this = *this | rhs);
   }
@@ -391,7 +392,7 @@ public:
   operator^(const bcdd_function &lhs, const bcdd_function &rhs) noexcept {
     return capi::oxidd_bcdd_xor(lhs._func, rhs._func);
   }
-  /// Assignment version of @ref operator^
+  /// Assignment version of `operator^()`
   bcdd_function &operator^=(const bcdd_function &rhs) noexcept {
     return (*this = *this ^ rhs);
   }
@@ -523,7 +524,7 @@ public:
 
   /// Count descendant nodes
   ///
-  /// `this` must not be invalid (check via is_invalid()).
+  /// `this` must not be invalid (check via `is_invalid()`).
   ///
   /// Locking behavior: acquires the manager's lock for shared access.
   ///
@@ -535,7 +536,7 @@ public:
 
   /// Check for satisfiability
   ///
-  /// `this` must not be invalid (check via is_invalid()).
+  /// `this` must not be invalid (check via `is_invalid()`).
   ///
   /// Locking behavior: acquires the manager's lock for shared access.
   ///
@@ -548,7 +549,7 @@ public:
   /// Check for validity
   ///
   /// `this` must not be invalid (in the technical, not the mathematical sense).
-  /// Check via is_invalid().
+  /// Check via `is_invalid()`.
   ///
   /// Locking behavior: acquires the manager's lock for shared access.
   ///
@@ -563,7 +564,7 @@ public:
   /// This method assumes that the function's domain of has `vars` many
   /// variables.
   ///
-  /// `this` must not be invalid (check via is_invalid()).
+  /// `this` must not be invalid (check via `is_invalid()`).
   ///
   /// Locking behavior: acquires the manager's lock for shared access.
   ///
@@ -642,7 +643,7 @@ inline bcdd_function bcdd_manager::f() const noexcept {
 
 /// @cond
 
-/// Partial specialization for oxidd::bcdd_function
+/// Partial specialization for `oxidd::bcdd_function`
 template <> struct std::hash<oxidd::bcdd_function> {
   std::size_t operator()(const oxidd::bcdd_function &f) const noexcept {
     return std::hash<const void *>{}(f._func._p) ^ f._func._i;
