@@ -1,6 +1,6 @@
 name: Python
 
-# spell-checker:ignore pyproject,pydata,jakebailey,CIBW
+# spell-checker:ignore awalsh,CIBW,jakebailey,pkgs,pydata,pyproject
 
 on:
   push:
@@ -25,10 +25,14 @@ jobs:
   lint-test-doc:
     name: Lint, Test & Doc
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
     - uses: actions/checkout@v4
+    - uses: awalsh128/cache-apt-pkgs-action@latest
+      with:
+        packages: cbindgen
+        version: 1.0
     - uses: actions/setup-python@v5
       with:
         python-version: 3.x
@@ -46,10 +50,10 @@ jobs:
     - name: Sphinx
       run: sphinx-build -W bindings/python/doc build/python-doc
 
-  linux-buildwheel:
+  buildwheel-linux:
     name: Build wheels for Linux
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
     - uses: actions/checkout@v4
@@ -65,7 +69,7 @@ jobs:
         name: python-wheels-linux
         path: wheelhouse/*.whl
 
-  mac-buildwheel:
+  buildwheel-mac:
     name: Build wheels for macOS
 
     runs-on: ${{ matrix.os.image }}
@@ -80,7 +84,7 @@ jobs:
       - name: Install cbindgen
         run: brew install cbindgen
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.17.0
+        uses: pypa/cibuildwheel@v2.18.1
         env:
           CIBW_ARCHS_MACOS: native
 
@@ -89,17 +93,17 @@ jobs:
           name: python-wheels-mac-${{ matrix.os.arch }}
           path: ./wheelhouse/*.whl
 
-  win-buildwheel:
+  buildwheel-win:
     name: Build wheels for Windows
 
-    runs-on: windows-latest
+    runs-on: windows-2022
 
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust targets
         run: rustup target add aarch64-pc-windows-msvc
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.17.0
+        uses: pypa/cibuildwheel@v2.18.1
         env:
           CIBW_ARCHS_WINDOWS: all
           CIBW_TEST_SKIP: "*-win_arm64"

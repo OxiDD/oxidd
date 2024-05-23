@@ -1,6 +1,6 @@
 name: C++
 
-# spell-checker:ignore DCMAKE
+# spell-checker:ignore awalsh,ctest,DCMAKE,pkgs
 
 on:
   push:
@@ -25,13 +25,17 @@ jobs:
   lint:
     name: Lint
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     permissions:
       pull-requests: write
 
     steps:
     - uses: actions/checkout@v4
+    - uses: awalsh128/cache-apt-pkgs-action@latest
+      with:
+        packages: cbindgen
+        version: 1.0
     - name: CMake Configure
       run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
     - name: Generate oxidd/capi.h
@@ -53,10 +57,10 @@ jobs:
       run: exit 1
 
 
-  test:
-    name: Test
+  test-linux:
+    name: Test (Linux)
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     strategy:
       matrix:
@@ -66,6 +70,10 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+    - uses: awalsh128/cache-apt-pkgs-action@latest
+      with:
+        packages: cbindgen
+        version: 1.0
     - name: CMake Configure
       run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=${{ matrix.compiler.cc }} -DCMAKE_CXX_COMPILER=${{ matrix.compiler.cxx }}
     - name: Build
@@ -74,3 +82,36 @@ jobs:
     - name: Run Tests
       working-directory: build
       run: make test
+
+  test-mac:
+    name: Test (macOS)
+
+    runs-on: macos-14
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install cbindgen
+      run: brew install cbindgen
+    - name: CMake Configure
+      run: cmake -B build -DCMAKE_BUILD_TYPE=Debug
+    - name: Build
+      working-directory: build
+      run: make boolean-function
+    - name: Run Tests
+      working-directory: build
+      run: make test
+
+  test-win:
+      name: Test (Windows)
+
+      runs-on: windows-2022
+
+      steps:
+      - uses: actions/checkout@v4
+      - name: CMake Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug
+      - name: Build
+        run: cmake --build build --target bindings/cpp/tests/boolean-function
+      - name: Run Tests
+        working-directory: build
+        run: ctest -C Debug

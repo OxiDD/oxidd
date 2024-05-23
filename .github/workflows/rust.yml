@@ -1,6 +1,6 @@
 name: Rust
 
-# spell-checker:ignore dtolnay
+# spell-checker:ignore awalsh,dtolnay,pkgs
 
 on:
   push:
@@ -23,10 +23,14 @@ jobs:
   lint:
     name: Lint
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
     - uses: actions/checkout@v4
+    - uses: awalsh128/cache-apt-pkgs-action@latest
+      with:
+        packages: cbindgen
+        version: 1.0
     - uses: dtolnay/rust-toolchain@master
       with:
         toolchain: nightly
@@ -38,7 +42,7 @@ jobs:
   test:
     name: Test
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     strategy:
       matrix:
@@ -47,6 +51,10 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+    - uses: awalsh128/cache-apt-pkgs-action@latest
+      with:
+        packages: cbindgen
+        version: 1.0
     - uses: dtolnay/rust-toolchain@master
       with:
         toolchain: ${{ matrix.toolchain }}
