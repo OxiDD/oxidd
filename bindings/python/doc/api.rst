@@ -6,7 +6,7 @@ API Reference
    :template: module.rst
    :recursive:
 
-   oxidd.abc
+   oxidd.protocols
    oxidd.bdd
    oxidd.bcdd
    oxidd.zbdd

@@ -2,17 +2,17 @@
 
 __all__ = ["BDDManager", "BDDFunction"]
 
-from collections.abc import Collection
+import collections.abc
 from typing import Optional
 
 from _oxidd import ffi as _ffi
 from _oxidd import lib as _lib
 from typing_extensions import Never, Self, override
 
-from . import abc, util
+from . import protocols, util
 
 
-class BDDManager(abc.BooleanFunctionManager):
+class BDDManager(protocols.BooleanFunctionManager["BDDFunction"]):
     """Manager for binary decision diagrams (without complement edges)"""
 
     _mgr: ...  #: Wrapped FFI object
@@ -64,7 +64,31 @@ class BDDManager(abc.BooleanFunctionManager):
         return _lib.oxidd_bdd_num_inner_nodes(self._mgr)
 
 
-class BDDFunction(abc.BooleanFunctionQuant[BDDManager]):
+class BDDSubstitution:
+    """Substitution mapping variables to replacement functions"""
+
+    _subst: ...  #: Wrapped FFI object (``oxidd_bdd_substitution_t *``)
+
+    def __init__(
+        self, pairs: collections.abc.Iterable[tuple["BDDFunction", "BDDFunction"]]
+    ):
+        """Create a new substitution object for BDDs
+
+        See :meth:`abc.FunctionSubst.make_substitution` fore more details.
+        """
+        self._subst = _lib.oxidd_bdd_substitution_new(
+            len(pairs) if isinstance(pairs, collections.abc.Sized) else 0
+        )
+        for v, r in pairs:
+            _lib.oxidd_bdd_substitution_add_pair(self._subst, v._func, r._func)
+
+    def __del__(self):
+        _lib.oxidd_bdd_substitution_free(self._subst)
+
+
+class BDDFunction(
+    protocols.BooleanFunctionQuant, protocols.FunctionSubst[BDDSubstitution]
+):
     """Boolean function represented as a simple binary decision diagram (BDD)
 
     All operations constructing BDDs may throw a :exc:`MemoryError` in case they
@@ -232,6 +256,19 @@ class BDDFunction(abc.BooleanFunctionQuant[BDDManager]):
         )
 
     @override
+    @classmethod
+    def make_substitution(
+        cls, pairs: collections.abc.Iterable[tuple[Self, Self]]
+    ) -> BDDSubstitution:
+        return BDDSubstitution(pairs)
+
+    @override
+    def substitute(self, substitution: BDDSubstitution) -> Self:
+        return self.__class__._from_raw(
+            _lib.oxidd_bdd_substitute(self._func, substitution._subst)
+        )
+
+    @override
     def forall(self, vars: Self) -> Self:
         assert (
             self._func._p == vars._func._p
@@ -274,7 +311,7 @@ class BDDFunction(abc.BooleanFunctionQuant[BDDManager]):
         return util.Assignment._from_raw(raw) if raw.len > 0 else None
 
     @override
-    def eval(self, args: Collection[tuple[Self, bool]]) -> bool:
+    def eval(self, args: collections.abc.Collection[tuple[Self, bool]]) -> bool:
         n = len(args)
         c_args = util._alloc("oxidd_bdd_bool_pair_t[]", n)
         for c_arg, (f, v) in zip(c_args, args):

@@ -9,10 +9,10 @@ from _oxidd import ffi as _ffi
 from _oxidd import lib as _lib
 from typing_extensions import Never, Self, override
 
-from . import abc, util
+from . import protocols, util
 
 
-class ZBDDManager(abc.BooleanFunctionManager):
+class ZBDDManager(protocols.BooleanFunctionManager["ZBDDFunction"]):
     """Manager for zero-suppressed binary decision diagrams"""
 
     _mgr: ...  #: Wrapped FFI object
@@ -87,7 +87,7 @@ class ZBDDManager(abc.BooleanFunctionManager):
         return _lib.oxidd_zbdd_num_inner_nodes(self._mgr)
 
 
-class ZBDDFunction(abc.BooleanFunction[ZBDDManager]):
+class ZBDDFunction(protocols.BooleanFunction):
     """Boolean function 𝔹ⁿ → 𝔹 (or set of Boolean vectors 𝔹ⁿ) represented as
     zero-suppressed binary decision diagram
 

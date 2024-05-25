@@ -2,17 +2,17 @@
 
 __all__ = ["BCDDManager", "BCDDFunction"]
 
-from collections.abc import Collection
+import collections.abc
 from typing import Optional
 
 from _oxidd import ffi as _ffi
 from _oxidd import lib as _lib
 from typing_extensions import Never, Self, override
 
-from . import abc, util
+from . import protocols, util
 
 
-class BCDDManager(abc.BooleanFunctionManager):
+class BCDDManager(protocols.BooleanFunctionManager["BCDDFunction"]):
     """Manager for binary decision diagrams with complement edges"""
 
     _mgr: ...  #: Wrapped FFI object
@@ -64,7 +64,31 @@ class BCDDManager(abc.BooleanFunctionManager):
         return _lib.oxidd_bcdd_num_inner_nodes(self._mgr)
 
 
-class BCDDFunction(abc.BooleanFunctionQuant[BCDDManager]):
+class BCDDSubstitution:
+    """Substitution mapping variables to replacement functions"""
+
+    _subst: ...  #: Wrapped FFI object (``oxidd_bcdd_substitution_t *``)
+
+    def __init__(
+        self, pairs: collections.abc.Iterable[tuple["BCDDFunction", "BCDDFunction"]]
+    ):
+        """Create a new substitution object for BCDDs
+
+        See :meth:`abc.FunctionSubst.make_substitution` fore more details.
+        """
+        self._subst = _lib.oxidd_bcdd_substitution_new(
+            len(pairs) if isinstance(pairs, collections.abc.Sized) else 0
+        )
+        for v, r in pairs:
+            _lib.oxidd_bcdd_substitution_add_pair(self._subst, v._func, r._func)
+
+    def __del__(self):
+        _lib.oxidd_bcdd_substitution_free(self._subst)
+
+
+class BCDDFunction(
+    protocols.BooleanFunctionQuant, protocols.FunctionSubst[BCDDSubstitution]
+):
     """Boolean function represented as a binary decision diagram with complement
     edges (BCDD)
 
@@ -234,6 +258,19 @@ class BCDDFunction(abc.BooleanFunctionQuant[BCDDManager]):
         )
 
     @override
+    @classmethod
+    def make_substitution(
+        cls, pairs: collections.abc.Iterable[tuple[Self, Self]]
+    ) -> BCDDSubstitution:
+        return BCDDSubstitution(pairs)
+
+    @override
+    def substitute(self, substitution: BCDDSubstitution) -> Self:
+        return self.__class__._from_raw(
+            _lib.oxidd_bcdd_substitute(self._func, substitution._subst)
+        )
+
+    @override
     def forall(self, vars: Self) -> Self:
         assert (
             self._func._p == vars._func._p
@@ -276,7 +313,7 @@ class BCDDFunction(abc.BooleanFunctionQuant[BCDDManager]):
         return util.Assignment._from_raw(raw) if raw.len > 0 else None
 
     @override
-    def eval(self, args: Collection[tuple[Self, bool]]) -> bool:
+    def eval(self, args: collections.abc.Collection[tuple[Self, bool]]) -> bool:
         n = len(args)
         c_args = util._alloc("oxidd_bcdd_bool_pair_t[]", n)
         for c_arg, (f, v) in zip(c_args, args):

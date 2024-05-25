@@ -1,5 +1,5 @@
 """
-The abstract base classes declared in this module allow abstracting away the
+The protocols classes declared in this module allow abstracting away the
 concrete decision diagram kind in a type-safe fashion.
 """
 
@@ -7,72 +7,21 @@ __all__ = [
     "Manager",
     "BooleanFunctionManager",
     "Function",
+    "FunctionSubst",
     "BooleanFunction",
     "BooleanFunctionQuant",
 ]
 
-from abc import ABC, abstractmethod
-from collections.abc import Collection
-from typing import Generic, Optional, TypeVar
+import collections.abc
+from abc import abstractmethod
+from typing import Generic, Optional, Protocol, TypeVar
 
 from typing_extensions import Self
 
 from .util import Assignment
 
 
-class Manager(ABC):
-    """Manager storing nodes and ensuring their uniqueness
-
-    A manager is the data structure responsible for storing nodes and ensuring
-    their uniqueness. It also defines the variable order.
-
-    Implementations supporting concurrency have an internal read/write lock.
-    Many operations acquire this lock for reading (shared) or writing
-    (exclusive).
-    """
-
-    @abstractmethod
-    def num_inner_nodes(self) -> int:
-        """Get the number of inner nodes
-
-        Acquires the manager's lock for shared access.
-        """
-        raise NotImplementedError
-
-
-class BooleanFunctionManager(Manager):
-    """Manager whose nodes represent Boolean functions"""
-
-    @abstractmethod
-    def new_var(self) -> "BooleanFunction[Self]":
-        """Get a fresh variable, i.e., a function that is true if and only if
-        the variable is true. This adds a new level to a decision diagram.
-
-        Acquires the manager's lock for exclusive access.
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    def true(self) -> "BooleanFunction[Self]":
-        """Get the constant true Boolean function ``⊤``
-
-        Acquires the manager's lock for shared access.
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    def false(self) -> "BooleanFunction[Self]":
-        """Get the constant false Boolean function ``⊥``
-
-        Acquires the manager's lock for shared access.
-        """
-        raise NotImplementedError
-
-
-M = TypeVar("M", covariant=True, bound=Manager)
-
-
-class Function(ABC, Generic[M]):
+class Function(Protocol):
     """Function represented as decision diagram
 
     A function is the combination of a reference to a :class:`Manager` and a
@@ -82,7 +31,7 @@ class Function(ABC, Generic[M]):
 
     @property
     @abstractmethod
-    def manager(self) -> M:
+    def manager(self) -> "Manager[Self]":
         """The associated manager"""
         raise NotImplementedError
 
@@ -97,7 +46,48 @@ class Function(ABC, Generic[M]):
         raise NotImplementedError
 
 
-class BooleanFunction(Function[M]):
+S = TypeVar("S")
+
+
+class FunctionSubst(Function, Generic[S], Protocol):
+    """Substitution extension for :class:`Function`"""
+
+    @classmethod
+    @abstractmethod
+    def make_substitution(cls, pairs: collections.abc.Iterable[tuple[Self, Self]]) -> S:
+        """Create a new substitution object from a collection of pairs
+        ``(var, replacement)``
+
+        The intent behind substitution objects is to optimize the case where the
+        same substitution is applied multiple times. We would like to re-use
+        apply cache entries across these operations, and therefore, we need a
+        compact identifier for the substitution (provided by the returned
+        substitution object).
+
+        All variables of must be distinct. Furthermore, variables must be
+        handles for the respective decision diagram levels, e.g., the respective
+        Boolean function for B(C)DDs, and a singleton set for ZBDDs. The order
+        of the pairs is irrelevant.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def substitute(self, substitution: S) -> Self:
+        """Substitute variables in ``self`` according to ``substitution``, which
+        can be created using :meth:`make_substitution`
+
+        The substitution is performed in a parallel fashion, e.g.:
+        ``(¬x ∧ ¬y)[x ↦ ¬x ∧ ¬y, y ↦ ⊥] = ¬(¬x ∧ ¬y) ∧ ¬⊥ = x ∨ y``
+
+        Acquires the manager's lock for shared access.
+
+        ``self`` and all functions in ``substitution`` must belong to the same
+        manager.
+        """
+        raise NotImplementedError
+
+
+class BooleanFunction(Function, Protocol):
     """Boolean function represented as decision diagram"""
 
     @abstractmethod
@@ -292,7 +282,7 @@ class BooleanFunction(Function[M]):
         raise NotImplementedError
 
     @abstractmethod
-    def eval(self, args: Collection[tuple[Self, bool]]) -> bool:
+    def eval(self, args: collections.abc.Collection[tuple[Self, bool]]) -> bool:
         """Evaluate this Boolean function with arguments ``args``
 
         ``args`` determines the valuation for all variables. Missing values are
@@ -306,7 +296,7 @@ class BooleanFunction(Function[M]):
         raise NotImplementedError
 
 
-class BooleanFunctionQuant(BooleanFunction[M]):
+class BooleanFunctionQuant(BooleanFunction, Protocol):
     """Quantification extension for :class:`BooleanFunction`"""
 
     @abstractmethod
@@ -359,4 +349,59 @@ class BooleanFunctionQuant(BooleanFunction[M]):
 
         Acquires the manager's lock for shared access.
         """  # noqa: E501
+        raise NotImplementedError
+
+
+F = TypeVar("F", bound=Function, covariant=True)
+
+
+class Manager(Generic[F], Protocol):
+    """Manager storing nodes and ensuring their uniqueness
+
+    A manager is the data structure responsible for storing nodes and ensuring
+    their uniqueness. It also defines the variable order.
+
+    Implementations supporting concurrency have an internal read/write lock.
+    Many operations acquire this lock for reading (shared) or writing
+    (exclusive).
+    """
+
+    @abstractmethod
+    def num_inner_nodes(self) -> int:
+        """Get the number of inner nodes
+
+        Acquires the manager's lock for shared access.
+        """
+        raise NotImplementedError
+
+
+BF = TypeVar("BF", bound=BooleanFunction, covariant=True)
+
+
+class BooleanFunctionManager(Manager[BF], Protocol):
+    """Manager whose nodes represent Boolean functions"""
+
+    @abstractmethod
+    def new_var(self) -> BF:
+        """Get a fresh variable, i.e., a function that is true if and only if
+        the variable is true. This adds a new level to a decision diagram.
+
+        Acquires the manager's lock for exclusive access.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def true(self) -> BF:
+        """Get the constant true Boolean function ``⊤``
+
+        Acquires the manager's lock for shared access.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def false(self) -> BF:
+        """Get the constant false Boolean function ``⊥``
+
+        Acquires the manager's lock for shared access.
+        """
         raise NotImplementedError
