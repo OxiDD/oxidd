@@ -1,6 +1,6 @@
 name: C++
 
-# spell-checker:ignore awalsh,ctest,DCMAKE,pkgs
+# spell-checker:ignore awalsh,ctest,DCMAKE,doxyindexer,pkgs
 
 on:
   push:
@@ -23,9 +23,12 @@ env:
 
 jobs:
   lint:
-    name: Lint
+    name: Lint & Doc
 
     runs-on: ubuntu-24.04
+
+    env:
+      doxygen_version: 1.11.0
 
     permissions:
       pull-requests: write
@@ -36,11 +39,25 @@ jobs:
       with:
         packages: cbindgen
         version: 1.0
+    - uses: actions/cache@v4
+      id: cache-doxygen
+      with:
+        path: |
+          ~/.local/bin/doxygen
+          ~/.local/bin/doxyindexer
+        key: doxygen-linux-${{ env.doxygen_version }}
+    - name: Download doxygen
+      if: steps.cache-doxygen.outputs.cache-hit != 'true'
+      run: |
+        mkdir -p ~/.local
+        curl https://www.doxygen.nl/files/doxygen-$doxygen_version.linux.bin.tar.gz | tar -xz -C ~/.local --strip-components=1 doxygen-$doxygen_version/bin/{doxygen,doxyindexer}
+    - name: Add ~/.local/bin to PATH
+      run: echo "$HOME/.local/bin" >> $GITHUB_PATH
     - name: CMake Configure
       run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
-    - name: Generate oxidd/capi.h
+    - name: Build Docs
       working-directory: build
-      run: make oxidd-capi-header
+      run: make oxidd-doc
     - uses: cpp-linter/cpp-linter-action@v2
       id: linter
       env:
@@ -52,9 +69,16 @@ jobs:
         style: "file"  # Use .clang-format config file
         tidy-checks: "" # Use .clang-tidy config file
         thread-comments: ${{ github.event_name == 'pull_request' && 'update' }}
-    - name: Fail fast?!
+    - name: Fail Fast?!
       if: steps.linter.outputs.checks-failed > 0
       run: exit 1
+    - name: Deploy Docs
+      if: ${{ github.ref == 'refs/heads/main' }}
+      working-directory: build/doc/html
+      run: zip -r - . | curl -u "$DEPLOY_TOKEN" --basic "$DEPLOY_URL/api/cpp/dev" --upload-file -
+      env:
+        DEPLOY_TOKEN: ${{ secrets.WEBSITE_DEPLOY_TOKEN }}
+        DEPLOY_URL: ${{ secrets.WEBSITE_DEPLOY_URL }}
 
 
   test-linux:

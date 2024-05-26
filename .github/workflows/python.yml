@@ -48,7 +48,14 @@ jobs:
     - name: Test
       run: pytest
     - name: Sphinx
-      run: sphinx-build -W bindings/python/doc build/python-doc
+      run: sphinx-build -W bindings/python/doc target/python/doc
+    - name: Deploy Docs
+      if: ${{ github.ref == 'refs/heads/main' }}
+      working-directory: target/python/doc
+      run: zip -r - . | curl -u "$DEPLOY_TOKEN" --basic "$DEPLOY_URL/api/python/dev" --upload-file -
+      env:
+        DEPLOY_TOKEN: ${{ secrets.WEBSITE_DEPLOY_TOKEN }}
+        DEPLOY_URL: ${{ secrets.WEBSITE_DEPLOY_URL }}
 
   buildwheel-linux:
     name: Build wheels for Linux
