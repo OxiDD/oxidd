@@ -1,6 +1,6 @@
 name: C++
 
-# spell-checker:ignore awalsh,ctest,DCMAKE,doxyindexer,pkgs
+# spell-checker:ignore awalsh,ctest,DCMAKE,doxyindexer,httpdocs,pkgs
 
 on:
   push:
@@ -78,11 +78,17 @@ jobs:
       if: ${{ github.ref == 'refs/heads/main' }}
       working-directory: build/doc/html
       run: |
-        [ $(zip -r - . | curl -o /dev/stderr -s -w "%{response_code}" -u "$DEPLOY_TOKEN" --basic "$DEPLOY_URL/api/cpp/dev" --upload-file -) = 200 ]
+        mkdir -p ~/.ssh
+        echo "$KNOWN_HOSTS" >> ~/.ssh/known_hosts
+        remote_cmd="mkdir '$PATH'.new && tar -xzC '$PATH'.new && mv '$PATH'{,.old} && mv '$PATH'{.new,} && rm -rf '$PATH'.old"
+        ssh-agent sh -c "echo '$KEY' | ssh-add - && tar -cvz . | ssh -l '$USER' -p '$PORT' '$HOST' sh -c '$remote_cmd'"
       env:
-        DEPLOY_TOKEN: ${{ secrets.WEBSITE_DEPLOY_TOKEN }}
-        DEPLOY_URL: ${{ secrets.WEBSITE_DEPLOY_URL }}
-
+        HOST: ${{ secrets.WEBSITE_SSH_HOST }}
+        USER: ${{ secrets.WEBSITE_SSH_USER }}
+        PORT: ${{ secrets.WEBSITE_SSH_PORT }}
+        KEY: ${{ secrets.WEBSITE_SSH_KEY }}
+        KNOWN_HOSTS: ${{ secrets.WEBSITE_SSH_KNOWN_HOSTS }}
+        PATH: /httpdocs/api/cpp/dev
 
   test-linux:
     name: Test (Linux)

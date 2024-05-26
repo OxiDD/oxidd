@@ -1,6 +1,6 @@
 name: Python
 
-# spell-checker:ignore awalsh,CIBW,jakebailey,pkgs,pydata,pyproject
+# spell-checker:ignore awalsh,CIBW,httpdocs,jakebailey,pkgs,pydata,pyproject
 
 on:
   push:
@@ -54,11 +54,17 @@ jobs:
     - name: Deploy Docs
       if: ${{ github.ref == 'refs/heads/main' }}
       working-directory: target/python/doc
-      run: |
-        [ $(zip -r - . | curl -o /dev/stderr -s -w "%{response_code}" -u "$DEPLOY_TOKEN" --basic "$DEPLOY_URL/api/python/dev" --upload-file -) = 200 ]
+        mkdir -p ~/.ssh
+        echo "$KNOWN_HOSTS" >> ~/.ssh/known_hosts
+        remote_cmd="mkdir '$PATH'.new && tar -xzC '$PATH'.new && mv '$PATH'{,.old} && mv '$PATH'{.new,} && rm -rf '$PATH'.old"
+        ssh-agent sh -c "echo '$KEY' | ssh-add - && tar -cvz . | ssh -l '$USER' -p '$PORT' '$HOST' sh -c '$remote_cmd'"
       env:
-        DEPLOY_TOKEN: ${{ secrets.WEBSITE_DEPLOY_TOKEN }}
-        DEPLOY_URL: ${{ secrets.WEBSITE_DEPLOY_URL }}
+        HOST: ${{ secrets.WEBSITE_SSH_HOST }}
+        USER: ${{ secrets.WEBSITE_SSH_USER }}
+        PORT: ${{ secrets.WEBSITE_SSH_PORT }}
+        KEY: ${{ secrets.WEBSITE_SSH_KEY }}
+        KNOWN_HOSTS: ${{ secrets.WEBSITE_SSH_KNOWN_HOSTS }}
+        PATH: /httpdocs/api/python/dev
 
   buildwheel-linux:
     name: Build wheels for Linux
