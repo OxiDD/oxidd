@@ -57,7 +57,7 @@ jobs:
       run: |
         mkdir -p ~/.ssh
         echo "$KNOWN_HOSTS" >> ~/.ssh/known_hosts
-        remote_cmd="mkdir '$PATH'.new && tar -xzC '$PATH'.new && mv '$PATH'{,.old} && mv '$PATH'{.new,} && rm -rf '$PATH'.old"
+        remote_cmd="mkdir '$TARGET'.new && tar -xzC '$TARGET'.new && mv '$TARGET'{,.old} && mv '$TARGET'{.new,} && rm -rf '$TARGET'.old"
         ssh-agent sh -c "echo '$KEY' | ssh-add - && tar -cvz . | ssh -l '$USER' -p '$PORT' '$HOST' sh -c '$remote_cmd'"
       env:
         HOST: ${{ secrets.WEBSITE_SSH_HOST }}
@@ -65,7 +65,7 @@ jobs:
         PORT: ${{ secrets.WEBSITE_SSH_PORT }}
         KEY: ${{ secrets.WEBSITE_SSH_KEY }}
         KNOWN_HOSTS: ${{ secrets.WEBSITE_SSH_KNOWN_HOSTS }}
-        PATH: /httpdocs/api/python/dev
+        TARGET: /httpdocs/api/python/dev
 
   buildwheel-linux:
     name: Build wheels for Linux
