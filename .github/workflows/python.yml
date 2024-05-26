@@ -54,7 +54,7 @@ jobs:
     - name: Deploy Docs
       if: ${{ github.ref == 'refs/heads/main' }}
       working-directory: target/python/doc
-      run:
+      run: |
         [ $(zip -r - . | curl -o /dev/stderr -s -w "%{response_code}" -u "$DEPLOY_TOKEN" --basic "$DEPLOY_URL/api/cpp/dev" --upload-file -) = 200 ]
       env:
         DEPLOY_TOKEN: ${{ secrets.WEBSITE_DEPLOY_TOKEN }}
