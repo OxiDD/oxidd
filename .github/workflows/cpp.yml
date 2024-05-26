@@ -4,19 +4,21 @@ name: C++
 
 on:
   push:
-    branches: ["main"]
+    branches: [main]
     paths:
-    - 'bindings/cpp/**'
-    - 'CMakeLists.txt'
-    - 'crates/**'
-    - 'Cargo.*'
+    - .github/workflows/cpp.yml
+    - bindings/cpp/**
+    - CMakeLists.txt
+    - crates/**
+    - Cargo.*
   pull_request:
-    branches: ["main"]
+    branches: [main]
     paths:
-    - 'bindings/cpp/**'
-    - 'CMakeLists.txt'
-    - 'crates/**'
-    - 'Cargo.*'
+    - .github/workflows/cpp.yml
+    - bindings/cpp/**
+    - CMakeLists.txt
+    - crates/**
+    - Cargo.*
 
 env:
   CARGO_TERM_COLOR: always

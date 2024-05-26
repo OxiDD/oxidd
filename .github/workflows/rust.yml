@@ -4,15 +4,17 @@ name: Rust
 
 on:
   push:
-    branches: ["main"]
+    branches: [main]
     paths:
-    - 'crates/**'
-    - 'Cargo.*'
+    - .github/workflows/rust.yml
+    - crates/**
+    - Cargo.*
   pull_request:
-    branches: ["main"]
+    branches: [main]
     paths:
-    - 'crates/**'
-    - 'Cargo.*'
+    - .github/workflows/rust.yml
+    - crates/**
+    - Cargo.*
 
 env:
   CARGO_TERM_COLOR: always
