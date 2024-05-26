@@ -54,6 +54,7 @@ jobs:
     - name: Deploy Docs
       if: ${{ github.ref == 'refs/heads/main' }}
       working-directory: target/python/doc
+      run: |
         mkdir -p ~/.ssh
         echo "$KNOWN_HOSTS" >> ~/.ssh/known_hosts
         remote_cmd="mkdir '$PATH'.new && tar -xzC '$PATH'.new && mv '$PATH'{,.old} && mv '$PATH'{.new,} && rm -rf '$PATH'.old"
