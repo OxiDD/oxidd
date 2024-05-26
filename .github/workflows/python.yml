@@ -57,8 +57,7 @@ jobs:
       run: |
         mkdir -p ~/.ssh
         echo "$KNOWN_HOSTS" >> ~/.ssh/known_hosts
-        remote_cmd="mkdir '$TARGET'.new && tar -xzC '$TARGET'.new && mv '$TARGET'{,.old} && mv '$TARGET'{.new,} && rm -rf '$TARGET'.old"
-        ssh-agent sh -c "echo '$KEY' | ssh-add - && tar -cvz . | ssh -l '$USER' -p '$PORT' '$HOST' sh -c '$remote_cmd'"
+        ssh-agent sh -c "echo '$KEY' | ssh-add - && tar -cvz . | ssh -l '$USER' -p '$PORT' '$HOST' sh -c 'mkdir $TARGET.new && tar -xzC $TARGET.new && mv $TARGET{,.old} && mv $TARGET{.new,} && rm -rf $TARGET.old'"
       env:
         HOST: ${{ secrets.WEBSITE_SSH_HOST }}
         USER: ${{ secrets.WEBSITE_SSH_USER }}
