@@ -41,8 +41,10 @@ FetchContent_Declare(corrosion
     GIT_TAG v0.5.0)
 FetchContent_MakeAvailable(corrosion)
 
-# Generate the cbindgen headers automatically after compilation.
-find_program(CBINDGEN_EXECUTABLE NAMES cbindgen DOC "Requires cbindgen to generate the OxiDD headers")
+find_program(CBINDGEN_EXECUTABLE
+    NAMES cbindgen
+    DOC "Requires cbindgen to generate the OxiDD headers"
+    REQUIRED)
 
 
 # --- Main Targets -------------------------------------------------------------
