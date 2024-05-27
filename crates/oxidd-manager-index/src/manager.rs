@@ -428,6 +428,8 @@ impl<'id, N: NodeBase, ET: Tag> oxidd_core::Edge for Edge<'id, N, ET> {
 }
 
 impl<'id, N, ET> Drop for Edge<'id, N, ET> {
+    #[inline(never)]
+    #[cold]
     fn drop(&mut self) {
         eprintln!(
             "`Edge`s must not be dropped. Use `Manager::drop_edge()`. Backtrace:\n{}",

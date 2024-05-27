@@ -587,6 +587,8 @@ impl<'id, N: NodeBase, ET: Tag, const TAG_BITS: u32> Edge<'id, N, ET, TAG_BITS> 
 }
 
 impl<'id, N, ET, const TAG_BITS: u32> Drop for Edge<'id, N, ET, TAG_BITS> {
+    #[inline(never)]
+    #[cold]
     fn drop(&mut self) {
         eprintln!(
             "`Edge`s must not be dropped. Use `Manager::drop_edge()`. Backtrace:\n{}",
