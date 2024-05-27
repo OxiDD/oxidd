@@ -67,12 +67,12 @@ corrosion_import_crate(
     PROFILE ${OXIDD_CARGO_PROFILE}
     CRATES oxidd-ffi
     CRATE_TYPES cdylib staticlib)
-add_dependencies(oxidd_ffi oxidd-capi-header)
-target_include_directories(oxidd_ffi INTERFACE
+add_dependencies(oxidd-ffi oxidd-capi-header)
+target_include_directories(oxidd-ffi INTERFACE
     ${oxidd_capi_include}
     ${PROJECT_SOURCE_DIR}/bindings/cpp/include)
 
-add_library(oxidd ALIAS oxidd_ffi)
+add_library(oxidd ALIAS oxidd-ffi)
 
 add_subdirectory(bindings/cpp/tests EXCLUDE_FROM_ALL)
 
