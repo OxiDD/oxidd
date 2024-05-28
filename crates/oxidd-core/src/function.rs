@@ -955,7 +955,7 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         // Naive default implementation
         use BooleanOperator::*;
-        let inner = match op {
+        let inner = EdgeDropGuard::new(manager, match op {
             And => Self::and_edge(manager, lhs, rhs),
             Or => Self::or_edge(manager, lhs, rhs),
             Xor => Self::xor_edge(manager, lhs, rhs),
@@ -964,11 +964,9 @@ pub trait BooleanFunctionQuant: BooleanFunction {
             Nor => Self::nor_edge(manager, lhs, rhs),
             Imp => Self::imp_edge(manager, lhs, rhs),
             ImpStrict => Self::imp_strict_edge(manager, lhs, rhs),
-        }?;
+        }?);
 
-        let result = Self::forall_edge(manager, &inner, vars);
-        manager.drop_edge(inner);
-        result
+        Self::forall_edge(manager, &inner, vars)
     }
 
     /// This operation is equivalent to `∃x. self <op> rhs`, where `<op>` is any
@@ -983,7 +981,7 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         // Naive default implementation
         use BooleanOperator::*;
-        let inner = match op {
+        let inner = EdgeDropGuard::new(manager, match op {
             And => Self::and_edge(manager, lhs, rhs),
             Or => Self::or_edge(manager, lhs, rhs),
             Xor => Self::xor_edge(manager, lhs, rhs),
@@ -992,11 +990,9 @@ pub trait BooleanFunctionQuant: BooleanFunction {
             Nor => Self::nor_edge(manager, lhs, rhs),
             Imp => Self::imp_edge(manager, lhs, rhs),
             ImpStrict => Self::imp_strict_edge(manager, lhs, rhs),
-        }?;
+        }?);
 
-        let result = Self::exist_edge(manager, &inner, vars);
-        manager.drop_edge(inner);
-        result
+        Self::exist_edge(manager, &inner, vars)
     }
 
     /// This operation is equivalent to `∃!x. self <op> rhs`, where `<op>` is any
@@ -1011,7 +1007,7 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         // Naive default implementation
         use BooleanOperator::*;
-        let inner = match op {
+        let inner = EdgeDropGuard::new(manager, match op {
             And => Self::and_edge(manager, lhs, rhs),
             Or => Self::or_edge(manager, lhs, rhs),
             Xor => Self::xor_edge(manager, lhs, rhs),
@@ -1020,11 +1016,9 @@ pub trait BooleanFunctionQuant: BooleanFunction {
             Nor => Self::nor_edge(manager, lhs, rhs),
             Imp => Self::imp_edge(manager, lhs, rhs),
             ImpStrict => Self::imp_strict_edge(manager, lhs, rhs),
-        }?;
+        }?);
 
-        let result = Self::unique_edge(manager, &inner, vars);
-        manager.drop_edge(inner);
-        result
+        Self::unique_edge(manager, &inner, vars)
     }
 }
 
