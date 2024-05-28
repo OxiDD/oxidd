@@ -297,6 +297,10 @@ pub enum BDDOp {
     Exist,
     /// Unique quantification
     Unique,
+
+    ApplyForall,
+    ApplyExist,
+    ApplyUnique,
 }
 
 enum Operation<'a, E: 'a + Edge> {
