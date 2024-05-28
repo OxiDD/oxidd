@@ -5,6 +5,7 @@
 mod boolean_prop;
 mod util;
 
+use oxidd_core::function::BooleanOperator;
 use oxidd_core::function::FunctionSubst;
 use rustc_hash::FxHashMap;
 
@@ -359,6 +360,7 @@ fn test_prop_depth2_quant<B: BooleanFunctionQuant>(
     }
     progress.done();
 }
+
 
 // The following tests are expensive, hence we use `#[ignore]`, see
 // https://doc.rust-lang.org/book/ch11-02-running-tests.html#ignoring-some-tests-unless-specifically-requested.
@@ -743,7 +745,41 @@ impl<'a, B: BooleanFunctionQuant> TestAllBooleanFunctions<'a, B> {
                 let unique_actual = self.dd_to_boolean_func[&f.unique(&dd_var_set).unwrap()];
                 assert_eq!(unique_actual, unique_expected);
             }
+
+            // Apply and quantification algorithms. Here, we only compare the naive and optimised implementations.
+            for f in &self.boolean_functions {
+            
+                for g in &self.boolean_functions {
+                    use BooleanOperator::*;                    
+                    for op in [And, Or, Xor, Equiv, Nand, Nor, Imp, ImpStrict] {
+                        let inner = match op {
+                            And => f.and(g).unwrap(),
+                            Or => f.or(g).unwrap(),
+                            Xor => f.xor(g).unwrap(),
+                            Equiv => f.equiv(g).unwrap(),
+                            Nand => f.nand(g).unwrap(),
+                            Nor => f.nor(g).unwrap(),
+                            Imp => f.imp(g).unwrap(),
+                            ImpStrict => f.imp_strict(g).unwrap(),
+                        };
+
+                        let exist_actual = self.dd_to_boolean_func[&f.apply_exist(op, g, &dd_var_set).unwrap()];
+                        let exist_expected = self.dd_to_boolean_func[&inner.exist(&dd_var_set).unwrap()];    
+                        assert_eq!(exist_actual, exist_expected);
+                        
+                        let forall_actual = self.dd_to_boolean_func[&f.apply_forall(op, g, &dd_var_set).unwrap()];
+                        let forall_expected = self.dd_to_boolean_func[&inner.forall(&dd_var_set).unwrap()];    
+                        assert_eq!(forall_actual, forall_expected);
+    
+                        let unique_actual = self.dd_to_boolean_func[&f.apply_unique(op, g, &dd_var_set).unwrap()];
+                        let unique_expected = self.dd_to_boolean_func[&inner.unique(&dd_var_set).unwrap()];
+                        assert_eq!(unique_actual, unique_expected);
+                    }
+    
+                }
+            }
         }
+
     }
 }
 
