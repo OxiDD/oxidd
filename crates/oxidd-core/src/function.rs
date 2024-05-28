@@ -743,6 +743,7 @@ pub trait BooleanFunction: Function {
 /// [`BooleanFunction::apply_exists()`], [`BooleanFunction::apply_forall()`] and
 /// [`BooleanFunction::apply_unique()`]. They correspond to the binary
 /// operations provided in the trait [`BooleanFunction`].
+#[derive(Copy, Clone)]
 pub enum BooleanOperator {
     /// Compute the conjunction `lhs ∧ rhs`.
     And,
@@ -954,7 +955,7 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         // Naive default implementation
         use BooleanOperator::*;
-        let res = match op {
+        let inner = match op {
             And => Self::and_edge(manager, lhs, rhs),
             Or => Self::or_edge(manager, lhs, rhs),
             Xor => Self::xor_edge(manager, lhs, rhs),
@@ -965,7 +966,9 @@ pub trait BooleanFunctionQuant: BooleanFunction {
             ImpStrict => Self::imp_strict_edge(manager, lhs, rhs),
         }?;
 
-        Self::exist_edge(manager, &res, vars)
+        let result = Self::forall_edge(manager, &inner, vars);
+        manager.drop_edge(inner);
+        result
     }
 
     /// This operation is equivalent to `∃x. self <op> rhs`, where `<op>` is any
@@ -980,7 +983,7 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         // Naive default implementation
         use BooleanOperator::*;
-        let res = match op {
+        let inner = match op {
             And => Self::and_edge(manager, lhs, rhs),
             Or => Self::or_edge(manager, lhs, rhs),
             Xor => Self::xor_edge(manager, lhs, rhs),
@@ -991,7 +994,9 @@ pub trait BooleanFunctionQuant: BooleanFunction {
             ImpStrict => Self::imp_strict_edge(manager, lhs, rhs),
         }?;
 
-        Self::forall_edge(manager, &res, vars)
+        let result = Self::exist_edge(manager, &inner, vars);
+        manager.drop_edge(inner);
+        result
     }
 
     /// This operation is equivalent to `∃!x. self <op> rhs`, where `<op>` is any
@@ -1006,7 +1011,7 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         // Naive default implementation
         use BooleanOperator::*;
-        let res = match op {
+        let inner = match op {
             And => Self::and_edge(manager, lhs, rhs),
             Or => Self::or_edge(manager, lhs, rhs),
             Xor => Self::xor_edge(manager, lhs, rhs),
@@ -1017,7 +1022,9 @@ pub trait BooleanFunctionQuant: BooleanFunction {
             ImpStrict => Self::imp_strict_edge(manager, lhs, rhs),
         }?;
 
-        Self::unique_edge(manager, &res, vars)
+        let result = Self::unique_edge(manager, &inner, vars);
+        manager.drop_edge(inner);
+        result
     }
 }
 
