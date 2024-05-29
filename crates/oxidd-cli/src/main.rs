@@ -11,6 +11,8 @@ use std::io::Write;
 use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering::Relaxed;
 use std::time::Duration;
 use std::time::Instant;
 
@@ -37,6 +39,7 @@ use oxidd_parser::ParseOptionsBuilder;
 use oxidd_parser::Problem;
 use oxidd_parser::Prop;
 use oxidd_parser::Var;
+use rayon::iter::IntoParallelIterator;
 use rustc_hash::FxHashMap;
 use rustc_hash::FxHasher;
 
@@ -86,8 +89,13 @@ struct Cli {
     read_var_order: bool,
 
     /// Order in which to apply operations when building a CNF
-    #[arg(value_enum, long, default_value_t = CNFBuildOrder::Seq)]
+    #[arg(value_enum, long, default_value_t = CNFBuildOrder::LeftDeep)]
     cnf_build_order: CNFBuildOrder,
+
+    /// For every conjunction operation in a CNF, compute and print the DD's
+    /// size
+    #[arg(long)]
+    cnf_size_profile: bool,
 
     /// Perform model counting
     #[arg(long)]
@@ -122,10 +130,17 @@ enum DDType {
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, ValueEnum)]
 enum CNFBuildOrder {
-    /// Sequential, as specified in the file
-    Seq,
-    /// Read the order from the comment lines in the input file
-    File,
+    /// Sequential, using left-deep bracketing of the conjunctions in the input
+    /// order
+    LeftDeep,
+    /// Sequential, using (nearly) balanced bracketing of the conjunctions in
+    /// the input order
+    Balanced,
+    /// Multithreaded, using Rayon's reduce method. The bracketing is
+    /// non-deterministic but the order is kept as in the input
+    WorkStealing,
+    /// Bracketing tree and order from the comment lines in the input file
+    Tree,
 }
 
 /// Human-readable durations
@@ -211,7 +226,7 @@ fn make_bool_dd<B>(
     vars: &mut FxHashMap<String, B>,
 ) -> B
 where
-    B: BooleanFunction + Send + 'static,
+    B: BooleanFunction + Send + Sync + 'static,
     for<'id> B::Manager<'id>: WorkerManager,
     for<'id> <B::Manager<'id> as Manager>::InnerNode: HasLevel,
 {
@@ -240,16 +255,19 @@ where
     fn clause_tree_rec<B: BooleanFunction>(
         clauses: &[B],
         clause_order: &[ClauseOrderNode],
+        report: impl Fn(&B) + Copy,
     ) -> (B, usize) {
         match clause_order[0] {
             ClauseOrderNode::Clause(n) => (clauses[n.get() - 1].clone(), 1),
             ClauseOrderNode::Conj => {
                 let mut consumed = 1;
-                let (lhs, c) = clause_tree_rec(clauses, &clause_order[consumed..]);
+                let (lhs, c) = clause_tree_rec(clauses, &clause_order[consumed..], report);
                 consumed += c;
-                let (rhs, c) = clause_tree_rec(clauses, &clause_order[consumed..]);
+                let (rhs, c) = clause_tree_rec(clauses, &clause_order[consumed..], report);
                 consumed += c;
-                (lhs.and(&rhs).expect(OOM_MSG), consumed)
+                let conj = lhs.and(&rhs).expect(OOM_MSG);
+                report(&conj);
+                (conj, consumed)
             }
         }
     }
@@ -269,7 +287,7 @@ where
                 eprintln!("error: variable order not given");
                 std::process::exit(1);
             }
-            if cli.cnf_build_order == CNFBuildOrder::File && clause_order.is_empty() {
+            if cli.cnf_build_order == CNFBuildOrder::Tree && clause_order.is_empty() {
                 eprintln!("error: clause order not given");
                 std::process::exit(1);
             }
@@ -314,15 +332,54 @@ where
                 if clauses.is_empty() {
                     B::t(manager)
                 } else {
-                    match cli.cnf_build_order {
-                        CNFBuildOrder::Seq => {
-                            let init = clauses[0].clone();
-                            clauses[1..]
-                                .iter()
-                                .fold(init, |acc, f| acc.and(f).expect(OOM_MSG))
+                    let cnf_size_profile = cli.cnf_size_profile;
+                    let conjuncts_built = AtomicUsize::new(0);
+                    let report = |f: &B| {
+                        if cnf_size_profile {
+                            let conj = conjuncts_built.fetch_add(1, Relaxed);
+                            let time = start.elapsed();
+                            println!(
+                                "[{:08.2}] conjunct {conj}: {} nodes",
+                                time.as_secs_f32(),
+                                f.node_count()
+                            );
                         }
-                        CNFBuildOrder::File => {
-                            let (func, _consumed) = clause_tree_rec(&clauses, &clause_order);
+                    };
+                    match cli.cnf_build_order {
+                        CNFBuildOrder::LeftDeep => {
+                            let init = clauses[0].clone();
+                            clauses[1..].iter().fold(init, |acc, f| {
+                                let res = acc.and(f).expect(OOM_MSG);
+                                report(&res);
+                                res
+                            })
+                        }
+                        CNFBuildOrder::Balanced => {
+                            let mut clauses = clauses;
+                            let mut step = 1;
+                            while step < clauses.len() {
+                                let mut i = 0;
+                                while i + step < clauses.len() {
+                                    clauses[i] = clauses[i].and(&clauses[i + step]).expect(OOM_MSG);
+                                    report(&clauses[i]);
+                                    i += 2 * step;
+                                }
+                                step *= 2;
+                            }
+                            clauses.into_iter().next().unwrap()
+                        }
+                        CNFBuildOrder::WorkStealing => rayon::iter::ParallelIterator::reduce(
+                            clauses.into_par_iter(),
+                            || B::t(manager),
+                            |acc, f| {
+                                let res = acc.and(&f).expect(OOM_MSG);
+                                report(&res);
+                                res
+                            },
+                        ),
+                        CNFBuildOrder::Tree => {
+                            let (func, _consumed) =
+                                clause_tree_rec(&clauses, &clause_order, report);
                             debug_assert_eq!(_consumed, clause_order.len());
                             func
                         }
@@ -382,7 +439,7 @@ where
 
 fn bool_dd_main<B, O>(cli: &Cli, mref: B::ManagerRef)
 where
-    B: BooleanFunction + Send + 'static,
+    B: BooleanFunction + Send + Sync + 'static,
     B::ManagerRef: Send + 'static,
     for<'id> B: dot::DotStyle<<B::Manager<'id> as Manager>::EdgeTag>,
     for<'id> B::Manager<'id>: WorkerManager + HasApplyCache<B::Manager<'id>, O>,
@@ -392,7 +449,7 @@ where
     O: Copy + Ord + Hash,
 {
     let parse_options = ParseOptionsBuilder::default()
-        .orders(cli.read_var_order | (cli.cnf_build_order == CNFBuildOrder::File))
+        .orders(cli.read_var_order | (cli.cnf_build_order == CNFBuildOrder::Tree))
         .build()
         .unwrap();
 
@@ -426,6 +483,7 @@ where
         })
     };
 
+    // Import dddmp files
     for path in &cli.dddmp_import {
         let start = Instant::now();
         print!("importing '{}' ...", path.display());
@@ -503,6 +561,7 @@ where
         report_dd_node_count();
     }
 
+    // Construct DDs for input problems (e.g., from DIMACS files)
     for file in &cli.file {
         let start = Instant::now();
         let Some(problem) = load_file(file, &parse_options) else {
@@ -518,6 +577,7 @@ where
         report_dd_node_count();
     }
 
+    // Identify equivalent functions
     let mut equivalences: FxHashMap<&B, Vec<usize>> = Default::default();
     for (i, (func, _)) in funcs.iter().enumerate() {
         equivalences
@@ -526,6 +586,7 @@ where
             .or_insert_with(|| vec![i]);
     }
 
+    // Count nodes and satisfying assignments
     let mut model_count_cache: SatCountCache<BigUint, BuildHasherDefault<FxHasher>> =
         SatCountCache::default();
     for (f, equiv) in equivalences.into_iter() {
@@ -550,6 +611,7 @@ where
         }
     }
 
+    // Export (dot, dddmp)
     mref.with_manager_shared(|manager| {
         if let Some(dotfile) = &cli.dot_output {
             fs::File::create(dotfile)
