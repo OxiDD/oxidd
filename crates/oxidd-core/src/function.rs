@@ -1,5 +1,6 @@
 //! Function traits
 
+use std::fmt::Display;
 use std::hash::BuildHasher;
 use std::hash::Hash;
 
@@ -743,7 +744,7 @@ pub trait BooleanFunction: Function {
 /// [`BooleanFunction::apply_exists()`], [`BooleanFunction::apply_forall()`] and
 /// [`BooleanFunction::apply_unique()`]. They correspond to the binary
 /// operations provided in the trait [`BooleanFunction`].
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum BooleanOperator {
     /// Compute the conjunction `lhs ∧ rhs`.
     And,
@@ -761,6 +762,22 @@ pub enum BooleanOperator {
     Imp,
     /// Compute the strict implication `lhs < rhs`.
     ImpStrict,
+}
+
+impl Display for BooleanOperator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use BooleanOperator::*;
+        match self {
+            And => write!(f, "∧"),
+            Or => write!(f, "∨"),
+            Xor => write!(f, "⊕"),
+            Equiv => write!(f, "↔"),
+            Nand => write!(f, "⊼"),
+            Nor => write!(f, "⊽"),
+            Imp => write!(f, "→"),
+            ImpStrict => write!(f, "<"),
+        }   
+    }
 }
 
 /// Quantification extension for [`BooleanFunction`]
