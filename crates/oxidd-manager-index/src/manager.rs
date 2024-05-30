@@ -172,7 +172,15 @@ struct SharedStoreState {
     allocated: u32,
 
     /// Eventually consistent count of inner nodes
-    node_count: u32,
+    ///
+    /// This is an `i64` and not an `u32` because of the following scenario:
+    /// Worker A creates n nodes such that its `node_count_delta` becomes n - 1
+    /// and the shared `node_count` is 1. At least two of the newly created
+    /// nodes are solely referenced by a [`Function`]. An application thread
+    /// drops these two functions. This will directly decrement the shared
+    /// `node_count` by 1 twice. If we used a `u32`, this would lead to an
+    /// overflow.
+    node_count: i64,
 
     /// Background garbage collection state (see [`GCState`])
     gc_state: GCState,
@@ -634,8 +642,8 @@ where
         LOCAL_STORE_STATE.with(|local| {
             let mut shared = self.state.lock();
 
-            shared.node_count = shared.node_count.wrapping_add_signed(delta);
-            if shared.gc_state == GCState::Init && shared.node_count >= shared.gc_hwm {
+            shared.node_count += delta as i64;
+            if shared.gc_state == GCState::Init && shared.node_count >= shared.gc_hwm as i64 {
                 shared.gc_state = GCState::Triggered;
                 self.gc_signal.1.notify_one();
             }
@@ -738,9 +746,7 @@ where
                 } else {
                     let mut shared = self.state.lock();
                     shared.next_free.push(state.next_free.replace(0));
-                    shared.node_count = shared
-                        .node_count
-                        .wrapping_add_signed(state.node_count_delta.replace(0));
+                    shared.node_count += state.node_count_delta.replace(0) as i64;
                 }
             } else {
                 #[cold]
@@ -873,9 +879,7 @@ where
                 if next_free != 0 {
                     shared.next_free.push(next_free);
                 }
-                shared.node_count = shared
-                    .node_count
-                    .wrapping_add_signed(local.node_count_delta.replace(0));
+                shared.node_count += local.node_count_delta.replace(0) as i64;
             });
         }
 
@@ -2055,14 +2059,13 @@ pub fn new_manager<
                 let mut shared = store.state.lock();
                 LOCAL_STORE_STATE.with(|local| {
                     if local.next_free.get() != 0 {
-                        shared.node_count = shared
-                            .node_count
-                            .wrapping_add_signed(local.node_count_delta.replace(0));
+                        shared.node_count += local.node_count_delta.replace(0) as i64;
                         shared.next_free.push(local.next_free.replace(0));
                     }
                 });
 
-                if shared.node_count < shared.gc_lwm && shared.gc_state != GCState::Disabled {
+                if shared.node_count < shared.gc_lwm as i64 && shared.gc_state != GCState::Disabled
+                {
                     shared.gc_state = GCState::Init;
                 }
             }
