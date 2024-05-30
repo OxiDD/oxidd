@@ -4,16 +4,6 @@ name: C++
 
 on:
   push:
-    branches: [main]
-    paths:
-    - .github/workflows/cpp.yml
-    - bindings/cpp/**
-    - CMakeLists.txt
-    - crates/**
-    - "!crates/oxidd-cli/**"
-    - Cargo.*
-  pull_request:
-    branches: [main]
     paths:
     - .github/workflows/cpp.yml
     - bindings/cpp/**

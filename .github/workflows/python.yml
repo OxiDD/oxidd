@@ -4,16 +4,6 @@ name: Python
 
 on:
   push:
-    branches: [main]
-    paths:
-    - .github/workflows/python.yml
-    - bindings/python/**
-    - pyproject.toml
-    - crates/**
-    - "!crates/oxidd-cli/**"
-    - Cargo.*
-  pull_request:
-    branches: [main]
     paths:
     - .github/workflows/python.yml
     - bindings/python/**
