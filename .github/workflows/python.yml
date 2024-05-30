@@ -54,7 +54,7 @@ jobs:
     - name: Sphinx
       run: sphinx-build -W bindings/python/doc target/python/doc
     - name: Deploy Docs
-      if: ${{ github.ref == 'refs/heads/main' }}
+      if: ${{ github.repository == 'OxiDD/oxidd' && github.ref == 'refs/heads/main' }}
       working-directory: target/python/doc
       run: |
         mkdir -p ~/.ssh

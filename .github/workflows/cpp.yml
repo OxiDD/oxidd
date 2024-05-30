@@ -77,7 +77,7 @@ jobs:
       if: steps.linter.outputs.checks-failed > 0
       run: exit 1
     - name: Deploy Docs
-      if: ${{ github.ref == 'refs/heads/main' }}
+      if: ${{ github.repository == 'OxiDD/oxidd' && github.ref == 'refs/heads/main' }}
       working-directory: build/doc/html
       run: |
         mkdir -p ~/.ssh
