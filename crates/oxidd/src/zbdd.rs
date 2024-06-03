@@ -217,7 +217,7 @@ mod pointer {
         tag_bits: 2,
     });
 
-    manager_data!(ZBDDManagerData for ZBDD, operator: ZBDDOp, cache_max_arity: 2);
+    manager_data!(ZBDDManagerData for ZBDD, operator: ZBDDOp, cache_max_arity: 3);
 
     crate::util::manager_ref_pointer_based!(pub struct ZBDDManagerRef(<ZBDD as DD>::ManagerRef) with ZBDDManagerData);
 

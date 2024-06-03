@@ -31,7 +31,7 @@ pub fn new_manager(
         if #[cfg(feature = "manager-pointer")] {
             pointer::BCDDManagerRef::new_manager(inner_node_capacity, apply_cache_capacity, threads)
         } else if #[cfg(feature = "manager-index")] {
-            index::BCDDManagerRef::new_manager(inner_node_capacity, 2, apply_cache_capacity, threads)
+            index::BCDDManagerRef::new_manager(inner_node_capacity, 1, apply_cache_capacity, threads)
         } else {
             unreachable!()
         }
@@ -108,7 +108,7 @@ mod pointer {
         tag_bits: 2,
     });
 
-    crate::util::manager_data!(BCDDManagerData for BCDD, operator: BCDDOp, cache_max_arity: 2);
+    crate::util::manager_data!(BCDDManagerData for BCDD, operator: BCDDOp, cache_max_arity: 3);
 
     crate::util::manager_ref_pointer_based!(pub struct BCDDManagerRef(<BCDD as DD>::ManagerRef) with BCDDManagerData);
 
