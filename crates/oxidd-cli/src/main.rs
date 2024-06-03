@@ -684,8 +684,11 @@ fn main() {
         sys.refresh_memory();
         let mem = sys.available_memory();
         let apply_cache_size = 4 * 4 * cli.apply_cache_capacity.next_power_of_two();
-        inner_node_capacity =
-            std::cmp::min((mem - apply_cache_size as u64) / (4 * 8), (1 << 32) - 1) as usize;
+        let terminals = if cli.dd_type == DDType::BCDD { 1 } else { 2 };
+        inner_node_capacity = std::cmp::min(
+            (mem - apply_cache_size as u64) / (4 * 8),
+            (1 << 32) - terminals,
+        ) as usize;
     }
 
     println!("inner node capacity: {inner_node_capacity}");
