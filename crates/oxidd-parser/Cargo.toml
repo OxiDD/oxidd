@@ -42,3 +42,8 @@ default = ["load-file"]
 
 ## Convenience functions etc. to load a problem from file ([`load_file`])
 load-file = ["dep:codespan-reporting"]
+
+
+[[example]]
+name = "load_file"
+required-features = ["load-file"]

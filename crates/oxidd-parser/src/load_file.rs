@@ -3,6 +3,7 @@
 // spell-checker:ignore termcolor
 
 use std::fmt;
+use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 
 use codespan_reporting::diagnostic::{Diagnostic, Label};
@@ -11,11 +12,11 @@ use codespan_reporting::term::termcolor::ColorChoice;
 use codespan_reporting::term::termcolor::{StandardStream, WriteColor};
 use codespan_reporting::term::{emit, Config};
 use nom::error::{ContextError, ErrorKind, FromExternalError, ParseError};
-use nom::{Finish, Offset};
+use nom::Offset;
 
-use crate::dimacs;
 use crate::ParseOptions;
 use crate::Problem;
+use crate::{aiger, dimacs};
 
 /// File types
 ///
@@ -27,17 +28,22 @@ pub enum FileType {
     /// DIMACS CNF/SAT formats
     ///
     /// Extensions: `.cnf`, `.sat`, `.dimacs`
-    Dimacs,
+    DIMACS,
+    /// AIGER
+    ///
+    /// Extensions: `.aag`, `.aig`
+    AIGER,
 }
 
 impl FileType {
     /// Guess the file type based on the given path
     pub fn from_path(path: &Path) -> Option<Self> {
         let ext = path.extension()?;
-        if ext == "cnf" || ext == "sat" || ext == "dimacs" {
-            return Some(FileType::Dimacs);
+        match ext.as_bytes() {
+            b"cnf" | b"sat" | b"dimacs" => Some(FileType::DIMACS),
+            b"aag" | b"aig" => Some(FileType::AIGER),
+            _ => None,
         }
-        None
     }
 }
 
@@ -100,13 +106,24 @@ pub fn parse<S: AsRef<str> + Clone + fmt::Display>(
     config: &Config,
 ) -> Option<Problem> {
     let errors = match file_type {
-        FileType::Dimacs => match dimacs::parse::<ParserReport<_>>(parse_options)(input).finish() {
+        FileType::DIMACS => match dimacs::parse::<ParserReport<_>>(parse_options)(input) {
             Ok((rest, problem)) => {
                 debug_assert!(rest.is_empty());
                 return Some(problem);
             }
-            Err(e) => e.0,
+            Err(e) => e,
         },
+        FileType::AIGER => match aiger::parse::<ParserReport<_>>(parse_options)(input) {
+            Ok((rest, aig)) => {
+                debug_assert!(rest.is_empty());
+                return Some(Problem::AIG(aig));
+            }
+            Err(e) => e,
+        },
+    };
+    let errors = match errors {
+        nom::Err::Error(e) | nom::Err::Failure(e) => e.0,
+        nom::Err::Incomplete(_) => unreachable!("only using complete parsers"),
     };
 
     let range = move |span: &[u8]| {

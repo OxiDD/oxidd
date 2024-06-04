@@ -8,7 +8,6 @@ use std::hash::Hash;
 use std::io;
 use std::io::Seek;
 use std::io::Write;
-use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::atomic::AtomicUsize;
@@ -182,23 +181,23 @@ const OOM_MSG: &str = "Out of memory";
 fn make_vars<'id, B: BooleanFunction>(
     manager: &mut B::Manager<'id>,
     num_vars: u32,
-    var_order: Vec<(Var, String)>,
+    var_order: Option<&[(Var, String)]>,
     name_map: &mut FxHashMap<String, B>,
 ) -> Vec<B>
 where
     B::Manager<'id>: WorkerManager,
     <B::Manager<'id> as Manager>::InnerNode: HasLevel,
 {
-    if !var_order.is_empty() {
+    if let Some(var_order) = var_order {
         debug_assert_eq!(var_order.len(), num_vars as usize);
         let mut vars: Vec<Option<B>> = vec![None; var_order.len()];
         let mut order = Vec::with_capacity(num_vars as usize);
         for (var, name) in var_order {
             let f = name_map
-                .entry(name)
+                .entry(name.to_string())
                 .or_insert_with(|| B::new_var(manager).expect(OOM_MSG))
                 .clone();
-            vars[(var.get() - 1) as usize] = Some(f.clone());
+            vars[*var] = Some(f.clone());
             order.push(f);
         }
         let vars: Vec<B> = vars
@@ -232,10 +231,8 @@ where
 {
     fn prop_rec<B: BooleanFunction>(manager: &B::Manager<'_>, prop: &Prop, vars: &[B]) -> B {
         match prop {
-            Prop::Lit(v, false) => vars[(NonZeroU32::get(*v) - 1) as usize].clone(),
-            Prop::Lit(v, true) => vars[(NonZeroU32::get(*v) - 1) as usize]
-                .not()
-                .expect(OOM_MSG),
+            Prop::Lit(l) if l.positive() => vars[l.variable()].clone(),
+            Prop::Lit(l) => vars[l.variable()].not().expect(OOM_MSG),
             Prop::Neg(p) => prop_rec(manager, p, vars).not().expect(OOM_MSG),
             Prop::And(ps) => ps.iter().fold(B::t(manager), |b, p| {
                 b.and(&prop_rec(manager, p, vars)).expect(OOM_MSG)
@@ -272,22 +269,35 @@ where
         }
     }
 
+    let check_var_count = move |vars: usize| {
+        if vars >= LevelNo::MAX as usize {
+            eprintln!("error: too many variables");
+            std::process::exit(1);
+        }
+        vars as LevelNo
+    };
+    #[inline]
+    fn check_var_order(
+        var_order: Option<&[(Var, String)]>,
+        read_var_order: bool,
+    ) -> Option<&[(Var, String)]> {
+        if !read_var_order {
+            None
+        } else if var_order.is_some() {
+            var_order
+        } else {
+            eprintln!("error: variable order not given");
+            std::process::exit(1);
+        }
+    }
+
     let start = Instant::now();
 
     let func = match problem {
-        Problem::CNF {
-            num_vars,
-            mut var_order,
-            clauses,
-            clause_order,
-        } => {
-            if !cli.read_var_order {
-                var_order.clear();
-            } else if var_order.is_empty() {
-                eprintln!("error: variable order not given");
-                std::process::exit(1);
-            }
-            if cli.cnf_build_order == CNFBuildOrder::Tree && clause_order.is_empty() {
+        Problem::CNF(mut cnf) => {
+            let num_vars = check_var_count(cnf.vars());
+            let var_order = check_var_order(cnf.var_order(), cli.read_var_order);
+            if cli.cnf_build_order == CNFBuildOrder::Tree && cnf.clause_order().is_none() {
                 eprintln!("error: clause order not given");
                 std::process::exit(1);
             }
@@ -297,32 +307,36 @@ where
             });
 
             mref.with_manager_shared(|manager| {
-                let clauses: Vec<B> = clauses
-                    .into_iter()
-                    .map(|mut clause| {
-                        if clause.is_empty() {
-                            return B::f(manager);
-                        }
+                let clauses = cnf.clauses_mut();
+                let mut bdd_clauses = Vec::with_capacity(clauses.len());
+                let mut i = 0;
+                while let Some(clause) = clauses.get_mut(i) {
+                    if clause.is_empty() {
+                        println!("clause {i} is empty");
+                        return B::f(manager);
+                    }
 
-                        // Build clause bottom-up
-                        clause.sort_unstable_by_key(|lit| lit.0);
-                        let (var, neg) = clause.pop().unwrap();
-                        let init = &vars[(var.get() - 1) as usize];
-                        let init = if neg {
-                            init.not().expect(OOM_MSG)
+                    // Build clause bottom-up
+                    clause.sort_unstable_by_key(|lit| std::cmp::Reverse(lit.variable()));
+                    let l = clause[0];
+                    let init = &vars[l.variable()];
+                    let init = if l.positive() {
+                        init.clone()
+                    } else {
+                        init.not().expect(OOM_MSG)
+                    };
+                    bdd_clauses.push(clause[1..].iter().fold(init, |acc, l| {
+                        let var = &vars[l.variable()];
+                        if l.positive() {
+                            acc.or(var).expect(OOM_MSG)
                         } else {
-                            init.clone()
-                        };
-                        clause.iter().rev().fold(init, |acc, &(var, neg)| {
-                            let var = &vars[(var.get() - 1) as usize];
-                            if neg {
-                                acc.or(&var.not().expect(OOM_MSG)).expect(OOM_MSG)
-                            } else {
-                                acc.or(var).expect(OOM_MSG)
-                            }
-                        })
-                    })
-                    .collect();
+                            acc.or(&var.not().expect(OOM_MSG)).expect(OOM_MSG)
+                        }
+                    }));
+
+                    i += 1;
+                }
+                let clauses = bdd_clauses;
                 println!(
                     "all {} clauses built after {}",
                     clauses.len(),
@@ -378,9 +392,9 @@ where
                             },
                         ),
                         CNFBuildOrder::Tree => {
-                            let (func, _consumed) =
-                                clause_tree_rec(&clauses, &clause_order, report);
-                            debug_assert_eq!(_consumed, clause_order.len());
+                            let co = cnf.clause_order().unwrap();
+                            let (func, _consumed) = clause_tree_rec(&clauses, co, report);
+                            debug_assert_eq!(_consumed, co.len());
                             func
                         }
                     }
@@ -388,21 +402,14 @@ where
             })
         }
 
-        Problem::Prop {
-            num_vars,
-            var_order,
-            ast,
-            ..
-        } => {
-            if cli.read_var_order && var_order.is_empty() {
-                eprintln!("error: variable order not given");
-                std::process::exit(1);
-            }
+        Problem::Prop(prop) => {
+            let num_vars = check_var_count(prop.vars());
+            let var_order = check_var_order(prop.var_order(), cli.read_var_order);
 
             let vars = mref.with_manager_exclusive(|manager| {
                 make_vars::<B>(manager, num_vars, var_order, vars)
             });
-            mref.with_manager_shared(|manager| prop_rec(manager, &ast, &vars))
+            mref.with_manager_shared(|manager| prop_rec(manager, prop.formula(), &vars))
         }
 
         _ => todo!(),

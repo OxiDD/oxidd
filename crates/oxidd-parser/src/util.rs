@@ -1,8 +1,90 @@
-use std::ops::RangeTo;
+//! Parsing helpers
+
+use std::mem::size_of;
+use std::ops::{Range, RangeFrom, RangeTo};
 
 use memchr::memchr2;
+use nom::branch::alt;
+use nom::character::complete::{line_ending, space0, u64};
+use nom::combinator::{eof, value};
 use nom::error::{ContextError, ErrorKind, ParseError};
-use nom::{AsBytes, Err, IResult, Parser, Slice};
+use nom::sequence::preceded;
+use nom::{
+    AsBytes, AsChar, Compare, Err, IResult, InputIter, InputLength, InputTakeAtPosition, Parser,
+    Slice,
+};
+
+pub const MAX_CAPACITY: u64 = (usize::MAX / 2 / size_of::<usize>()) as u64;
+
+pub fn usize<I, E>(input: I) -> IResult<I, usize, E>
+where
+    I: InputIter + Slice<RangeFrom<usize>> + Slice<RangeTo<usize>> + InputLength + AsBytes + Clone,
+    I::Item: AsChar,
+    E: ParseError<I> + ContextError<I>,
+{
+    let (remaining, res) = u64(input.clone())?;
+    if res > MAX_CAPACITY {
+        let span = word_span(input);
+        fail(span, "number too large")
+    } else {
+        Ok((remaining, res as usize))
+    }
+}
+
+pub fn collect<'a, I, O, E, F>(
+    n: usize,
+    to: &'a mut Vec<O>,
+    mut parser: F,
+) -> impl 'a + FnMut(I) -> IResult<I, (), E>
+where
+    F: 'a + Parser<I, O, E>,
+{
+    move |mut input| {
+        for _ in 0..n {
+            let (inp, parsed) = parser.parse(input)?;
+            to.push(parsed);
+            input = inp;
+        }
+        Ok((input, ()))
+    }
+}
+
+pub fn collect_pair<'a, I, O1, O2, E, F>(
+    n: usize,
+    to1: &'a mut Vec<O1>,
+    to2: &'a mut Vec<O2>,
+    mut parser: F,
+) -> impl 'a + FnMut(I) -> IResult<I, (), E>
+where
+    F: 'a + Parser<I, (O1, O2), E>,
+{
+    move |mut input| {
+        for _ in 0..n {
+            let (inp, (o1, o2)) = parser.parse(input)?;
+            to1.push(o1);
+            to2.push(o2);
+            input = inp;
+        }
+        Ok((input, ()))
+    }
+}
+
+/// Optionally space-preceded end of line or file
+pub fn eol<I, E>(input: I) -> IResult<I, (), E>
+where
+    I: Slice<Range<usize>>
+        + Slice<RangeFrom<usize>>
+        + Slice<RangeTo<usize>>
+        + InputIter
+        + InputLength
+        + InputTakeAtPosition
+        + Compare<&'static str>
+        + Clone,
+    <I as InputTakeAtPosition>::Item: AsChar + Clone,
+    E: ParseError<I>,
+{
+    preceded(space0, value((), alt((line_ending, eof))))(input)
+}
 
 pub fn word<I, O, E, F>(mut parser: F) -> impl FnMut(I) -> IResult<I, O, E>
 where
@@ -31,6 +113,7 @@ pub fn word_span<I: Slice<RangeTo<usize>> + AsBytes>(input: I) -> I {
     input
 }
 
+#[inline]
 pub fn line_span<I: Slice<RangeTo<usize>> + AsBytes>(input: I) -> I {
     match memchr2(b'\n', b'\t', input.as_bytes()) {
         Some(i) => input.slice(..i),
@@ -55,6 +138,7 @@ where
     }
 }
 
+#[inline]
 pub fn fail<I: Clone, O, E: ParseError<I> + ContextError<I>>(
     span: I,
     msg: &'static str,

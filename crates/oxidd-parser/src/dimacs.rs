@@ -1,4 +1,4 @@
-//! A DIMACS CNF/SAT parser based on the paper
+//! DIMACS CNF/SAT parser based on the paper
 //! "[Satisfiability Suggested Format][spec]"
 //!
 //! [spec]: https://www21.in.tum.de/~lammich/2015_SS_Seminar_SAT/resources/dimacs-cnf.pdf
@@ -13,7 +13,7 @@ use rustc_hash::FxHashSet;
 use nom::branch::alt;
 use nom::bytes::complete::{tag, take, take_till};
 use nom::character::complete::{
-    char, line_ending, multispace0, not_line_ending, space0, space1, u32, u64,
+    char, line_ending, multispace0, not_line_ending, space0, space1, u64,
 };
 use nom::combinator::{consumed, cut, eof, success, value};
 use nom::error::{context, ContextError, ErrorKind, FromExternalError, ParseError};
@@ -21,8 +21,12 @@ use nom::multi::many0_count;
 use nom::sequence::preceded;
 use nom::{Err, IResult};
 
-use crate::util::{context_loc, fail, fail_with_contexts, line_span, trim_end, word, word_span};
-use crate::{ClauseOrderNode, ParseOptions, Problem, Prop, Var, VarOrder};
+use crate::util::{
+    context_loc, fail, fail_with_contexts, line_span, trim_end, word, word_span, MAX_CAPACITY,
+};
+use crate::{ClauseOrderNode, ParseOptions, Problem, Var};
+
+type VarOrder = Vec<(Var, String)>;
 
 // spell-checker:ignore SATX,SATEX
 
@@ -56,7 +60,7 @@ fn comment<'a, E: ParseError<&'a [u8]>>(input: &'a [u8]) -> IResult<&'a [u8], ()
 /// number and its span.
 fn clause_order<'a, E>(
     input: &'a [u8],
-) -> IResult<&'a [u8], (Vec<ClauseOrderNode>, (&'a [u8], NonZeroUsize)), E>
+) -> IResult<&'a [u8], (Vec<ClauseOrderNode>, (&'a [u8], usize)), E>
 where
     E: ParseError<&'a [u8]> + ContextError<&'a [u8]> + FromExternalError<&'a [u8], String>,
 {
@@ -64,7 +68,7 @@ where
         input: &'a [u8],
         order: &mut Vec<ClauseOrderNode>,
         inserted: &mut BitVec,
-    ) -> IResult<&'a [u8], (&'a [u8], NonZeroUsize), E> {
+    ) -> IResult<&'a [u8], (&'a [u8], usize), E> {
         let (input, _) = space0(input)?;
         let (input, _) = char('[')(input)?;
         let (input, _) = space0(input)?;
@@ -72,17 +76,17 @@ where
             let (input, _) = space0(input)?;
             let (input, _) = char(']')(input)?;
 
-            if (usize::BITS < u64::BITS && n > usize::MAX as u64) || n as usize == usize::MAX {
+            if n > MAX_CAPACITY {
                 return fail(span, "clause number too large");
             }
-            let n = NonZeroUsize::new(n as usize + 1).unwrap();
-            if inserted.len() < n.get() {
-                inserted.resize(n.get(), false);
-            } else if inserted[n.get() - 1] {
+            let n = n as usize;
+            if inserted.len() <= n {
+                inserted.resize(n + 1, false);
+            } else if inserted[n] {
                 return fail(span, "second occurrence of clause in order");
             }
-            order.push(ClauseOrderNode::Clause(n));
-            inserted.set(n.get() - 1, true);
+            order.push(ClauseOrderNode::Clause(NonZeroUsize::new(n + 1).unwrap()));
+            inserted.set(n, true);
             return Ok((input, (span, n)));
         }
 
@@ -120,8 +124,8 @@ where
 
 fn var_order_record<'a, E: ParseError<&'a [u8]> + ContextError<&'a [u8]>>(
     input: &'a [u8],
-) -> IResult<&'a [u8], ((&'a [u8], u32), &'a [u8]), E> {
-    let (input, (var_span, var)) = consumed(u32)(input)?;
+) -> IResult<&'a [u8], ((&'a [u8], u64), &'a [u8]), E> {
+    let (input, (var_span, var)) = consumed(u64)(input)?;
     let (input, _) = space1(input)?;
     let (input, name) = not_line_ending(input)?;
     let (input, _) = line_ending(input)?;
@@ -158,14 +162,14 @@ fn format<'a, E: ParseError<&'a [u8]> + ContextError<&'a [u8]>>(
     )(input)
 }
 
-/// Parses a problem line, i.e. `p cnf <#vars> <#clauses>` or
+/// Parses a problem line, i.e., `p cnf <#vars> <#clauses>` or
 /// `p sat(e|x|ex) <#vars>`
 ///
 /// Returns the format, number of vars and in case of `cnf` format the number of
 /// clauses together with their spans.
 fn problem_line<'a, E: ParseError<&'a [u8]> + ContextError<&'a [u8]>>(
     input: &'a [u8],
-) -> IResult<&'a [u8], ((&'a [u8], Format), (&'a [u8], u32), (&'a [u8], u64)), E> {
+) -> IResult<&'a [u8], ((&'a [u8], Format), (&'a [u8], usize), (&'a [u8], usize)), E> {
     let inner = |input| {
         let (input, _) = context(
             "all lines in the preamble must begin with 'c' or 'p'",
@@ -174,11 +178,19 @@ fn problem_line<'a, E: ParseError<&'a [u8]> + ContextError<&'a [u8]>>(
         let (input, _) = space1(input)?;
         let (input, fmt) = consumed(format)(input)?;
         let (input, _) = space1(input)?;
-        let (input, num_vars) = consumed(u32)(input)?;
+        let (input, num_vars) = consumed(u64)(input)?;
+        if num_vars.1 > MAX_CAPACITY {
+            return fail(num_vars.0, "too many variables");
+        }
+        let num_vars = (num_vars.0, num_vars.1 as usize);
         if fmt.1 == Format::CNF {
             let msg = "expected the number of clauses (CNF format)";
             let (input, _) = context(msg, space1)(input)?;
             let (input, num_clauses) = context_loc(|| word_span(input), msg, consumed(u64))(input)?;
+            if num_clauses.1 > MAX_CAPACITY {
+                return fail(num_clauses.0, "too many clauses");
+            }
+            let num_clauses = (num_clauses.0, num_clauses.1 as usize);
             let (input, _) = space0(input)?;
             value((fmt, num_vars, num_clauses), line_ending)(input)
         } else {
@@ -197,7 +209,8 @@ fn problem_line<'a, E: ParseError<&'a [u8]> + ContextError<&'a [u8]>>(
     )(input)
 }
 
-/// Parses the preamble, i.e. all `c` and `p` lines at the beginning of the file
+/// Parses the preamble, i.e., all `c` and `p` lines at the beginning of the
+/// file
 ///
 /// Returns the format, number of variables, number of clauses (in case of CNF
 /// format), the variable order (or an empty `Vec`), as well as the
@@ -210,7 +223,7 @@ fn problem_line<'a, E: ParseError<&'a [u8]> + ContextError<&'a [u8]>>(
 /// clause order is empty.
 fn preamble<'a, E>(
     parse_orders: bool,
-) -> impl Fn(&'a [u8]) -> IResult<&'a [u8], (Format, u32, u64, VarOrder, Vec<ClauseOrderNode>), E>
+) -> impl Fn(&'a [u8]) -> IResult<&'a [u8], (Format, usize, usize, VarOrder, Vec<ClauseOrderNode>), E>
 where
     E: ParseError<&'a [u8]> + ContextError<&'a [u8]> + FromExternalError<&'a [u8], String>,
 {
@@ -224,7 +237,7 @@ where
             // clause order
             let mut corder = Vec::new();
             let mut corder_span = [].as_slice();
-            let mut max_clause = ([].as_slice(), NonZeroUsize::new(1).unwrap()); // dummy value
+            let mut max_clause = ([].as_slice(), 0); // dummy value
 
             loop {
                 let next_input = match preceded(char::<_, E>('c'), space1)(input) {
@@ -249,24 +262,28 @@ where
                 {
                     // var order line
                     input = next_input;
-                    let num_vars = var as usize;
-                    if let Some(var) = Var::new(var) {
-                        let i = num_vars - 1;
-                        if num_vars > inserted.len() {
-                            inserted.resize(num_vars, false);
-                            var_order.reserve(num_vars - var_order.len());
-                            max_var_span = var_span;
-                        } else if inserted[i] {
-                            return fail(var_span, "second occurrence of variable in order");
-                        }
-                        inserted.set(i, true);
-                        if !names.insert(name) {
-                            return fail(name, "second occurrence of variable name");
-                        }
-                        var_order.push((var, String::from_utf8_lossy(name).to_string()));
-                    } else {
+                    if var == 0 {
                         return fail(var_span, "variable number must be greater than 0");
                     }
+                    if var > MAX_CAPACITY {
+                        return fail(var_span, "variable number too large");
+                    }
+
+                    let num_vars = var as usize;
+                    let var = num_vars - 1;
+
+                    if num_vars > inserted.len() {
+                        inserted.resize(num_vars, false);
+                        var_order.reserve(num_vars - var_order.len());
+                        max_var_span = var_span;
+                    } else if inserted[var] {
+                        return fail(var_span, "second occurrence of variable in order");
+                    }
+                    inserted.set(var, true);
+                    if !names.insert(name) {
+                        return fail(name, "second occurrence of variable name");
+                    }
+                    var_order.push((var, String::from_utf8_lossy(name).to_string()));
                 } else {
                     return fail(
                         line_span(input),
@@ -283,7 +300,7 @@ where
             }
 
             let (next_input, (format, num_vars, num_clauses)) = problem_line(input)?;
-            if !var_order.is_empty() && num_vars.1 as usize != var_order.len() {
+            if !var_order.is_empty() && num_vars.1 != var_order.len() {
                 return fail_with_contexts([
                     (num_vars.0, "number of variables does not match"),
                     (max_var_span, "note: maximal variable number given here"),
@@ -296,10 +313,10 @@ where
                         (format.0, "note: format given here"),
                     ]);
                 }
-                if max_clause.1.get() != num_clauses.1 as usize {
+                if max_clause.1 != num_clauses.1 - 1 {
                     return fail_with_contexts([
                         (num_clauses.0, "number of clauses does not match"),
-                        (max_clause.0, "note: maximal variable number given here"),
+                        (max_clause.0, "note: maximal clause number given here"),
                     ]);
                 }
             }
@@ -320,18 +337,20 @@ where
 
 mod cnf {
     use nom::branch::alt;
-    use nom::character::complete::{char, multispace0, u32};
+    use nom::character::complete::{char, multispace0, u64};
     use nom::combinator::{consumed, eof, iterator, map, recognize};
     use nom::error::{context, ContextError, ErrorKind, FromExternalError, ParseError};
     use nom::sequence::preceded;
     use nom::{Err, IResult};
 
     use crate::util::fail;
-    use crate::{ClauseOrderNode, Problem, Var, VarOrder};
+    use crate::{CNFProblem, ClauseOrderNode, Literal, Problem, Vec2d};
+
+    use super::VarOrder;
 
     #[derive(Clone, Copy, PartialEq, Eq, Debug)]
     enum CNFTokenKind {
-        Int(u32),
+        Int(u64),
         Neg,
     }
 
@@ -345,7 +364,7 @@ mod cnf {
         input: &'a [u8],
     ) -> IResult<&'a [u8], CNFToken, E> {
         let tok = alt((
-            map(consumed(u32), |(span, n)| CNFToken {
+            map(consumed(u64), |(span, n)| CNFToken {
                 span,
                 kind: CNFTokenKind::Int(n),
             }),
@@ -359,8 +378,8 @@ mod cnf {
     }
 
     pub fn parse<'a, E>(
-        num_vars: u32,
-        num_clauses: u64,
+        num_vars: usize,
+        num_clauses: usize,
         var_order: VarOrder,
         clause_order: Vec<ClauseOrderNode>,
     ) -> impl FnOnce(&'a [u8]) -> IResult<&'a [u8], Problem, E>
@@ -368,19 +387,19 @@ mod cnf {
         E: ParseError<&'a [u8]> + ContextError<&'a [u8]> + FromExternalError<&'a [u8], String>,
     {
         move |input| {
-            let mut clauses = Vec::with_capacity(num_clauses as usize);
-            let mut clause = Vec::new();
+            let mut clauses = Vec2d::with_capacity(num_clauses, num_clauses * 4);
+            clauses.push_vec();
             let mut neg = false;
 
             let mut it = iterator(input, lex::<E>);
             for token in &mut it {
                 match token.kind {
-                    CNFTokenKind::Int(0) => clauses.push(std::mem::take(&mut clause)),
+                    CNFTokenKind::Int(0) => clauses.push_vec(),
                     CNFTokenKind::Int(n) => {
-                        if n > num_vars {
+                        if n > num_vars as u64 {
                             return fail(token.span, "variables must be in range [1, #vars]");
                         }
-                        clause.push((Var::new(n).unwrap(), neg));
+                        clauses.push_element(Literal::new(neg, (n - 1) as usize));
                         neg = false;
                     }
                     CNFTokenKind::Neg if !neg => neg = true,
@@ -392,12 +411,12 @@ mod cnf {
             let (input, _) = multispace0(input)?;
             let (input, _) = context("expected a literal or '0'", eof)(input)?;
 
-            if clauses.len() as u64 == num_clauses && clause.is_empty() {
-                // Last clause may be terminated by 0 ...
-            } else {
-                // ... but there is no need to.
-                clauses.push(clause);
-                if clauses.len() as u64 != num_clauses {
+            if clauses.len() != num_clauses {
+                // The last clause may or may not be terminated by 0. In case it is, we called
+                // `push_clause()` once too often.
+                if clauses.len() == num_clauses + 1 && clauses.last().unwrap().is_empty() {
+                    clauses.pop_vec();
+                } else {
                     return Err(Err::Failure(E::from_external_error(
                         input,
                         ErrorKind::Fail,
@@ -408,12 +427,12 @@ mod cnf {
 
             Ok((
                 input,
-                Problem::CNF {
+                Problem::CNF(Box::new(CNFProblem {
                     num_vars,
                     var_order,
                     clauses,
                     clause_order,
-                },
+                })),
             ))
         }
     }
@@ -422,7 +441,7 @@ mod cnf {
 mod sat {
     use nom::branch::alt;
     use nom::bytes::complete::tag;
-    use nom::character::complete::{char, multispace0, u32};
+    use nom::character::complete::{char, multispace0, u64};
     use nom::combinator::{consumed, cut, map, recognize};
     use nom::error::{ContextError, ErrorKind, ParseError};
     use nom::sequence::terminated;
@@ -430,9 +449,9 @@ mod sat {
     use nom::IResult;
 
     use crate::util::{fail, map_res_fail, word};
-    use crate::{Var, VarOrder};
+    use crate::{Literal, Problem, Prop, PropProblem, Var};
 
-    use super::{Problem, Prop};
+    use super::VarOrder;
 
     #[derive(Clone, Copy, PartialEq, Eq, Debug)]
     enum TokenKind {
@@ -464,7 +483,7 @@ mod sat {
     }
 
     fn lex<'a, E: ParseError<&'a [u8]> + ContextError<&'a [u8]>>(
-        num_vars: u32,
+        num_vars: usize,
     ) -> impl Fn(&'a [u8]) -> IResult<&'a [u8], Option<Token<'a>>, E> {
         move |input| {
             let (input, _) = multispace0(input)?; // should never fail
@@ -472,13 +491,13 @@ mod sat {
                 return Ok((input, None));
             }
             alt((
-                map_res_fail(consumed(u32), |(span, n)| {
-                    if n == 0 || n > num_vars {
+                map_res_fail(consumed(u64), |(span, n)| {
+                    if n == 0 || n > num_vars as u64 {
                         Err((span, "variables must be in range [1, #vars]"))
                     } else {
                         Ok(Some(Token {
                             span,
-                            kind: TokenKind::Var(Var::new(n).unwrap()),
+                            kind: TokenKind::Var(n as usize),
                         }))
                     }
                 }),
@@ -522,7 +541,7 @@ mod sat {
     fn expect<'a, E: ParseError<&'a [u8]> + ContextError<&'a [u8]>>(
         kind: TokenKind,
         err: &'static str,
-        num_vars: u32,
+        num_vars: usize,
     ) -> impl Fn(&'a [u8]) -> IResult<&'a [u8], (), E> {
         move |input| {
             let (input, tok) = lex(num_vars)(input)?;
@@ -535,7 +554,7 @@ mod sat {
     }
 
     fn formula<'a, E: ParseError<&'a [u8]> + ContextError<&'a [u8]>>(
-        num_vars: u32,
+        num_vars: usize,
         allow_xor: bool,
         allow_eq: bool,
     ) -> impl Fn(&'a [u8]) -> IResult<&'a [u8], Prop, SatParserErr<E>> {
@@ -547,7 +566,7 @@ mod sat {
             };
 
             match tok.kind {
-                TokenKind::Var(n) => Ok((input, Prop::Lit(n, false))),
+                TokenKind::Var(n) => Ok((input, Prop::Lit(Literal::new(false, n - 1)))),
                 TokenKind::Lpar => terminated(
                     cut(formula(num_vars, allow_xor, allow_eq)),
                     expect(TokenKind::Rpar, "expected ')'", num_vars),
@@ -563,7 +582,7 @@ mod sat {
                         None => return fail(input, "expected a variable or '('"),
                     };
                     match tok.kind {
-                        TokenKind::Var(n) => Ok((input, Prop::Lit(n, true))),
+                        TokenKind::Var(n) => Ok((input, Prop::Lit(Literal::new(true, n - 1)))),
                         TokenKind::Lpar => map(
                             terminated(
                                 cut(formula(num_vars, allow_xor, allow_eq)),
@@ -611,7 +630,7 @@ mod sat {
     }
 
     pub fn parse<'a, E: ParseError<&'a [u8]> + ContextError<&'a [u8]>>(
-        num_vars: u32,
+        num_vars: usize,
         var_order: VarOrder,
         allow_xor: bool,
         allow_eq: bool,
@@ -619,13 +638,13 @@ mod sat {
         move |input| match formula(num_vars, allow_xor, allow_eq)(input) {
             Ok((input, ast)) => Ok((
                 input,
-                Problem::Prop {
+                Problem::Prop(Box::new(PropProblem {
                     num_vars,
                     var_order,
                     xor: allow_xor,
                     eq: allow_eq,
                     ast,
-                },
+                })),
             )),
             Err(e) => Err(e.map(|e| match e {
                 SatParserErr::E(e) => e,
@@ -666,16 +685,18 @@ where
 mod tests {
     use nom::Finish;
 
-    use super::*;
     use crate::Prop::{And, Or};
+    use crate::{Literal, Prop, Vec2d};
+
+    use super::*;
 
     // CNF var
-    fn cv(v: i32) -> (Var, bool) {
-        (Var::new(v.unsigned_abs()).unwrap(), v < 0)
+    fn cv(v: isize) -> Literal {
+        Literal::new(v < 0, v.unsigned_abs() - 1)
     }
     // SAT var
-    fn sv(v: i32) -> Prop {
-        Prop::Lit(Var::new(v.unsigned_abs()).unwrap(), v < 0)
+    fn sv(v: isize) -> Prop {
+        Prop::Lit(Literal::new(v < 0, v.unsigned_abs() - 1))
     }
 
     const OPTS_NO_ORDER: ParseOptions = ParseOptions { orders: false };
@@ -692,21 +713,16 @@ p cnf 4 3
             .finish()
             .unwrap();
         assert!(input.is_empty());
-        match problem {
-            Problem::CNF {
-                num_vars: 4,
-                var_order,
-                clauses: ast,
-                clause_order,
-            } => {
-                assert!(var_order.is_empty());
-                assert_eq!(
-                    ast,
-                    vec![vec![cv(1), cv(3), cv(-4)], vec![cv(4)], vec![cv(2), cv(-3)]]
-                );
-                assert!(clause_order.is_empty());
-            }
-            _ => panic!(),
+        if let Problem::CNF(cnf) = problem {
+            assert_eq!(cnf.vars(), 4);
+            assert!(cnf.var_order().is_none());
+            assert_eq!(
+                cnf.clauses(),
+                &Vec2d::from_iter([&[cv(1), cv(3), cv(-4)] as &[_], &[cv(4)], &[cv(2), cv(-3)]])
+            );
+            assert!(cnf.clause_order().is_none());
+        } else {
+            panic!()
         }
     }
 
@@ -722,21 +738,16 @@ p cnf 4 3
             .finish()
             .unwrap();
         assert!(input.is_empty());
-        match problem {
-            Problem::CNF {
-                num_vars: 4,
-                var_order,
-                clauses: ast,
-                clause_order,
-            } => {
-                assert!(var_order.is_empty());
-                assert_eq!(
-                    ast,
-                    vec![vec![cv(1), cv(3), cv(-4)], vec![cv(4)], vec![cv(2), cv(-3)]]
-                );
-                assert!(clause_order.is_empty());
-            }
-            _ => panic!(),
+        if let Problem::CNF(cnf) = problem {
+            assert_eq!(cnf.vars(), 4);
+            assert!(cnf.var_order().is_none());
+            assert_eq!(
+                cnf.clauses(),
+                &Vec2d::from_iter([&[cv(1), cv(3), cv(-4)] as &[_], &[cv(4)], &[cv(2), cv(-3)]])
+            );
+            assert!(cnf.clause_order().is_none());
+        } else {
+            panic!()
         }
     }
 
@@ -747,18 +758,13 @@ p cnf 4 3
             .finish()
             .unwrap();
         assert!(input.is_empty());
-        match problem {
-            Problem::CNF {
-                num_vars: 0,
-                var_order,
-                clauses: ast,
-                clause_order,
-            } => {
-                assert!(var_order.is_empty());
-                assert!(ast.is_empty());
-                assert!(clause_order.is_empty());
-            }
-            _ => panic!(),
+        if let Problem::CNF(cnf) = problem {
+            assert_eq!(cnf.vars(), 0);
+            assert!(cnf.var_order().is_none());
+            assert!(cnf.clauses().is_empty());
+            assert!(cnf.clause_order().is_none());
+        } else {
+            panic!()
         }
     }
 
@@ -774,25 +780,21 @@ p sat 4
             .finish()
             .unwrap();
         assert!(input.is_empty());
-        match problem {
-            Problem::Prop {
-                num_vars: 4,
-                var_order,
-                xor: false,
-                eq: false,
-                ast,
-            } => {
-                assert!(var_order.is_empty());
-                assert_eq!(
-                    ast,
-                    And(vec![
-                        Or(vec![sv(1), sv(3), sv(-4)]),
-                        Or(vec![sv(4)]),
-                        Or(vec![sv(2), sv(3)])
-                    ])
-                );
-            }
-            _ => panic!(),
+        if let Problem::Prop(prop) = problem {
+            assert_eq!(prop.vars(), 4);
+            assert!(prop.var_order().is_none());
+            assert!(!prop.xor_allowed());
+            assert!(!prop.eq_allowed());
+            assert_eq!(
+                prop.formula(),
+                &And(vec![
+                    Or(vec![sv(1), sv(3), sv(-4)]),
+                    Or(vec![sv(4)]),
+                    Or(vec![sv(2), sv(3)])
+                ])
+            );
+        } else {
+            panic!();
         }
     }
 
