@@ -39,12 +39,13 @@ Repository = "https://github.com/OxiDD/oxidd"
 Issues = "https://github.com/OxiDD/oxidd/issues"
 
 [build-system]
-requires = ["setuptools >= 61.0"]
+requires = ["setuptools >= 61.0", "setuptools_scm >= 8"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 packages = ["oxidd"]
 package-dir = { "" = "bindings/python" }
+include-package-data = false
 
 [tool.pyright]
 include = ["bindings/python"]

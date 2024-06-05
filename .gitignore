@@ -2,6 +2,8 @@
 /target/
 # (Usual) CMake build directory
 /build/
+# Python wheel and source distribution directory
+/dist/
 
 # Local development tools etc.
 /.local/
