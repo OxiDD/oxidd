@@ -1,6 +1,6 @@
 [package]
 name = "oxidd-rules-zbdd"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2021"
 description = "Zero-suppressed decision diagrams (ZBDDs) for OxiDD"
 readme = "../../README.md"

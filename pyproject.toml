@@ -1,12 +1,12 @@
 [project]
 name = "oxidd"
-version = "0.1.0"
+version = "0.7.0"
 description = "Decision Diagrams"
 requires-python = ">=3.9"
 keywords = ["Decision Diagrams", "BDD", "ZBDD", "ZDD"]
 authors = [{ name = "OxiDD Contributors", email = "info@oxidd.net" }]
 maintainers = [{ name = "Nils Husung", email = "nils@oxidd.net" }]
-
+readme = "bindings/python/README.md"
 
 dependencies = ["cffi ~= 1.12", "typing-extensions ~= 4.0"]
 
@@ -34,6 +34,7 @@ classifiers = [
 
 [project.urls]
 Homepage = "https://oxidd.net"
+Documentation = "https://oxidd.net/api/python/dev/getting-started.html"
 Repository = "https://github.com/OxiDD/oxidd"
 Issues = "https://github.com/OxiDD/oxidd/issues"
 
