@@ -381,19 +381,22 @@ impl AIG {
     pub fn latches(&self) -> &[Literal] {
         &self.latches
     }
-
     /// Get the initial value of latch `i`
     #[inline(always)]
     pub fn latch_init_value(&self, i: usize) -> Option<bool> {
         self.latch_init_values[i]
     }
 
-    /// Get the and gate definitions
-    ///
-    /// A pair of [`Literal`]s represents the two inputs of an and gate.
+    /// Get the and gate definitions (i.e., their two inputs)
     #[inline(always)]
     pub fn and_gates(&self) -> &[(Literal, Literal)] {
         &self.and_gates
+    }
+
+    /// Get the output definitions
+    #[inline(always)]
+    pub fn outputs(&self) -> &[Literal] {
+        &self.outputs
     }
 
     /// Get the name for input `i`
