@@ -60,3 +60,7 @@ apply-cache-direct-mapped = ["oxidd/apply-cache-direct-mapped"]
 
 ## Enable statistics (will harm performance)
 statistics = ["oxidd/statistics"]
+
+
+[profile.release]
+panic = "abort"
