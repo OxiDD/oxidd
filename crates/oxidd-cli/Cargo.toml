@@ -1,6 +1,6 @@
 [package]
 name = "oxidd-cli"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 description = "Command line interface for OxiDD"
 readme = "../../README.md"
@@ -61,6 +61,6 @@ apply-cache-direct-mapped = ["oxidd/apply-cache-direct-mapped"]
 ## Enable statistics (will harm performance)
 statistics = ["oxidd/statistics"]
 
-
-[profile.release]
-panic = "abort"
+# Uncomment this for releases, see https://github.com/rust-lang/cargo/issues/8264
+#[profile.release]
+#panic = "abort"
