@@ -386,9 +386,13 @@ where
                             clauses.into_par_iter(),
                             || B::t(manager),
                             |acc, f| {
-                                let res = acc.and(&f).expect(OOM_MSG);
-                                report(&res);
-                                res
+                                if acc.valid() {
+                                    f
+                                } else {
+                                    let res = acc.and(&f).expect(OOM_MSG);
+                                    report(&res);
+                                    res
+                                }
                             },
                         ),
                         CNFBuildOrder::Tree => {
