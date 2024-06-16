@@ -740,27 +740,28 @@ pub trait BooleanFunction: Function {
     ) -> bool;
 }
 
-/// The binary operations that can be used in
-/// [`BooleanFunction::apply_exists()`], [`BooleanFunction::apply_forall()`] and
-/// [`BooleanFunction::apply_unique()`]. They correspond to the binary
+/// Binary operations that can be used in
+/// [`BooleanFunctionQuant::apply_exist()`],
+/// [`BooleanFunctionQuant::apply_forall()`], and
+/// [`BooleanFunctionQuant::apply_unique()`]. They correspond to the binary
 /// operations provided in the trait [`BooleanFunction`].
 #[derive(Copy, Clone, Debug)]
 pub enum BooleanOperator {
-    /// Compute the conjunction `lhs ∧ rhs`.
+    /// Conjunction `lhs ∧ rhs`.
     And,
-    /// Compute the disjunction `lhs ∨ rhs`.
+    /// Disjunction `lhs ∨ rhs`.
     Or,
-    /// Compute the exclusive disjunction `lhs ⊕ rhs`.
+    /// Exclusive disjunction `lhs ⊕ rhs`.
     Xor,
-    /// Compute the equivalence `lhs ↔ rhs`.
+    /// Equivalence `lhs ↔ rhs`.
     Equiv,
-    /// Compute the negated conjunction `lhs ⊼ rhs`.
+    /// Negated conjunction `lhs ⊼ rhs`.
     Nand,
-    /// Compute the negated disjunction `lhs ⊽ rhs`.
+    /// Negated disjunction `lhs ⊽ rhs`.
     Nor,
-    /// Compute the implication `lhs → rhs`.
+    /// Implication `lhs → rhs`.
     Imp,
-    /// Compute the strict implication `lhs < rhs`.
+    /// Strict implication `lhs < rhs`.
     ImpStrict,
 }
 
@@ -776,7 +777,7 @@ impl Display for BooleanOperator {
             Nor => write!(f, "⊽"),
             Imp => write!(f, "→"),
             ImpStrict => write!(f, "<"),
-        }   
+        }
     }
 }
 
@@ -860,7 +861,8 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     /// This operation is equivalent to `∀x. self <op> rhs`, where `<op>` is any
     /// of the operations from [`BooleanOperator`]
     ///
-    /// See also [`Self::forall()`] and the trait [`BooleanFunction`] for more details.
+    /// See also [`Self::forall()`] and the trait [`BooleanFunction`] for more
+    /// details.
     ///
     /// Locking behavior: acquires the manager's lock for shared access.
     ///
@@ -881,7 +883,7 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     /// This operation is equivalent to `∃x. self <op> rhs`, where `<op>` is any
     /// of the operations from [`BooleanOperator`]
     ///
-    /// See also [`Self::exists()`] and the trait [`BooleanFunction`] for more
+    /// See also [`Self::exist()`] and the trait [`BooleanFunction`] for more
     /// details.
     ///
     /// Panics if `self` and `rhs` and `vars` don't belong to the same manager.
@@ -972,16 +974,19 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         // Naive default implementation
         use BooleanOperator::*;
-        let inner = EdgeDropGuard::new(manager, match op {
-            And => Self::and_edge(manager, lhs, rhs),
-            Or => Self::or_edge(manager, lhs, rhs),
-            Xor => Self::xor_edge(manager, lhs, rhs),
-            Equiv => Self::equiv_edge(manager, lhs, rhs),
-            Nand => Self::nand_edge(manager, lhs, rhs),
-            Nor => Self::nor_edge(manager, lhs, rhs),
-            Imp => Self::imp_edge(manager, lhs, rhs),
-            ImpStrict => Self::imp_strict_edge(manager, lhs, rhs),
-        }?);
+        let inner = EdgeDropGuard::new(
+            manager,
+            match op {
+                And => Self::and_edge(manager, lhs, rhs),
+                Or => Self::or_edge(manager, lhs, rhs),
+                Xor => Self::xor_edge(manager, lhs, rhs),
+                Equiv => Self::equiv_edge(manager, lhs, rhs),
+                Nand => Self::nand_edge(manager, lhs, rhs),
+                Nor => Self::nor_edge(manager, lhs, rhs),
+                Imp => Self::imp_edge(manager, lhs, rhs),
+                ImpStrict => Self::imp_strict_edge(manager, lhs, rhs),
+            }?,
+        );
 
         Self::forall_edge(manager, &inner, vars)
     }
@@ -998,22 +1003,25 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         // Naive default implementation
         use BooleanOperator::*;
-        let inner = EdgeDropGuard::new(manager, match op {
-            And => Self::and_edge(manager, lhs, rhs),
-            Or => Self::or_edge(manager, lhs, rhs),
-            Xor => Self::xor_edge(manager, lhs, rhs),
-            Equiv => Self::equiv_edge(manager, lhs, rhs),
-            Nand => Self::nand_edge(manager, lhs, rhs),
-            Nor => Self::nor_edge(manager, lhs, rhs),
-            Imp => Self::imp_edge(manager, lhs, rhs),
-            ImpStrict => Self::imp_strict_edge(manager, lhs, rhs),
-        }?);
+        let inner = EdgeDropGuard::new(
+            manager,
+            match op {
+                And => Self::and_edge(manager, lhs, rhs),
+                Or => Self::or_edge(manager, lhs, rhs),
+                Xor => Self::xor_edge(manager, lhs, rhs),
+                Equiv => Self::equiv_edge(manager, lhs, rhs),
+                Nand => Self::nand_edge(manager, lhs, rhs),
+                Nor => Self::nor_edge(manager, lhs, rhs),
+                Imp => Self::imp_edge(manager, lhs, rhs),
+                ImpStrict => Self::imp_strict_edge(manager, lhs, rhs),
+            }?,
+        );
 
         Self::exist_edge(manager, &inner, vars)
     }
 
-    /// This operation is equivalent to `∃!x. self <op> rhs`, where `<op>` is any
-    /// of the operations from [`BooleanOperator`], edge version
+    /// This operation is equivalent to `∃!x. self <op> rhs`, where `<op>` is
+    /// any of the operations from [`BooleanOperator`], edge version
     #[must_use]
     fn apply_unique_edge<'id>(
         manager: &Self::Manager<'id>,
@@ -1024,16 +1032,19 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         // Naive default implementation
         use BooleanOperator::*;
-        let inner = EdgeDropGuard::new(manager, match op {
-            And => Self::and_edge(manager, lhs, rhs),
-            Or => Self::or_edge(manager, lhs, rhs),
-            Xor => Self::xor_edge(manager, lhs, rhs),
-            Equiv => Self::equiv_edge(manager, lhs, rhs),
-            Nand => Self::nand_edge(manager, lhs, rhs),
-            Nor => Self::nor_edge(manager, lhs, rhs),
-            Imp => Self::imp_edge(manager, lhs, rhs),
-            ImpStrict => Self::imp_strict_edge(manager, lhs, rhs),
-        }?);
+        let inner = EdgeDropGuard::new(
+            manager,
+            match op {
+                And => Self::and_edge(manager, lhs, rhs),
+                Or => Self::or_edge(manager, lhs, rhs),
+                Xor => Self::xor_edge(manager, lhs, rhs),
+                Equiv => Self::equiv_edge(manager, lhs, rhs),
+                Nand => Self::nand_edge(manager, lhs, rhs),
+                Nor => Self::nor_edge(manager, lhs, rhs),
+                Imp => Self::imp_edge(manager, lhs, rhs),
+                ImpStrict => Self::imp_strict_edge(manager, lhs, rhs),
+            }?,
+        );
 
         Self::unique_edge(manager, &inner, vars)
     }

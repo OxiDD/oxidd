@@ -4,6 +4,7 @@ use std::borrow::Borrow;
 
 use oxidd_core::function::BooleanFunction;
 use oxidd_core::function::BooleanFunctionQuant;
+use oxidd_core::function::BooleanOperator;
 use oxidd_core::function::EdgeOfFunc;
 use oxidd_core::function::Function;
 use oxidd_core::function::FunctionSubst;
@@ -825,6 +826,84 @@ where
             root.borrowed(),
             vars.borrowed(),
         )
+    }
+
+    #[inline]
+    fn apply_forall_edge<'id>(
+        manager: &Self::Manager<'id>,
+        op: BooleanOperator,
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+        vars: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        use BooleanOperator::*;
+        const Q: u8 = BDDOp::And as u8;
+        let lhs = lhs.borrowed();
+        let rhs = rhs.borrowed();
+        let vars = vars.borrowed();
+        use apply_rec_st::apply_quant; // TODO: concurrent version
+        match op {
+            And => apply_quant::<_, Q, { BDDOp::And as u8 }>(manager, lhs, rhs, vars),
+            Or => apply_quant::<_, Q, { BDDOp::Or as u8 }>(manager, lhs, rhs, vars),
+            Xor => apply_quant::<_, Q, { BDDOp::Xor as u8 }>(manager, lhs, rhs, vars),
+            Equiv => apply_quant::<_, Q, { BDDOp::Equiv as u8 }>(manager, lhs, rhs, vars),
+            Nand => apply_quant::<_, Q, { BDDOp::Nand as u8 }>(manager, lhs, rhs, vars),
+            Nor => apply_quant::<_, Q, { BDDOp::Nor as u8 }>(manager, lhs, rhs, vars),
+            Imp => apply_quant::<_, Q, { BDDOp::Imp as u8 }>(manager, lhs, rhs, vars),
+            ImpStrict => apply_quant::<_, Q, { BDDOp::ImpStrict as u8 }>(manager, lhs, rhs, vars),
+        }
+    }
+
+    #[inline]
+    fn apply_exist_edge<'id>(
+        manager: &Self::Manager<'id>,
+        op: BooleanOperator,
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+        vars: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        use BooleanOperator::*;
+        const Q: u8 = BDDOp::Or as u8;
+        let lhs = lhs.borrowed();
+        let rhs = rhs.borrowed();
+        let vars = vars.borrowed();
+        use apply_rec_st::apply_quant; // TODO: concurrent version
+        match op {
+            And => apply_quant::<_, Q, { BDDOp::And as u8 }>(manager, lhs, rhs, vars),
+            Or => apply_quant::<_, Q, { BDDOp::Or as u8 }>(manager, lhs, rhs, vars),
+            Xor => apply_quant::<_, Q, { BDDOp::Xor as u8 }>(manager, lhs, rhs, vars),
+            Equiv => apply_quant::<_, Q, { BDDOp::Equiv as u8 }>(manager, lhs, rhs, vars),
+            Nand => apply_quant::<_, Q, { BDDOp::Nand as u8 }>(manager, lhs, rhs, vars),
+            Nor => apply_quant::<_, Q, { BDDOp::Nor as u8 }>(manager, lhs, rhs, vars),
+            Imp => apply_quant::<_, Q, { BDDOp::Imp as u8 }>(manager, lhs, rhs, vars),
+            ImpStrict => apply_quant::<_, Q, { BDDOp::ImpStrict as u8 }>(manager, lhs, rhs, vars),
+        }
+    }
+
+    #[inline]
+    fn apply_unique_edge<'id>(
+        manager: &Self::Manager<'id>,
+        op: BooleanOperator,
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+        vars: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        use BooleanOperator::*;
+        const Q: u8 = BDDOp::Xor as u8;
+        let lhs = lhs.borrowed();
+        let rhs = rhs.borrowed();
+        let vars = vars.borrowed();
+        use apply_rec_st::apply_quant; // TODO: concurrent version
+        match op {
+            And => apply_quant::<_, Q, { BDDOp::And as u8 }>(manager, lhs, rhs, vars),
+            Or => apply_quant::<_, Q, { BDDOp::Or as u8 }>(manager, lhs, rhs, vars),
+            Xor => apply_quant::<_, Q, { BDDOp::Xor as u8 }>(manager, lhs, rhs, vars),
+            Equiv => apply_quant::<_, Q, { BDDOp::Equiv as u8 }>(manager, lhs, rhs, vars),
+            Nand => apply_quant::<_, Q, { BDDOp::Nand as u8 }>(manager, lhs, rhs, vars),
+            Nor => apply_quant::<_, Q, { BDDOp::Nor as u8 }>(manager, lhs, rhs, vars),
+            Imp => apply_quant::<_, Q, { BDDOp::Imp as u8 }>(manager, lhs, rhs, vars),
+            ImpStrict => apply_quant::<_, Q, { BDDOp::ImpStrict as u8 }>(manager, lhs, rhs, vars),
+        }
     }
 }
 

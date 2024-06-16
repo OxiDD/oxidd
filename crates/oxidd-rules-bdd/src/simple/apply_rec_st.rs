@@ -587,12 +587,12 @@ where
 }
 
 /// Recursively apply the binary operator `OP` to `f` and `g` while quantifying
-/// `Q` over `vars`. This is more efficient then computing then an apply operation
-/// followed by a quantification.
-/// 
+/// `Q` over `vars`. This is more efficient then computing then an apply
+/// operation followed by a quantification.
+///
 /// One example usage is for the relational product, i.e., computing `∃ s,
-/// t: S(s) ∧ T(s, t)`, where `S` is a boolean function representing the states and
-/// `T` a boolean function representing the transition relation.
+/// t: S(s) ∧ T(s, t)`, where `S` is a boolean function representing the states
+/// and `T` a boolean function representing the transition relation.
 ///
 /// Note that `Q` is one of `BDDOp::And`, `BDDOp::Or`, or `BDDOp::Xor` as `u8`.
 /// This saves us another case distinction in the code (would not be present at
@@ -614,8 +614,8 @@ where
         _ if Q == BDDOp::Xor as u8 => BDDOp::ApplyUnique,
         _ => unreachable!("invalid quantifier"),
     };
-    stat!(call operator);
 
+    stat!(call operator);
     // Handle the terminal cases
     let (f, g) = match super::terminal_bin::<M, OP>(manager, &f, &g) {
         Operation::Binary(_, f, g) => (f, g),
@@ -642,49 +642,51 @@ where
 
     let flevel = fnode.level();
     let glevel = gnode.level();
-    let minlevel = fnode.level().min(gnode.level());
+    let min_level = std::cmp::min(fnode.level(), gnode.level());
 
     let vars = if operator != BDDOp::Unique {
         // We can ignore all variables above the top-most variable. Removing
         // them before querying the apply cache should increase the hit ratio by
         // a lot.
-        crate::set_pop(manager, vars, minlevel)
+        crate::set_pop(manager, vars, min_level)
     } else {
-        // No need to pop variables here, if the variable is above `minlevel`,
+        // No need to pop variables here, if the variable is above `min_level`,
         // i.e., does not occur in `f` or 'g', then the result is `f ⊕ f ≡ ⊥`. We
         // handle this below.
         vars
     };
-    
+
     let vnode = match manager.get_node(&vars) {
         Node::Inner(n) => n,
         // Empty variables: just apply operation
         Node::Terminal(_) => return apply_bin::<M, OP>(manager, f, g),
-    }; 
+    };
 
     let vlevel = vnode.level();
-    if vlevel < minlevel && operator == BDDOp::Unique {
-        // `vnode` above `fnode` and `gnode`, i.e., the variable does not occur in `f` or `g` (see above)
+    if vlevel < min_level && operator == BDDOp::Unique {
+        // `vnode` above `fnode` and `gnode`, i.e., the variable does not occur in `f`
+        // or `g` (see above)
         return manager.get_terminal(BDDTerminal::False);
     }
 
-    if minlevel > vlevel { 
+    if min_level > vlevel {
         // We are beyond the variables to be quantified, so simply apply.
         return apply_bin::<M, OP>(manager, f, g);
     }
 
     // Query the cache
     stat!(cache_query operator);
-    if let Some(res) =
-        manager
-            .apply_cache()
-            .get_with_numeric(manager, operator, &[f.borrowed(), g.borrowed(), vars.borrowed()], &[OP as u32])
-    {
+    if let Some(res) = manager.apply_cache().get_with_numeric(
+        manager,
+        operator,
+        &[f.borrowed(), g.borrowed(), vars.borrowed()],
+        &[OP as u32],
+    ) {
         stat!(cache_hit operator);
         return Ok(res);
     }
 
-    let vt = if vlevel == minlevel {
+    let vt = if vlevel == min_level {
         vnode.child(0)
     } else {
         vars.borrowed()
@@ -702,20 +704,30 @@ where
         (g.borrowed(), g.borrowed())
     };
 
-    let t = EdgeDropGuard::new(manager, apply_quant::<M, Q, OP>(manager, ft, gt, vt.borrowed())?);
-    let e = EdgeDropGuard::new(manager, apply_quant::<M, Q, OP>(manager, fe, ge, vt.borrowed())?);
+    let t = EdgeDropGuard::new(
+        manager,
+        apply_quant::<M, Q, OP>(manager, ft, gt, vt.borrowed())?,
+    );
+    let e = EdgeDropGuard::new(
+        manager,
+        apply_quant::<M, Q, OP>(manager, fe, ge, vt.borrowed())?,
+    );
 
-    let res = if minlevel == vlevel {
+    let res = if min_level == vlevel {
         apply_bin::<M, OP>(manager, t.borrowed(), e.borrowed())?
     } else {
-        reduce(manager, minlevel, t.into_edge(), e.into_edge(), BDDOp::And)?
+        reduce(manager, min_level, t.into_edge(), e.into_edge(), operator)?
     };
 
-    manager
-        .apply_cache()
-        .add_with_numeric(manager, operator, &[f, g, vars], &[OP as u32], res.borrowed());    
+    manager.apply_cache().add_with_numeric(
+        manager,
+        operator,
+        &[f, g, vars],
+        &[OP as u32],
+        res.borrowed(),
+    );
 
-    Ok(res)  
+    Ok(res)
 }
 
 // --- Function Interface ------------------------------------------------------
@@ -1056,16 +1068,20 @@ where
         vars: &EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         use BooleanOperator::*;
+        const Q: u8 = BDDOp::And as u8;
+        let lhs = lhs.borrowed();
+        let rhs = rhs.borrowed();
+        let vars = vars.borrowed();
         match op {
-            And => apply_quant::<_, { BDDOp::And as u8 }, { BDDOp::And as u8 }>(manager, lhs.borrowed(), rhs.borrowed(), vars.borrowed()),
-            Or => apply_quant::<_, { BDDOp::And as u8 }, { BDDOp::Or as u8 }>(manager, lhs.borrowed(), rhs.borrowed(), vars.borrowed()),
-            Xor => apply_quant::<_, { BDDOp::And as u8 }, { BDDOp::Xor as u8 }>(manager, lhs.borrowed(), rhs.borrowed(), vars.borrowed()),
-            Equiv => apply_quant::<_, { BDDOp::And as u8 }, { BDDOp::Equiv as u8 }>(manager, lhs.borrowed(), rhs.borrowed(), vars.borrowed()),
-            Nand => apply_quant::<_, { BDDOp::And as u8 }, { BDDOp::Nand as u8 }>(manager, lhs.borrowed(), rhs.borrowed(), vars.borrowed()),
-            Nor => apply_quant::<_, { BDDOp::And as u8 }, { BDDOp::Nor as u8 }>(manager, lhs.borrowed(), rhs.borrowed(), vars.borrowed()),
-            Imp => apply_quant::<_, { BDDOp::And as u8 }, { BDDOp::Imp as u8 }>(manager, lhs.borrowed(), rhs.borrowed(), vars.borrowed()),
-            ImpStrict => apply_quant::<_, { BDDOp::And as u8 }, { BDDOp::ImpStrict as u8 }>(manager, lhs.borrowed(), rhs.borrowed(), vars.borrowed()),
-        }        
+            And => apply_quant::<_, Q, { BDDOp::And as u8 }>(manager, lhs, rhs, vars),
+            Or => apply_quant::<_, Q, { BDDOp::Or as u8 }>(manager, lhs, rhs, vars),
+            Xor => apply_quant::<_, Q, { BDDOp::Xor as u8 }>(manager, lhs, rhs, vars),
+            Equiv => apply_quant::<_, Q, { BDDOp::Equiv as u8 }>(manager, lhs, rhs, vars),
+            Nand => apply_quant::<_, Q, { BDDOp::Nand as u8 }>(manager, lhs, rhs, vars),
+            Nor => apply_quant::<_, Q, { BDDOp::Nor as u8 }>(manager, lhs, rhs, vars),
+            Imp => apply_quant::<_, Q, { BDDOp::Imp as u8 }>(manager, lhs, rhs, vars),
+            ImpStrict => apply_quant::<_, Q, { BDDOp::ImpStrict as u8 }>(manager, lhs, rhs, vars),
+        }
     }
 
     #[inline]
@@ -1077,16 +1093,20 @@ where
         vars: &EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         use BooleanOperator::*;
+        const Q: u8 = BDDOp::Or as u8;
+        let lhs = lhs.borrowed();
+        let rhs = rhs.borrowed();
+        let vars = vars.borrowed();
         match op {
-            And => apply_quant::<_, { BDDOp::Or as u8 }, { BDDOp::And as u8 }>(manager, lhs.borrowed(), rhs.borrowed(), vars.borrowed()),
-            Or => apply_quant::<_, { BDDOp::Or as u8 }, { BDDOp::Or as u8 }>(manager, lhs.borrowed(), rhs.borrowed(), vars.borrowed()),
-            Xor => apply_quant::<_, { BDDOp::Or as u8 }, { BDDOp::Xor as u8 }>(manager, lhs.borrowed(), rhs.borrowed(), vars.borrowed()),
-            Equiv => apply_quant::<_, { BDDOp::Or as u8 }, { BDDOp::Equiv as u8 }>(manager, lhs.borrowed(), rhs.borrowed(), vars.borrowed()),
-            Nand => apply_quant::<_, { BDDOp::Or as u8 }, { BDDOp::Nand as u8 }>(manager, lhs.borrowed(), rhs.borrowed(), vars.borrowed()),
-            Nor => apply_quant::<_, { BDDOp::Or as u8 }, { BDDOp::Nor as u8 }>(manager, lhs.borrowed(), rhs.borrowed(), vars.borrowed()),
-            Imp => apply_quant::<_, { BDDOp::Or as u8 }, { BDDOp::Imp as u8 }>(manager, lhs.borrowed(), rhs.borrowed(), vars.borrowed()),
-            ImpStrict => apply_quant::<_, { BDDOp::Or as u8 }, { BDDOp::ImpStrict as u8 }>(manager, lhs.borrowed(), rhs.borrowed(), vars.borrowed()),
-        }        
+            And => apply_quant::<_, Q, { BDDOp::And as u8 }>(manager, lhs, rhs, vars),
+            Or => apply_quant::<_, Q, { BDDOp::Or as u8 }>(manager, lhs, rhs, vars),
+            Xor => apply_quant::<_, Q, { BDDOp::Xor as u8 }>(manager, lhs, rhs, vars),
+            Equiv => apply_quant::<_, Q, { BDDOp::Equiv as u8 }>(manager, lhs, rhs, vars),
+            Nand => apply_quant::<_, Q, { BDDOp::Nand as u8 }>(manager, lhs, rhs, vars),
+            Nor => apply_quant::<_, Q, { BDDOp::Nor as u8 }>(manager, lhs, rhs, vars),
+            Imp => apply_quant::<_, Q, { BDDOp::Imp as u8 }>(manager, lhs, rhs, vars),
+            ImpStrict => apply_quant::<_, Q, { BDDOp::ImpStrict as u8 }>(manager, lhs, rhs, vars),
+        }
     }
 
     #[inline]
@@ -1098,16 +1118,20 @@ where
         vars: &EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         use BooleanOperator::*;
+        const Q: u8 = BDDOp::Xor as u8;
+        let lhs = lhs.borrowed();
+        let rhs = rhs.borrowed();
+        let vars = vars.borrowed();
         match op {
-            And => apply_quant::<_, { BDDOp::Xor as u8 }, { BDDOp::And as u8 }>(manager, lhs.borrowed(), rhs.borrowed(), vars.borrowed()),
-            Or => apply_quant::<_, { BDDOp::Xor as u8 }, { BDDOp::Or as u8 }>(manager, lhs.borrowed(), rhs.borrowed(), vars.borrowed()),
-            Xor => apply_quant::<_, { BDDOp::Xor as u8 }, { BDDOp::Xor as u8 }>(manager, lhs.borrowed(), rhs.borrowed(), vars.borrowed()),
-            Equiv => apply_quant::<_, { BDDOp::Xor as u8 }, { BDDOp::Equiv as u8 }>(manager, lhs.borrowed(), rhs.borrowed(), vars.borrowed()),
-            Nand => apply_quant::<_, { BDDOp::Xor as u8 }, { BDDOp::Nand as u8 }>(manager, lhs.borrowed(), rhs.borrowed(), vars.borrowed()),
-            Nor => apply_quant::<_, { BDDOp::Xor as u8 }, { BDDOp::Nor as u8 }>(manager, lhs.borrowed(), rhs.borrowed(), vars.borrowed()),
-            Imp => apply_quant::<_, { BDDOp::Xor as u8 }, { BDDOp::Imp as u8 }>(manager, lhs.borrowed(), rhs.borrowed(), vars.borrowed()),
-            ImpStrict => apply_quant::<_, { BDDOp::Xor as u8 }, { BDDOp::ImpStrict as u8 }>(manager, lhs.borrowed(), rhs.borrowed(), vars.borrowed()),
-        }        
+            And => apply_quant::<_, Q, { BDDOp::And as u8 }>(manager, lhs, rhs, vars),
+            Or => apply_quant::<_, Q, { BDDOp::Or as u8 }>(manager, lhs, rhs, vars),
+            Xor => apply_quant::<_, Q, { BDDOp::Xor as u8 }>(manager, lhs, rhs, vars),
+            Equiv => apply_quant::<_, Q, { BDDOp::Equiv as u8 }>(manager, lhs, rhs, vars),
+            Nand => apply_quant::<_, Q, { BDDOp::Nand as u8 }>(manager, lhs, rhs, vars),
+            Nor => apply_quant::<_, Q, { BDDOp::Nor as u8 }>(manager, lhs, rhs, vars),
+            Imp => apply_quant::<_, Q, { BDDOp::Imp as u8 }>(manager, lhs, rhs, vars),
+            ImpStrict => apply_quant::<_, Q, { BDDOp::ImpStrict as u8 }>(manager, lhs, rhs, vars),
+        }
     }
 }
 
