@@ -1906,15 +1906,13 @@ impl<
     for ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS>
 {
     fn from(manager: &'a M<'id, NC, ET, TMC, RC, MDC, TERMINALS>) -> Self {
+        let ptr = manager as *const _ as *const M<'static, NC, ET, TMC, RC, MDC, TERMINALS>;
         // SAFETY:
-        // - We just change "identifier" lifetimes.
+        // - We just changed "identifier" lifetimes.
         // - The pointer was obtained via `Arc::into_raw()`, and since we have a
         //   `&Manager` reference, the counter is at least 1.
         unsafe {
-            let manager = std::mem::transmute::<
-                &M<'id, NC, ET, TMC, RC, MDC, TERMINALS>,
-                &M<'static, NC, ET, TMC, RC, MDC, TERMINALS>,
-            >(manager);
+            let manager = &*ptr;
             Arc::increment_strong_count(manager.store);
             ManagerRef(Arc::from_raw(manager.store))
         }
@@ -2253,13 +2251,14 @@ unsafe impl<
 
     #[inline]
     fn from_edge<'id>(manager: &Self::Manager<'id>, edge: EdgeOfFunc<'id, Self>) -> Self {
+        #[allow(clippy::unnecessary_cast)] // this cast is necessary
+        let ptr = manager as *const Self::Manager<'id> as *const Self::Manager<'static>;
         // SAFETY:
-        // - We just change "identifier" lifetimes.
+        // - We just changed "identifier" lifetimes.
         // - The pointer was obtained via `Arc::into_raw()`, and since we have a
         //   `&Manager` reference, the counter is at least 1.
         let store = unsafe {
-            let manager =
-                std::mem::transmute::<&Self::Manager<'id>, &Self::Manager<'static>>(manager);
+            let manager = &*ptr;
             Arc::increment_strong_count(manager.store);
             ManagerRef(Arc::from_raw(manager.store))
         };
@@ -2278,13 +2277,11 @@ unsafe impl<
             crate::util::ptr_eq_untyped(self.store.0.manager.data_ptr(), manager),
             "This function does not belong to `manager`"
         );
+
+        let ptr = &*self.edge as *const EdgeOfFunc<'static, Self> as *const EdgeOfFunc<'id, Self>;
         // SAFETY: Just changing lifetimes; we checked that `self.edge` belongs
         // to `manager` above.
-        unsafe {
-            std::mem::transmute::<&Edge<'static, NC::T<'static>, ET>, &Edge<'id, NC::T<'id>, ET>>(
-                &self.edge,
-            )
-        }
+        unsafe { &*ptr }
     }
 
     #[inline]

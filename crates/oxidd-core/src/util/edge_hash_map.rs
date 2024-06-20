@@ -1,12 +1,22 @@
 //! [`HashMap`] mapping from edges to values of another type. Performs the
-//! necessary management of [`Edge`][super::Edge]s.
+//! necessary management of [`Edge`]s.
 
 use std::collections::hash_map;
 use std::collections::HashMap;
 use std::hash::BuildHasher;
 use std::mem::ManuallyDrop;
 
+use crate::Edge;
 use crate::Manager;
+
+use super::Borrowed;
+
+#[inline(always)]
+fn manually_drop_ref<T>(r: &T) -> &ManuallyDrop<T> {
+    let ptr = r as *const T as *const ManuallyDrop<T>;
+    // SAFETY: `T` and `ManuallyDrop<T>` have the same representation
+    unsafe { &*ptr }
+}
 
 /// [`HashMap`] mapping from edges to values of type `V`
 ///
@@ -67,17 +77,13 @@ impl<'a, M: Manager, V, S: Default + BuildHasher> EdgeHashMap<'a, M, V, S> {
     /// Get a reference to the value for `edge` (if present)
     #[inline]
     pub fn get(&self, key: &M::Edge) -> Option<&V> {
-        // SAFETY: `ManuallyDrop<T>` has the same representation as `T`
-        self.map
-            .get(unsafe { std::mem::transmute::<&M::Edge, &ManuallyDrop<M::Edge>>(key) })
+        self.map.get(manually_drop_ref(key))
     }
 
     /// Get a mutable reference to the value for `edge` (if present)
     #[inline]
     pub fn get_mut(&mut self, key: &M::Edge) -> Option<&mut V> {
-        // SAFETY: `ManuallyDrop<T>` has the same representation as `T`
-        self.map
-            .get_mut(unsafe { std::mem::transmute::<&M::Edge, &ManuallyDrop<M::Edge>>(key) })
+        self.map.get_mut(manually_drop_ref(key))
     }
 
     /// Insert a key-value pair into the map
@@ -86,11 +92,10 @@ impl<'a, M: Manager, V, S: Default + BuildHasher> EdgeHashMap<'a, M, V, S> {
     /// is returned. If the map did have this key present, the value is updated,
     /// and the old value is returned.
     pub fn insert(&mut self, key: &M::Edge, value: V) -> Option<V> {
-        // SAFETY: `key` is valid for reads. If the edge is actually inserted
-        // into the map, then we clone the edge (and forget the clone),
-        // otherwise the map forgets it.
-        // TODO: Do we need to add (safety) requirements to the `Edge`/`Manager` trait?
-        let edge = ManuallyDrop::new(unsafe { std::ptr::read(key) });
+        let edge = key.borrowed();
+        // SAFETY: If the edge is actually inserted into the map, then we clone
+        // the edge (and forget the clone), otherwise the map forgets it.
+        let edge = unsafe { Borrowed::into_inner(edge) };
         match self.map.insert(edge, value) {
             Some(old) => Some(old),
             None => {
@@ -105,11 +110,7 @@ impl<'a, M: Manager, V, S: Default + BuildHasher> EdgeHashMap<'a, M, V, S> {
     /// Returns the value that was previously stored in the map, or `None`,
     /// respectively.
     pub fn remove(&mut self, key: &M::Edge) -> Option<V> {
-        // SAFETY: `ManuallyDrop<T>` has the same representation as `T`
-        match self
-            .map
-            .remove_entry(unsafe { std::mem::transmute::<&M::Edge, &ManuallyDrop<M::Edge>>(key) })
-        {
+        match self.map.remove_entry(manually_drop_ref(key)) {
             Some((key, value)) => {
                 self.manager.drop_edge(ManuallyDrop::into_inner(key));
                 Some(value)
