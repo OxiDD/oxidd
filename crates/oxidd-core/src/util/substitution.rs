@@ -77,7 +77,7 @@ impl<T: Substitution> Substitution for &T {
 /// Substitution mapping variables to replacement functions, created from slices
 /// of functions
 ///
-/// `S` is the storage type, and can, e.g., be a `Vec<S>`
+/// `S` is the storage type, and can, e.g., be `Vec<F>` or `&[F]`.
 #[derive(Debug)]
 pub struct Subst<F, S = Vec<F>> {
     id: u32,
