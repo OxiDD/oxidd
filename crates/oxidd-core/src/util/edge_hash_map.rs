@@ -1,6 +1,7 @@
 //! [`HashMap`] mapping from edges to values of another type. Performs the
 //! necessary management of [`Edge`]s.
 
+use std::borrow::Borrow;
 use std::collections::hash_map;
 use std::collections::HashMap;
 use std::hash::BuildHasher;
@@ -11,11 +12,27 @@ use crate::Manager;
 
 use super::Borrowed;
 
-#[inline(always)]
-fn manually_drop_ref<T>(r: &T) -> &ManuallyDrop<T> {
-    let ptr = r as *const T as *const ManuallyDrop<T>;
-    // SAFETY: `T` and `ManuallyDrop<T>` have the same representation
-    unsafe { &*ptr }
+/// Newtype wrapper around [`ManuallyDrop`] that also implements [`Borrow<T>`]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct ManuallyDropKey<T>(ManuallyDrop<T>);
+
+impl<T> ManuallyDropKey<T> {
+    #[inline(always)]
+    fn new(inner: T) -> Self {
+        Self(ManuallyDrop::new(inner))
+    }
+
+    #[inline(always)]
+    fn into_inner(self) -> T {
+        ManuallyDrop::into_inner(self.0)
+    }
+}
+
+impl<T> Borrow<T> for ManuallyDropKey<T> {
+    #[inline(always)]
+    fn borrow(&self) -> &T {
+        &self.0
+    }
 }
 
 /// [`HashMap`] mapping from edges to values of type `V`
@@ -25,7 +42,7 @@ fn manually_drop_ref<T>(r: &T) -> &ManuallyDrop<T> {
 /// keys before dropping the map.
 pub struct EdgeHashMap<'a, M: Manager, V, S> {
     manager: &'a M,
-    map: ManuallyDrop<HashMap<ManuallyDrop<M::Edge>, V, S>>,
+    map: ManuallyDrop<HashMap<ManuallyDropKey<M::Edge>, V, S>>,
 }
 
 impl<'a, M: Manager, V, S: Default + BuildHasher> EdgeHashMap<'a, M, V, S> {
@@ -77,13 +94,13 @@ impl<'a, M: Manager, V, S: Default + BuildHasher> EdgeHashMap<'a, M, V, S> {
     /// Get a reference to the value for `edge` (if present)
     #[inline]
     pub fn get(&self, key: &M::Edge) -> Option<&V> {
-        self.map.get(manually_drop_ref(key))
+        self.map.get(key)
     }
 
     /// Get a mutable reference to the value for `edge` (if present)
     #[inline]
     pub fn get_mut(&mut self, key: &M::Edge) -> Option<&mut V> {
-        self.map.get_mut(manually_drop_ref(key))
+        self.map.get_mut(key)
     }
 
     /// Insert a key-value pair into the map
@@ -96,7 +113,7 @@ impl<'a, M: Manager, V, S: Default + BuildHasher> EdgeHashMap<'a, M, V, S> {
         // SAFETY: If the edge is actually inserted into the map, then we clone
         // the edge (and forget the clone), otherwise the map forgets it.
         let edge = unsafe { Borrowed::into_inner(edge) };
-        match self.map.insert(edge, value) {
+        match self.map.insert(ManuallyDropKey(edge), value) {
             Some(old) => Some(old),
             None => {
                 std::mem::forget(self.manager.clone_edge(key));
@@ -110,9 +127,9 @@ impl<'a, M: Manager, V, S: Default + BuildHasher> EdgeHashMap<'a, M, V, S> {
     /// Returns the value that was previously stored in the map, or `None`,
     /// respectively.
     pub fn remove(&mut self, key: &M::Edge) -> Option<V> {
-        match self.map.remove_entry(manually_drop_ref(key)) {
+        match self.map.remove_entry(key) {
             Some((key, value)) => {
-                self.manager.drop_edge(ManuallyDrop::into_inner(key));
+                self.manager.drop_edge(key.into_inner());
                 Some(value)
             }
             None => None,
@@ -138,7 +155,10 @@ impl<'a, M: Manager, V: Clone, S: Default + BuildHasher> Clone for EdgeHashMap<'
     fn clone(&self) -> Self {
         let mut map = HashMap::with_capacity_and_hasher(self.len(), S::default());
         for (k, v) in self.map.iter() {
-            let _res = map.insert(ManuallyDrop::new(self.manager.clone_edge(k)), v.clone());
+            let _res = map.insert(
+                ManuallyDropKey::new(self.manager.clone_edge(k.borrow())),
+                v.clone(),
+            );
             debug_assert!(_res.is_none());
         }
         Self {
@@ -153,7 +173,7 @@ impl<'a, M: Manager, V, S> Drop for EdgeHashMap<'a, M, V, S> {
     fn drop(&mut self) {
         // SAFETY: `self.map` is never used again
         for (k, _) in unsafe { ManuallyDrop::take(&mut self.map) } {
-            self.manager.drop_edge(ManuallyDrop::into_inner(k));
+            self.manager.drop_edge(k.into_inner());
         }
     }
 }
@@ -173,7 +193,7 @@ impl<'a, M: Manager, V, S> IntoIterator for EdgeHashMap<'a, M, V, S> {
 }
 
 /// Owning iterator over the entries of an [`EdgeHashMap`]
-pub struct IntoIter<M: Manager, V>(hash_map::IntoIter<ManuallyDrop<M::Edge>, V>);
+pub struct IntoIter<M: Manager, V>(hash_map::IntoIter<ManuallyDropKey<M::Edge>, V>);
 
 impl<M: Manager, V> Iterator for IntoIter<M, V> {
     type Item = (M::Edge, V);
@@ -181,7 +201,7 @@ impl<M: Manager, V> Iterator for IntoIter<M, V> {
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         match self.0.next() {
-            Some((key, value)) => Some((ManuallyDrop::into_inner(key), value)),
+            Some((key, value)) => Some((key.into_inner(), value)),
             None => None,
         }
     }
@@ -190,7 +210,7 @@ impl<M: Manager, V> Iterator for IntoIter<M, V> {
 /// Iterator over the entries of an [`EdgeHashMap`]
 ///
 /// Created by [`EdgeHashMap::iter()`], see its documentation for more details.
-pub struct Iter<'a, M: Manager, V>(hash_map::Iter<'a, ManuallyDrop<M::Edge>, V>);
+pub struct Iter<'a, M: Manager, V>(hash_map::Iter<'a, ManuallyDropKey<M::Edge>, V>);
 
 impl<'a, M: Manager, V> Iterator for Iter<'a, M, V> {
     type Item = (&'a M::Edge, &'a V);
@@ -198,7 +218,7 @@ impl<'a, M: Manager, V> Iterator for Iter<'a, M, V> {
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         match self.0.next() {
-            Some((key, value)) => Some((key, value)),
+            Some((key, value)) => Some((key.borrow(), value)),
             None => None,
         }
     }
@@ -219,7 +239,7 @@ impl<'a, 'b, M: Manager, V, S> IntoIterator for &'b EdgeHashMap<'a, M, V, S> {
 ///
 /// Created by [`EdgeHashMap::iter_mut()`], see its documentation for more
 /// details.
-pub struct IterMut<'a, M: Manager, V>(hash_map::IterMut<'a, ManuallyDrop<M::Edge>, V>);
+pub struct IterMut<'a, M: Manager, V>(hash_map::IterMut<'a, ManuallyDropKey<M::Edge>, V>);
 
 impl<'a, M: Manager, V> Iterator for IterMut<'a, M, V> {
     type Item = (&'a M::Edge, &'a mut V);
@@ -227,7 +247,7 @@ impl<'a, M: Manager, V> Iterator for IterMut<'a, M, V> {
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         match self.0.next() {
-            Some((key, value)) => Some((key, value)),
+            Some((key, value)) => Some((key.borrow(), value)),
             None => None,
         }
     }

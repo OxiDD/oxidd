@@ -93,6 +93,7 @@ musllinux
 NAND
 nanorand
 nanos
+newtype
 NOLINTNEXTLINE
 nonnull
 nonoverlapping
