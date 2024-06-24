@@ -1,3 +1,4 @@
+use std::marker::PhantomData;
 use std::sync::atomic;
 use std::sync::atomic::AtomicU64;
 
@@ -75,21 +76,29 @@ impl<T: Substitution> Substitution for &T {
 
 /// Substitution mapping variables to replacement functions, created from slices
 /// of functions
+///
+/// `S` is the storage type, and can, e.g., be a `Vec<S>`
 #[derive(Debug)]
-pub struct Subst<'a, F> {
+pub struct Subst<F, S = Vec<F>> {
     id: u32,
-    vars: &'a [F],
-    replacements: &'a [F],
+    vars: S,
+    replacements: S,
+    phantom: PhantomData<fn(&F)>,
 }
 
-impl<F> Copy for Subst<'_, F> {}
-impl<F> Clone for Subst<'_, F> {
+impl<F, S: Copy> Copy for Subst<F, S> {}
+impl<F, S: Clone> Clone for Subst<F, S> {
     fn clone(&self) -> Self {
-        *self
+        Self {
+            id: self.id,
+            vars: self.vars.clone(),
+            replacements: self.replacements.clone(),
+            phantom: PhantomData,
+        }
     }
 }
 
-impl<'a, F> Substitution for Subst<'a, F> {
+impl<'a, F, S: AsRef<[F]>> Substitution for &'a Subst<F, S> {
     type Var = &'a F;
     type Replacement = &'a F;
 
@@ -100,11 +109,11 @@ impl<'a, F> Substitution for Subst<'a, F> {
 
     #[inline]
     fn pairs(&self) -> impl ExactSizeIterator<Item = (Self::Var, Self::Replacement)> {
-        self.vars.iter().zip(self.replacements)
+        self.vars.as_ref().iter().zip(self.replacements.as_ref())
     }
 }
 
-impl<'a, F> Subst<'a, F> {
+impl<F, S: AsRef<[F]>> Subst<F, S> {
     /// Create a new substitution to replace the i-th variable of `vars` by the
     /// i-th function in replacement
     ///
@@ -114,10 +123,10 @@ impl<'a, F> Subst<'a, F> {
     ///
     /// Panics if `vars` and `replacements` have different length
     #[track_caller]
-    pub fn new(vars: &'a [F], replacements: &'a [F]) -> Self {
+    pub fn new(vars: S, replacements: S) -> Self {
         assert_eq!(
-            vars.len(),
-            replacements.len(),
+            vars.as_ref().len(),
+            replacements.as_ref().len(),
             "`vars` and `replacements` must have the same length"
         );
 
@@ -125,6 +134,7 @@ impl<'a, F> Subst<'a, F> {
             id: new_substitution_id(),
             vars,
             replacements,
+            phantom: PhantomData,
         }
     }
 }

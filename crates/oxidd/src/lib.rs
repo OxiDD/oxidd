@@ -20,6 +20,7 @@ pub use oxidd_core::function::FunctionSubst;
 pub use oxidd_core::function::NumberBase;
 pub use oxidd_core::function::PseudoBooleanFunction;
 pub use oxidd_core::function::TVLFunction;
+pub use oxidd_core::util::{Subst, Substitution};
 pub use oxidd_core::Edge;
 pub use oxidd_core::InnerNode;
 pub use oxidd_core::LevelNo;

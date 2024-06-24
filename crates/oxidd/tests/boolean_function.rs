@@ -635,7 +635,7 @@ impl<'a, B: BooleanFunction + FunctionSubst> TestAllBooleanFunctions<'a, B> {
                     expected |= ((f_explicit >> mapped_assignment) & 1) << assignment;
                 }
 
-                let actual = self.dd_to_boolean_func[&f.substitute(subst).unwrap()];
+                let actual = self.dd_to_boolean_func[&f.substitute(&subst).unwrap()];
                 assert_eq!(actual, expected);
             }
         }
