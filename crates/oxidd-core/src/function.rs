@@ -745,7 +745,7 @@ pub trait BooleanFunction: Function {
 /// [`BooleanFunctionQuant::apply_forall()`], and
 /// [`BooleanFunctionQuant::apply_unique()`]. They correspond to the binary
 /// operations provided in the trait [`BooleanFunction`].
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum BooleanOperator {
     /// Conjunction `lhs ∧ rhs`.
     And,
