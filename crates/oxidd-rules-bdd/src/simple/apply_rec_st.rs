@@ -714,7 +714,7 @@ where
     );
 
     let res = if min_level == vlevel {
-        apply_bin::<M, OP>(manager, t.borrowed(), e.borrowed())?
+        apply_bin::<M, Q>(manager, t.borrowed(), e.borrowed())?
     } else {
         reduce(manager, min_level, t.into_edge(), e.into_edge(), operator)?
     };
