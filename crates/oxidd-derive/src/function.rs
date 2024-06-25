@@ -627,10 +627,11 @@ pub fn derive_boolean_function_quant(input: syn::DeriveInput) -> TokenStream {
 
             let mut methods = TokenStream::new();
 
-            for name in ["apply_forall", "apply_exist", "apply_unique"] {                
+            for name in ["apply_forall", "apply_exist", "apply_unique"] {
                 let method = syn::Ident::new(name, Span::call_site());
-                let func = struct_field
-                    .gen_from_inner(quote!(#trait_path::#method(&self.#field, op, &rhs.#field, &vars.#field)?));
+                let func = struct_field.gen_from_inner(
+                    quote!(#trait_path::#method(&self.#field, op, &rhs.#field, &vars.#field)?),
+                );
                 let method_edge = syn::Ident::new(&format!("{name}_edge"), Span::call_site());
 
                 let method = quote! {
@@ -643,7 +644,7 @@ pub fn derive_boolean_function_quant(input: syn::DeriveInput) -> TokenStream {
                     ) -> ::oxidd_core::util::AllocResult<Self> {
                         ::std::result::Result::Ok(#func)
                     }
-                    
+
                     #[inline]
                     fn #method_edge<'__id>(
                         manager: &#manager_ty,
@@ -653,13 +654,13 @@ pub fn derive_boolean_function_quant(input: syn::DeriveInput) -> TokenStream {
                         vars: &#edge_ty,
                     ) -> ::oxidd_core::util::AllocResult<#edge_ty> {
                         <#inner as #trait_path>::#method_edge(manager, op, lhs, rhs, vars)
-                    }                    
-                };   
+                    }
+                };
 
-                methods.extend(method);            
+                methods.extend(method);
             }
 
-            methods            
+            methods
         },
     )
 }

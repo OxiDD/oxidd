@@ -361,7 +361,6 @@ fn test_prop_depth2_quant<B: BooleanFunctionQuant>(
     progress.done();
 }
 
-
 // The following tests are expensive, hence we use `#[ignore]`, see
 // https://doc.rust-lang.org/book/ch11-02-running-tests.html#ignoring-some-tests-unless-specifically-requested.
 // You can set the `OXIDD_TESTING_PROGRESS` environment variable to get a simple
@@ -746,11 +745,11 @@ impl<'a, B: BooleanFunctionQuant> TestAllBooleanFunctions<'a, B> {
                 assert_eq!(unique_actual, unique_expected);
             }
 
-            // Apply and quantification algorithms. Here, we only compare the naive and optimised implementations.
+            // Apply and quantification algorithms. Here, we only compare the naive and
+            // optimised implementations.
             for f in &self.boolean_functions {
-            
                 for g in &self.boolean_functions {
-                    use BooleanOperator::*;                    
+                    use BooleanOperator::*;
                     for op in [And, Or, Xor, Equiv, Nand, Nor, Imp, ImpStrict] {
                         let inner = match op {
                             And => f.and(g).unwrap(),
@@ -763,24 +762,39 @@ impl<'a, B: BooleanFunctionQuant> TestAllBooleanFunctions<'a, B> {
                             ImpStrict => f.imp_strict(g).unwrap(),
                         };
 
+                        let exist_actual =
+                            self.dd_to_boolean_func[&f.apply_exist(op, g, &dd_var_set).unwrap()];
+                        let exist_expected =
+                            self.dd_to_boolean_func[&inner.exist(&dd_var_set).unwrap()];
+                        assert_eq!(
+                            exist_actual, exist_expected,
+                            "Operation {} exist, actual: {:#032b}, expected: {:#032b}",
+                            op as u8, exist_actual, exist_expected
+                        );
 
-                        let exist_actual = self.dd_to_boolean_func[&f.apply_exist(op, g, &dd_var_set).unwrap()];
-                        let exist_expected = self.dd_to_boolean_func[&inner.exist(&dd_var_set).unwrap()];    
-                        assert_eq!(exist_actual, exist_expected, "Operation {} exist, actual: {:#032b}, expected: {:#032b}", op as u8, exist_actual, exist_expected);
-                        
-                        let forall_actual = self.dd_to_boolean_func[&f.apply_forall(op, g, &dd_var_set).unwrap()];
-                        let forall_expected = self.dd_to_boolean_func[&inner.forall(&dd_var_set).unwrap()];  
-                        assert_eq!(forall_actual, forall_expected, "Operation {} forall, actual: {:#032b}, expected: {:#032b}", op as u8, forall_actual, forall_expected);
-    
-                        let unique_actual = self.dd_to_boolean_func[&f.apply_unique(op, g, &dd_var_set).unwrap()];
-                        let unique_expected = self.dd_to_boolean_func[&inner.unique(&dd_var_set).unwrap()];
-                        assert_eq!(unique_actual, unique_expected, "Operation {} unique, actual: {:#032b}, expected: {:#032b}", op as u8, unique_actual, unique_expected);
+                        let forall_actual =
+                            self.dd_to_boolean_func[&f.apply_forall(op, g, &dd_var_set).unwrap()];
+                        let forall_expected =
+                            self.dd_to_boolean_func[&inner.forall(&dd_var_set).unwrap()];
+                        assert_eq!(
+                            forall_actual, forall_expected,
+                            "Operation {} forall, actual: {:#032b}, expected: {:#032b}",
+                            op as u8, forall_actual, forall_expected
+                        );
+
+                        let unique_actual =
+                            self.dd_to_boolean_func[&f.apply_unique(op, g, &dd_var_set).unwrap()];
+                        let unique_expected =
+                            self.dd_to_boolean_func[&inner.unique(&dd_var_set).unwrap()];
+                        assert_eq!(
+                            unique_actual, unique_expected,
+                            "Operation {} unique, actual: {:#032b}, expected: {:#032b}",
+                            op as u8, unique_actual, unique_expected
+                        );
                     }
-    
                 }
             }
         }
-
     }
 }
 
