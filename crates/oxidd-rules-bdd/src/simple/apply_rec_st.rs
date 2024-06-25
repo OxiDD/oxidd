@@ -706,9 +706,9 @@ where
     let e = EdgeDropGuard::new(manager, apply_quant::<M, Q, OP>(manager, fe, ge, vt.borrowed())?);
 
     let res = if minlevel == vlevel {
-        apply_bin::<M, OP>(manager, t.borrowed(), e.borrowed())?
+        apply_bin::<M, Q>(manager, t.borrowed(), e.borrowed())?
     } else {
-        reduce(manager, minlevel, t.into_edge(), e.into_edge(), BDDOp::And)?
+        reduce(manager, minlevel, t.into_edge(), e.into_edge(), operator)?
     };
 
     manager
