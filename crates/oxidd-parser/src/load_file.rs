@@ -3,7 +3,6 @@
 // spell-checker:ignore termcolor
 
 use std::fmt;
-use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 
 use codespan_reporting::diagnostic::{Diagnostic, Label};
@@ -39,7 +38,7 @@ impl FileType {
     /// Guess the file type based on the given path
     pub fn from_path(path: &Path) -> Option<Self> {
         let ext = path.extension()?;
-        match ext.as_bytes() {
+        match ext.as_encoded_bytes() {
             b"cnf" | b"sat" | b"dimacs" => Some(FileType::DIMACS),
             b"aag" | b"aig" => Some(FileType::AIGER),
             _ => None,
