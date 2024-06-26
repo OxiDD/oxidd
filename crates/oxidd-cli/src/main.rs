@@ -33,7 +33,7 @@ use oxidd_core::WorkerManager;
 use oxidd_dump::dddmp;
 use oxidd_dump::dot;
 use oxidd_parser::load_file::load_file;
-use oxidd_parser::ClauseOrderNode;
+use oxidd_parser::ClauseOrderTree;
 use oxidd_parser::ParseOptionsBuilder;
 use oxidd_parser::Problem;
 use oxidd_parser::Prop;
@@ -140,6 +140,16 @@ enum CNFBuildOrder {
     WorkStealing,
     /// Bracketing tree and order from the comment lines in the input file
     Tree,
+    /// Like tree, but with parallel construction
+    TreeParallel,
+}
+
+impl CNFBuildOrder {
+    /// Whether an externally supplied clause order is necessary
+    fn needs_clause_order(self) -> bool {
+        use CNFBuildOrder::*;
+        matches!(self, Tree | TreeParallel)
+    }
 }
 
 /// Human-readable durations
@@ -251,20 +261,36 @@ where
 
     fn clause_tree_rec<B: BooleanFunction>(
         clauses: &[B],
-        clause_order: &[ClauseOrderNode],
+        clause_order: &ClauseOrderTree,
         report: impl Fn(&B) + Copy,
-    ) -> (B, usize) {
-        match clause_order[0] {
-            ClauseOrderNode::Clause(n) => (clauses[n.get() - 1].clone(), 1),
-            ClauseOrderNode::Conj => {
-                let mut consumed = 1;
-                let (lhs, c) = clause_tree_rec(clauses, &clause_order[consumed..], report);
-                consumed += c;
-                let (rhs, c) = clause_tree_rec(clauses, &clause_order[consumed..], report);
-                consumed += c;
+    ) -> B {
+        match clause_order {
+            ClauseOrderTree::Clause(n) => clauses[*n].clone(),
+            ClauseOrderTree::Conj(lhs, rhs) => {
+                let lhs = clause_tree_rec(clauses, lhs, report);
+                let rhs = clause_tree_rec(clauses, rhs, report);
                 let conj = lhs.and(&rhs).expect(OOM_MSG);
                 report(&conj);
-                (conj, consumed)
+                conj
+            }
+        }
+    }
+
+    fn clause_tree_par_rec<B: BooleanFunction + Send + Sync>(
+        clauses: &[B],
+        clause_order: &ClauseOrderTree,
+        report: impl Fn(&B) + Copy + Send + Sync,
+    ) -> B {
+        match clause_order {
+            ClauseOrderTree::Clause(n) => clauses[*n].clone(),
+            ClauseOrderTree::Conj(lhs, rhs) => {
+                let (lhs, rhs) = rayon::join(
+                    || clause_tree_rec(clauses, lhs, report),
+                    || clause_tree_rec(clauses, rhs, report),
+                );
+                let conj = lhs.and(&rhs).expect(OOM_MSG);
+                report(&conj);
+                conj
             }
         }
     }
@@ -297,7 +323,7 @@ where
         Problem::CNF(mut cnf) => {
             let num_vars = check_var_count(cnf.vars());
             let var_order = check_var_order(cnf.var_order(), cli.read_var_order);
-            if cli.cnf_build_order == CNFBuildOrder::Tree && cnf.clause_order().is_none() {
+            if cli.cnf_build_order.needs_clause_order() && cnf.clause_order().is_none() {
                 eprintln!("error: clause order not given");
                 std::process::exit(1);
             }
@@ -396,10 +422,10 @@ where
                             },
                         ),
                         CNFBuildOrder::Tree => {
-                            let co = cnf.clause_order().unwrap();
-                            let (func, _consumed) = clause_tree_rec(&clauses, co, report);
-                            debug_assert_eq!(_consumed, co.len());
-                            func
+                            clause_tree_rec(&clauses, cnf.clause_order().unwrap(), report)
+                        }
+                        CNFBuildOrder::TreeParallel => {
+                            clause_tree_par_rec(&clauses, cnf.clause_order().unwrap(), report)
                         }
                     }
                 }
@@ -460,7 +486,7 @@ where
     O: Copy + Ord + Hash,
 {
     let parse_options = ParseOptionsBuilder::default()
-        .orders(cli.read_var_order | (cli.cnf_build_order == CNFBuildOrder::Tree))
+        .orders(cli.read_var_order || cli.cnf_build_order.needs_clause_order())
         .build()
         .unwrap();
 
