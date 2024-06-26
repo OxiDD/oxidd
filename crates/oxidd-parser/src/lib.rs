@@ -23,7 +23,6 @@
 #![allow(clippy::type_complexity)]
 
 use std::fmt;
-use std::num::NonZeroUsize;
 
 use derive_builder::Builder;
 
@@ -112,7 +111,7 @@ pub struct CNFProblem {
     num_vars: usize,
     var_order: Vec<(Var, String)>,
     clauses: Vec2d<Literal>,
-    clause_order: Vec<ClauseOrderNode>,
+    clause_order: Option<ClauseOrderTree>,
 }
 
 impl CNFProblem {
@@ -145,14 +144,10 @@ impl CNFProblem {
         }
     }
 
-    /// Pre-linearized binary tree representing the clause order
+    /// Binary tree representing the clause order
     #[inline(always)]
-    pub fn clause_order(&self) -> Option<&[ClauseOrderNode]> {
-        if self.clause_order.is_empty() {
-            None
-        } else {
-            Some(&self.clause_order)
-        }
+    pub fn clause_order(&self) -> Option<&ClauseOrderTree> {
+        self.clause_order.as_ref()
     }
 }
 
@@ -204,22 +199,18 @@ impl PropProblem {
     }
 }
 
-/// Nodes in a pre-linearized binary clause order tree
+/// Binary clause order tree
 ///
 /// Since conjunction is a commutative and associative operator, a list of
 /// clauses may be processed in different ways. In some cases, `A ∧ (B ∧ C)` may
 /// be much more efficient to process `(A ∧ B) ∧ C`. This is why
 /// [`Problem::CNF`] allows to specify a clause order.
-///
-/// We represent clause orders as a pre-linearized binary tree:
-/// `[Conj, Conj, Clause(1), Clause(2), Clause(3)]` refers to `(1 ∧ 2) ∧ 3`,
-/// `[Conj, Clause(1), Conj, Clause(2), Clause(3)]` refers to `1 ∧ (2 ∧ 3)`.
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub enum ClauseOrderNode {
-    /// A clause
-    Clause(NonZeroUsize),
-    /// Conjunction of the two following subtrees
-    Conj,
+pub enum ClauseOrderTree {
+    /// Conjunction
+    Conj(Box<[ClauseOrderTree]>),
+    /// Clause index (starting from 0)
+    Clause(usize),
 }
 
 /// Propositional formula

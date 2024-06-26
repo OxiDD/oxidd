@@ -964,6 +964,16 @@ where
     }
 
     #[inline]
+    fn approx_num_inner_nodes(&self) -> usize {
+        let count = self.store().state.lock().node_count;
+        if count < 0 {
+            0
+        } else {
+            count as u64 as usize
+        }
+    }
+
+    #[inline]
     fn num_levels(&self) -> LevelNo {
         self.unique_table.len() as LevelNo
     }

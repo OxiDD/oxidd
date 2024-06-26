@@ -3,46 +3,33 @@
 use std::borrow::Cow;
 use std::fmt;
 use std::fs;
-use std::hash::BuildHasherDefault;
-use std::hash::Hash;
+use std::hash::{BuildHasherDefault, Hash};
 use std::io;
-use std::io::Seek;
-use std::io::Write;
+use std::io::{Seek, Write};
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::atomic::AtomicUsize;
-use std::sync::atomic::Ordering::Relaxed;
-use std::time::Duration;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use bitvec::prelude::*;
-use clap::Parser;
-use clap::ValueEnum;
+use clap::{Parser, ValueEnum};
 use num_bigint::BigUint;
-use oxidd::util::SatCountCache;
-use oxidd::BooleanFunction;
-use oxidd::Edge;
-use oxidd::LevelNo;
-use oxidd::Manager;
-use oxidd_core::ApplyCache;
-use oxidd_core::HasApplyCache;
-use oxidd_core::HasLevel;
-use oxidd_core::LevelView;
-use oxidd_core::ManagerRef;
-use oxidd_core::WorkerManager;
-use oxidd_dump::dddmp;
-use oxidd_dump::dot;
+use oxidd::util::{AllocResult, SatCountCache};
+use oxidd::{BooleanFunction, Edge, LevelNo, Manager};
+use oxidd_core::{ApplyCache, HasApplyCache, HasLevel, ManagerRef, WorkerManager};
+use oxidd_dump::{dddmp, dot};
 use oxidd_parser::load_file::load_file;
-use oxidd_parser::ClauseOrderNode;
-use oxidd_parser::ParseOptionsBuilder;
-use oxidd_parser::Problem;
-use oxidd_parser::Prop;
-use oxidd_parser::Var;
-use rayon::iter::IntoParallelIterator;
-use rustc_hash::FxHashMap;
-use rustc_hash::FxHasher;
+use oxidd_parser::{ClauseOrderTree, ParseOptionsBuilder, Problem, Prop, Var};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use rustc_hash::{FxHashMap, FxHasher};
 
-// spell-checker:ignore mref,subsec,funcs,dotfile,dmpfile
+mod progress;
+use progress::PROGRESS;
+mod profiler;
+use profiler::Profiler;
+mod util;
+use util::{handle_oom, HDuration};
+
+// spell-checker:ignore mref,funcs,dotfile,dmpfile
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -88,13 +75,17 @@ struct Cli {
     read_var_order: bool,
 
     /// Order in which to apply operations when building a CNF
-    #[arg(value_enum, long, default_value_t = CNFBuildOrder::LeftDeep)]
+    #[arg(value_enum, long, default_value_t = CNFBuildOrder::Balanced)]
     cnf_build_order: CNFBuildOrder,
 
-    /// For every conjunction operation in a CNF, compute and print the DD's
-    /// size
+    /// For every DD operation of the problem(s), compute and print the size of
+    /// the resulting DD function to the given CSV file
+    ///
+    /// For CNFs, we only consider the conjunction operations. If multiple input
+    /// problems are given, then the values for the i-th problem are written
+    /// to the i-th CSV file (if present).
     #[arg(long)]
-    cnf_size_profile: bool,
+    size_profile: Vec<PathBuf>,
 
     /// Perform model counting
     #[arg(long)]
@@ -106,11 +97,13 @@ struct Cli {
     #[arg(long, default_value_t = 0)]
     threads: u32,
 
-    /// Report statistics every STATS_SECS seconds
-    ///
-    /// A value of 0 disables the reports.
-    #[arg(long, default_value_t = 0)]
-    stats_secs: u64,
+    /// Report progress
+    #[arg(long, short = 'p')]
+    progress: bool,
+
+    /// Interval between each progress report in seconds
+    #[arg(long, default_value_t = 1.0)]
+    progress_interval: f32,
 
     /// Problem input file(s)
     file: Vec<PathBuf>,
@@ -140,43 +133,17 @@ enum CNFBuildOrder {
     WorkStealing,
     /// Bracketing tree and order from the comment lines in the input file
     Tree,
+    /// Like tree, but with parallel construction
+    TreeParallel,
 }
 
-/// Human-readable durations
-struct HDuration(Duration);
-
-impl fmt::Display for HDuration {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let d = self.0;
-        let s = d.as_secs();
-        if s >= 60 {
-            let (m, s) = (s / 60, s % 60);
-            let (h, m) = (m / 60, m % 60);
-            if h == 0 {
-                return write!(f, "{m} m {s} s");
-            }
-            let (d, h) = (h / 60, h % 60);
-            if d == 0 {
-                return write!(f, "{h} h {m} m {s} s");
-            }
-            return write!(f, "{d} d {h} h {m} m {s} s");
-        }
-        if s != 0 {
-            return write!(f, "{:.3} s", d.as_secs_f32());
-        }
-        let ms = d.subsec_millis();
-        if ms != 0 {
-            return write!(f, "{ms} ms");
-        }
-        let us = d.subsec_micros();
-        if us != 0 {
-            return write!(f, "{us} us");
-        }
-        write!(f, "{} ns", d.subsec_nanos())
+impl CNFBuildOrder {
+    /// Whether an externally supplied clause order is necessary
+    fn needs_clause_order(self) -> bool {
+        use CNFBuildOrder::*;
+        matches!(self, Tree | TreeParallel)
     }
 }
-
-const OOM_MSG: &str = "Out of memory";
 
 fn make_vars<'id, B: BooleanFunction>(
     manager: &mut B::Manager<'id>,
@@ -195,7 +162,7 @@ where
         for (var, name) in var_order {
             let f = name_map
                 .entry(name.to_string())
-                .or_insert_with(|| B::new_var(manager).expect(OOM_MSG))
+                .or_insert_with(|| handle_oom!(B::new_var(manager)))
                 .clone();
             vars[*var] = Some(f.clone());
             order.push(f);
@@ -211,7 +178,7 @@ where
             .map(|i| {
                 name_map
                     .entry(i.to_string())
-                    .or_insert_with(|| B::new_var(manager).expect(OOM_MSG))
+                    .or_insert_with(|| handle_oom!(B::new_var(manager)))
                     .clone()
             })
             .collect()
@@ -221,6 +188,7 @@ where
 fn make_bool_dd<B>(
     mref: &B::ManagerRef,
     problem: Problem,
+    problem_no: usize,
     cli: &Cli,
     vars: &mut FxHashMap<String, B>,
 ) -> B
@@ -229,43 +197,102 @@ where
     for<'id> B::Manager<'id>: WorkerManager,
     for<'id> <B::Manager<'id> as Manager>::InnerNode: HasLevel,
 {
-    fn prop_rec<B: BooleanFunction>(manager: &B::Manager<'_>, prop: &Prop, vars: &[B]) -> B {
+    fn prop_rec<B: BooleanFunction>(
+        manager: &B::Manager<'_>,
+        prop: &Prop,
+        vars: &[B],
+        profiler: &Profiler,
+    ) -> B {
+        let fold = |ps: &[Prop], init: B, op: fn(&B, &B) -> AllocResult<B>| {
+            ps.iter().fold(init, |acc, p| {
+                let rhs = prop_rec(manager, p, vars, profiler);
+                let op_start = profiler.start_op();
+                let res = handle_oom!(op(&acc, &rhs));
+                profiler.finish_op(op_start, &res);
+                res
+            })
+        };
+
         match prop {
             Prop::Lit(l) if l.positive() => vars[l.variable()].clone(),
-            Prop::Lit(l) => vars[l.variable()].not().expect(OOM_MSG),
-            Prop::Neg(p) => prop_rec(manager, p, vars).not().expect(OOM_MSG),
-            Prop::And(ps) => ps.iter().fold(B::t(manager), |b, p| {
-                b.and(&prop_rec(manager, p, vars)).expect(OOM_MSG)
-            }),
-            Prop::Or(ps) => ps.iter().fold(B::f(manager), |b, p| {
-                b.or(&prop_rec(manager, p, vars)).expect(OOM_MSG)
-            }),
-            Prop::Xor(ps) => ps.iter().fold(B::f(manager), |b, p| {
-                b.xor(&prop_rec(manager, p, vars)).expect(OOM_MSG)
-            }),
-            Prop::Eq(ps) => ps.iter().fold(B::t(manager), |b, p| {
-                b.equiv(&prop_rec(manager, p, vars)).expect(OOM_MSG)
-            }),
+            Prop::Lit(l) => handle_oom!(vars[l.variable()].not()),
+            Prop::Neg(p) => handle_oom!(prop_rec(manager, p, vars, profiler).not()),
+            Prop::And(ps) => fold(ps, B::t(manager), B::and),
+            Prop::Or(ps) => fold(ps, B::f(manager), B::or),
+            Prop::Xor(ps) => fold(ps, B::f(manager), B::xor),
+            Prop::Eq(ps) => fold(ps, B::t(manager), B::and),
         }
+    }
+
+    fn prop_inner_nodes(prop: &Prop) -> usize {
+        match prop {
+            Prop::Lit(_) => 0,
+            Prop::Neg(p) => 1 + prop_inner_nodes(p),
+            Prop::And(ps) | Prop::Or(ps) | Prop::Xor(ps) | Prop::Eq(ps) => {
+                ps.len() + ps.iter().map(prop_inner_nodes).sum::<usize>()
+            }
+        }
+    }
+
+    fn balanced_reduce<T>(
+        iter: impl IntoIterator<Item = T>,
+        mut f: impl for<'a> FnMut(&'a T, &'a T) -> T,
+    ) -> Option<T> {
+        let mut buf: Vec<T> = iter.into_iter().collect();
+        let mut step = 1;
+        while step < buf.len() {
+            let mut i = 0;
+            while i + step < buf.len() {
+                buf[i] = f(&buf[i], &buf[i + step]);
+                i += 2 * step;
+            }
+            step *= 2;
+        }
+        buf.into_iter().next()
     }
 
     fn clause_tree_rec<B: BooleanFunction>(
         clauses: &[B],
-        clause_order: &[ClauseOrderNode],
-        report: impl Fn(&B) + Copy,
-    ) -> (B, usize) {
-        match clause_order[0] {
-            ClauseOrderNode::Clause(n) => (clauses[n.get() - 1].clone(), 1),
-            ClauseOrderNode::Conj => {
-                let mut consumed = 1;
-                let (lhs, c) = clause_tree_rec(clauses, &clause_order[consumed..], report);
-                consumed += c;
-                let (rhs, c) = clause_tree_rec(clauses, &clause_order[consumed..], report);
-                consumed += c;
-                let conj = lhs.and(&rhs).expect(OOM_MSG);
-                report(&conj);
-                (conj, consumed)
-            }
+        clause_order: &ClauseOrderTree,
+        profiler: &Profiler,
+    ) -> Option<B> {
+        match clause_order {
+            ClauseOrderTree::Clause(n) => Some(clauses[*n].clone()),
+            ClauseOrderTree::Conj(sub) => balanced_reduce(
+                sub.iter()
+                    .filter_map(|t| clause_tree_rec(clauses, t, profiler)),
+                |lhs: &B, rhs: &B| {
+                    let op_start = profiler.start_op();
+                    let conj = handle_oom!(lhs.and(rhs));
+                    profiler.finish_op(op_start, &conj);
+                    conj
+                },
+            ),
+        }
+    }
+
+    fn clause_tree_par_rec<B: BooleanFunction + Send + Sync>(
+        clauses: &[B],
+        clause_order: &ClauseOrderTree,
+        profiler: &Profiler,
+    ) -> Option<B> {
+        match clause_order {
+            ClauseOrderTree::Clause(n) => Some(clauses[*n].clone()),
+            ClauseOrderTree::Conj(sub) => ParallelIterator::reduce(
+                sub.into_par_iter()
+                    .map(|t| clause_tree_par_rec(clauses, t, profiler)),
+                || None,
+                |lhs: Option<B>, rhs: Option<B>| match (lhs, rhs) {
+                    (None, None) => None,
+                    (None, Some(f)) | (Some(f), None) => Some(f),
+                    (Some(lhs), Some(rhs)) => {
+                        let op_start = profiler.start_op();
+                        let conj = handle_oom!(lhs.and(&rhs));
+                        profiler.finish_op(op_start, &conj);
+                        Some(conj)
+                    }
+                },
+            ),
         }
     }
 
@@ -291,13 +318,13 @@ where
         }
     }
 
-    let start = Instant::now();
+    let profiler = Profiler::new(cli.size_profile.get(problem_no));
 
     let func = match problem {
         Problem::CNF(mut cnf) => {
             let num_vars = check_var_count(cnf.vars());
             let var_order = check_var_order(cnf.var_order(), cli.read_var_order);
-            if cli.cnf_build_order == CNFBuildOrder::Tree && cnf.clause_order().is_none() {
+            if cli.cnf_build_order.needs_clause_order() && cnf.clause_order().is_none() {
                 eprintln!("error: clause order not given");
                 std::process::exit(1);
             }
@@ -308,6 +335,10 @@ where
 
             mref.with_manager_shared(|manager| {
                 let clauses = cnf.clauses_mut();
+                PROGRESS.set_task(
+                    format!("build clauses (problem {problem_no})"),
+                    clauses.len(),
+                );
                 let mut bdd_clauses = Vec::with_capacity(clauses.len());
                 let mut i = 0;
                 while let Some(clause) = clauses.get_mut(i) {
@@ -323,14 +354,14 @@ where
                     let init = if l.positive() {
                         init.clone()
                     } else {
-                        init.not().expect(OOM_MSG)
+                        handle_oom!(init.not())
                     };
                     bdd_clauses.push(clause[1..].iter().fold(init, |acc, l| {
                         let var = &vars[l.variable()];
                         if l.positive() {
-                            acc.or(var).expect(OOM_MSG)
+                            handle_oom!(acc.or(var))
                         } else {
-                            acc.or(&var.not().expect(OOM_MSG)).expect(OOM_MSG)
+                            handle_oom!(acc.or(&handle_oom!(var.not())))
                         }
                     }));
 
@@ -340,66 +371,55 @@ where
                 println!(
                     "all {} clauses built after {}",
                     clauses.len(),
-                    HDuration(start.elapsed())
+                    HDuration(profiler.elapsed_time())
                 );
 
+                PROGRESS.set_task(
+                    format!("conjoin clauses (problem {problem_no})"),
+                    clauses.len() - 1,
+                );
                 if clauses.is_empty() {
                     B::t(manager)
                 } else {
-                    let cnf_size_profile = cli.cnf_size_profile;
-                    let conjuncts_built = AtomicUsize::new(0);
-                    let report = |f: &B| {
-                        if cnf_size_profile {
-                            let conj = conjuncts_built.fetch_add(1, Relaxed);
-                            let time = start.elapsed();
-                            println!(
-                                "[{:08.2}] conjunct {conj}: {} nodes",
-                                time.as_secs_f32(),
-                                f.node_count()
-                            );
-                        }
-                    };
                     match cli.cnf_build_order {
                         CNFBuildOrder::LeftDeep => {
                             let init = clauses[0].clone();
                             clauses[1..].iter().fold(init, |acc, f| {
-                                let res = acc.and(f).expect(OOM_MSG);
-                                report(&res);
+                                let op_start = profiler.start_op();
+                                let res = handle_oom!(acc.and(f));
+                                profiler.finish_op(op_start, &res);
                                 res
                             })
                         }
-                        CNFBuildOrder::Balanced => {
-                            let mut clauses = clauses;
-                            let mut step = 1;
-                            while step < clauses.len() {
-                                let mut i = 0;
-                                while i + step < clauses.len() {
-                                    clauses[i] = clauses[i].and(&clauses[i + step]).expect(OOM_MSG);
-                                    report(&clauses[i]);
-                                    i += 2 * step;
-                                }
-                                step *= 2;
-                            }
-                            clauses.into_iter().next().unwrap()
-                        }
-                        CNFBuildOrder::WorkStealing => rayon::iter::ParallelIterator::reduce(
-                            clauses.into_par_iter(),
-                            || B::t(manager),
-                            |acc, f| {
-                                if acc.valid() {
-                                    f
-                                } else {
-                                    let res = acc.and(&f).expect(OOM_MSG);
-                                    report(&res);
-                                    res
+                        CNFBuildOrder::Balanced => balanced_reduce(clauses, |lhs: &B, rhs: &B| {
+                            let op_start = profiler.start_op();
+                            let conj = handle_oom!(lhs.and(rhs));
+                            profiler.finish_op(op_start, &conj);
+                            conj
+                        })
+                        .unwrap(),
+                        CNFBuildOrder::WorkStealing => ParallelIterator::reduce(
+                            clauses.into_par_iter().map(|c| Some(c)),
+                            || None,
+                            |lhs: Option<B>, rhs: Option<B>| match (lhs, rhs) {
+                                (None, None) => None,
+                                (None, Some(f)) | (Some(f), None) => Some(f),
+                                (Some(lhs), Some(rhs)) => {
+                                    let op_start = profiler.start_op();
+                                    let res = handle_oom!(lhs.and(&rhs));
+                                    profiler.finish_op(op_start, &res);
+                                    Some(res)
                                 }
                             },
-                        ),
+                        )
+                        .unwrap(),
                         CNFBuildOrder::Tree => {
-                            let co = cnf.clause_order().unwrap();
-                            let (func, _consumed) = clause_tree_rec(&clauses, co, report);
-                            debug_assert_eq!(_consumed, co.len());
-                            func
+                            clause_tree_rec(&clauses, cnf.clause_order().unwrap(), &profiler)
+                                .unwrap()
+                        }
+                        CNFBuildOrder::TreeParallel => {
+                            clause_tree_par_rec(&clauses, cnf.clause_order().unwrap(), &profiler)
+                                .unwrap()
                         }
                     }
                 }
@@ -407,45 +427,26 @@ where
         }
 
         Problem::Prop(prop) => {
+            PROGRESS.set_task(
+                "build propositional formula",
+                prop_inner_nodes(prop.formula()),
+            );
             let num_vars = check_var_count(prop.vars());
             let var_order = check_var_order(prop.var_order(), cli.read_var_order);
 
             let vars = mref.with_manager_exclusive(|manager| {
                 make_vars::<B>(manager, num_vars, var_order, vars)
             });
-            mref.with_manager_shared(|manager| prop_rec(manager, prop.formula(), &vars))
+            mref.with_manager_shared(|manager| prop_rec(manager, prop.formula(), &vars, &profiler))
         }
 
         _ => todo!(),
     };
-    println!("BDD building done within {}", HDuration(start.elapsed()));
+    println!(
+        "BDD building done within {}",
+        HDuration(profiler.elapsed_time())
+    );
     func
-}
-
-fn background_stats<MR, O>(mref: MR, interval: Duration)
-where
-    MR: ManagerRef + Send + 'static,
-    for<'id> MR::Manager<'id>: HasApplyCache<MR::Manager<'id>, O>,
-    O: Copy + Ord + Hash,
-{
-    if interval.is_zero() {
-        return; // statistics report disabled
-    }
-
-    std::thread::spawn(move || {
-        let mut scheduled = Instant::now();
-        loop {
-            scheduled += interval;
-            if let Some(d) = scheduled.checked_duration_since(Instant::now()) {
-                std::thread::sleep(d);
-            }
-
-            mref.with_manager_shared(|manager| {
-                println!("[stat] {} nodes", manager.num_inner_nodes());
-                //manager.apply_cache().print_stats();
-            });
-        }
-    });
 }
 
 fn bool_dd_main<B, O>(cli: &Cli, mref: B::ManagerRef)
@@ -460,42 +461,50 @@ where
     O: Copy + Ord + Hash,
 {
     let parse_options = ParseOptionsBuilder::default()
-        .orders(cli.read_var_order | (cli.cnf_build_order == CNFBuildOrder::Tree))
+        .orders(cli.read_var_order || cli.cnf_build_order.needs_clause_order())
         .build()
         .unwrap();
 
     let mut vars: FxHashMap<String, B> = Default::default();
     let mut funcs: Vec<(B, String)> = Vec::new();
 
-    background_stats::<B::ManagerRef, O>(mref.clone(), Duration::from_secs(cli.stats_secs));
+    let progress_interval = match Duration::try_from_secs_f32(cli.progress_interval) {
+        Ok(int) if cli.progress_interval > f32::EPSILON => int,
+        _ => {
+            eprintln!("Invalid progress interval (must be positive)");
+            std::process::exit(1);
+        }
+    };
+
+    let handle = if cli.progress {
+        Some(progress::start_progress_report::<B::ManagerRef, O>(
+            mref.clone(),
+            progress_interval,
+        ))
+    } else {
+        None
+    };
 
     let report_dd_node_count = || {
         mref.with_manager_shared(|manager| {
             if !cli.no_prune_unreachable {
                 println!("node count before pruning: {}", manager.num_inner_nodes());
-                assert_eq!(
-                    manager.num_inner_nodes(),
-                    manager.levels().map(|l| l.len()).sum::<usize>()
-                );
                 manager.apply_cache().clear(manager);
-                assert_eq!(
-                    manager.num_inner_nodes(),
-                    manager.levels().map(|l| l.len()).sum::<usize>()
-                );
+                let start = Instant::now();
                 manager.gc();
-                assert_eq!(
-                    manager.num_inner_nodes(),
-                    manager.levels().map(|l| l.len()).sum::<usize>()
-                );
+                println!("garbage collection took {}", HDuration(start.elapsed()));
             }
             let count = manager.num_inner_nodes();
             println!("node count: {count}");
-            assert_eq!(count, manager.levels().map(|l| l.len()).sum::<usize>());
         })
     };
 
     // Import dddmp files
+    if !cli.dddmp_import.is_empty() {
+        PROGRESS.set_task("import from dddmp", cli.dddmp_import.len());
+    }
     for path in &cli.dddmp_import {
+        PROGRESS.start_op();
         let start = Instant::now();
         print!("importing '{}' ...", path.display());
         io::stdout().flush().unwrap();
@@ -530,7 +539,7 @@ where
                 for (name, in_support) in var_names.iter().zip(filter) {
                     let f = vars
                         .entry(name.clone())
-                        .or_insert_with(|| B::new_var(manager).expect(OOM_MSG));
+                        .or_insert_with(|| handle_oom!(B::new_var(manager)));
                     if in_support {
                         support_vars.push(f.clone());
                     }
@@ -567,13 +576,14 @@ where
             }
         });
 
+        PROGRESS.finish_op();
         println!(" done ({})", HDuration(start.elapsed()));
 
         report_dd_node_count();
     }
 
     // Construct DDs for input problems (e.g., from DIMACS files)
-    for file in &cli.file {
+    for (i, file) in cli.file.iter().enumerate() {
         let start = Instant::now();
         let Some(problem) = load_file(file, &parse_options) else {
             std::process::exit(1)
@@ -581,13 +591,14 @@ where
         println!("parsing done within {}", HDuration(start.elapsed()));
 
         funcs.push((
-            make_bool_dd(&mref, problem, cli, &mut vars),
+            make_bool_dd(&mref, problem, i, cli, &mut vars),
             file.file_name().unwrap().to_string_lossy().to_string(),
         ));
 
         report_dd_node_count();
     }
 
+    let pause_handle = PROGRESS.pause_progress_report();
     // Identify equivalent functions
     let mut equivalences: FxHashMap<&B, Vec<usize>> = Default::default();
     for (i, (func, _)) in funcs.iter().enumerate() {
@@ -621,10 +632,12 @@ where
             println!("{count} ({})", HDuration(start.elapsed()));
         }
     }
+    drop(pause_handle);
 
     // Export (dot, dddmp)
     mref.with_manager_shared(|manager| {
         if let Some(dotfile) = &cli.dot_output {
+            PROGRESS.set_task("dot export", 1);
             fs::File::create(dotfile)
                 .and_then(|file| {
                     dot::dump_all(
@@ -640,6 +653,7 @@ where
         }
 
         if let Some(dmpfile) = &cli.dddmp_export {
+            PROGRESS.set_task("dddmp export", 1);
             fs::File::create(dmpfile)
                 .and_then(|file| {
                     let mut var_edges = Vec::with_capacity(vars.len());
@@ -677,6 +691,10 @@ where
                 });
         }
     });
+
+    if let Some(handle) = handle {
+        handle.join();
+    }
 }
 
 fn main() {

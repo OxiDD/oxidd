@@ -670,6 +670,16 @@ pub unsafe trait Manager: Sized {
     #[must_use]
     fn num_inner_nodes(&self) -> usize;
 
+    /// Get an approximate count of inner nodes
+    ///
+    /// For concurrent implementations, it may be much less costly to determine
+    /// an approximation of the inner node count than an accurate count
+    /// ([`Self::num_inner_nodes()`]).
+    #[must_use]
+    fn approx_num_inner_nodes(&self) -> usize {
+        self.num_inner_nodes()
+    }
+
     /// Get the number of levels
     #[must_use]
     fn num_levels(&self) -> LevelNo;
