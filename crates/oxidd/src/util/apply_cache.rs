@@ -1,6 +1,7 @@
 use std::hash::Hash;
 
 use oxidd_core::util::Borrowed;
+use oxidd_core::GCContainer;
 use oxidd_core::Manager;
 
 cfg_if::cfg_if! {
@@ -39,6 +40,17 @@ impl<M: Manager, O: Copy, const ARITY: usize> oxidd_core::util::DropWith<M::Edge
 {
     #[inline(always)]
     fn drop_with(self, _drop_edge: impl Fn(M::Edge)) {
+        // Nothing to do
+    }
+}
+
+impl<M: Manager, O, const ARITY: usize> GCContainer<M> for NoApplyCache<M, O, ARITY>
+{    
+    fn pre_gc(&self, _manager: &M) {
+        // Nothing to do
+    }
+
+    unsafe fn post_gc(&self, _manager: &M) {
         // Nothing to do
     }
 }
