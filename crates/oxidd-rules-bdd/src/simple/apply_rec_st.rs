@@ -40,8 +40,8 @@ use super::Operation;
 #[cfg(feature = "statistics")]
 use super::STAT_COUNTERS;
 
-// spell-checker:ignore
-// fnode,gnode,hnode,vnode,flevel,glevel,hlevel,minlevel,vlevel
+// spell-checker:ignore fnode,gnode,hnode,vnode,flevel,
+// spell-checker:ignore glevel,hlevel,minlevel,vlevel
 
 /// Recursively apply the 'not' operator to `f`
 pub(super) fn apply_not<M>(manager: &M, f: Borrowed<M::Edge>) -> AllocResult<M::Edge>

@@ -746,7 +746,7 @@ impl<'a, B: BooleanFunctionQuant> TestAllBooleanFunctions<'a, B> {
             }
 
             // Apply and quantification algorithms. Here, we only compare the naive and
-            // optimised implementations.
+            // optimized implementations.
             for f in &self.boolean_functions {
                 for g in &self.boolean_functions {
                     use BooleanOperator::*;
@@ -786,7 +786,7 @@ impl<'a, B: BooleanFunctionQuant> TestAllBooleanFunctions<'a, B> {
                         assert_eq!(
                             forall_actual, forall_expected,
                             "Operation forall {:#032b} {:#032b} {} {:#032b}, actual: {:#032b}, expected: {:#032b}",
-                            vars,                            
+                            vars,
                             f_value,
                             op,
                             g_value,
@@ -801,7 +801,7 @@ impl<'a, B: BooleanFunctionQuant> TestAllBooleanFunctions<'a, B> {
                         assert_eq!(
                             unique_actual, unique_expected,
                             "Operation unique {:#032b} {:#032b} {} {:#032b}, actual: {:#032b}, expected: {:#032b}", 
-                            vars,                           
+                            vars,
                             f_value,
                             op,
                             g_value, unique_actual, unique_expected
