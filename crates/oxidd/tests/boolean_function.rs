@@ -762,14 +762,21 @@ impl<'a, B: BooleanFunctionQuant> TestAllBooleanFunctions<'a, B> {
                             ImpStrict => f.imp_strict(g).unwrap(),
                         };
 
+                        let vars = self.dd_to_boolean_func[&dd_var_set];
+                        let f_value = self.dd_to_boolean_func[f];
+                        let g_value = self.dd_to_boolean_func[g];
                         let exist_actual =
                             self.dd_to_boolean_func[&f.apply_exist(op, g, &dd_var_set).unwrap()];
                         let exist_expected =
                             self.dd_to_boolean_func[&inner.exist(&dd_var_set).unwrap()];
                         assert_eq!(
                             exist_actual, exist_expected,
-                            "Operation {} exist, actual: {:#032b}, expected: {:#032b}",
-                            op as u8, exist_actual, exist_expected
+                            "Operation exist {:#032b} {:#032b} {} {:#032b}, actual: {:#032b}, expected: {:#032b}",
+                            vars,
+                            f_value,
+                            op,
+                            g_value,
+                            exist_actual, exist_expected
                         );
 
                         let forall_actual =
@@ -778,8 +785,13 @@ impl<'a, B: BooleanFunctionQuant> TestAllBooleanFunctions<'a, B> {
                             self.dd_to_boolean_func[&inner.forall(&dd_var_set).unwrap()];
                         assert_eq!(
                             forall_actual, forall_expected,
-                            "Operation {} forall, actual: {:#032b}, expected: {:#032b}",
-                            op as u8, forall_actual, forall_expected
+                            "Operation forall {:#032b} {:#032b} {} {:#032b}, actual: {:#032b}, expected: {:#032b}",
+                            vars,                            
+                            f_value,
+                            op,
+                            g_value,
+                            forall_actual,
+                            forall_expected
                         );
 
                         let unique_actual =
@@ -788,8 +800,11 @@ impl<'a, B: BooleanFunctionQuant> TestAllBooleanFunctions<'a, B> {
                             self.dd_to_boolean_func[&inner.unique(&dd_var_set).unwrap()];
                         assert_eq!(
                             unique_actual, unique_expected,
-                            "Operation {} unique, actual: {:#032b}, expected: {:#032b}",
-                            op as u8, unique_actual, unique_expected
+                            "Operation unique {:#032b} {:#032b} {} {:#032b}, actual: {:#032b}, expected: {:#032b}", 
+                            vars,                           
+                            f_value,
+                            op,
+                            g_value, unique_actual, unique_expected
                         );
                     }
                 }
