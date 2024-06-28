@@ -44,8 +44,7 @@ impl<M: Manager, O: Copy, const ARITY: usize> oxidd_core::util::DropWith<M::Edge
     }
 }
 
-impl<M: Manager, O, const ARITY: usize> GCContainer<M> for NoApplyCache<M, O, ARITY>
-{    
+impl<M: Manager, O, const ARITY: usize> GCContainer<M> for NoApplyCache<M, O, ARITY> {
     fn pre_gc(&self, _manager: &M) {
         // Nothing to do
     }

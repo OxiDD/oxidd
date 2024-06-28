@@ -521,7 +521,6 @@ where
     Ok(res)
 }
 
-
 /// Recursively apply the binary operator `OP` to `f` and `g` while quantifying
 /// `Q` over `vars`. This is more efficient then computing then an apply
 /// operation followed by a quantification.
@@ -982,7 +981,7 @@ where
             vars.borrowed(),
         )
     }
-    
+
     #[inline]
     fn apply_forall_edge<'id>(
         manager: &Self::Manager<'id>,
