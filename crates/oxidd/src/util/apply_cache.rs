@@ -1,7 +1,7 @@
 use std::hash::Hash;
 
 use oxidd_core::util::Borrowed;
-use oxidd_core::GCContainer;
+use oxidd_core::util::GCContainer;
 use oxidd_core::Manager;
 
 cfg_if::cfg_if! {
