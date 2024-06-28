@@ -645,7 +645,7 @@ where
     let glevel = gnode.level();
     let minlevel = fnode.level().min(gnode.level());
 
-    let vars = if operator != BDDOp::Unique {
+    let vars = if operator != BDDOp::ApplyUnique {
         // We can ignore all variables above the top-most variable. Removing
         // them before querying the apply cache should increase the hit ratio by
         // a lot.
@@ -664,7 +664,7 @@ where
     };
 
     let vlevel = vnode.level();
-    if vlevel < minlevel && operator == BDDOp::Unique {
+    if vlevel < minlevel && operator == BDDOp::ApplyUnique {
         // `vnode` above `fnode` and `gnode`, i.e., the variable does not occur in `f`
         // or `g` (see above)
         return manager.get_terminal(BDDTerminal::False);
