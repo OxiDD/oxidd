@@ -741,8 +741,8 @@ pub trait BooleanFunction: Function {
 }
 
 /// The binary operations that can be used in
-/// [`BooleanFunction::apply_exists()`], [`BooleanFunction::apply_forall()`] and
-/// [`BooleanFunction::apply_unique()`]. They correspond to the binary
+/// [`BooleanFunctionQuant::apply_exist()`], [`BooleanFunctionQuant::apply_forall()`] and
+/// [`BooleanFunctionQuant::apply_unique()`]. They correspond to the binary
 /// operations provided in the trait [`BooleanFunction`].
 #[derive(Copy, Clone, Debug)]
 pub enum BooleanOperator {
@@ -882,7 +882,7 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     /// This operation is equivalent to `∃x. self <op> rhs`, where `<op>` is any
     /// of the operations from [`BooleanOperator`]
     ///
-    /// See also [`Self::exists()`] and the trait [`BooleanFunction`] for more
+    /// See also [`Self::exist()`] and the trait [`BooleanFunction`] for more
     /// details.
     ///
     /// Panics if `self` and `rhs` and `vars` don't belong to the same manager.
