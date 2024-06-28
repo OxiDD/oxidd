@@ -741,7 +741,8 @@ pub trait BooleanFunction: Function {
 }
 
 /// The binary operations that can be used in
-/// [`BooleanFunctionQuant::apply_exist()`], [`BooleanFunctionQuant::apply_forall()`] and
+/// [`BooleanFunctionQuant::apply_exist()`],
+/// [`BooleanFunctionQuant::apply_forall()`] and
 /// [`BooleanFunctionQuant::apply_unique()`]. They correspond to the binary
 /// operations provided in the trait [`BooleanFunction`].
 #[derive(Copy, Clone, Debug)]
