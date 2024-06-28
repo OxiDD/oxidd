@@ -38,7 +38,8 @@ use super::Operation;
 #[cfg(feature = "statistics")]
 use super::STAT_COUNTERS;
 
-// spell-checker:ignore fnode,gnode,hnode,vnode,flevel,glevel,hlevel,vlevel
+// spell-checker:ignore fnode,gnode,hnode,vnode,flevel,glevel,hlevel,minlevel,
+// spell-checker:ignore vlevel
 
 /// Recursively apply the 'not' operator to `f`
 ///
