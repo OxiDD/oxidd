@@ -614,11 +614,10 @@ where
 
     // Query the cache
     stat!(cache_query operator);
-    if let Some(res) = manager.apply_cache().get_with_numeric(
+    if let Some(res) = manager.apply_cache().get(
         manager,
         operator,
         &[f.borrowed(), g.borrowed(), vars.borrowed()],
-        &[OP as u32],
     ) {
         stat!(cache_hit operator);
         return Ok(res);
@@ -660,13 +659,9 @@ where
         reduce(manager, minlevel, t.into_edge(), e.into_edge(), operator)?
     };
 
-    manager.apply_cache().add_with_numeric(
-        manager,
-        operator,
-        &[f, g, vars],
-        &[OP as u32],
-        res.borrowed(),
-    );
+    manager
+        .apply_cache()
+        .add(manager, operator, &[f, g, vars], res.borrowed());
 
     Ok(res)
 }
