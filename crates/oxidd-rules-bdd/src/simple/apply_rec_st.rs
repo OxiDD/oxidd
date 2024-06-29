@@ -608,12 +608,7 @@ where
     M: Manager<Terminal = BDDTerminal> + HasApplyCache<M, BDDOp>,
     M::InnerNode: HasLevel,
 {
-    let operator = match () {
-        _ if Q == BDDOp::And as u8 => BDDOp::ApplyForall,
-        _ if Q == BDDOp::Or as u8 => BDDOp::ApplyExist,
-        _ if Q == BDDOp::Xor as u8 => BDDOp::ApplyUnique,
-        _ => unreachable!("invalid quantifier"),
-    };
+    let operator = const { BDDOp::from_apply_quant(Q, OP) };
 
     stat!(call operator);
     // Handle the terminal cases
@@ -650,15 +645,15 @@ where
         // a lot.
         crate::set_pop(manager, vars, min_level)
     } else {
-        // No need to pop variables here, if the variable is above `min_level`,
-        // i.e., does not occur in `f` or 'g', then the result is `f ⊕ f ≡ ⊥`. We
+        // No need to pop variables here. If the variable is above `min_level`,
+        // i.e., does not occur in `f` or `g`, then the result is `f ⊕ f ≡ ⊥`. We
         // handle this below.
         vars
     };
 
     let vnode = match manager.get_node(&vars) {
         Node::Inner(n) => n,
-        // Empty variables: just apply operation
+        // Empty variable set: just apply operation
         Node::Terminal(_) => return apply_bin::<M, OP>(manager, f, g),
     };
 
@@ -676,11 +671,10 @@ where
 
     // Query the cache
     stat!(cache_query operator);
-    if let Some(res) = manager.apply_cache().get_with_numeric(
+    if let Some(res) = manager.apply_cache().get(
         manager,
         operator,
         &[f.borrowed(), g.borrowed(), vars.borrowed()],
-        &[OP as u32],
     ) {
         stat!(cache_hit operator);
         return Ok(res);
@@ -719,13 +713,9 @@ where
         reduce(manager, min_level, t.into_edge(), e.into_edge(), operator)?
     };
 
-    manager.apply_cache().add_with_numeric(
-        manager,
-        operator,
-        &[f, g, vars],
-        &[OP as u32],
-        res.borrowed(),
-    );
+    manager
+        .apply_cache()
+        .add(manager, operator, &[f, g, vars], res.borrowed());
 
     Ok(res)
 }
