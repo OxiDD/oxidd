@@ -1,5 +1,6 @@
 //! Function traits
 
+use std::fmt::Display;
 use std::hash::BuildHasher;
 use std::hash::Hash;
 
@@ -739,6 +740,47 @@ pub trait BooleanFunction: Function {
     ) -> bool;
 }
 
+/// Binary operations that can be used in
+/// [`BooleanFunctionQuant::apply_exist()`],
+/// [`BooleanFunctionQuant::apply_forall()`], and
+/// [`BooleanFunctionQuant::apply_unique()`]. They correspond to the binary
+/// operations provided in the trait [`BooleanFunction`].
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub enum BooleanOperator {
+    /// Conjunction `lhs ∧ rhs`
+    And,
+    /// Disjunction `lhs ∨ rhs`
+    Or,
+    /// Exclusive disjunction `lhs ⊕ rhs`
+    Xor,
+    /// Equivalence `lhs ↔ rhs`
+    Equiv,
+    /// Negated conjunction `lhs ⊼ rhs`
+    Nand,
+    /// Negated disjunction `lhs ⊽ rhs`
+    Nor,
+    /// Implication `lhs → rhs`
+    Imp,
+    /// Strict implication `lhs < rhs`
+    ImpStrict,
+}
+
+impl Display for BooleanOperator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use BooleanOperator::*;
+        match self {
+            And => write!(f, "∧"),
+            Or => write!(f, "∨"),
+            Xor => write!(f, "⊕"),
+            Equiv => write!(f, "↔"),
+            Nand => write!(f, "⊼"),
+            Nor => write!(f, "⊽"),
+            Imp => write!(f, "→"),
+            ImpStrict => write!(f, "<"),
+        }
+    }
+}
+
 /// Quantification extension for [`BooleanFunction`]
 pub trait BooleanFunctionQuant: BooleanFunction {
     /// Restrict a set of `vars` to constant values
@@ -816,6 +858,68 @@ pub trait BooleanFunctionQuant: BooleanFunction {
         })
     }
 
+    /// This operation is equivalent to `∀x. self <op> rhs`, where `<op>` is any
+    /// of the operations from [`BooleanOperator`]
+    ///
+    /// See also [`Self::forall()`] and the trait [`BooleanFunction`] for more
+    /// details.
+    ///
+    /// Locking behavior: acquires the manager's lock for shared access.
+    ///
+    /// Panics if `self` and `rhs` and `vars` don't belong to the same manager.
+    fn apply_forall(&self, op: BooleanOperator, rhs: &Self, vars: &Self) -> AllocResult<Self> {
+        self.with_manager_shared(|manager, root| {
+            let e = Self::apply_forall_edge(
+                manager,
+                op,
+                root,
+                rhs.as_edge(manager),
+                vars.as_edge(manager),
+            )?;
+            Ok(Self::from_edge(manager, e))
+        })
+    }
+
+    /// This operation is equivalent to `∃x. self <op> rhs`, where `<op>` is any
+    /// of the operations from [`BooleanOperator`]
+    ///
+    /// See also [`Self::exist()`] and the trait [`BooleanFunction`] for more
+    /// details.
+    ///
+    /// Panics if `self` and `rhs` and `vars` don't belong to the same manager.
+    fn apply_exist(&self, op: BooleanOperator, rhs: &Self, vars: &Self) -> AllocResult<Self> {
+        self.with_manager_shared(|manager, root| {
+            let e = Self::apply_exist_edge(
+                manager,
+                op,
+                root,
+                rhs.as_edge(manager),
+                vars.as_edge(manager),
+            )?;
+            Ok(Self::from_edge(manager, e))
+        })
+    }
+
+    /// This operation is equivalent to `∃!x. self <op> rhs`, where `<op>` is
+    /// any of the operations from [`BooleanOperator`]
+    ///
+    /// See also [`Self::unique()`] and the trait [`BooleanFunction`] for more
+    /// details.
+    ///
+    /// Panics if `self` and `rhs` and `vars` don't belong to the same manager.
+    fn apply_unique(&self, op: BooleanOperator, rhs: &Self, vars: &Self) -> AllocResult<Self> {
+        self.with_manager_shared(|manager, root| {
+            let e = Self::apply_unique_edge(
+                manager,
+                op,
+                root,
+                rhs.as_edge(manager),
+                vars.as_edge(manager),
+            )?;
+            Ok(Self::from_edge(manager, e))
+        })
+    }
+
     /// Restrict a set of `vars` to constant values, edge version
     ///
     /// See [`Self::restrict()`] for more details.
@@ -857,6 +961,93 @@ pub trait BooleanFunctionQuant: BooleanFunction {
         root: &EdgeOfFunc<'id, Self>,
         vars: &EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>>;
+
+    /// This operation is equivalent to `∀x. self <op> rhs`, where `<op>` is any
+    /// of the operations from [`BooleanOperator`], edge version
+    #[must_use]
+    fn apply_forall_edge<'id>(
+        manager: &Self::Manager<'id>,
+        op: BooleanOperator,
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+        vars: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        // Naive default implementation
+        use BooleanOperator::*;
+        let inner = EdgeDropGuard::new(
+            manager,
+            match op {
+                And => Self::and_edge(manager, lhs, rhs),
+                Or => Self::or_edge(manager, lhs, rhs),
+                Xor => Self::xor_edge(manager, lhs, rhs),
+                Equiv => Self::equiv_edge(manager, lhs, rhs),
+                Nand => Self::nand_edge(manager, lhs, rhs),
+                Nor => Self::nor_edge(manager, lhs, rhs),
+                Imp => Self::imp_edge(manager, lhs, rhs),
+                ImpStrict => Self::imp_strict_edge(manager, lhs, rhs),
+            }?,
+        );
+
+        Self::forall_edge(manager, &inner, vars)
+    }
+
+    /// This operation is equivalent to `∃x. self <op> rhs`, where `<op>` is any
+    /// of the operations from [`BooleanOperator`], edge version
+    #[must_use]
+    fn apply_exist_edge<'id>(
+        manager: &Self::Manager<'id>,
+        op: BooleanOperator,
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+        vars: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        // Naive default implementation
+        use BooleanOperator::*;
+        let inner = EdgeDropGuard::new(
+            manager,
+            match op {
+                And => Self::and_edge(manager, lhs, rhs),
+                Or => Self::or_edge(manager, lhs, rhs),
+                Xor => Self::xor_edge(manager, lhs, rhs),
+                Equiv => Self::equiv_edge(manager, lhs, rhs),
+                Nand => Self::nand_edge(manager, lhs, rhs),
+                Nor => Self::nor_edge(manager, lhs, rhs),
+                Imp => Self::imp_edge(manager, lhs, rhs),
+                ImpStrict => Self::imp_strict_edge(manager, lhs, rhs),
+            }?,
+        );
+
+        Self::exist_edge(manager, &inner, vars)
+    }
+
+    /// This operation is equivalent to `∃!x. self <op> rhs`, where `<op>` is
+    /// any of the operations from [`BooleanOperator`], edge version
+    #[must_use]
+    fn apply_unique_edge<'id>(
+        manager: &Self::Manager<'id>,
+        op: BooleanOperator,
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+        vars: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        // Naive default implementation
+        use BooleanOperator::*;
+        let inner = EdgeDropGuard::new(
+            manager,
+            match op {
+                And => Self::and_edge(manager, lhs, rhs),
+                Or => Self::or_edge(manager, lhs, rhs),
+                Xor => Self::xor_edge(manager, lhs, rhs),
+                Equiv => Self::equiv_edge(manager, lhs, rhs),
+                Nand => Self::nand_edge(manager, lhs, rhs),
+                Nor => Self::nor_edge(manager, lhs, rhs),
+                Imp => Self::imp_edge(manager, lhs, rhs),
+                ImpStrict => Self::imp_strict_edge(manager, lhs, rhs),
+            }?,
+        );
+
+        Self::unique_edge(manager, &inner, vars)
+    }
 }
 
 /// Set of Boolean vectors
