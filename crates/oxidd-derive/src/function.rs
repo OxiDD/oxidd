@@ -644,7 +644,6 @@ pub fn derive_boolean_function_quant(input: syn::DeriveInput) -> TokenStream {
                     ) -> ::oxidd_core::util::AllocResult<Self> {
                         ::std::result::Result::Ok(#func)
                     }
-
                     #[inline]
                     fn #method_edge<'__id>(
                         manager: &#manager_ty,

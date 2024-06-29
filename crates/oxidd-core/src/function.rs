@@ -740,28 +740,28 @@ pub trait BooleanFunction: Function {
     ) -> bool;
 }
 
-/// The binary operations that can be used in
+/// Binary operations that can be used in
 /// [`BooleanFunctionQuant::apply_exist()`],
-/// [`BooleanFunctionQuant::apply_forall()`] and
+/// [`BooleanFunctionQuant::apply_forall()`], and
 /// [`BooleanFunctionQuant::apply_unique()`]. They correspond to the binary
 /// operations provided in the trait [`BooleanFunction`].
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum BooleanOperator {
-    /// Compute the conjunction `lhs ∧ rhs`.
+    /// Conjunction `lhs ∧ rhs`
     And,
-    /// Compute the disjunction `lhs ∨ rhs`.
+    /// Disjunction `lhs ∨ rhs`
     Or,
-    /// Compute the exclusive disjunction `lhs ⊕ rhs`.
+    /// Exclusive disjunction `lhs ⊕ rhs`
     Xor,
-    /// Compute the equivalence `lhs ↔ rhs`.
+    /// Equivalence `lhs ↔ rhs`
     Equiv,
-    /// Compute the negated conjunction `lhs ⊼ rhs`.
+    /// Negated conjunction `lhs ⊼ rhs`
     Nand,
-    /// Compute the negated disjunction `lhs ⊽ rhs`.
+    /// Negated disjunction `lhs ⊽ rhs`
     Nor,
-    /// Compute the implication `lhs → rhs`.
+    /// Implication `lhs → rhs`
     Imp,
-    /// Compute the strict implication `lhs < rhs`.
+    /// Strict implication `lhs < rhs`
     ImpStrict,
 }
 

@@ -5,6 +5,8 @@
 mod boolean_prop;
 mod util;
 
+use std::fmt;
+
 use oxidd_core::function::BooleanOperator;
 use oxidd_core::function::FunctionSubst;
 use rustc_hash::FxHashMap;
@@ -428,6 +430,37 @@ struct TestAllBooleanFunctions<'a, B: BooleanFunction> {
 }
 
 impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
+    fn check(
+        &self,
+        desc: impl fmt::Display,
+        actual: ExplicitBFunc,
+        expected: ExplicitBFunc,
+        operands: &[ExplicitBFunc],
+        sets: &[u32],
+    ) {
+        if actual != expected {
+            let vars = self.vars.len() as u32;
+            let mut columns = Vec::with_capacity(operands.len() + 2);
+            let op_it = operands.iter().copied();
+            if operands.len() <= 3 {
+                columns.extend(["f", "g", "h"].iter().map(|n| n.to_string()).zip(op_it))
+            } else {
+                columns.extend((0..operands.len()).map(|i| format!("f{i}")).zip(op_it))
+            };
+            columns.push(("expected".to_string(), expected));
+            columns.push(("actual".to_string(), actual));
+            let table = util::debug::TruthTable { vars, columns };
+            if sets.is_empty() {
+                panic!("Operation {desc} failed\n\n{table}");
+            } else {
+                panic!(
+                    "Operation {desc} failed\n\n{table}\nwith {:?}",
+                    util::debug::SetList { vars, sets }
+                );
+            }
+        }
+    }
+
     /// Initialize the test, generating DDs for all Boolean functions for the
     /// given variable set. `vars` are the Boolean functions representing the
     /// variables identified by `var_handles`. For BDDs, the two coincide, but
@@ -526,7 +559,7 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
             // not
             let expected = !f_explicit & func_mask;
             let actual = self.dd_to_boolean_func[&f.not().unwrap()];
-            assert_eq!(actual, expected);
+            self.check("¬f", actual, expected, &[f_explicit], &[]);
 
             // arity >= 2
             for (g_explicit, g) in self.boolean_functions.iter().enumerate() {
@@ -535,51 +568,55 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
                 // and
                 let expected = f_explicit & g_explicit;
                 let actual = self.dd_to_boolean_func[&f.and(g).unwrap()];
-                assert_eq!(actual, expected);
+                self.check("f ∧ g", actual, expected, &[f_explicit, g_explicit], &[]);
 
                 // or
                 let expected = f_explicit | g_explicit;
                 let actual = self.dd_to_boolean_func[&f.or(g).unwrap()];
-                assert_eq!(actual, expected);
+                self.check("f ∨ g", actual, expected, &[f_explicit, g_explicit], &[]);
 
                 // xor
                 let expected = f_explicit ^ g_explicit;
                 let actual = self.dd_to_boolean_func[&f.xor(g).unwrap()];
-                assert_eq!(actual, expected);
+                self.check("f ⊕ g", actual, expected, &[f_explicit, g_explicit], &[]);
 
                 // equiv
                 let expected = !(f_explicit ^ g_explicit) & func_mask;
                 let actual = self.dd_to_boolean_func[&f.equiv(g).unwrap()];
-                assert_eq!(actual, expected);
+                self.check("f ↔ g", actual, expected, &[f_explicit, g_explicit], &[]);
 
                 // nand
                 let expected = !(f_explicit & g_explicit) & func_mask;
                 let actual = self.dd_to_boolean_func[&f.nand(g).unwrap()];
-                assert_eq!(actual, expected);
+                self.check("f ⊼ g", actual, expected, &[f_explicit, g_explicit], &[]);
 
                 // nor
                 let expected = !(f_explicit | g_explicit) & func_mask;
                 let actual = self.dd_to_boolean_func[&f.nor(g).unwrap()];
-                assert_eq!(actual, expected);
+                self.check("f ⊽ g", actual, expected, &[f_explicit, g_explicit], &[]);
 
                 // implication
                 let expected = (!f_explicit | g_explicit) & func_mask;
                 let actual = self.dd_to_boolean_func[&f.imp(g).unwrap()];
-                assert_eq!(actual, expected);
+                self.check("f → g", actual, expected, &[f_explicit, g_explicit], &[]);
 
                 // strict implication
                 let expected = !f_explicit & g_explicit;
                 let actual = self.dd_to_boolean_func[&f.imp_strict(g).unwrap()];
-                assert_eq!(actual, expected);
+                self.check("f < g", actual, expected, &[f_explicit, g_explicit], &[]);
 
                 // arity >= 3
                 for (h_explicit, h) in self.boolean_functions.iter().enumerate() {
                     let h_explicit = h_explicit as ExplicitBFunc;
 
                     // ite
-                    let expected = (f_explicit & g_explicit) | (!f_explicit & h_explicit);
-                    let actual = self.dd_to_boolean_func[&f.ite(g, h).unwrap()];
-                    assert_eq!(actual, expected);
+                    self.check(
+                        "if f { g } else { h }",
+                        self.dd_to_boolean_func[&f.ite(g, h).unwrap()],
+                        (f_explicit & g_explicit) | (!f_explicit & h_explicit),
+                        &[f_explicit, g_explicit, h_explicit],
+                        &[],
+                    );
                 }
             }
         }
@@ -735,14 +772,75 @@ impl<'a, B: BooleanFunctionQuant> TestAllBooleanFunctions<'a, B> {
                     unique_expected |= (unique_bit as ExplicitBFunc) << assignment;
                 }
 
-                let exist_actual = self.dd_to_boolean_func[&f.exist(&dd_var_set).unwrap()];
-                assert_eq!(exist_actual, exist_expected);
+                self.check(
+                    "∃v. f",
+                    self.dd_to_boolean_func[&f.exist(&dd_var_set).unwrap()],
+                    exist_expected,
+                    &[f_explicit],
+                    &[var_set],
+                );
 
-                let forall_actual = self.dd_to_boolean_func[&f.forall(&dd_var_set).unwrap()];
-                assert_eq!(forall_actual, forall_expected);
+                self.check(
+                    "∀v. f",
+                    self.dd_to_boolean_func[&f.forall(&dd_var_set).unwrap()],
+                    forall_expected,
+                    &[f_explicit],
+                    &[var_set],
+                );
 
-                let unique_actual = self.dd_to_boolean_func[&f.unique(&dd_var_set).unwrap()];
-                assert_eq!(unique_actual, unique_expected);
+                self.check(
+                    "∃!v. f",
+                    self.dd_to_boolean_func[&f.unique(&dd_var_set).unwrap()],
+                    unique_expected,
+                    &[f_explicit],
+                    &[var_set],
+                );
+            }
+
+            // Apply and quantification algorithms. Here, we only compare the naive and
+            // optimized implementations.
+            for (f_explicit, f) in self.boolean_functions.iter().enumerate() {
+                let f_explicit = f_explicit as ExplicitBFunc;
+                for (g_explicit, g) in self.boolean_functions.iter().enumerate() {
+                    let g_explicit = g_explicit as ExplicitBFunc;
+                    use BooleanOperator::*;
+                    for op in [And, Or, Xor, Equiv, Nand, Nor, Imp, ImpStrict] {
+                        let (inner, inner_symbol) = match op {
+                            And => (f.and(g).unwrap(), "∧"),
+                            Or => (f.or(g).unwrap(), "∨"),
+                            Xor => (f.xor(g).unwrap(), "⊕"),
+                            Equiv => (f.equiv(g).unwrap(), "↔"),
+                            Nand => (f.nand(g).unwrap(), "⊼"),
+                            Nor => (f.nor(g).unwrap(), "⊽"),
+                            Imp => (f.imp(g).unwrap(), "→"),
+                            ImpStrict => (f.imp_strict(g).unwrap(), "<"),
+                        };
+
+                        self.check(
+                            format_args!("∃v. f {inner_symbol} g"),
+                            self.dd_to_boolean_func[&f.apply_exist(op, g, &dd_var_set).unwrap()],
+                            self.dd_to_boolean_func[&inner.exist(&dd_var_set).unwrap()],
+                            &[f_explicit, g_explicit],
+                            &[var_set],
+                        );
+
+                        self.check(
+                            format_args!("∀v. f {inner_symbol} g"),
+                            self.dd_to_boolean_func[&f.apply_forall(op, g, &dd_var_set).unwrap()],
+                            self.dd_to_boolean_func[&inner.forall(&dd_var_set).unwrap()],
+                            &[f_explicit, g_explicit],
+                            &[var_set],
+                        );
+
+                        self.check(
+                            format_args!("∃!v. f {inner_symbol} g"),
+                            self.dd_to_boolean_func[&f.apply_unique(op, g, &dd_var_set).unwrap()],
+                            self.dd_to_boolean_func[&inner.unique(&dd_var_set).unwrap()],
+                            &[f_explicit, g_explicit],
+                            &[var_set],
+                        );
+                    }
+                }
             }
 
             // Apply and quantification algorithms. Here, we only compare the naive and
@@ -800,7 +898,7 @@ impl<'a, B: BooleanFunctionQuant> TestAllBooleanFunctions<'a, B> {
                             self.dd_to_boolean_func[&inner.unique(&dd_var_set).unwrap()];
                         assert_eq!(
                             unique_actual, unique_expected,
-                            "Operation unique {:#032b} {:#032b} {} {:#032b}, actual: {:#032b}, expected: {:#032b}", 
+                            "Operation unique {:#032b} {:#032b} {} {:#032b}, actual: {:#032b}, expected: {:#032b}",
                             vars,
                             f_value,
                             op,
@@ -814,7 +912,7 @@ impl<'a, B: BooleanFunctionQuant> TestAllBooleanFunctions<'a, B> {
 }
 
 #[test]
-//#[cfg_attr(miri, ignore)]
+#[cfg_attr(miri, ignore)]
 fn bdd_all_boolean_functions_2vars_t1() {
     let mref = oxidd::bdd::new_manager(65536, 1024, 1);
     let vars = bdd_vars::<BDDFunction>(&mref, 2);
