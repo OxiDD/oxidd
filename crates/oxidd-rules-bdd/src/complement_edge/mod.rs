@@ -1,22 +1,12 @@
 //! Binary decision diagrams with complemented edges
 
-use std::convert::Infallible;
 use std::fmt;
 use std::hash::Hash;
 use std::iter::FusedIterator;
 use std::marker::PhantomData;
 
-use oxidd_core::util::AllocResult;
-use oxidd_core::util::Borrowed;
-use oxidd_core::DiagramRules;
-use oxidd_core::Edge;
-use oxidd_core::HasApplyCache;
-use oxidd_core::HasLevel;
-use oxidd_core::InnerNode;
-use oxidd_core::LevelNo;
-use oxidd_core::Manager;
-use oxidd_core::Node;
-use oxidd_core::ReducedOrNew;
+use oxidd_core::util::{AllocResult, Borrowed};
+use oxidd_core::{DiagramRules, Edge, HasLevel, InnerNode, LevelNo, Manager, Node, ReducedOrNew};
 use oxidd_derive::Countable;
 use oxidd_dump::dddmp::AsciiDisplay;
 
@@ -24,9 +14,7 @@ use crate::stat;
 
 // spell-checker:ignore fnode,gnode
 
-#[cfg(feature = "multi-threading")]
-mod apply_rec_mt;
-mod apply_rec_st;
+mod apply_rec;
 
 // --- Edge Tag ----------------------------------------------------------------
 
@@ -229,7 +217,7 @@ where
 pub struct BCDDTerminal;
 
 impl std::str::FromStr for BCDDTerminal {
-    type Err = Infallible;
+    type Err = std::convert::Infallible;
 
     fn from_str(_s: &str) -> Result<Self, Self::Err> {
         Ok(BCDDTerminal)
@@ -408,10 +396,6 @@ where
 
 // --- Function Interface ------------------------------------------------------
 
-/// Workaround for https://github.com/rust-lang/rust/issues/49601
-trait HasBCDDOpApplyCache<M: Manager>: HasApplyCache<M, BCDDOp> {}
-impl<M: Manager + HasApplyCache<M, BCDDOp>> HasBCDDOpApplyCache<M> for M {}
-
 #[cfg(feature = "multi-threading")]
-pub use apply_rec_mt::BCDDFunctionMT;
-pub use apply_rec_st::BCDDFunction;
+pub use apply_rec::mt::BCDDFunctionMT;
+pub use apply_rec::BCDDFunction;

@@ -41,6 +41,7 @@ CUDD
 Cython
 DDDMP
 dealloc
+decreasable
 DIMACS
 docstring
 docstrings
@@ -115,6 +116,8 @@ pytest
 pyupgrade
 RAII
 realloc
+recursor
+recursors
 repr
 retag
 rpath

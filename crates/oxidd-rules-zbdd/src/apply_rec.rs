@@ -1,55 +1,37 @@
 //! Recursive single-threaded apply algorithms
 
 use std::borrow::Borrow;
-use std::cmp::Ord;
-use std::cmp::Ordering;
-use std::hash::BuildHasher;
-use std::hash::Hash;
+use std::cmp::{Ord, Ordering};
+use std::hash::{BuildHasher, Hash};
 
 use bitvec::slice::BitSlice;
 use bitvec::vec::BitVec;
 
-use oxidd_core::function::BooleanFunction;
-use oxidd_core::function::BooleanVecSet;
-use oxidd_core::function::EdgeOfFunc;
-use oxidd_core::function::Function;
-use oxidd_core::util::AllocResult;
-use oxidd_core::util::Borrowed;
-use oxidd_core::util::EdgeDropGuard;
-use oxidd_core::util::OptBool;
-use oxidd_core::util::SatCountCache;
-use oxidd_core::util::SatCountNumber;
-use oxidd_core::ApplyCache;
-use oxidd_core::Edge;
-use oxidd_core::HasApplyCache;
-use oxidd_core::HasLevel;
-use oxidd_core::InnerNode;
-use oxidd_core::LevelNo;
-use oxidd_core::Manager;
-use oxidd_core::Node;
-use oxidd_core::Tag;
+use oxidd_core::{
+    function::{BooleanFunction, BooleanVecSet, EdgeOfFunc, Function},
+    util::{AllocResult, Borrowed, EdgeDropGuard, OptBool, SatCountCache, SatCountNumber},
+    ApplyCache, Edge, HasApplyCache, HasLevel, InnerNode, LevelNo, Manager, Node, Tag,
+};
 use oxidd_derive::Function;
 use oxidd_dump::dot::DotStyle;
 
-use super::collect_children;
-use super::reduce;
-use super::reduce_borrowed;
-use super::singleton_level;
-use super::stat;
-use super::HasZBDDCache;
-use super::ZBDDCache;
-use super::ZBDDOp;
-use super::ZBDDTerminal;
+use crate::recursor::{Recursor, SequentialRecursor};
+
 #[cfg(feature = "statistics")]
 use super::STAT_COUNTERS;
+use super::{
+    collect_children, reduce, reduce_borrowed, singleton_level, stat, HasZBDDCache, ZBDDCache,
+    ZBDDOp, ZBDDTerminal,
+};
 
 // spell-checker:ignore fnode,gnode,hnode,flevel,glevel,hlevel,ghlevel
 // spell-checker:ignore symm
 
 /// Recursively compute the subset with `var` set to `VAL`, or change `var` if
 /// `VAL == -1`
-pub(super) fn subset<M, const VAL: i8>(
+fn subset<M, R: Recursor<M>, const VAL: i8>(
     manager: &M,
+    rec: R,
     f: Borrowed<M::Edge>,
     var: Borrowed<M::Edge>,
     var_level: LevelNo,
@@ -96,14 +78,12 @@ where
     }
 
     let (fhi, flo) = collect_children(node);
-    let hi = EdgeDropGuard::new(
+    let (hi, lo) = rec.subset(
+        subset::<M, R, VAL>,
         manager,
-        subset::<M, VAL>(manager, fhi, var.borrowed(), var_level)?,
-    );
-    let lo = EdgeDropGuard::new(
-        manager,
-        subset::<M, VAL>(manager, flo, var.borrowed(), var_level)?,
-    );
+        (fhi, var.borrowed(), var_level),
+        (flo, var.borrowed(), var_level),
+    )?;
     let h = reduce(manager, level, hi.into_edge(), lo.into_edge(), op)?;
 
     // Add to apply cache
@@ -115,8 +95,9 @@ where
 }
 
 /// Recursively apply the union operator to `f` and `g`
-pub(super) fn apply_union<M>(
+fn apply_union<M, R: Recursor<M>>(
     manager: &M,
+    rec: R,
     f: Borrowed<M::Edge>,
     g: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
@@ -124,8 +105,12 @@ where
     M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, ZBDDOp>,
     M::InnerNode: HasLevel,
 {
+    if rec.should_switch_to_sequential() {
+        return apply_union(manager, SequentialRecursor, f, g);
+    }
     use ZBDDOp::Union;
     stat!(call Union);
+
     let empty = EdgeDropGuard::new(manager, manager.get_terminal(ZBDDTerminal::Empty).unwrap());
     if f == g || *g == *empty {
         return Ok(manager.clone_edge(&f));
@@ -155,19 +140,18 @@ where
     let h = match flevel.cmp(&glevel) {
         Ordering::Less => {
             let (hi, flo) = collect_children(fnode.unwrap_inner());
-            let lo = apply_union(manager, flo, g.borrowed())?;
+            let lo = apply_union(manager, rec, flo, g.borrowed())?;
             reduce_borrowed(manager, flevel, hi, lo, Union)
         }
         Ordering::Equal => {
             let (fhi, flo) = collect_children(fnode.unwrap_inner());
             let (ghi, glo) = collect_children(gnode.unwrap_inner());
-            let hi = EdgeDropGuard::new(manager, apply_union(manager, fhi, ghi)?);
-            let lo = EdgeDropGuard::new(manager, apply_union(manager, flo, glo)?);
+            let (hi, lo) = rec.binary(apply_union, manager, (fhi, ghi), (flo, glo))?;
             reduce(manager, flevel, hi.into_edge(), lo.into_edge(), Union)
         }
         Ordering::Greater => {
             let (hi, glo) = collect_children(gnode.unwrap_inner());
-            let lo = apply_union(manager, f.borrowed(), glo)?;
+            let lo = apply_union(manager, rec, f.borrowed(), glo)?;
             reduce_borrowed(manager, glevel, hi, lo, Union)
         }
     }?;
@@ -181,8 +165,9 @@ where
 }
 
 /// Recursively apply the intersection operator to `f` and `g`
-pub(super) fn apply_intsec<M>(
+fn apply_intsec<M, R: Recursor<M>>(
     manager: &M,
+    rec: R,
     f: Borrowed<M::Edge>,
     g: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
@@ -190,8 +175,12 @@ where
     M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, ZBDDOp>,
     M::InnerNode: HasLevel,
 {
+    if rec.should_switch_to_sequential() {
+        return apply_intsec(manager, SequentialRecursor, f, g);
+    }
     use ZBDDOp::Intsec;
     stat!(call Intsec);
+
     if f == g {
         return Ok(manager.clone_edge(&f));
     }
@@ -222,18 +211,17 @@ where
         Ordering::Less => {
             // f above g
             let flo = fnode.unwrap_inner().child(1);
-            apply_intsec(manager, flo.borrowed(), g.borrowed())
+            apply_intsec(manager, rec, flo.borrowed(), g.borrowed())
         }
         Ordering::Equal => {
             let (fhi, flo) = collect_children(fnode.unwrap_inner());
             let (ghi, glo) = collect_children(gnode.unwrap_inner());
-            let hi = EdgeDropGuard::new(manager, apply_intsec(manager, fhi, ghi)?);
-            let lo = EdgeDropGuard::new(manager, apply_intsec(manager, flo, glo)?);
+            let (hi, lo) = rec.binary(apply_intsec, manager, (fhi, ghi), (flo, glo))?;
             reduce(manager, flevel, hi.into_edge(), lo.into_edge(), Intsec)
         }
         Ordering::Greater => {
             let glo = gnode.unwrap_inner().child(1);
-            apply_intsec(manager, f.borrowed(), glo.borrowed())
+            apply_intsec(manager, rec, f.borrowed(), glo.borrowed())
         }
     }?;
 
@@ -246,8 +234,9 @@ where
 }
 
 /// Recursively apply the difference operator to `f` and `g`
-pub(super) fn apply_diff<M>(
+fn apply_diff<M, R: Recursor<M>>(
     manager: &M,
+    rec: R,
     f: Borrowed<M::Edge>,
     g: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
@@ -255,8 +244,12 @@ where
     M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, ZBDDOp>,
     M::InnerNode: HasLevel,
 {
+    if rec.should_switch_to_sequential() {
+        return apply_diff(manager, SequentialRecursor, f, g);
+    }
     use ZBDDOp::Diff;
     stat!(call Diff);
+
     let empty = EdgeDropGuard::new(manager, manager.get_terminal(ZBDDTerminal::Empty).unwrap());
     if f == g || *f == *empty {
         return Ok(empty.into_edge());
@@ -283,19 +276,18 @@ where
     let h = match flevel.cmp(&glevel) {
         Ordering::Less => {
             let (hi, flo) = collect_children(fnode.unwrap_inner());
-            let lo = apply_diff(manager, flo, g.borrowed())?;
+            let lo = apply_diff(manager, rec, flo, g.borrowed())?;
             reduce_borrowed(manager, flevel, hi, lo, Diff)
         }
         Ordering::Equal => {
             let (fhi, flo) = collect_children(fnode.unwrap_inner());
             let (ghi, glo) = collect_children(gnode.unwrap_inner());
-            let hi = EdgeDropGuard::new(manager, apply_diff(manager, fhi, ghi)?);
-            let lo = EdgeDropGuard::new(manager, apply_diff(manager, flo, glo)?);
+            let (hi, lo) = rec.binary(apply_diff, manager, (fhi, ghi), (flo, glo))?;
             reduce(manager, flevel, hi.into_edge(), lo.into_edge(), Diff)
         }
         Ordering::Greater => {
             let glo = gnode.unwrap_inner().child(1);
-            apply_diff(manager, f.borrowed(), glo.borrowed())
+            apply_diff(manager, rec, f.borrowed(), glo.borrowed())
         }
     }?;
 
@@ -308,8 +300,9 @@ where
 }
 
 /// Recursively apply the symmetric difference operator to `f` and `g`
-pub(super) fn apply_symm_diff<M>(
+fn apply_symm_diff<M, R: Recursor<M>>(
     manager: &M,
+    rec: R,
     f: Borrowed<M::Edge>,
     g: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
@@ -317,9 +310,12 @@ where
     M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, ZBDDOp>,
     M::InnerNode: HasLevel,
 {
+    if rec.should_switch_to_sequential() {
+        return apply_symm_diff(manager, SequentialRecursor, f, g);
+    }
     use ZBDDOp::SymmDiff;
-
     stat!(call SymmDiff);
+
     let empty = EdgeDropGuard::new(manager, manager.get_terminal(ZBDDTerminal::Empty).unwrap());
     if f == g {
         return Ok(empty.into_edge());
@@ -352,19 +348,18 @@ where
     let h = match flevel.cmp(&glevel) {
         Ordering::Less => {
             let (hi, flo) = collect_children(fnode.unwrap_inner());
-            let lo = apply_symm_diff(manager, flo, g.borrowed())?;
+            let lo = apply_symm_diff(manager, rec, flo, g.borrowed())?;
             reduce_borrowed(manager, flevel, hi, lo, SymmDiff)
         }
         Ordering::Equal => {
             let (fhi, flo) = collect_children(fnode.unwrap_inner());
             let (ghi, glo) = collect_children(gnode.unwrap_inner());
-            let hi = EdgeDropGuard::new(manager, apply_symm_diff(manager, fhi, ghi)?);
-            let lo = EdgeDropGuard::new(manager, apply_symm_diff(manager, flo, glo)?);
+            let (hi, lo) = rec.binary(apply_symm_diff, manager, (fhi, ghi), (flo, glo))?;
             reduce(manager, flevel, hi.into_edge(), lo.into_edge(), SymmDiff)
         }
         Ordering::Greater => {
             let (hi, glo) = collect_children(gnode.unwrap_inner());
-            let lo = apply_symm_diff(manager, f.borrowed(), glo.borrowed())?;
+            let lo = apply_symm_diff(manager, rec, f.borrowed(), glo.borrowed())?;
             reduce_borrowed(manager, glevel, hi, lo, SymmDiff)
         }
     }?;
@@ -378,8 +373,9 @@ where
 }
 
 /// Recursively apply the if-then-else operator (`if f { g } else { h }`)
-pub(super) fn apply_ite<M>(
+fn apply_ite<M, R: Recursor<M>>(
     manager: &M,
+    rec: R,
     f: Borrowed<M::Edge>,
     g: Borrowed<M::Edge>,
     h: Borrowed<M::Edge>,
@@ -388,6 +384,9 @@ where
     M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, ZBDDOp> + HasZBDDCache<M::Edge>,
     M::InnerNode: HasLevel,
 {
+    if rec.should_switch_to_sequential() {
+        return apply_ite(manager, SequentialRecursor, f, g, h);
+    }
     use ZBDDOp::Ite;
     use ZBDDTerminal::*;
     stat!(call Ite);
@@ -397,10 +396,10 @@ where
         return Ok(manager.clone_edge(&g));
     }
     if f == g {
-        return apply_union(manager, f, h);
+        return apply_union(manager, rec, f, h);
     }
     if f == h {
-        return apply_intsec(manager, f, g);
+        return apply_intsec(manager, rec, f, g);
     }
 
     let fnode = manager.get_node(&f);
@@ -413,13 +412,13 @@ where
     let glevel = gnode.level();
     if gnode.is_terminal(&Empty) {
         // f < h = h \ f
-        return apply_diff(manager, h, f);
+        return apply_diff(manager, rec, h, f);
     }
 
     let hnode = manager.get_node(&h);
     let hlevel = hnode.level();
     if hnode.is_terminal(&Empty) {
-        return apply_intsec(manager, f, g);
+        return apply_intsec(manager, rec, f, g);
     }
 
     let ghlevel = std::cmp::min(glevel, hlevel);
@@ -429,7 +428,7 @@ where
         return Ok(manager.clone_edge(&g));
     }
     if *g == *tautology {
-        return apply_union(manager, f, h);
+        return apply_union(manager, rec, f, h);
     }
     // if *h == *tautology { f → g }; we cannot handle this properly
 
@@ -449,7 +448,7 @@ where
             debug_assert!(hlevel < flevel || glevel < flevel);
             if glevel < hlevel {
                 let glo = gnode.unwrap_inner().child(1);
-                apply_ite(manager, f.borrowed(), glo.borrowed(), h.borrowed())
+                apply_ite(manager, rec, f.borrowed(), glo.borrowed(), h.borrowed())
             } else {
                 let (hi, hlo) = collect_children(hnode.unwrap_inner());
                 let g = if glevel == hlevel {
@@ -457,34 +456,42 @@ where
                 } else {
                     g.borrowed()
                 };
-                let lo = apply_ite(manager, f.borrowed(), g, hlo)?;
+                let lo = apply_ite(manager, rec, f.borrowed(), g, hlo)?;
                 reduce_borrowed(manager, level, hi, lo, Ite)
             }
         }
         Ordering::Less => {
             let flo = fnode.unwrap_inner().child(1);
-            apply_ite(manager, flo.borrowed(), g.borrowed(), h.borrowed())
+            apply_ite(manager, rec, flo.borrowed(), g.borrowed(), h.borrowed())
         }
         Ordering::Equal => {
             debug_assert!(flevel == glevel || flevel == hlevel);
             let (fhi, flo) = collect_children(fnode.unwrap_inner());
-            let (hi, g, h) = if hlevel > flevel {
+            let (hi, lo) = if hlevel > flevel {
                 let (ghi, glo) = collect_children(gnode.unwrap_inner());
-                let hi = apply_intsec(manager, fhi, ghi)?;
-                (EdgeDropGuard::new(manager, hi), glo, h.borrowed())
+                rec.binary_ternary(
+                    manager,
+                    apply_intsec,
+                    (fhi, ghi),
+                    apply_ite,
+                    (flo, glo, h.borrowed()),
+                )
             } else if glevel > flevel {
                 let (hhi, hlo) = collect_children(hnode.unwrap_inner());
-                let hi = apply_diff(manager, hhi, fhi)?;
-                (EdgeDropGuard::new(manager, hi), g.borrowed(), hlo)
+                rec.binary_ternary(
+                    manager,
+                    apply_diff,
+                    (hhi, fhi),
+                    apply_ite,
+                    (flo, g.borrowed(), hlo),
+                )
             } else {
                 debug_assert!(flevel == glevel && flevel == hlevel);
                 let (ghi, glo) = collect_children(gnode.unwrap_inner());
                 let (hhi, hlo) = collect_children(hnode.unwrap_inner());
-                let hi = apply_ite(manager, fhi, ghi, hhi)?;
-                (EdgeDropGuard::new(manager, hi), glo, hlo)
-            };
-            let lo = apply_ite(manager, flo, g, h)?;
-            reduce(manager, level, hi.into_edge(), lo, Ite)
+                rec.ternary(apply_ite, manager, (fhi, ghi, hhi), (flo, glo, hlo))
+            }?;
+            reduce(manager, level, hi.into_edge(), lo.into_edge(), Ite)
         }
     }?;
 
@@ -496,6 +503,10 @@ where
 }
 
 // --- Function Interface ------------------------------------------------------
+
+/// Workaround for https://github.com/rust-lang/rust/issues/49601
+trait HasZBDDOpApplyCache<M: Manager>: HasApplyCache<M, ZBDDOp> {}
+impl<M: Manager + HasApplyCache<M, ZBDDOp>> HasZBDDOpApplyCache<M> for M {}
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Function, Debug)]
 #[repr(transparent)]
@@ -519,7 +530,7 @@ impl<F: Function> ZBDDFunction<F> {
 impl<F: Function> BooleanVecSet for ZBDDFunction<F>
 where
     for<'id> F::Manager<'id>: Manager<Terminal = ZBDDTerminal>
-        + super::HasZBDDOpApplyCache<F::Manager<'id>>
+        + HasZBDDOpApplyCache<F::Manager<'id>>
         + HasZBDDCache<<F::Manager<'id> as Manager>::Edge>,
     for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
 {
@@ -548,8 +559,9 @@ where
         set: &EdgeOfFunc<'id, Self>,
         var: &EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        let rec = SequentialRecursor;
         let var_level = singleton_level(manager, var);
-        subset::<_, 0>(manager, set.borrowed(), var.borrowed(), var_level)
+        subset::<_, _, 0>(manager, rec, set.borrowed(), var.borrowed(), var_level)
     }
 
     #[inline]
@@ -558,8 +570,9 @@ where
         set: &EdgeOfFunc<'id, Self>,
         var: &EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        let rec = SequentialRecursor;
         let var_level = singleton_level(manager, var);
-        subset::<_, 1>(manager, set.borrowed(), var.borrowed(), var_level)
+        subset::<_, _, 1>(manager, rec, set.borrowed(), var.borrowed(), var_level)
     }
 
     #[inline]
@@ -568,8 +581,9 @@ where
         set: &EdgeOfFunc<'id, Self>,
         var: &EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        let rec = SequentialRecursor;
         let var_level = singleton_level(manager, var);
-        subset::<_, -1>(manager, set.borrowed(), var.borrowed(), var_level)
+        subset::<_, _, -1>(manager, rec, set.borrowed(), var.borrowed(), var_level)
     }
 
     #[inline]
@@ -578,7 +592,7 @@ where
         lhs: &EdgeOfFunc<'id, Self>,
         rhs: &EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_union(manager, lhs.borrowed(), rhs.borrowed())
+        apply_union(manager, SequentialRecursor, lhs.borrowed(), rhs.borrowed())
     }
 
     #[inline]
@@ -587,7 +601,7 @@ where
         lhs: &EdgeOfFunc<'id, Self>,
         rhs: &EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_intsec(manager, lhs.borrowed(), rhs.borrowed())
+        apply_intsec(manager, SequentialRecursor, lhs.borrowed(), rhs.borrowed())
     }
 
     #[inline]
@@ -596,14 +610,14 @@ where
         lhs: &EdgeOfFunc<'id, Self>,
         rhs: &EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_diff(manager, lhs.borrowed(), rhs.borrowed())
+        apply_diff(manager, SequentialRecursor, lhs.borrowed(), rhs.borrowed())
     }
 }
 
 impl<F: Function> BooleanFunction for ZBDDFunction<F>
 where
     for<'id> F::Manager<'id>: Manager<Terminal = ZBDDTerminal>
-        + super::HasZBDDOpApplyCache<F::Manager<'id>>
+        + HasZBDDOpApplyCache<F::Manager<'id>>
         + HasZBDDCache<<F::Manager<'id> as Manager>::Edge>,
     for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
 {
@@ -647,8 +661,9 @@ where
         manager: &Self::Manager<'id>,
         edge: &EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        let rec = SequentialRecursor;
         let taut = manager.zbdd_cache().tautology(0);
-        apply_diff(manager, taut.borrowed(), edge.borrowed())
+        apply_diff(manager, rec, taut.borrowed(), edge.borrowed())
     }
 
     #[inline]
@@ -657,7 +672,7 @@ where
         lhs: &EdgeOfFunc<'id, Self>,
         rhs: &EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_intsec(manager, lhs.borrowed(), rhs.borrowed())
+        apply_intsec(manager, SequentialRecursor, lhs.borrowed(), rhs.borrowed())
     }
     #[inline]
     fn or_edge<'id>(
@@ -665,7 +680,7 @@ where
         lhs: &EdgeOfFunc<'id, Self>,
         rhs: &EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_union(manager, lhs.borrowed(), rhs.borrowed())
+        apply_union(manager, SequentialRecursor, lhs.borrowed(), rhs.borrowed())
     }
     #[inline]
     fn nand_edge<'id>(
@@ -691,7 +706,7 @@ where
         lhs: &EdgeOfFunc<'id, Self>,
         rhs: &EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_symm_diff(manager, lhs.borrowed(), rhs.borrowed())
+        apply_symm_diff(manager, SequentialRecursor, lhs.borrowed(), rhs.borrowed())
     }
     #[inline]
     fn equiv_edge<'id>(
@@ -716,7 +731,7 @@ where
         lhs: &EdgeOfFunc<'id, Self>,
         rhs: &EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_diff(manager, rhs.borrowed(), lhs.borrowed())
+        apply_diff(manager, SequentialRecursor, rhs.borrowed(), lhs.borrowed())
     }
 
     #[inline]
@@ -726,7 +741,8 @@ where
         g: &EdgeOfFunc<'id, Self>,
         h: &EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_ite(manager, f.borrowed(), g.borrowed(), h.borrowed())
+        let rec = SequentialRecursor;
+        apply_ite(manager, rec, f.borrowed(), g.borrowed(), h.borrowed())
     }
 
     #[inline]
@@ -874,3 +890,298 @@ where
 }
 
 impl<F: Function, T: Tag> DotStyle<T> for ZBDDFunction<F> {}
+
+#[cfg(feature = "multi-threading")]
+pub mod mt {
+    use oxidd_core::WorkerManager;
+
+    use crate::recursor::mt::ParallelRecursor;
+
+    use super::*;
+
+    #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Function, Debug)]
+    #[repr(transparent)]
+    pub struct ZBDDFunctionMT<F: Function>(F);
+
+    impl<F: Function> From<F> for ZBDDFunctionMT<F> {
+        #[inline(always)]
+        fn from(value: F) -> Self {
+            ZBDDFunctionMT(value)
+        }
+    }
+
+    impl<F: Function> ZBDDFunctionMT<F>
+    where
+        for<'id> F::Manager<'id>: WorkerManager,
+    {
+        /// Convert `self` into the underlying [`Function`]
+        #[inline(always)]
+        pub fn into_inner(self) -> F {
+            self.0
+        }
+    }
+
+    impl<F: Function> BooleanVecSet for ZBDDFunctionMT<F>
+    where
+        for<'id> F::Manager<'id>: Manager<Terminal = ZBDDTerminal>
+            + super::HasZBDDOpApplyCache<F::Manager<'id>>
+            + super::HasZBDDCache<<F::Manager<'id> as Manager>::Edge>
+            + WorkerManager,
+        for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
+        for<'id> <F::Manager<'id> as Manager>::Edge: Send + Sync,
+    {
+        #[inline]
+        fn new_singleton<'id>(manager: &mut Self::Manager<'id>) -> AllocResult<Self> {
+            let hi = manager.get_terminal(ZBDDTerminal::Base).unwrap();
+            let lo = manager.get_terminal(ZBDDTerminal::Empty).unwrap();
+            let edge = manager.add_level(|level| InnerNode::new(level, [hi, lo]))?;
+            ZBDDCache::rebuild(manager);
+            Ok(Self::from_edge(manager, edge))
+        }
+
+        #[inline]
+        fn empty_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self> {
+            manager.get_terminal(ZBDDTerminal::Empty).unwrap()
+        }
+
+        #[inline]
+        fn base_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self> {
+            manager.get_terminal(ZBDDTerminal::Base).unwrap()
+        }
+
+        #[inline]
+        fn subset0_edge<'id>(
+            manager: &Self::Manager<'id>,
+            set: &EdgeOfFunc<'id, Self>,
+            var: &EdgeOfFunc<'id, Self>,
+        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            let rec = ParallelRecursor::new(manager);
+            let var_level = singleton_level(manager, var);
+            subset::<_, _, 0>(manager, rec, set.borrowed(), var.borrowed(), var_level)
+        }
+
+        #[inline]
+        fn subset1_edge<'id>(
+            manager: &Self::Manager<'id>,
+            set: &EdgeOfFunc<'id, Self>,
+            var: &EdgeOfFunc<'id, Self>,
+        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            let rec = ParallelRecursor::new(manager);
+            let var_level = singleton_level(manager, var);
+            subset::<_, _, 1>(manager, rec, set.borrowed(), var.borrowed(), var_level)
+        }
+
+        #[inline]
+        fn change_edge<'id>(
+            manager: &Self::Manager<'id>,
+            set: &EdgeOfFunc<'id, Self>,
+            var: &EdgeOfFunc<'id, Self>,
+        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            let rec = ParallelRecursor::new(manager);
+            let var_level = singleton_level(manager, var);
+            subset::<_, _, -1>(manager, rec, set.borrowed(), var.borrowed(), var_level)
+        }
+
+        #[inline]
+        fn union_edge<'id>(
+            manager: &Self::Manager<'id>,
+            lhs: &EdgeOfFunc<'id, Self>,
+            rhs: &EdgeOfFunc<'id, Self>,
+        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            let rec = ParallelRecursor::new(manager);
+            apply_union(manager, rec, lhs.borrowed(), rhs.borrowed())
+        }
+
+        #[inline]
+        fn intsec_edge<'id>(
+            manager: &Self::Manager<'id>,
+            lhs: &EdgeOfFunc<'id, Self>,
+            rhs: &EdgeOfFunc<'id, Self>,
+        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            let rec = ParallelRecursor::new(manager);
+            apply_intsec(manager, rec, lhs.borrowed(), rhs.borrowed())
+        }
+
+        #[inline]
+        fn diff_edge<'id>(
+            manager: &Self::Manager<'id>,
+            lhs: &EdgeOfFunc<'id, Self>,
+            rhs: &EdgeOfFunc<'id, Self>,
+        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            let rec = ParallelRecursor::new(manager);
+            apply_diff(manager, rec, lhs.borrowed(), rhs.borrowed())
+        }
+    }
+
+    impl<F: Function> BooleanFunction for ZBDDFunctionMT<F>
+    where
+        for<'id> F::Manager<'id>: Manager<Terminal = ZBDDTerminal>
+            + super::HasZBDDOpApplyCache<F::Manager<'id>>
+            + super::HasZBDDCache<<F::Manager<'id> as Manager>::Edge>
+            + WorkerManager,
+        for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
+        for<'id> <F::Manager<'id> as Manager>::Edge: Send + Sync,
+    {
+        fn new_var<'id>(manager: &mut Self::Manager<'id>) -> AllocResult<Self> {
+            let hi = manager.get_terminal(ZBDDTerminal::Base).unwrap();
+            let lo = manager.get_terminal(ZBDDTerminal::Empty).unwrap();
+            let mut edge = manager.add_level(|level| InnerNode::new(level, [hi, lo]))?;
+
+            // Build the chain bottom up. We need to skip the newly created level.
+            let mut levels = manager.levels().rev();
+            levels.next().unwrap();
+            for mut view in levels {
+                // only use `oxidd_core::LevelView` here to mitigate confusion of Rust Analyzer
+                use oxidd_core::LevelView;
+
+                let level = view.level_no();
+                let edge2 = manager.clone_edge(&edge);
+                edge = view.get_or_insert(<F::Manager<'id> as Manager>::InnerNode::new(
+                    level,
+                    [edge, edge2],
+                ))?;
+            }
+
+            ZBDDCache::rebuild(manager);
+
+            Ok(Self::from_edge(manager, edge))
+        }
+
+        #[inline]
+        fn f_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self> {
+            manager.get_terminal(ZBDDTerminal::Empty).unwrap()
+        }
+
+        #[inline]
+        fn t_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self> {
+            manager.clone_edge(manager.zbdd_cache().tautology(0))
+        }
+
+        #[inline]
+        fn not_edge<'id>(
+            manager: &Self::Manager<'id>,
+            edge: &EdgeOfFunc<'id, Self>,
+        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            let rec = ParallelRecursor::new(manager);
+            let taut = manager.zbdd_cache().tautology(0);
+            apply_diff(manager, rec, taut.borrowed(), edge.borrowed())
+        }
+
+        #[inline]
+        fn and_edge<'id>(
+            manager: &Self::Manager<'id>,
+            lhs: &EdgeOfFunc<'id, Self>,
+            rhs: &EdgeOfFunc<'id, Self>,
+        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            let rec = ParallelRecursor::new(manager);
+            apply_intsec(manager, rec, lhs.borrowed(), rhs.borrowed())
+        }
+        #[inline]
+        fn or_edge<'id>(
+            manager: &Self::Manager<'id>,
+            lhs: &EdgeOfFunc<'id, Self>,
+            rhs: &EdgeOfFunc<'id, Self>,
+        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            let rec = ParallelRecursor::new(manager);
+            apply_union(manager, rec, lhs.borrowed(), rhs.borrowed())
+        }
+        #[inline]
+        fn nand_edge<'id>(
+            manager: &Self::Manager<'id>,
+            lhs: &EdgeOfFunc<'id, Self>,
+            rhs: &EdgeOfFunc<'id, Self>,
+        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            let and = Self::and_edge(manager, lhs, rhs)?;
+            Self::not_edge(manager, &*EdgeDropGuard::new(manager, and))
+        }
+        #[inline]
+        fn nor_edge<'id>(
+            manager: &Self::Manager<'id>,
+            lhs: &EdgeOfFunc<'id, Self>,
+            rhs: &EdgeOfFunc<'id, Self>,
+        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            let or = Self::or_edge(manager, lhs, rhs)?;
+            Self::not_edge(manager, &*EdgeDropGuard::new(manager, or))
+        }
+        #[inline]
+        fn xor_edge<'id>(
+            manager: &Self::Manager<'id>,
+            lhs: &EdgeOfFunc<'id, Self>,
+            rhs: &EdgeOfFunc<'id, Self>,
+        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            let rec = ParallelRecursor::new(manager);
+            apply_symm_diff(manager, rec, lhs.borrowed(), rhs.borrowed())
+        }
+        #[inline]
+        fn equiv_edge<'id>(
+            manager: &Self::Manager<'id>,
+            lhs: &EdgeOfFunc<'id, Self>,
+            rhs: &EdgeOfFunc<'id, Self>,
+        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            let xor = Self::xor_edge(manager, lhs, rhs)?;
+            Self::not_edge(manager, &*EdgeDropGuard::new(manager, xor))
+        }
+        #[inline]
+        fn imp_edge<'id>(
+            manager: &Self::Manager<'id>,
+            lhs: &EdgeOfFunc<'id, Self>,
+            rhs: &EdgeOfFunc<'id, Self>,
+        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            Self::ite_edge(manager, lhs, rhs, manager.zbdd_cache().tautology(0))
+        }
+        #[inline]
+        fn imp_strict_edge<'id>(
+            manager: &Self::Manager<'id>,
+            lhs: &EdgeOfFunc<'id, Self>,
+            rhs: &EdgeOfFunc<'id, Self>,
+        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            let rec = ParallelRecursor::new(manager);
+            apply_diff(manager, rec, rhs.borrowed(), lhs.borrowed())
+        }
+
+        #[inline]
+        fn ite_edge<'id>(
+            manager: &Self::Manager<'id>,
+            f: &EdgeOfFunc<'id, Self>,
+            g: &EdgeOfFunc<'id, Self>,
+            h: &EdgeOfFunc<'id, Self>,
+        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            let rec = ParallelRecursor::new(manager);
+            apply_ite(manager, rec, f.borrowed(), g.borrowed(), h.borrowed())
+        }
+
+        #[inline]
+        fn sat_count_edge<'id, N: SatCountNumber, S: std::hash::BuildHasher>(
+            manager: &Self::Manager<'id>,
+            edge: &EdgeOfFunc<'id, Self>,
+            vars: LevelNo,
+            cache: &mut SatCountCache<N, S>,
+        ) -> N {
+            ZBDDFunction::<F>::sat_count_edge(manager, edge, vars, cache)
+        }
+
+        #[inline]
+        fn pick_cube_edge<'id, 'a, I>(
+            manager: &'a Self::Manager<'id>,
+            edge: &'a EdgeOfFunc<'id, Self>,
+            order: impl IntoIterator<IntoIter = I>,
+            choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>) -> bool,
+        ) -> Option<Vec<OptBool>>
+        where
+            I: ExactSizeIterator<Item = &'a EdgeOfFunc<'id, Self>>,
+        {
+            ZBDDFunction::<F>::pick_cube_edge(manager, edge, order, choice)
+        }
+
+        #[inline]
+        fn eval_edge<'id, 'a>(
+            manager: &'a Self::Manager<'id>,
+            edge: &'a EdgeOfFunc<'id, Self>,
+            args: impl IntoIterator<Item = (Borrowed<'a, EdgeOfFunc<'id, Self>>, bool)>,
+        ) -> bool {
+            ZBDDFunction::<F>::eval_edge(manager, edge, args)
+        }
+    }
+
+    impl<F: Function, T: Tag> DotStyle<T> for ZBDDFunctionMT<F> {}
+}

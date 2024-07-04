@@ -19,6 +19,8 @@ use oxidd_core::InnerNode;
 use oxidd_core::LevelNo;
 use oxidd_core::Manager;
 
+mod recursor;
+
 #[cfg(feature = "complement-edge")]
 pub mod complement_edge;
 #[cfg(feature = "simple")]

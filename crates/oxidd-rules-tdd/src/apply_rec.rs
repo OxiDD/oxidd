@@ -2,12 +2,8 @@
 
 use std::borrow::Borrow;
 
-use oxidd_core::function::EdgeOfFunc;
-use oxidd_core::function::Function;
-use oxidd_core::function::TVLFunction;
-use oxidd_core::util::AllocResult;
-use oxidd_core::util::Borrowed;
-use oxidd_core::util::EdgeDropGuard;
+use oxidd_core::function::{EdgeOfFunc, Function, TVLFunction};
+use oxidd_core::util::{AllocResult, Borrowed, EdgeDropGuard};
 use oxidd_core::ApplyCache;
 use oxidd_core::Edge;
 use oxidd_core::HasApplyCache;
@@ -19,20 +15,14 @@ use oxidd_core::Tag;
 use oxidd_derive::Function;
 use oxidd_dump::dot::DotStyle;
 
-use super::collect_children;
-use super::reduce;
-use super::stat;
-use super::terminal_bin;
-use super::Operation;
-use super::TDDOp;
-use super::TDDTerminal;
 #[cfg(feature = "statistics")]
 use super::STAT_COUNTERS;
+use super::{collect_children, reduce, stat, terminal_bin, Operation, TDDOp, TDDTerminal};
 
 // spell-checker:ignore fnode,gnode,hnode,flevel,glevel,hlevel,ghlevel
 
 /// Recursively apply the 'not' operator to `f`
-pub(super) fn apply_not<M>(manager: &M, f: Borrowed<M::Edge>) -> AllocResult<M::Edge>
+fn apply_not<M>(manager: &M, f: Borrowed<M::Edge>) -> AllocResult<M::Edge>
 where
     M: Manager<Terminal = TDDTerminal> + HasApplyCache<M, TDDOp>,
     M::InnerNode: HasLevel,
@@ -80,7 +70,7 @@ where
 ///
 /// We use a `const` parameter `OP` to have specialized version of this function
 /// for each operator.
-pub(super) fn apply_bin<M, const OP: u8>(
+fn apply_bin<M, const OP: u8>(
     manager: &M,
     f: Borrowed<M::Edge>,
     g: Borrowed<M::Edge>,
@@ -147,7 +137,7 @@ where
 }
 
 /// Recursively apply the if-then-else operator (`if f { g } else { h }`)
-pub(super) fn apply_ite_rec<M>(
+fn apply_ite_rec<M>(
     manager: &M,
     f: Borrowed<M::Edge>,
     g: Borrowed<M::Edge>,
@@ -257,6 +247,10 @@ where
 
 // --- Function Interface ------------------------------------------------------
 
+/// Workaround for https://github.com/rust-lang/rust/issues/49601
+trait HasTDDOpApplyCache<M: Manager>: HasApplyCache<M, TDDOp> {}
+impl<M: Manager + HasApplyCache<M, TDDOp>> HasTDDOpApplyCache<M> for M {}
+
 /// Three value logic function backed by a ternary decision diagram
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Function, Debug)]
 #[repr(transparent)]
@@ -279,8 +273,7 @@ impl<F: Function> TDDFunction<F> {
 
 impl<F: Function> TVLFunction for TDDFunction<F>
 where
-    for<'id> F::Manager<'id>:
-        Manager<Terminal = TDDTerminal> + super::HasTDDOpApplyCache<F::Manager<'id>>,
+    for<'id> F::Manager<'id>: Manager<Terminal = TDDTerminal> + HasTDDOpApplyCache<F::Manager<'id>>,
     for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
 {
     #[inline]

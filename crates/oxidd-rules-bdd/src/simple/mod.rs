@@ -4,25 +4,14 @@ use std::borrow::Borrow;
 use std::fmt;
 use std::hash::Hash;
 
-use oxidd_core::util::AllocResult;
-use oxidd_core::util::Borrowed;
-use oxidd_core::DiagramRules;
-use oxidd_core::Edge;
-use oxidd_core::HasApplyCache;
-use oxidd_core::HasLevel;
-use oxidd_core::InnerNode;
-use oxidd_core::LevelNo;
-use oxidd_core::Manager;
-use oxidd_core::Node;
-use oxidd_core::ReducedOrNew;
+use oxidd_core::util::{AllocResult, Borrowed};
+use oxidd_core::{DiagramRules, Edge, HasLevel, InnerNode, LevelNo, Manager, Node, ReducedOrNew};
 use oxidd_derive::Countable;
 use oxidd_dump::dddmp::AsciiDisplay;
 
 use crate::stat;
 
-#[cfg(feature = "multi-threading")]
-mod apply_rec_mt;
-mod apply_rec_st;
+mod apply_rec;
 
 // --- Reduction Rules ---------------------------------------------------------
 
@@ -345,10 +334,6 @@ where
 
 // --- Function Interface ------------------------------------------------------
 
-/// Workaround for https://github.com/rust-lang/rust/issues/49601
-trait HasBDDOpApplyCache<M: Manager>: HasApplyCache<M, BDDOp> {}
-impl<M: Manager + HasApplyCache<M, BDDOp>> HasBDDOpApplyCache<M> for M {}
-
 #[cfg(feature = "multi-threading")]
-pub use apply_rec_mt::BDDFunctionMT;
-pub use apply_rec_st::BDDFunction;
+pub use apply_rec::mt::BDDFunctionMT;
+pub use apply_rec::BDDFunction;

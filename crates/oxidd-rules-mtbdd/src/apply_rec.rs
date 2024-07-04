@@ -1,29 +1,14 @@
 //! Recursive single-threaded apply algorithms
 
-use oxidd_core::function::EdgeOfFunc;
-use oxidd_core::function::Function;
-use oxidd_core::function::NumberBase;
-use oxidd_core::function::PseudoBooleanFunction;
-use oxidd_core::util::AllocResult;
-use oxidd_core::util::Borrowed;
-use oxidd_core::util::EdgeDropGuard;
-use oxidd_core::ApplyCache;
-use oxidd_core::Edge;
-use oxidd_core::HasApplyCache;
-use oxidd_core::HasLevel;
-use oxidd_core::InnerNode;
-use oxidd_core::Manager;
-use oxidd_core::Tag;
+use oxidd_core::function::{EdgeOfFunc, Function, NumberBase, PseudoBooleanFunction};
+use oxidd_core::util::{AllocResult, Borrowed, EdgeDropGuard};
+use oxidd_core::{ApplyCache, Edge, HasApplyCache, HasLevel, InnerNode, Manager, Tag};
 use oxidd_derive::Function;
 use oxidd_dump::dot::DotStyle;
 
-use super::collect_children;
-use super::reduce;
-use super::stat;
-use super::MTBDDOp;
-use super::Operation;
 #[cfg(feature = "statistics")]
 use super::STAT_COUNTERS;
+use super::{collect_children, reduce, stat, MTBDDOp, Operation};
 
 // spell-checker:ignore fnode,gnode,flevel,glevel
 
@@ -31,7 +16,7 @@ use super::STAT_COUNTERS;
 ///
 /// We use a `const` parameter `OP` to have specialized version of this function
 /// for each operator.
-pub(super) fn apply_bin<M, T, const OP: u8>(
+fn apply_bin<M, T, const OP: u8>(
     manager: &M,
     f: Borrowed<M::Edge>,
     g: Borrowed<M::Edge>,
@@ -89,6 +74,10 @@ where
 
 // --- Function Interface ------------------------------------------------------
 
+/// Workaround for https://github.com/rust-lang/rust/issues/49601
+trait HasMTBDDOpApplyCache<M: Manager>: HasApplyCache<M, MTBDDOp> {}
+impl<M: Manager + HasApplyCache<M, MTBDDOp>> HasMTBDDOpApplyCache<M> for M {}
+
 /// Boolean function backed by a binary decision diagram
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Function, Debug)]
 #[repr(transparent)]
@@ -111,7 +100,7 @@ impl<F: Function> MTBDDFunction<F> {
 
 impl<F: Function, T: NumberBase> PseudoBooleanFunction for MTBDDFunction<F>
 where
-    for<'id> F::Manager<'id>: Manager<Terminal = T> + super::HasMTBDDOpApplyCache<F::Manager<'id>>,
+    for<'id> F::Manager<'id>: Manager<Terminal = T> + HasMTBDDOpApplyCache<F::Manager<'id>>,
     for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
 {
     type Number = T;

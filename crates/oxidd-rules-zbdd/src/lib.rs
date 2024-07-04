@@ -10,26 +10,17 @@
 use std::fmt;
 use std::hash::Hash;
 
-use oxidd_core::util::AllocResult;
-use oxidd_core::util::Borrowed;
-use oxidd_core::util::DropWith;
-use oxidd_core::DiagramRules;
-use oxidd_core::Edge;
-use oxidd_core::HasApplyCache;
-use oxidd_core::HasLevel;
-use oxidd_core::InnerNode;
-use oxidd_core::LevelNo;
-use oxidd_core::LevelView;
-use oxidd_core::Manager;
-use oxidd_core::ReducedOrNew;
+use oxidd_core::util::{AllocResult, Borrowed, DropWith};
+use oxidd_core::{
+    DiagramRules, Edge, HasLevel, InnerNode, LevelNo, LevelView, Manager, ReducedOrNew,
+};
 use oxidd_derive::Countable;
 use oxidd_dump::dddmp::AsciiDisplay;
 
 // spell-checker:ignore symm
 
-#[cfg(feature = "multi-threading")]
-mod apply_rec_mt;
-mod apply_rec_st;
+mod apply_rec;
+mod recursor;
 
 // --- Reduction Rules ---------------------------------------------------------
 
@@ -372,13 +363,9 @@ where
 
 // --- Function Interface ------------------------------------------------------
 
-/// Workaround for https://github.com/rust-lang/rust/issues/49601
-trait HasZBDDOpApplyCache<M: Manager>: HasApplyCache<M, ZBDDOp> {}
-impl<M: Manager + HasApplyCache<M, ZBDDOp>> HasZBDDOpApplyCache<M> for M {}
-
 #[cfg(feature = "multi-threading")]
-pub use apply_rec_mt::ZBDDFunctionMT;
-pub use apply_rec_st::ZBDDFunction;
+pub use apply_rec::mt::ZBDDFunctionMT;
+pub use apply_rec::ZBDDFunction;
 
 // --- Statistics --------------------------------------------------------------
 

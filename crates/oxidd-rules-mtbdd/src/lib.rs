@@ -12,22 +12,13 @@ use std::cmp::Ordering;
 use std::hash::Hash;
 
 use oxidd_core::function::NumberBase;
-use oxidd_core::util::AllocResult;
-use oxidd_core::util::Borrowed;
-use oxidd_core::DiagramRules;
-use oxidd_core::Edge;
-use oxidd_core::HasApplyCache;
-use oxidd_core::InnerNode;
-use oxidd_core::LevelNo;
-use oxidd_core::Manager;
-use oxidd_core::Node;
-use oxidd_core::ReducedOrNew;
+use oxidd_core::util::{AllocResult, Borrowed};
+use oxidd_core::{DiagramRules, Edge, InnerNode, LevelNo, Manager, Node, ReducedOrNew};
+use oxidd_derive::Countable;
 
 pub mod terminal;
 
-//#[cfg(feature = "multi-threading")]
-//mod apply_rec_mt;
-mod apply_rec_st;
+mod apply_rec;
 
 // --- Reduction Rules ---------------------------------------------------------
 
@@ -219,13 +210,9 @@ fn terminal_bin<'a, M: Manager<Terminal = T>, T: NumberBase, const OP: u8>(
 
 // --- Function Interface ------------------------------------------------------
 
-/// Workaround for https://github.com/rust-lang/rust/issues/49601
-trait HasMTBDDOpApplyCache<M: Manager>: HasApplyCache<M, MTBDDOp> {}
-impl<M: Manager + HasApplyCache<M, MTBDDOp>> HasMTBDDOpApplyCache<M> for M {}
-
 //#[cfg(feature = "multi-threading")]
-//pub use apply_rec_mt::MTBDDFunctionMT;
-pub use apply_rec_st::MTBDDFunction;
+//pub use apply_rec::mt::MTBDDFunctionMT;
+pub use apply_rec::MTBDDFunction;
 
 // --- Statistics --------------------------------------------------------------
 
@@ -313,5 +300,4 @@ macro_rules! stat {
     };
 }
 
-use oxidd_derive::Countable;
 pub(crate) use stat;

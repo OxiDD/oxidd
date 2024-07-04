@@ -10,22 +10,12 @@ use std::borrow::Borrow;
 use std::fmt;
 use std::hash::Hash;
 
-use oxidd_core::util::AllocResult;
-use oxidd_core::util::Borrowed;
-use oxidd_core::DiagramRules;
-use oxidd_core::Edge;
-use oxidd_core::HasApplyCache;
-use oxidd_core::InnerNode;
-use oxidd_core::LevelNo;
-use oxidd_core::Manager;
-use oxidd_core::Node;
-use oxidd_core::ReducedOrNew;
+use oxidd_core::util::{AllocResult, Borrowed};
+use oxidd_core::{DiagramRules, Edge, InnerNode, LevelNo, Manager, Node, ReducedOrNew};
 use oxidd_derive::Countable;
 use oxidd_dump::dddmp::AsciiDisplay;
 
-//#[cfg(feature = "multi-threading")]
-//mod apply_rec_mt;
-mod apply_rec_st;
+mod apply_rec;
 
 // --- Reduction Rules ---------------------------------------------------------
 
@@ -303,13 +293,9 @@ fn terminal_bin<'a, M: Manager<Terminal = TDDTerminal>, const OP: u8>(
 
 // --- Function Interface ------------------------------------------------------
 
-/// Workaround for https://github.com/rust-lang/rust/issues/49601
-trait HasTDDOpApplyCache<M: Manager>: HasApplyCache<M, TDDOp> {}
-impl<M: Manager + HasApplyCache<M, TDDOp>> HasTDDOpApplyCache<M> for M {}
-
 //#[cfg(feature = "multi-threading")]
-//pub use apply_rec_mt::TDDFunctionMT;
-pub use apply_rec_st::TDDFunction;
+//pub use apply_rec::mt::TDDFunctionMT;
+pub use apply_rec::TDDFunction;
 
 // --- Statistics --------------------------------------------------------------
 
