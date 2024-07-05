@@ -21,7 +21,7 @@ crate-type = ["cdylib", "staticlib"]
 oxidd-core = { workspace = true }
 oxidd = { workspace = true, features = ["bdd", "bcdd", "zbdd"] }
 
-rustc-hash = "1" # fast hash function
+rustc-hash = "2" # fast hash function
 
 
 [features]

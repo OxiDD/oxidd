@@ -27,7 +27,7 @@ clap = { version = "4", features = ["derive", "wrap_help"] }
 num-bigint = "0.4"
 
 parking_lot = "0.12" # fast alternative Mutex & RwLock implementation
-rustc-hash = "1"     # fast hash function
+rustc-hash = "2"     # fast hash function
 rayon = "1.10"       # thread pools, parallel iterators etc.
 bitvec = "1"
 

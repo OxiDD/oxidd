@@ -29,7 +29,7 @@ oxidd-derive.workspace = true
 oxidd-test-utils.workspace = true
 
 # fast hash function
-rustc-hash = "1"
+rustc-hash = "2"
 
 
 [features]

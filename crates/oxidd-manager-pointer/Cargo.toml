@@ -27,7 +27,7 @@ parking_lot = "0.12"
 linear-hashtbl.workspace = true
 
 # fast hash function
-rustc-hash = "1"
+rustc-hash = "2"
 
 # bit vectors
 bitvec = "1"

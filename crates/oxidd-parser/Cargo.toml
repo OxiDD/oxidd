@@ -28,7 +28,7 @@ codespan-reporting = { version = "0.11", optional = true }
 bitvec = "1"
 
 # hash function
-rustc-hash = "1"
+rustc-hash = "2"
 
 # `Builder` derive macro
 derive_builder = "0.20"

@@ -26,7 +26,7 @@ oxidd-rules-mtbdd = { workspace = true, optional = true }
 oxidd-rules-tdd = { workspace = true, optional = true }
 oxidd-rules-zbdd = { workspace = true, optional = true }
 
-rustc-hash = "1" # fast hash function
+rustc-hash = "2" # fast hash function
 
 cfg-if = "1.0"
 
