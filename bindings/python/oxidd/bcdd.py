@@ -15,7 +15,7 @@ from . import protocols, util
 class BCDDManager(protocols.BooleanFunctionManager["BCDDFunction"]):
     """Manager for binary decision diagrams with complement edges"""
 
-    _mgr: ...  #: Wrapped FFI object
+    _mgr: ...  #: Wrapped FFI object (``oxidd_bcdd_manager_t``)
 
     def __init__(self, inner_node_capacity: int, apply_cache_size: int, threads: int):
         """Create a new manager
@@ -96,7 +96,7 @@ class BCDDFunction(
     they run out of memory.
     """
 
-    _func: ...  #: Wrapped FFI object
+    _func: ...  #: Wrapped FFI object (``oxidd_bcdd_t``)
 
     def __init__(self, _: Never):
         """Private constructor

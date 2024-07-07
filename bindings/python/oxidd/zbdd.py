@@ -15,7 +15,7 @@ from . import protocols, util
 class ZBDDManager(protocols.BooleanFunctionManager["ZBDDFunction"]):
     """Manager for zero-suppressed binary decision diagrams"""
 
-    _mgr: ...  #: Wrapped FFI object
+    _mgr: ...  #: Wrapped FFI object (``oxidd_zbdd_manager_t``)
 
     def __init__(self, inner_node_capacity: int, apply_cache_size: int, threads: int):
         """Create a new manager
@@ -95,7 +95,7 @@ class ZBDDFunction(protocols.BooleanFunction):
     run out of memory.
     """
 
-    _func: ...  #: Wrapped FFI object
+    _func: ...  #: Wrapped FFI object (``oxidd_zbdd_t``)
 
     def __init__(self, _: Never):
         """Private constructor
