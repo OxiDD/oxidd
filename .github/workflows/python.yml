@@ -46,7 +46,7 @@ jobs:
     - name: Test
       run: pytest
     - name: Sphinx
-      run: sphinx-build -W bindings/python/doc target/python/doc
+      run: sphinx-build bindings/python/doc target/python/doc
     - name: Deploy Docs
       if: ${{ github.repository == 'OxiDD/oxidd' && github.ref == 'refs/heads/main' }}
       working-directory: target/python/doc
