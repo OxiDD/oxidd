@@ -13,6 +13,7 @@ use oxidd::{
 
 // We need to use the following items from `oxidd_core` since cbindgen only
 // parses `oxidd_ffi` and `oxidd_core`:
+use oxidd_core::function::BooleanOperator;
 use oxidd_core::LevelNo;
 
 use crate::util::{assignment_t, FUNC_UNWRAP_MSG};
@@ -618,6 +619,69 @@ pub unsafe extern "C" fn oxidd_bcdd_exist(f: bcdd_t, var: bcdd_t) -> bcdd_t {
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_bcdd_unique(f: bcdd_t, var: bcdd_t) -> bcdd_t {
     op2(f, var, BCDDFunction::unique)
+}
+
+/// Combined application of `op` and `oxidd_bcdd_forall()`
+///
+/// Passing a number as `op` that is not a valid `oxidd_boolean_operator`
+/// results in undefined behavior.
+///
+/// Locking behavior: acquires the manager's lock for shared access.
+///
+/// @returns  The BCDD function `∀ vars. lhs <op> rhs` with its own reference
+///           count
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bcdd_apply_forall(
+    op: BooleanOperator,
+    lhs: bcdd_t,
+    rhs: bcdd_t,
+    vars: bcdd_t,
+) -> bcdd_t {
+    lhs.get()
+        .and_then(|f| f.apply_forall(op, &*rhs.get()?, &*vars.get()?))
+        .into()
+}
+
+/// Combined application of `op` and `oxidd_bcdd_exist()`
+///
+/// Passing a number as `op` that is not a valid `oxidd_boolean_operator`
+/// results in undefined behavior.
+///
+/// Locking behavior: acquires the manager's lock for shared access.
+///
+/// @returns  The BCDD function `∃ vars. lhs <op> rhs` with its own reference
+///           count
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bcdd_apply_exist(
+    op: BooleanOperator,
+    lhs: bcdd_t,
+    rhs: bcdd_t,
+    vars: bcdd_t,
+) -> bcdd_t {
+    lhs.get()
+        .and_then(|f| f.apply_exist(op, &*rhs.get()?, &*vars.get()?))
+        .into()
+}
+
+/// Combined application of `op` and `oxidd_bcdd_unique()`
+///
+/// Passing a number as `op` that is not a valid `oxidd_boolean_operator`
+/// results in undefined behavior.
+///
+/// Locking behavior: acquires the manager's lock for shared access.
+///
+/// @returns  The BCDD function `∃! vars. lhs <op> rhs` with its own reference
+///           count
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bcdd_apply_unique(
+    op: BooleanOperator,
+    lhs: bcdd_t,
+    rhs: bcdd_t,
+    vars: bcdd_t,
+) -> bcdd_t {
+    lhs.get()
+        .and_then(|f| f.apply_unique(op, &*rhs.get()?, &*vars.get()?))
+        .into()
 }
 
 /// Count nodes in `f`

@@ -8,6 +8,7 @@ from oxidd.protocols import (
     BooleanFunctionQuant,
     FunctionSubst,
 )
+from oxidd.util import BooleanOperator
 
 # spell-checker:ignore nvars,BFQS
 
@@ -285,6 +286,36 @@ class AllBooleanFunctionsQuantSubst(AllBooleanFunctions[BFQS]):
 
                 unique_actual = self._dd_to_boolean_func[f.unique(dd_var_set)]
                 assert unique_actual == unique_expected
+
+                for g in self._boolean_functions:
+                    for op in BooleanOperator:
+                        if op == BooleanOperator.AND:
+                            inner = f & g
+                        elif op == BooleanOperator.OR:
+                            inner = f | g
+                        elif op == BooleanOperator.XOR:
+                            inner = f ^ g
+                        elif op == BooleanOperator.EQUIV:
+                            inner = f.equiv(g)
+                        elif op == BooleanOperator.NAND:
+                            inner = f.nand(g)
+                        elif op == BooleanOperator.NOR:
+                            inner = f.nor(g)
+                        elif op == BooleanOperator.IMP:
+                            inner = f.imp(g)
+                        elif op == BooleanOperator.IMP_STRICT:
+                            inner = f.imp_strict(g)
+                        else:
+                            raise RuntimeError("Unknown operator")
+
+                        expected = inner.forall(dd_var_set)
+                        assert f.apply_forall(op, g, dd_var_set) == expected
+
+                        expected = inner.exist(dd_var_set)
+                        assert f.apply_exist(op, g, dd_var_set) == expected
+
+                        expected = inner.unique(dd_var_set)
+                        assert f.apply_unique(op, g, dd_var_set) == expected
 
 
 def test_bdd_all_boolean_functions_2vars_t1():

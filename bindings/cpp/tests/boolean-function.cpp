@@ -14,10 +14,12 @@
 #include <oxidd/bcdd.hpp>
 #include <oxidd/bdd.hpp>
 #include <oxidd/concepts.hpp>
+#include <oxidd/util.hpp>
 #include <oxidd/zbdd.hpp>
 
 using namespace oxidd;
 using namespace oxidd::concepts;
+using oxidd::util::boolean_operator;
 using oxidd::util::slice;
 
 // spell-checker:ignore nvars
@@ -43,7 +45,7 @@ public:
   constexpr enumerate_view()
     requires std::default_initializable<V>
   = default;
-  constexpr explicit enumerate_view(V base) : _base(std::move(base)){};
+  constexpr explicit enumerate_view(V base) : _base(std::move(base)) {};
 
   [[nodiscard]] constexpr iterator begin() const {
     return iterator(std::ranges::begin(_base), 0);
@@ -418,6 +420,48 @@ public:
         const explicit_b_func unique_actual =
             _dd_to_boolean_func.at(f.unique(dd_var_set));
         assert(unique_actual == unique_expected);
+
+        for (const auto &g : _boolean_functions) {
+          for (const boolean_operator op :
+               {boolean_operator::AND, boolean_operator::OR,
+                boolean_operator::XOR, boolean_operator::EQUIV,
+                boolean_operator::NAND, boolean_operator::NOR,
+                boolean_operator::IMP, boolean_operator::IMP_STRICT}) {
+            typename M::function inner;
+            switch (op) {
+            case boolean_operator::AND:
+              inner = f & g;
+              break;
+            case boolean_operator::OR:
+              inner = f | g;
+              break;
+            case boolean_operator::XOR:
+              inner = f ^ g;
+              break;
+            case boolean_operator::EQUIV:
+              inner = f.equiv(g);
+              break;
+            case boolean_operator::NAND:
+              inner = f.nand(g);
+              break;
+            case boolean_operator::NOR:
+              inner = f.nor(g);
+              break;
+            case boolean_operator::IMP:
+              inner = f.imp(g);
+              break;
+            case boolean_operator::IMP_STRICT:
+              inner = f.imp_strict(g);
+              break;
+            }
+
+            assert(f.apply_forall(op, g, dd_var_set) ==
+                   inner.forall(dd_var_set));
+            assert(f.apply_exist(op, g, dd_var_set) == inner.exist(dd_var_set));
+            assert(f.apply_unique(op, g, dd_var_set) ==
+                   inner.unique(dd_var_set));
+          }
+        }
       }
     }
   }

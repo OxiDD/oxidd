@@ -290,6 +290,41 @@ class BDDFunction(
         return self.__class__._from_raw(_lib.oxidd_bdd_unique(self._func, vars._func))
 
     @override
+    def apply_forall(self, op: util.BooleanOperator, rhs: Self, vars: Self):
+        if not isinstance(op, util.BooleanOperator):
+            # If op were an arbitrary integer that is not part of the enum,
+            # this would lead to undefined behavior
+            raise ValueError("`op` must be a BooleanOperator")
+        assert (
+            self._func._p == rhs._func._p == vars._func._p
+        ), "`self`, `rhs`, and `vars` must belong to the same manager"
+        return self.__class__._from_raw(
+            _lib.oxidd_bdd_apply_forall(op, self._func, rhs._func, vars._func)
+        )
+
+    @override
+    def apply_exist(self, op: util.BooleanOperator, rhs: Self, vars: Self):
+        if not isinstance(op, util.BooleanOperator):
+            raise ValueError("`op` must be a BooleanOperator")
+        assert (
+            self._func._p == rhs._func._p == vars._func._p
+        ), "`self`, `rhs`, and `vars` must belong to the same manager"
+        return self.__class__._from_raw(
+            _lib.oxidd_bdd_apply_exist(op, self._func, rhs._func, vars._func)
+        )
+
+    @override
+    def apply_unique(self, op: util.BooleanOperator, rhs: Self, vars: Self):
+        if not isinstance(op, util.BooleanOperator):
+            raise ValueError("`op` must be a BooleanOperator")
+        assert (
+            self._func._p == rhs._func._p == vars._func._p
+        ), "`self`, `rhs`, and `vars` must belong to the same manager"
+        return self.__class__._from_raw(
+            _lib.oxidd_bdd_apply_unique(op, self._func, rhs._func, vars._func)
+        )
+
+    @override
     def node_count(self) -> int:
         return int(_lib.oxidd_bdd_node_count(self._func))
 

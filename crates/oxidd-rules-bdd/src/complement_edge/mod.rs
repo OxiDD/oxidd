@@ -5,7 +5,7 @@ use std::hash::Hash;
 use std::iter::FusedIterator;
 use std::marker::PhantomData;
 
-use oxidd_core::util::{AllocResult, Borrowed};
+use oxidd_core::util::{AllocResult, Borrowed, EdgeDropGuard};
 use oxidd_core::{DiagramRules, Edge, HasLevel, InnerNode, LevelNo, Manager, Node, ReducedOrNew};
 use oxidd_derive::Countable;
 use oxidd_dump::dddmp::AsciiDisplay;
@@ -257,7 +257,7 @@ fn terminal_and<'a, M>(
     manager: &'a M,
     f: &'a M::Edge,
     g: &'a M::Edge,
-) -> NodesOrDone<'a, M::Edge, M::InnerNode>
+) -> NodesOrDone<'a, EdgeDropGuard<'a, M>, M::InnerNode>
 where
     M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal>,
 {
@@ -271,22 +271,26 @@ where
     let gu = g.with_tag(None);
     if *fu == *gu {
         if ft == gt {
-            return Done(manager.clone_edge(g));
+            return Done(EdgeDropGuard::new(manager, manager.clone_edge(g)));
         }
-        return Done(get_terminal(manager, false));
+        return Done(EdgeDropGuard::new(manager, get_terminal(manager, false)));
     }
 
     let (h, tag) = match (manager.get_node(f), manager.get_node(g)) {
         (Inner(fnode), Inner(gnode)) => return Nodes(fnode, gnode),
         (Inner(_), Terminal(_)) => (f, gt),
         (Terminal(_), Inner(_)) => (g, ft),
-        (Terminal(_), Terminal(_)) => return Done(get_terminal(manager, ft == None && gt == None)),
+        (Terminal(_), Terminal(_)) => {
+            let res = get_terminal(manager, ft == None && gt == None);
+            return Done(EdgeDropGuard::new(manager, res));
+        }
     };
-    Done(if tag == Complemented {
+    let res = if tag == Complemented {
         get_terminal(manager, false)
     } else {
         manager.clone_edge(h)
-    })
+    };
+    Done(EdgeDropGuard::new(manager, res))
 }
 
 /// Terminal case for 'xor'
@@ -296,7 +300,7 @@ fn terminal_xor<'a, M>(
     manager: &'a M,
     f: &'a M::Edge,
     g: &'a M::Edge,
-) -> NodesOrDone<'a, M::Edge, M::InnerNode>
+) -> NodesOrDone<'a, EdgeDropGuard<'a, M>, M::InnerNode>
 where
     M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal>,
 {
@@ -309,20 +313,19 @@ where
     let fu = f.with_tag(None);
     let gu = g.with_tag(None);
     if *fu == *gu {
-        return Done(get_terminal(manager, ft != gt));
+        return Done(EdgeDropGuard::new(manager, get_terminal(manager, ft != gt)));
     }
     let (h, tag) = match (manager.get_node(f), manager.get_node(g)) {
         (Inner(fnode), Inner(gnode)) => return Nodes(fnode, gnode),
         (Inner(_), Terminal(_)) => (f, gt),
         (Terminal(_), Inner(_)) => (g, ft),
-        (Terminal(_), Terminal(_)) => return Done(get_terminal(manager, ft != gt)),
+        (Terminal(_), Terminal(_)) => {
+            return Done(EdgeDropGuard::new(manager, get_terminal(manager, ft != gt)))
+        }
     };
     let h = manager.clone_edge(h);
-    if tag == Complemented {
-        Done(h)
-    } else {
-        Done(not_owned(h))
-    }
+    let h = if tag == Complemented { h } else { not_owned(h) };
+    Done(EdgeDropGuard::new(manager, h))
 }
 
 // --- Operations & Apply Implementation ---------------------------------------
@@ -347,6 +350,45 @@ pub enum BCDDOp {
     Exist,
     /// Unique quantification
     Unique,
+
+    ForallAnd,
+    ForallXor,
+    ExistAnd,
+    ExistXor,
+    UniqueAnd,
+    /// Usually, we don't need `⊼` since we have `∧` and a cheap `¬` operation.
+    /// However, `∃! v. ¬φ` is not equivalent to `¬∃! v. φ`, so we use
+    /// `∃! v. φ ⊼ ψ` (i.e., a special `⊼` operator) for the combined
+    /// apply-quantify algorithm.
+    UniqueNand,
+    UniqueXor,
+}
+
+impl BCDDOp {
+    const fn from_apply_quant(q: u8, op: u8) -> Self {
+        if q == BCDDOp::Forall as u8 {
+            match () {
+                _ if op == BCDDOp::And as u8 => BCDDOp::ForallAnd,
+                _ if op == BCDDOp::Xor as u8 => BCDDOp::ForallXor,
+                _ => panic!("invalid OP"),
+            }
+        } else if q == BCDDOp::Exist as u8 {
+            match () {
+                _ if op == BCDDOp::And as u8 => BCDDOp::ExistAnd,
+                _ if op == BCDDOp::Xor as u8 => BCDDOp::ExistXor,
+                _ => panic!("invalid OP"),
+            }
+        } else if q == BCDDOp::Unique as u8 {
+            match () {
+                _ if op == BCDDOp::And as u8 => BCDDOp::UniqueAnd,
+                _ if op == BCDDOp::UniqueNand as u8 => BCDDOp::UniqueNand,
+                _ if op == BCDDOp::Xor as u8 => BCDDOp::UniqueXor,
+                _ => panic!("invalid OP"),
+            }
+        } else {
+            panic!("invalid quantifier");
+        }
+    }
 }
 
 enum NodesOrDone<'a, E, N> {

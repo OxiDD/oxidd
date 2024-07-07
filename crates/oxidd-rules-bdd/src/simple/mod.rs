@@ -286,6 +286,77 @@ pub enum BDDOp {
     Exist,
     /// Unique quantification
     Unique,
+
+    ForallAnd,
+    ForallOr,
+    ForallNand,
+    ForallNor,
+    ForallXor,
+    ForallEquiv,
+    ForallImp,
+    ForallImpStrict,
+
+    ExistAnd,
+    ExistOr,
+    ExistNand,
+    ExistNor,
+    ExistXor,
+    ExistEquiv,
+    ExistImp,
+    ExistImpStrict,
+
+    UniqueAnd,
+    UniqueOr,
+    UniqueNand,
+    UniqueNor,
+    UniqueXor,
+    UniqueEquiv,
+    UniqueImp,
+    UniqueImpStrict,
+}
+
+impl BDDOp {
+    const fn from_apply_quant(q: u8, op: u8) -> Self {
+        if q == BDDOp::And as u8 {
+            match () {
+                _ if op == BDDOp::And as u8 => BDDOp::ForallAnd,
+                _ if op == BDDOp::Or as u8 => BDDOp::ForallOr,
+                _ if op == BDDOp::Nand as u8 => BDDOp::ForallNand,
+                _ if op == BDDOp::Nor as u8 => BDDOp::ForallNor,
+                _ if op == BDDOp::Xor as u8 => BDDOp::ForallXor,
+                _ if op == BDDOp::Equiv as u8 => BDDOp::ForallEquiv,
+                _ if op == BDDOp::Imp as u8 => BDDOp::ForallImp,
+                _ if op == BDDOp::ImpStrict as u8 => BDDOp::ForallImpStrict,
+                _ => panic!("invalid OP"),
+            }
+        } else if q == BDDOp::Or as u8 {
+            match () {
+                _ if op == BDDOp::And as u8 => BDDOp::ExistAnd,
+                _ if op == BDDOp::Or as u8 => BDDOp::ExistOr,
+                _ if op == BDDOp::Nand as u8 => BDDOp::ExistNand,
+                _ if op == BDDOp::Nor as u8 => BDDOp::ExistNor,
+                _ if op == BDDOp::Xor as u8 => BDDOp::ExistXor,
+                _ if op == BDDOp::Equiv as u8 => BDDOp::ExistEquiv,
+                _ if op == BDDOp::Imp as u8 => BDDOp::ExistImp,
+                _ if op == BDDOp::ImpStrict as u8 => BDDOp::ExistImpStrict,
+                _ => panic!("invalid OP"),
+            }
+        } else if q == BDDOp::Xor as u8 {
+            match () {
+                _ if op == BDDOp::And as u8 => BDDOp::UniqueAnd,
+                _ if op == BDDOp::Or as u8 => BDDOp::UniqueOr,
+                _ if op == BDDOp::Nand as u8 => BDDOp::UniqueNand,
+                _ if op == BDDOp::Nor as u8 => BDDOp::UniqueNor,
+                _ if op == BDDOp::Xor as u8 => BDDOp::UniqueXor,
+                _ if op == BDDOp::Equiv as u8 => BDDOp::UniqueEquiv,
+                _ if op == BDDOp::Imp as u8 => BDDOp::UniqueImp,
+                _ if op == BDDOp::ImpStrict as u8 => BDDOp::UniqueImpStrict,
+                _ => panic!("invalid OP"),
+            }
+        } else {
+            panic!("invalid quantifier");
+        }
+    }
 }
 
 enum Operation<'a, E: 'a + Edge> {

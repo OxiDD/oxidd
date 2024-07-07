@@ -221,6 +221,7 @@ item_types = []
 renaming_overrides_prefixing = false
 
 [export.rename]
+"BooleanOperator" = "boolean_operator"
 "LevelNo" = "level_no_t"
 
 # Configuration for name mangling

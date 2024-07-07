@@ -18,7 +18,7 @@ from typing import Generic, Optional, Protocol, TypeVar
 
 from typing_extensions import Self
 
-from .util import Assignment
+from .util import Assignment, BooleanOperator
 
 
 class Function(Protocol):
@@ -349,6 +349,36 @@ class BooleanFunctionQuant(BooleanFunction, Protocol):
 
         Acquires the manager's lock for shared access.
         """  # noqa: E501
+        raise NotImplementedError
+
+    @abstractmethod
+    def apply_forall(self, op: BooleanOperator, rhs: Self, vars: Self) -> Self:
+        """Combined application of ``op`` and :meth:`forall()`:
+        ``∀ vars. self <op> rhs``
+
+        ``self``, ``rhs``, and ``vars`` must belong to the same manager.
+
+        Acquires the manager's lock for shared access."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def apply_exist(self, op: BooleanOperator, rhs: Self, vars: Self) -> Self:
+        """Combined application of ``op`` and :meth:`exist()`:
+        ``∃ vars. self <op> rhs``
+
+        ``self``, ``rhs``, and ``vars`` must belong to the same manager.
+
+        Acquires the manager's lock for shared access."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def apply_unique(self, op: BooleanOperator, rhs: Self, vars: Self) -> Self:
+        """Combined application of ``op`` and :meth:`unique()`:
+        ``∃! vars. self <op> rhs``
+
+        ``self``, ``rhs``, and ``vars`` must belong to the same manager.
+
+        Acquires the manager's lock for shared access."""
         raise NotImplementedError
 
 

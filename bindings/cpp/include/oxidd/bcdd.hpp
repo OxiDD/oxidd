@@ -540,6 +540,48 @@ public:
     return capi::oxidd_bcdd_unique(_func, vars._func);
   }
 
+  /// Combined application of `op` and `forall()`
+  ///
+  /// Locking behavior: acquires the manager's lock for shared access.
+  ///
+  /// @returns  The BCDD function `∀ vars. this <op> rhs` (may be invalid if the
+  ///           operation runs out of memory)
+  [[nodiscard]] bcdd_function
+  apply_forall(const util::boolean_operator op, const bcdd_function &rhs,
+               const bcdd_function &vars) const noexcept {
+    return capi::oxidd_bcdd_apply_forall(
+        static_cast<capi::oxidd_boolean_operator>(op), _func, rhs._func,
+        vars._func);
+  }
+
+  /// Combined application of `op` and `exist()`
+  ///
+  /// Locking behavior: acquires the manager's lock for shared access.
+  ///
+  /// @returns  The BCDD function `∃ vars. this <op> rhs` (may be invalid if the
+  ///           operation runs out of memory)
+  [[nodiscard]] bcdd_function
+  apply_exist(const util::boolean_operator op, const bcdd_function &rhs,
+              const bcdd_function &vars) const noexcept {
+    return capi::oxidd_bcdd_apply_exist(
+        static_cast<capi::oxidd_boolean_operator>(op), _func, rhs._func,
+        vars._func);
+  }
+
+  /// Combined application of `op` and `unique()`
+  ///
+  /// Locking behavior: acquires the manager's lock for shared access.
+  ///
+  /// @returns  The BCDD function `∃! vars. this <op> rhs` (may be invalid if
+  ///           the operation runs out of memory)
+  [[nodiscard]] bcdd_function
+  apply_unique(const util::boolean_operator op, const bcdd_function &rhs,
+               const bcdd_function &vars) const noexcept {
+    return capi::oxidd_bcdd_apply_unique(
+        static_cast<capi::oxidd_boolean_operator>(op), _func, rhs._func,
+        vars._func);
+  }
+
   /// @}
   /// @name Query Operations on BCDDs
   /// @{

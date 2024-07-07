@@ -42,6 +42,28 @@ enum class opt_bool : int8_t {
   // NOLINTEND(readability-identifier-naming)
 };
 
+/// Binary operator on Boolean functions
+enum class boolean_operator : uint8_t {
+  // NOLINTBEGIN(readability-identifier-naming)
+  /// Conjunction `lhs ∧ rhs`
+  AND = capi::OXIDD_BOOLEAN_OPERATOR_AND,
+  /// Disjunction `lhs ∨ rhs`
+  OR = capi::OXIDD_BOOLEAN_OPERATOR_OR,
+  /// Exclusive disjunction `lhs ⊕ rhs`
+  XOR = capi::OXIDD_BOOLEAN_OPERATOR_XOR,
+  /// Equivalence `lhs ↔ rhs`
+  EQUIV = capi::OXIDD_BOOLEAN_OPERATOR_EQUIV,
+  /// Negated conjunction `lhs ⊼ rhs`
+  NAND = capi::OXIDD_BOOLEAN_OPERATOR_NAND,
+  /// Negated disjunction `lhs ⊽ rhs`
+  NOR = capi::OXIDD_BOOLEAN_OPERATOR_NOR,
+  /// Implication `lhs → rhs`
+  IMP = capi::OXIDD_BOOLEAN_OPERATOR_IMP,
+  /// Strict implication `lhs < rhs`
+  IMP_STRICT = capi::OXIDD_BOOLEAN_OPERATOR_IMP_STRICT,
+  // NOLINTEND(readability-identifier-naming)
+};
+
 /// View into a contiguous sequence, roughly equivalent to Rust's `&[T]` type
 ///
 /// This type is trivially copyable and should be passed by value.

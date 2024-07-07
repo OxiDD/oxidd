@@ -244,7 +244,9 @@ concept substitution = function_subst<typename S::function> &&
 template <class F>
 concept boolean_function =
     function<F> &&
-    requires(const F &f, F &mut_f, level_no_t levels,
+    // `f.sat_count_double` should take `levels` by-value. We require that it
+    // isn't taken as a mutable reference, at least.
+    requires(const F &f, F &mut_f, const level_no_t &levels,
              util::slice<std::pair<F, bool>> args) {
       // cofactors
       { f.cofactors() } -> std::same_as<std::pair<F, F>>;
@@ -318,13 +320,30 @@ concept boolean_function_manager =
 /// over a single variable `x` is `f(…, 0, …) o f(…, 1, …)`, where `o` is `∧`
 /// for universal, `∨` for existential, and `⊕` for unique quantification.
 ///
+/// There are specialized algorithms for applying an operator and abstracting
+/// over some variables via quantification. They may be implemented by the
+/// following member functions:
+///
+/// - `f.apply_forall(op, g, vars)` computes `∀ vars. f <op> g` (i.e., is
+///   equivalent to `f.op(g).forall(vars)`)
+/// - `f.apply_exist(op, g, vars)` computes `∃ vars. f <op> g`
+/// - `f.apply_unique(op, g, vars)` computes `∃! vars. f <op> g`
+///
 /// All operations here acquire the manager's lock for shared access.
 template <class F>
-concept boolean_function_quant = boolean_function<F> && requires(const F &f) {
-  { f.forall(f) } -> std::same_as<F>;
-  { f.exist(f) } -> std::same_as<F>;
-  { f.unique(f) } -> std::same_as<F>;
-};
+concept boolean_function_quant =
+    boolean_function<F> &&
+    // `op` should be passed by-value. We require that the methods don't take it
+    // as a mutable reference, at least.
+    requires(const F &f, const util::boolean_operator &op) {
+      { f.forall(f) } -> std::same_as<F>;
+      { f.exist(f) } -> std::same_as<F>;
+      { f.unique(f) } -> std::same_as<F>;
+
+      { f.apply_forall(op, f, f) } -> std::same_as<F>;
+      { f.apply_exist(op, f, f) } -> std::same_as<F>;
+      { f.apply_unique(op, f, f) } -> std::same_as<F>;
+    };
 
 } // namespace oxidd::concepts
 

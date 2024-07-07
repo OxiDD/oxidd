@@ -7,6 +7,7 @@
 // Some general notes: cbindgen will prefix all types with `oxidd_`, and
 // additionally rename:
 //
+// - `BooleanOperator` into `oxidd_boolean_operator`
 // - `LevelNo` into `oxidd_level_no_t`
 //
 // Renaming is not applied in docstrings, we manually enter the C symbol name

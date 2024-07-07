@@ -1,7 +1,8 @@
 """Primitives and utilities"""
 
-__all__ = ["Assignment"]
+__all__ = ["BooleanOperator", "Assignment"]
 
+import enum
 from collections.abc import Iterator, Sequence
 from typing import Optional, Union
 
@@ -11,6 +12,27 @@ from typing_extensions import Never, Self, overload, override
 
 #: CFFI allocator that does not zero the newly allocated region
 _alloc = _ffi.new_allocator(should_clear_after_alloc=False)
+
+
+class BooleanOperator(enum.IntEnum):
+    """Binary operators on Boolean functions"""
+
+    AND = _lib.OXIDD_BOOLEAN_OPERATOR_AND
+    """Conjunction ``lhs ∧ rhs``"""
+    OR = _lib.OXIDD_BOOLEAN_OPERATOR_OR
+    """Disjunction ``lhs ∨ rhs``"""
+    XOR = _lib.OXIDD_BOOLEAN_OPERATOR_XOR
+    """Exclusive disjunction ``lhs ⊕ rhs``"""
+    EQUIV = _lib.OXIDD_BOOLEAN_OPERATOR_EQUIV
+    """Equivalence ``lhs ↔ rhs``"""
+    NAND = _lib.OXIDD_BOOLEAN_OPERATOR_NAND
+    """Negated conjunction ``lhs ⊼ rhs``"""
+    NOR = _lib.OXIDD_BOOLEAN_OPERATOR_NOR
+    """Negated disjunction ``lhs ⊽ rhs``"""
+    IMP = _lib.OXIDD_BOOLEAN_OPERATOR_IMP
+    """Implication ``lhs → rhs``"""
+    IMP_STRICT = _lib.OXIDD_BOOLEAN_OPERATOR_IMP_STRICT
+    """Strict implication ``lhs < rhs``"""
 
 
 class Assignment(Sequence[Optional[bool]]):

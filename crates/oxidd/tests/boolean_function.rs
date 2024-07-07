@@ -793,6 +793,50 @@ impl<'a, B: BooleanFunctionQuant> TestAllBooleanFunctions<'a, B> {
                     &[f_explicit],
                     &[var_set],
                 );
+
+                // Apply and quantification algorithms. Here, we only compare the naive and
+                // optimized implementations.
+                let f_explicit = f_explicit as ExplicitBFunc;
+                for (g_explicit, g) in self.boolean_functions.iter().enumerate() {
+                    let g_explicit = g_explicit as ExplicitBFunc;
+                    use BooleanOperator::*;
+                    for op in [And, Or, Xor, Equiv, Nand, Nor, Imp, ImpStrict] {
+                        let (inner, inner_symbol) = match op {
+                            And => (f.and(g).unwrap(), "∧"),
+                            Or => (f.or(g).unwrap(), "∨"),
+                            Xor => (f.xor(g).unwrap(), "⊕"),
+                            Equiv => (f.equiv(g).unwrap(), "↔"),
+                            Nand => (f.nand(g).unwrap(), "⊼"),
+                            Nor => (f.nor(g).unwrap(), "⊽"),
+                            Imp => (f.imp(g).unwrap(), "→"),
+                            ImpStrict => (f.imp_strict(g).unwrap(), "<"),
+                        };
+
+                        self.check(
+                            format_args!("∃v. f {inner_symbol} g"),
+                            self.dd_to_boolean_func[&f.apply_exist(op, g, &dd_var_set).unwrap()],
+                            self.dd_to_boolean_func[&inner.exist(&dd_var_set).unwrap()],
+                            &[f_explicit, g_explicit],
+                            &[var_set],
+                        );
+
+                        self.check(
+                            format_args!("∀v. f {inner_symbol} g"),
+                            self.dd_to_boolean_func[&f.apply_forall(op, g, &dd_var_set).unwrap()],
+                            self.dd_to_boolean_func[&inner.forall(&dd_var_set).unwrap()],
+                            &[f_explicit, g_explicit],
+                            &[var_set],
+                        );
+
+                        self.check(
+                            format_args!("∃!v. f {inner_symbol} g"),
+                            self.dd_to_boolean_func[&f.apply_unique(op, g, &dd_var_set).unwrap()],
+                            self.dd_to_boolean_func[&inner.unique(&dd_var_set).unwrap()],
+                            &[f_explicit, g_explicit],
+                            &[var_set],
+                        );
+                    }
+                }
             }
         }
     }

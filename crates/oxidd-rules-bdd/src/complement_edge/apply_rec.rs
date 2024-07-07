@@ -5,7 +5,9 @@ use std::hash::BuildHasher;
 use bitvec::vec::BitVec;
 
 use oxidd_core::{
-    function::{BooleanFunction, BooleanFunctionQuant, EdgeOfFunc, Function, FunctionSubst},
+    function::{
+        BooleanFunction, BooleanFunctionQuant, BooleanOperator, EdgeOfFunc, Function, FunctionSubst,
+    },
     util::{
         AllocResult, Borrowed, EdgeDropGuard, EdgeVecDropGuard, OptBool, SatCountCache,
         SatCountNumber,
@@ -65,7 +67,7 @@ where
             NodesOrDone::Nodes(fnode, gnode) => {
                 (BCDDOp::And, g.borrowed(), gnode, f.borrowed(), fnode)
             }
-            NodesOrDone::Done(h) => return Ok(h),
+            NodesOrDone::Done(h) => return Ok(h.into_edge()),
         }
     } else {
         assert_eq!(OP, BCDDOp::Xor as u8);
@@ -77,7 +79,7 @@ where
                 (BCDDOp::Xor, g.borrowed(), gnode, f.borrowed(), fnode)
             }
             NodesOrDone::Done(h) => {
-                return Ok(h);
+                return Ok(h.into_edge());
             }
         }
     };
@@ -716,6 +718,242 @@ where
     Ok(res)
 }
 
+/// Recursively apply the binary operator `OP` to `f` and `g` while quantifying
+/// `Q` over `vars`. This is more efficient then computing then an apply
+/// operation followed by a quantification.
+///
+/// One example usage is for the relational product, i.e., computing
+/// `∃ s, t. S(s) ∧ T(s, t)`, where `S` is a boolean function representing the
+/// states and `T` a boolean function representing the transition relation.
+///
+/// `Q` is one of [`BCDDOp::Forall`], [`BCDDOp::Exist`], or [`BCDDOp::Forall`]
+/// as `u8`. We use a `const` parameter `OP` to have specialized version of this
+/// function for each operator ([`BCDDOp::And`], [`BCDDOp::Xor`], or
+/// specifically [`BCDDOp::UniqueNand`], each as `u8`).
+fn apply_quant<'a, M, R: Recursor<M>, const Q: u8, const OP: u8>(
+    manager: &'a M,
+    rec: R,
+    f: Borrowed<M::Edge>,
+    g: Borrowed<M::Edge>,
+    vars: Borrowed<M::Edge>,
+) -> AllocResult<M::Edge>
+where
+    M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag> + HasApplyCache<M, BCDDOp>,
+    M::InnerNode: HasLevel,
+{
+    if rec.should_switch_to_sequential() {
+        return apply_quant::<M, _, Q, OP>(manager, SequentialRecursor, f, g, vars);
+    }
+
+    let operator = const { BCDDOp::from_apply_quant(Q, OP) };
+
+    stat!(call operator);
+    // Handle the terminal cases
+    let (f, fnode, g, gnode) = if OP == BCDDOp::And as u8 || OP == BCDDOp::UniqueNand as u8 {
+        match super::terminal_and(manager, &f, &g) {
+            NodesOrDone::Nodes(fnode, gnode) if f < g => (f.borrowed(), fnode, g.borrowed(), gnode),
+            // `And` is commutative, hence we swap `f` and `g` in the apply
+            // cache key if `f > g` to have a unique representation of the set
+            // `{f, g}`.
+            NodesOrDone::Nodes(fnode, gnode) => (g.borrowed(), gnode, f.borrowed(), fnode),
+            NodesOrDone::Done(h) if OP == BCDDOp::UniqueNand as u8 => {
+                return quant::<M, R, Q>(manager, rec, not(&h), vars)
+            }
+            NodesOrDone::Done(h) => return quant::<M, R, Q>(manager, rec, h.borrowed(), vars),
+        }
+    } else {
+        assert_eq!(OP, BCDDOp::Xor as u8);
+        match super::terminal_xor(manager, &f, &g) {
+            NodesOrDone::Nodes(fnode, gnode) if f < g => (f.borrowed(), fnode, g.borrowed(), gnode),
+            NodesOrDone::Nodes(fnode, gnode) => (g.borrowed(), gnode, f.borrowed(), fnode),
+            NodesOrDone::Done(h) => return quant::<M, R, Q>(manager, rec, h.borrowed(), vars),
+        }
+    };
+
+    let flevel = fnode.level();
+    let glevel = gnode.level();
+    let min_level = std::cmp::min(fnode.level(), gnode.level());
+
+    let vars = if Q != BCDDOp::Unique as u8 {
+        // We can ignore all variables above the top-most variable. Removing
+        // them before querying the apply cache should increase the hit ratio by
+        // a lot.
+        crate::set_pop(manager, vars, min_level)
+    } else {
+        // No need to pop variables here. If the variable is above `min_level`,
+        // i.e., does not occur in `f` or `g`, then the result is `f ⊕ f ≡ ⊥`. We
+        // handle this below.
+        vars
+    };
+
+    let vnode = match manager.get_node(&vars) {
+        Node::Inner(n) => n,
+        // Empty variable set: just apply operation
+        Node::Terminal(_) if OP == BCDDOp::UniqueNand as u8 => {
+            return Ok(not_owned(apply_and(manager, rec, f, g)?))
+        }
+        Node::Terminal(_) => return apply_bin::<M, R, OP>(manager, rec, f, g),
+    };
+
+    let vlevel = vnode.level();
+    if vlevel < min_level && Q == BCDDOp::Unique as u8 {
+        // `vnode` above `fnode` and `gnode`, i.e., the variable does not occur in `f`
+        // or `g` (see above)
+        return Ok(get_terminal(manager, false));
+    }
+
+    if min_level > vlevel {
+        // We are beyond the variables to be quantified, so simply apply.
+        if OP == BCDDOp::UniqueNand as u8 {
+            return Ok(not_owned(apply_and(manager, rec, f, g)?));
+        }
+        return apply_bin::<M, R, OP>(manager, rec, f, g);
+    }
+
+    // Query the cache
+    stat!(cache_query operator);
+    if let Some(res) = manager.apply_cache().get(
+        manager,
+        operator,
+        &[f.borrowed(), g.borrowed(), vars.borrowed()],
+    ) {
+        stat!(cache_hit operator);
+        return Ok(res);
+    }
+
+    let vt = if vlevel == min_level {
+        vnode.child(0)
+    } else {
+        vars.borrowed()
+    };
+
+    let (ft, fe) = if flevel <= glevel {
+        collect_cofactors(f.tag(), fnode)
+    } else {
+        (f.borrowed(), f.borrowed())
+    };
+
+    let (gt, ge) = if flevel >= glevel {
+        collect_cofactors(g.tag(), gnode)
+    } else {
+        (g.borrowed(), g.borrowed())
+    };
+
+    let (t, e) = rec.ternary(
+        apply_quant::<M, R, Q, OP>,
+        manager,
+        (ft, gt, vt.borrowed()),
+        (fe, ge, vt.borrowed()),
+    )?;
+
+    let res = if min_level == vlevel {
+        if Q == BCDDOp::Forall as u8 {
+            apply_and(manager, rec, t.borrowed(), e.borrowed())?
+        } else if Q == BCDDOp::Exist as u8 {
+            not_owned(apply_and(manager, rec, not(&t), not(&e))?)
+        } else if Q == BCDDOp::Unique as u8 {
+            apply_bin::<M, R, { BCDDOp::Xor as u8 }>(manager, rec, t.borrowed(), e.borrowed())?
+        } else {
+            unreachable!()
+        }
+    } else {
+        reduce(manager, min_level, t.into_edge(), e.into_edge(), operator)?
+    };
+
+    manager
+        .apply_cache()
+        .add(manager, operator, &[f, g, vars], res.borrowed());
+
+    Ok(res)
+}
+
+/// Dynamic dispatcher for [`apply_quant()`] and universal/existential
+/// quantification
+///
+/// In contrast to [`apply_quant()`], the operator is not a const but a runtime
+/// parameter. `QN` is the "negated" version of `Q`: If `Q` is
+/// [`BCDDOp::Forall`] (as u8) then, `QN` is [`BCDDOp::Exist`], and vice versa.
+fn apply_quant_dispatch<'a, M, R: Recursor<M>, const Q: u8, const QN: u8>(
+    manager: &'a M,
+    rec: R,
+    op: BooleanOperator,
+    f: Borrowed<M::Edge>,
+    g: Borrowed<M::Edge>,
+    vars: Borrowed<M::Edge>,
+) -> AllocResult<M::Edge>
+where
+    M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag> + HasApplyCache<M, BCDDOp>,
+    M::InnerNode: HasLevel,
+{
+    use BooleanOperator::*;
+    const OA: u8 = BCDDOp::And as u8;
+    const OX: u8 = BCDDOp::Xor as u8;
+
+    const {
+        assert!(
+            (Q == BCDDOp::Forall as u8 && QN == BCDDOp::Exist as u8)
+                || (Q == BCDDOp::Exist as u8 && QN == BCDDOp::Forall as u8)
+        );
+    }
+
+    match op {
+        And => apply_quant::<M, R, Q, OA>(manager, rec, f, g, vars),
+        Or => {
+            let tmp = apply_quant::<M, R, QN, OA>(manager, rec, not(&f), not(&g), vars)?;
+            Ok(not_owned(tmp))
+        }
+        Xor => apply_quant::<M, R, Q, OX>(manager, rec, f, g, vars),
+        Equiv => {
+            let tmp = apply_quant::<M, R, QN, OX>(manager, rec, f, g, vars)?;
+            Ok(not_owned(tmp))
+        }
+        Nand => {
+            let tmp = apply_quant::<M, R, QN, OA>(manager, rec, f, g, vars)?;
+            Ok(not_owned(tmp))
+        }
+        Nor => apply_quant::<M, R, Q, OA>(manager, rec, not(&f), not(&g), vars),
+        Imp => {
+            let tmp = apply_quant::<M, R, QN, OA>(manager, rec, f, not(&g), vars)?;
+            Ok(not_owned(tmp))
+        }
+        ImpStrict => apply_quant::<M, R, Q, OA>(manager, rec, not(&f), g, vars),
+    }
+}
+
+/// Dynamic dispatcher for [`apply_quant()`] and unique quantification
+///
+/// In contrast to [`apply_quant()`], the operator is not a const but a runtime
+/// parameter.
+fn apply_quant_unique_dispatch<'a, M, R: Recursor<M>>(
+    manager: &'a M,
+    rec: R,
+    op: BooleanOperator,
+    f: Borrowed<M::Edge>,
+    g: Borrowed<M::Edge>,
+    vars: Borrowed<M::Edge>,
+) -> AllocResult<M::Edge>
+where
+    M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag> + HasApplyCache<M, BCDDOp>,
+    M::InnerNode: HasLevel,
+{
+    use BooleanOperator::*;
+    const Q: u8 = BCDDOp::Unique as u8;
+    const OA: u8 = BCDDOp::And as u8;
+    const OX: u8 = BCDDOp::Xor as u8;
+    const ONA: u8 = BCDDOp::UniqueNand as u8;
+
+    match op {
+        And => apply_quant::<M, R, Q, OA>(manager, rec, f, g, vars),
+        Or => apply_quant::<M, R, Q, ONA>(manager, rec, not(&f), not(&g), vars),
+        Xor => apply_quant::<M, R, Q, OX>(manager, rec, f, g, vars),
+        Equiv => apply_quant::<M, R, Q, OX>(manager, rec, not(&f), g, vars),
+        Nand => apply_quant::<M, R, Q, ONA>(manager, rec, f, g, vars),
+        Nor => apply_quant::<M, R, Q, OA>(manager, rec, not(&f), not(&g), vars),
+        Imp => apply_quant::<M, R, Q, ONA>(manager, rec, f, not(&g), vars),
+        ImpStrict => apply_quant::<M, R, Q, OA>(manager, rec, not(&f), g, vars),
+    }
+}
+
 // --- Function Interface ------------------------------------------------------
 
 /// Workaround for https://github.com/rust-lang/rust/issues/49601
@@ -1109,7 +1347,6 @@ where
         let rec = SequentialRecursor;
         quant::<_, _, { BCDDOp::Forall as u8 }>(manager, rec, root.borrowed(), vars.borrowed())
     }
-
     #[inline]
     fn exist_edge<'id>(
         manager: &Self::Manager<'id>,
@@ -1119,7 +1356,6 @@ where
         let rec = SequentialRecursor;
         quant::<_, _, { BCDDOp::Exist as u8 }>(manager, rec, root.borrowed(), vars.borrowed())
     }
-
     #[inline]
     fn unique_edge<'id>(
         manager: &Self::Manager<'id>,
@@ -1128,6 +1364,53 @@ where
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         let rec = SequentialRecursor;
         quant::<_, _, { BCDDOp::Unique as u8 }>(manager, rec, root.borrowed(), vars.borrowed())
+    }
+
+    #[inline]
+    fn apply_forall_edge<'id>(
+        manager: &Self::Manager<'id>,
+        op: BooleanOperator,
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+        vars: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        apply_quant_dispatch::<_, _, { BCDDOp::Forall as u8 }, { BCDDOp::Exist as u8 }>(
+            manager,
+            SequentialRecursor,
+            op,
+            lhs.borrowed(),
+            rhs.borrowed(),
+            vars.borrowed(),
+        )
+    }
+    #[inline]
+    fn apply_exist_edge<'id>(
+        manager: &Self::Manager<'id>,
+        op: BooleanOperator,
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+        vars: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        apply_quant_dispatch::<_, _, { BCDDOp::Exist as u8 }, { BCDDOp::Forall as u8 }>(
+            manager,
+            SequentialRecursor,
+            op,
+            lhs.borrowed(),
+            rhs.borrowed(),
+            vars.borrowed(),
+        )
+    }
+    #[inline]
+    fn apply_unique_edge<'id>(
+        manager: &Self::Manager<'id>,
+        op: BooleanOperator,
+        lhs: &EdgeOfFunc<'id, Self>,
+        rhs: &EdgeOfFunc<'id, Self>,
+        vars: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        let rec = SequentialRecursor;
+        let (lhs, rhs, vars) = (lhs.borrowed(), rhs.borrowed(), vars.borrowed());
+        apply_quant_unique_dispatch(manager, rec, op, lhs, rhs, vars)
     }
 }
 
@@ -1372,7 +1655,6 @@ pub mod mt {
             let rec = ParallelRecursor::new(manager);
             quant::<_, _, { BCDDOp::Forall as u8 }>(manager, rec, root.borrowed(), vars.borrowed())
         }
-
         #[inline]
         fn exist_edge<'id>(
             manager: &Self::Manager<'id>,
@@ -1382,7 +1664,6 @@ pub mod mt {
             let rec = ParallelRecursor::new(manager);
             quant::<_, _, { BCDDOp::Exist as u8 }>(manager, rec, root.borrowed(), vars.borrowed())
         }
-
         #[inline]
         fn unique_edge<'id>(
             manager: &Self::Manager<'id>,
@@ -1391,6 +1672,53 @@ pub mod mt {
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
             let rec = ParallelRecursor::new(manager);
             quant::<_, _, { BCDDOp::Unique as u8 }>(manager, rec, root.borrowed(), vars.borrowed())
+        }
+
+        #[inline]
+        fn apply_forall_edge<'id>(
+            manager: &Self::Manager<'id>,
+            op: BooleanOperator,
+            lhs: &EdgeOfFunc<'id, Self>,
+            rhs: &EdgeOfFunc<'id, Self>,
+            vars: &EdgeOfFunc<'id, Self>,
+        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            apply_quant_dispatch::<_, _, { BCDDOp::Forall as u8 }, { BCDDOp::Exist as u8 }>(
+                manager,
+                ParallelRecursor::new(manager),
+                op,
+                lhs.borrowed(),
+                rhs.borrowed(),
+                vars.borrowed(),
+            )
+        }
+        #[inline]
+        fn apply_exist_edge<'id>(
+            manager: &Self::Manager<'id>,
+            op: BooleanOperator,
+            lhs: &EdgeOfFunc<'id, Self>,
+            rhs: &EdgeOfFunc<'id, Self>,
+            vars: &EdgeOfFunc<'id, Self>,
+        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            apply_quant_dispatch::<_, _, { BCDDOp::Exist as u8 }, { BCDDOp::Forall as u8 }>(
+                manager,
+                ParallelRecursor::new(manager),
+                op,
+                lhs.borrowed(),
+                rhs.borrowed(),
+                vars.borrowed(),
+            )
+        }
+        #[inline]
+        fn apply_unique_edge<'id>(
+            manager: &Self::Manager<'id>,
+            op: BooleanOperator,
+            lhs: &EdgeOfFunc<'id, Self>,
+            rhs: &EdgeOfFunc<'id, Self>,
+            vars: &EdgeOfFunc<'id, Self>,
+        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            let rec = ParallelRecursor::new(manager);
+            let (lhs, rhs, vars) = (lhs.borrowed(), rhs.borrowed(), vars.borrowed());
+            apply_quant_unique_dispatch(manager, rec, op, lhs, rhs, vars)
         }
     }
 
