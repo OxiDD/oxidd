@@ -292,6 +292,7 @@ def test_bdd_all_boolean_functions_2vars_t1():
     vars = [mgr.new_var() for _ in range(2)]
     test = AllBooleanFunctionsQuantSubst(mgr, vars, vars)
     test.basic()
+    test.subst()
     test.quant()
 
 
@@ -300,6 +301,7 @@ def test_bcdd_all_boolean_functions_2vars_t1():
     vars = [mgr.new_var() for _ in range(2)]
     test = AllBooleanFunctionsQuantSubst(mgr, vars, vars)
     test.basic()
+    test.subst()
     test.quant()
 
 
