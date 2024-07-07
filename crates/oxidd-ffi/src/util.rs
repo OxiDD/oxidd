@@ -1,15 +1,14 @@
 use oxidd_core::util::Substitution;
 
-/// Level number type
-#[allow(non_camel_case_types)]
-pub type oxidd_level_no_t = u32;
+/// cbindgen:ignore
+pub const FUNC_UNWRAP_MSG: &str = "the given function is invalid";
 
 /// Boolean assignment
 ///
 /// `data` is a pointer to `len` values. A value can be either 0 (false), 1
 /// (true), or -1 (don't care).
 #[repr(C)]
-pub struct oxidd_assignment_t {
+pub struct assignment_t {
     /// Pointer to the data array of length `len`
     ///
     /// Must never be modified
@@ -28,7 +27,7 @@ pub struct oxidd_assignment_t {
 ///
 /// In case `assignment.data` is `NULL`, this is a no-op.
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_assignment_free(assignment: oxidd_assignment_t) {
+pub unsafe extern "C" fn oxidd_assignment_free(assignment: assignment_t) {
     if !assignment.data.is_null() {
         drop(Vec::from_raw_parts(
             assignment.data,

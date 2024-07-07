@@ -52,7 +52,9 @@ find_program(CBINDGEN_EXECUTABLE
 # Generate oxidd/capi.h using cbindgen
 set(oxidd_capi_include ${PROJECT_BINARY_DIR}/include)
 set(oxidd_capi_h ${oxidd_capi_include}/oxidd/capi.h)
-file(GLOB_RECURSE oxidd_ffi_sources CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/crates/oxidd-ffi/*.rs)
+file(GLOB_RECURSE oxidd_ffi_sources CONFIGURE_DEPENDS
+    ${PROJECT_SOURCE_DIR}/crates/oxidd-core/*.rs
+    ${PROJECT_SOURCE_DIR}/crates/oxidd-ffi/*.rs)
 add_custom_command(
     OUTPUT ${oxidd_capi_h}
     COMMAND ${CBINDGEN_EXECUTABLE}

@@ -183,7 +183,7 @@ exclude = []
 
 # A prefix to add before the name of every item
 # default: no prefix is added
-prefix = ""
+prefix = "oxidd_"
 
 # Types of items that we'll generate. If empty, then all types of item are emitted.
 #
@@ -218,14 +218,16 @@ item_types = []
 # "MyType => capi_my_cool_type"
 #
 # default: false
-renaming_overrides_prefixing = true
+renaming_overrides_prefixing = false
 
+[export.rename]
+"LevelNo" = "level_no_t"
 
 # Configuration for name mangling
 [export.mangle]
 # Whether the types should be renamed during mangling, for example
 # c_char -> CChar, etc.
-#rename_types = "SnakeCase"
+rename_types = "SnakeCase"
 # Whether the underscores from the mangled name should be omitted.
 remove_underscores = false
 
@@ -410,7 +412,7 @@ derive_gte = false
 # * "GeckoCase": apply no renaming
 #
 # default: "None"
-rename_variants = "None"
+rename_variants = "QualifiedScreamingSnakeCase"
 
 # Whether an extra "sentinel" enum variant should be added to all generated enums.
 # Firefox uses this for their IPC serialization library.
@@ -507,7 +509,7 @@ allow_static_const = true
 # Whether a generated constant can be constexpr in C++ mode.
 #
 # default: true
-allow_constexpr = false
+allow_constexpr = true
 
 # This rule specifies the order in which constants will be sorted.
 #
@@ -529,13 +531,13 @@ bitflags = false
 [parse]
 # Whether to parse dependent crates and include their types in the output
 # default: false
-parse_deps = false
+parse_deps = true
 
 # A white list of crate names that are allowed to be parsed. If this is defined,
 # only crates found in this list will ever be parsed.
 #
 # default: there is no whitelist (NOTE: this is the opposite of [])
-include = []
+include = ["oxidd-core"]
 
 # A black list of crate names that are not allowed to be parsed.
 # default: []

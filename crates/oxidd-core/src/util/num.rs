@@ -15,6 +15,7 @@ use crate::util::IsFloatingPoint;
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Saturating<T>(pub T);
 
+/// cbindgen:ignore
 impl<T> IsFloatingPoint for Saturating<T> {
     const FLOATING_POINT: bool = false;
 }
@@ -95,6 +96,7 @@ impl ShlAssign<u32> for Saturating<u128> {
 /// Floating point number like [`f64`], but with [`ShlAssign<u32>`] and
 /// [`ShrAssign<u32>`].
 #[derive(Clone, Copy, PartialEq, PartialOrd)]
+#[repr(transparent)]
 pub struct F64(pub f64);
 
 impl From<u32> for F64 {
@@ -103,6 +105,7 @@ impl From<u32> for F64 {
     }
 }
 
+/// cbindgen:ignore
 impl IsFloatingPoint for F64 {
     const FLOATING_POINT: bool = true;
 }

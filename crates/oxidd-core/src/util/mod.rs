@@ -484,6 +484,7 @@ pub trait IsFloatingPoint {
 }
 
 // dirty hack until we have specialization
+/// cbindgen:ignore
 impl<T: std::ops::ShlAssign<i32>> IsFloatingPoint for T {
     const FLOATING_POINT: bool = false;
 }

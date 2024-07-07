@@ -152,10 +152,12 @@ def read_cdefs(header: Path) -> str:
             line = next(lines, None)
             if line is None:
                 break
-            if not line:
+            if all(c == "\n" or c == "\r" for c in line):
                 continue
             if line[0] == "#":
-                if line.startswith("#if"):
+                if line.startswith("#if") and not line.startswith(
+                    "#ifndef __cplusplus"
+                ):
                     while True:
                         line = next(lines, None)
                         if line is None:

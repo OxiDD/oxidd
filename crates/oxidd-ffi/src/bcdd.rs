@@ -3,27 +3,19 @@ use std::mem::ManuallyDrop;
 
 use rustc_hash::FxHasher;
 
-use oxidd::bcdd::BCDDFunction;
-use oxidd::bcdd::BCDDManagerRef;
+use oxidd::bcdd::{BCDDFunction, BCDDManagerRef};
 use oxidd::util::num::F64;
-use oxidd::util::AllocResult;
-use oxidd::util::Borrowed;
-use oxidd::util::OutOfMemory;
-use oxidd::BooleanFunction;
-use oxidd::BooleanFunctionQuant;
-use oxidd::Edge;
-use oxidd::Function;
-use oxidd::FunctionSubst;
-use oxidd::Manager;
-use oxidd::ManagerRef;
-use oxidd::RawFunction;
-use oxidd::RawManagerRef;
+use oxidd::util::{AllocResult, Borrowed, OutOfMemory};
+use oxidd::{
+    BooleanFunction, BooleanFunctionQuant, Edge, Function, FunctionSubst, Manager, ManagerRef,
+    RawFunction, RawManagerRef,
+};
 
-use crate::util::oxidd_assignment_t;
-use crate::util::oxidd_level_no_t;
+// We need to use the following items from `oxidd_core` since cbindgen only
+// parses `oxidd_ffi` and `oxidd_core`:
+use oxidd_core::LevelNo;
 
-/// cbindgen:ignore
-const FUNC_UNWRAP_MSG: &str = "the given function is invalid";
+use crate::util::{assignment_t, FUNC_UNWRAP_MSG};
 
 /// Reference to a manager of a binary decision diagram with complement edges
 /// (BCDD)
@@ -36,12 +28,12 @@ const FUNC_UNWRAP_MSG: &str = "the given function is invalid";
 /// leaks.
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct oxidd_bcdd_manager_t {
+pub struct bcdd_manager_t {
     /// Internal pointer value, `NULL` iff this reference is invalid
     _p: *const std::ffi::c_void,
 }
 
-impl oxidd_bcdd_manager_t {
+impl bcdd_manager_t {
     #[inline]
     unsafe fn get(self) -> ManuallyDrop<BCDDManagerRef> {
         assert!(!self._p.is_null(), "the given manager is invalid");
@@ -66,7 +58,7 @@ impl oxidd_bcdd_manager_t {
 /// oxidd_bcdd_unref() to avoid memory leaks.
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct oxidd_bcdd_t {
+pub struct bcdd_t {
     /// Internal pointer value, `NULL` iff this function is invalid
     _p: *const std::ffi::c_void,
     /// Internal index value
@@ -74,7 +66,7 @@ pub struct oxidd_bcdd_t {
 }
 
 /// cbindgen:ignore
-impl oxidd_bcdd_t {
+impl bcdd_t {
     const INVALID: Self = Self {
         _p: std::ptr::null(),
         _i: 0,
@@ -90,7 +82,7 @@ impl oxidd_bcdd_t {
     }
 }
 
-impl From<BCDDFunction> for oxidd_bcdd_t {
+impl From<BCDDFunction> for bcdd_t {
     #[inline]
     fn from(value: BCDDFunction) -> Self {
         let (_p, _i) = value.into_raw();
@@ -98,7 +90,7 @@ impl From<BCDDFunction> for oxidd_bcdd_t {
     }
 }
 
-impl From<AllocResult<BCDDFunction>> for oxidd_bcdd_t {
+impl From<AllocResult<BCDDFunction>> for bcdd_t {
     #[inline]
     fn from(value: AllocResult<BCDDFunction>) -> Self {
         match value {
@@ -110,7 +102,7 @@ impl From<AllocResult<BCDDFunction>> for oxidd_bcdd_t {
         }
     }
 }
-impl From<Option<BCDDFunction>> for oxidd_bcdd_t {
+impl From<Option<BCDDFunction>> for bcdd_t {
     #[inline]
     fn from(value: Option<BCDDFunction>) -> Self {
         match value {
@@ -125,37 +117,34 @@ impl From<Option<BCDDFunction>> for oxidd_bcdd_t {
 
 /// Pair of two `oxidd_bcdd_t` instances
 #[repr(C)]
-pub struct oxidd_bcdd_pair_t {
+pub struct bcdd_pair_t {
     /// First component
-    first: oxidd_bcdd_t,
+    first: bcdd_t,
     /// Second component
-    second: oxidd_bcdd_t,
+    second: bcdd_t,
 }
 
 #[inline]
-unsafe fn op1(
-    f: oxidd_bcdd_t,
-    op: impl FnOnce(&BCDDFunction) -> AllocResult<BCDDFunction>,
-) -> oxidd_bcdd_t {
+unsafe fn op1(f: bcdd_t, op: impl FnOnce(&BCDDFunction) -> AllocResult<BCDDFunction>) -> bcdd_t {
     f.get().and_then(|f| op(&f)).into()
 }
 
 #[inline]
 unsafe fn op2(
-    lhs: oxidd_bcdd_t,
-    rhs: oxidd_bcdd_t,
+    lhs: bcdd_t,
+    rhs: bcdd_t,
     op: impl FnOnce(&BCDDFunction, &BCDDFunction) -> AllocResult<BCDDFunction>,
-) -> oxidd_bcdd_t {
+) -> bcdd_t {
     lhs.get().and_then(|lhs| op(&lhs, &*rhs.get()?)).into()
 }
 
 #[inline]
 unsafe fn op3(
-    f1: oxidd_bcdd_t,
-    f2: oxidd_bcdd_t,
-    f3: oxidd_bcdd_t,
+    f1: bcdd_t,
+    f2: bcdd_t,
+    f3: bcdd_t,
     op: impl FnOnce(&BCDDFunction, &BCDDFunction, &BCDDFunction) -> AllocResult<BCDDFunction>,
-) -> oxidd_bcdd_t {
+) -> bcdd_t {
     f1.get()
         .and_then(|f1| op(&f1, &*f2.get()?, &*f3.get()?))
         .into()
@@ -178,8 +167,8 @@ pub extern "C" fn oxidd_bcdd_manager_new(
     inner_node_capacity: usize,
     apply_cache_capacity: usize,
     threads: u32,
-) -> oxidd_bcdd_manager_t {
-    oxidd_bcdd_manager_t {
+) -> bcdd_manager_t {
+    bcdd_manager_t {
         _p: oxidd::bcdd::new_manager(inner_node_capacity, apply_cache_capacity, threads).into_raw(),
     }
 }
@@ -190,9 +179,7 @@ pub extern "C" fn oxidd_bcdd_manager_new(
 ///
 /// @returns  `manager`
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_manager_ref(
-    manager: oxidd_bcdd_manager_t,
-) -> oxidd_bcdd_manager_t {
+pub unsafe extern "C" fn oxidd_bcdd_manager_ref(manager: bcdd_manager_t) -> bcdd_manager_t {
     if !manager._p.is_null() {
         std::mem::forget(manager.get().clone());
     }
@@ -203,7 +190,7 @@ pub unsafe extern "C" fn oxidd_bcdd_manager_ref(
 ///
 /// No-op if `manager` is invalid.
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_manager_unref(manager: oxidd_bcdd_manager_t) {
+pub unsafe extern "C" fn oxidd_bcdd_manager_unref(manager: bcdd_manager_t) {
     if !manager._p.is_null() {
         drop(BCDDManagerRef::from_raw(manager._p));
     }
@@ -216,7 +203,7 @@ pub unsafe extern "C" fn oxidd_bcdd_manager_unref(manager: oxidd_bcdd_manager_t)
 ///
 /// @returns  `f`
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_ref(f: oxidd_bcdd_t) -> oxidd_bcdd_t {
+pub unsafe extern "C" fn oxidd_bcdd_ref(f: bcdd_t) -> bcdd_t {
     std::mem::forget(f.get().clone());
     f
 }
@@ -226,7 +213,7 @@ pub unsafe extern "C" fn oxidd_bcdd_ref(f: oxidd_bcdd_t) -> oxidd_bcdd_t {
 ///
 /// No-op if `f` is invalid.
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_unref(f: oxidd_bcdd_t) {
+pub unsafe extern "C" fn oxidd_bcdd_unref(f: bcdd_t) {
     if !f._p.is_null() {
         drop(BCDDFunction::from_raw(f._p, f._i));
     }
@@ -238,8 +225,8 @@ pub unsafe extern "C" fn oxidd_bcdd_unref(f: oxidd_bcdd_t) {
 ///
 /// @returns  A manager reference with its own reference count
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_containing_manager(f: oxidd_bcdd_t) -> oxidd_bcdd_manager_t {
-    oxidd_bcdd_manager_t {
+pub unsafe extern "C" fn oxidd_bcdd_containing_manager(f: bcdd_t) -> bcdd_manager_t {
+    bcdd_manager_t {
         _p: f.get().expect(FUNC_UNWRAP_MSG).manager_ref().into_raw(),
     }
 }
@@ -250,7 +237,7 @@ pub unsafe extern "C" fn oxidd_bcdd_containing_manager(f: oxidd_bcdd_t) -> oxidd
 ///
 /// @returns  The number of inner nodes
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_num_inner_nodes(manager: oxidd_bcdd_manager_t) -> usize {
+pub unsafe extern "C" fn oxidd_bcdd_num_inner_nodes(manager: bcdd_manager_t) -> usize {
     manager
         .get()
         .with_manager_shared(|manager| manager.num_inner_nodes())
@@ -263,7 +250,7 @@ pub unsafe extern "C" fn oxidd_bcdd_num_inner_nodes(manager: oxidd_bcdd_manager_
 ///
 /// @returns  The BCDD function representing the variable.
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_new_var(manager: oxidd_bcdd_manager_t) -> oxidd_bcdd_t {
+pub unsafe extern "C" fn oxidd_bcdd_new_var(manager: bcdd_manager_t) -> bcdd_t {
     manager
         .get()
         .with_manager_exclusive(|manager| BCDDFunction::new_var(manager).into())
@@ -275,7 +262,7 @@ pub unsafe extern "C" fn oxidd_bcdd_new_var(manager: oxidd_bcdd_manager_t) -> ox
 ///
 /// @returns  The BCDD function with its own reference count
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_false(manager: oxidd_bcdd_manager_t) -> oxidd_bcdd_t {
+pub unsafe extern "C" fn oxidd_bcdd_false(manager: bcdd_manager_t) -> bcdd_t {
     manager
         .get()
         .with_manager_shared(|manager| BCDDFunction::f(manager).into())
@@ -287,7 +274,7 @@ pub unsafe extern "C" fn oxidd_bcdd_false(manager: oxidd_bcdd_manager_t) -> oxid
 ///
 /// @returns  The BCDD function with its own reference count
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_true(manager: oxidd_bcdd_manager_t) -> oxidd_bcdd_t {
+pub unsafe extern "C" fn oxidd_bcdd_true(manager: bcdd_manager_t) -> bcdd_t {
     manager
         .get()
         .with_manager_shared(|manager| BCDDFunction::t(manager).into())
@@ -311,18 +298,18 @@ pub unsafe extern "C" fn oxidd_bcdd_true(manager: oxidd_bcdd_manager_t) -> oxidd
 /// @returns  The pair `f_true` and `f_false` if `f` is valid and references an
 ///           inner node, otherwise a pair of invalid functions.
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_cofactors(f: oxidd_bcdd_t) -> oxidd_bcdd_pair_t {
+pub unsafe extern "C" fn oxidd_bcdd_cofactors(f: bcdd_t) -> bcdd_pair_t {
     if let Ok(f) = f.get() {
         if let Some((t, e)) = f.cofactors() {
-            return oxidd_bcdd_pair_t {
+            return bcdd_pair_t {
                 first: t.into(),
                 second: e.into(),
             };
         }
     }
-    oxidd_bcdd_pair_t {
-        first: oxidd_bcdd_t::INVALID,
-        second: oxidd_bcdd_t::INVALID,
+    bcdd_pair_t {
+        first: bcdd_t::INVALID,
+        second: bcdd_t::INVALID,
     }
 }
 
@@ -338,11 +325,11 @@ pub unsafe extern "C" fn oxidd_bcdd_cofactors(f: oxidd_bcdd_t) -> oxidd_bcdd_pai
 /// @returns  `f_true` if `f` is valid and references an inner node, otherwise
 ///           an invalid function.
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_cofactor_true(f: oxidd_bcdd_t) -> oxidd_bcdd_t {
+pub unsafe extern "C" fn oxidd_bcdd_cofactor_true(f: bcdd_t) -> bcdd_t {
     if let Ok(f) = f.get() {
         f.cofactor_true().into()
     } else {
-        oxidd_bcdd_t::INVALID
+        bcdd_t::INVALID
     }
 }
 
@@ -358,11 +345,11 @@ pub unsafe extern "C" fn oxidd_bcdd_cofactor_true(f: oxidd_bcdd_t) -> oxidd_bcdd
 /// @returns  `f_false` if `f` is valid and references an inner node, otherwise
 ///           an invalid function.
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_cofactor_false(f: oxidd_bcdd_t) -> oxidd_bcdd_t {
+pub unsafe extern "C" fn oxidd_bcdd_cofactor_false(f: bcdd_t) -> bcdd_t {
     if let Ok(f) = f.get() {
         f.cofactor_false().into()
     } else {
-        oxidd_bcdd_t::INVALID
+        bcdd_t::INVALID
     }
 }
 
@@ -372,7 +359,7 @@ pub unsafe extern "C" fn oxidd_bcdd_cofactor_false(f: oxidd_bcdd_t) -> oxidd_bcd
 ///
 /// @returns  The BCDD function with its own reference count
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_not(f: oxidd_bcdd_t) -> oxidd_bcdd_t {
+pub unsafe extern "C" fn oxidd_bcdd_not(f: bcdd_t) -> bcdd_t {
     op1(f, BCDDFunction::not)
 }
 
@@ -382,7 +369,7 @@ pub unsafe extern "C" fn oxidd_bcdd_not(f: oxidd_bcdd_t) -> oxidd_bcdd_t {
 ///
 /// @returns  The BCDD function with its own reference count
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_and(lhs: oxidd_bcdd_t, rhs: oxidd_bcdd_t) -> oxidd_bcdd_t {
+pub unsafe extern "C" fn oxidd_bcdd_and(lhs: bcdd_t, rhs: bcdd_t) -> bcdd_t {
     op2(lhs, rhs, BCDDFunction::and)
 }
 
@@ -392,7 +379,7 @@ pub unsafe extern "C" fn oxidd_bcdd_and(lhs: oxidd_bcdd_t, rhs: oxidd_bcdd_t) ->
 ///
 /// @returns  The BCDD function with its own reference count
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_or(lhs: oxidd_bcdd_t, rhs: oxidd_bcdd_t) -> oxidd_bcdd_t {
+pub unsafe extern "C" fn oxidd_bcdd_or(lhs: bcdd_t, rhs: bcdd_t) -> bcdd_t {
     op2(lhs, rhs, BCDDFunction::or)
 }
 
@@ -402,7 +389,7 @@ pub unsafe extern "C" fn oxidd_bcdd_or(lhs: oxidd_bcdd_t, rhs: oxidd_bcdd_t) -> 
 ///
 /// @returns  The BCDD function with its own reference count
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_nand(lhs: oxidd_bcdd_t, rhs: oxidd_bcdd_t) -> oxidd_bcdd_t {
+pub unsafe extern "C" fn oxidd_bcdd_nand(lhs: bcdd_t, rhs: bcdd_t) -> bcdd_t {
     op2(lhs, rhs, BCDDFunction::nand)
 }
 
@@ -412,7 +399,7 @@ pub unsafe extern "C" fn oxidd_bcdd_nand(lhs: oxidd_bcdd_t, rhs: oxidd_bcdd_t) -
 ///
 /// @returns  The BCDD function with its own reference count
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_nor(lhs: oxidd_bcdd_t, rhs: oxidd_bcdd_t) -> oxidd_bcdd_t {
+pub unsafe extern "C" fn oxidd_bcdd_nor(lhs: bcdd_t, rhs: bcdd_t) -> bcdd_t {
     op2(lhs, rhs, BCDDFunction::nor)
 }
 
@@ -422,7 +409,7 @@ pub unsafe extern "C" fn oxidd_bcdd_nor(lhs: oxidd_bcdd_t, rhs: oxidd_bcdd_t) ->
 ///
 /// @returns  The BCDD function with its own reference count
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_xor(lhs: oxidd_bcdd_t, rhs: oxidd_bcdd_t) -> oxidd_bcdd_t {
+pub unsafe extern "C" fn oxidd_bcdd_xor(lhs: bcdd_t, rhs: bcdd_t) -> bcdd_t {
     op2(lhs, rhs, BCDDFunction::xor)
 }
 
@@ -432,7 +419,7 @@ pub unsafe extern "C" fn oxidd_bcdd_xor(lhs: oxidd_bcdd_t, rhs: oxidd_bcdd_t) ->
 ///
 /// @returns  The BCDD function with its own reference count
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_equiv(lhs: oxidd_bcdd_t, rhs: oxidd_bcdd_t) -> oxidd_bcdd_t {
+pub unsafe extern "C" fn oxidd_bcdd_equiv(lhs: bcdd_t, rhs: bcdd_t) -> bcdd_t {
     op2(lhs, rhs, BCDDFunction::equiv)
 }
 
@@ -442,7 +429,7 @@ pub unsafe extern "C" fn oxidd_bcdd_equiv(lhs: oxidd_bcdd_t, rhs: oxidd_bcdd_t) 
 ///
 /// @returns  The BCDD function with its own reference count
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_imp(lhs: oxidd_bcdd_t, rhs: oxidd_bcdd_t) -> oxidd_bcdd_t {
+pub unsafe extern "C" fn oxidd_bcdd_imp(lhs: bcdd_t, rhs: bcdd_t) -> bcdd_t {
     op2(lhs, rhs, BCDDFunction::imp)
 }
 
@@ -452,10 +439,7 @@ pub unsafe extern "C" fn oxidd_bcdd_imp(lhs: oxidd_bcdd_t, rhs: oxidd_bcdd_t) ->
 ///
 /// @returns  The BCDD function with its own reference count
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_imp_strict(
-    lhs: oxidd_bcdd_t,
-    rhs: oxidd_bcdd_t,
-) -> oxidd_bcdd_t {
+pub unsafe extern "C" fn oxidd_bcdd_imp_strict(lhs: bcdd_t, rhs: bcdd_t) -> bcdd_t {
     op2(lhs, rhs, BCDDFunction::imp_strict)
 }
 
@@ -466,10 +450,10 @@ pub unsafe extern "C" fn oxidd_bcdd_imp_strict(
 /// @returns  The BCDD function with its own reference count
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_bcdd_ite(
-    cond: oxidd_bcdd_t,
-    then_case: oxidd_bcdd_t,
-    else_case: oxidd_bcdd_t,
-) -> oxidd_bcdd_t {
+    cond: bcdd_t,
+    then_case: bcdd_t,
+    else_case: bcdd_t,
+) -> bcdd_t {
     op3(cond, then_case, else_case, BCDDFunction::ite)
 }
 
@@ -486,11 +470,11 @@ pub unsafe extern "C" fn oxidd_bcdd_ite(
 /// @returns  The BCDD function with its own reference count
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_bcdd_substitute(
-    f: oxidd_bcdd_t,
-    substitution: *const oxidd_bcdd_substitution_t,
-) -> oxidd_bcdd_t {
+    f: bcdd_t,
+    substitution: *const bcdd_substitution_t,
+) -> bcdd_t {
     if substitution.is_null() {
-        return oxidd_bcdd_t::INVALID;
+        return bcdd_t::INVALID;
     }
     f.get()
         .and_then(|f| {
@@ -510,7 +494,7 @@ pub unsafe extern "C" fn oxidd_bcdd_substitute(
 /// substitution is applied multiple times. We would like to re-use apply
 /// cache entries across these operations, and therefore, we need a compact
 /// identifier for the substitution.
-pub struct oxidd_bcdd_substitution_t {
+pub struct bcdd_substitution_t {
     id: u32,
     pairs: Vec<(BCDDFunction, BCDDFunction)>,
 }
@@ -525,10 +509,8 @@ pub struct oxidd_bcdd_substitution_t {
 ///
 /// @returns  The substitution, to be freed via oxidd_bcdd_substitution_free()
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_substitution_new(
-    capacity: usize,
-) -> *mut oxidd_bcdd_substitution_t {
-    Box::into_raw(Box::new(oxidd_bcdd_substitution_t {
+pub unsafe extern "C" fn oxidd_bcdd_substitution_new(capacity: usize) -> *mut bcdd_substitution_t {
+    Box::into_raw(Box::new(bcdd_substitution_t {
         id: oxidd_core::util::new_substitution_id(),
         pairs: Vec::with_capacity(capacity),
     }))
@@ -546,9 +528,9 @@ pub unsafe extern "C" fn oxidd_bcdd_substitution_new(
 /// incorrect results when applying the substitution again.
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_bcdd_substitution_add_pair(
-    substitution: *mut oxidd_bcdd_substitution_t,
-    var: oxidd_bcdd_t,
-    replacement: oxidd_bcdd_t,
+    substitution: *mut bcdd_substitution_t,
+    var: bcdd_t,
+    replacement: bcdd_t,
 ) {
     assert!(!substitution.is_null(), "substitution must not be NULL");
     let v = var.get().expect("the variable function is invalid");
@@ -564,9 +546,7 @@ pub unsafe extern "C" fn oxidd_bcdd_substitution_add_pair(
 ///
 /// If `substitution` is `NULL`, this is a no-op.
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_substitution_free(
-    substitution: *mut oxidd_bcdd_substitution_t,
-) {
+pub unsafe extern "C" fn oxidd_bcdd_substitution_free(substitution: *mut bcdd_substitution_t) {
     if !substitution.is_null() {
         drop(Box::from_raw(substitution))
     }
@@ -583,7 +563,7 @@ pub unsafe extern "C" fn oxidd_bcdd_substitution_free(
 ///
 /// @returns  The BCDD function with its own reference count
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_restrict(f: oxidd_bcdd_t, vars: oxidd_bcdd_t) -> oxidd_bcdd_t {
+pub unsafe extern "C" fn oxidd_bcdd_restrict(f: bcdd_t, vars: bcdd_t) -> bcdd_t {
     op2(f, vars, BCDDFunction::restrict)
 }
 
@@ -599,7 +579,7 @@ pub unsafe extern "C" fn oxidd_bcdd_restrict(f: oxidd_bcdd_t, vars: oxidd_bcdd_t
 ///
 /// @returns  The BCDD function with its own reference count
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_forall(f: oxidd_bcdd_t, var: oxidd_bcdd_t) -> oxidd_bcdd_t {
+pub unsafe extern "C" fn oxidd_bcdd_forall(f: bcdd_t, var: bcdd_t) -> bcdd_t {
     op2(f, var, BCDDFunction::forall)
 }
 
@@ -615,7 +595,7 @@ pub unsafe extern "C" fn oxidd_bcdd_forall(f: oxidd_bcdd_t, var: oxidd_bcdd_t) -
 ///
 /// @returns  The BCDD function with its own reference count
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_exist(f: oxidd_bcdd_t, var: oxidd_bcdd_t) -> oxidd_bcdd_t {
+pub unsafe extern "C" fn oxidd_bcdd_exist(f: bcdd_t, var: bcdd_t) -> bcdd_t {
     op2(f, var, BCDDFunction::exist)
 }
 
@@ -636,7 +616,7 @@ pub unsafe extern "C" fn oxidd_bcdd_exist(f: oxidd_bcdd_t, var: oxidd_bcdd_t) ->
 ///
 /// @returns  The BCDD function with its own reference count
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_unique(f: oxidd_bcdd_t, var: oxidd_bcdd_t) -> oxidd_bcdd_t {
+pub unsafe extern "C" fn oxidd_bcdd_unique(f: bcdd_t, var: bcdd_t) -> bcdd_t {
     op2(f, var, BCDDFunction::unique)
 }
 
@@ -648,7 +628,7 @@ pub unsafe extern "C" fn oxidd_bcdd_unique(f: oxidd_bcdd_t, var: oxidd_bcdd_t) -
 ///
 /// @returns  The node count including the two terminal nodes
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_node_count(f: oxidd_bcdd_t) -> usize {
+pub unsafe extern "C" fn oxidd_bcdd_node_count(f: bcdd_t) -> usize {
     f.get().expect(FUNC_UNWRAP_MSG).node_count()
 }
 
@@ -660,7 +640,7 @@ pub unsafe extern "C" fn oxidd_bcdd_node_count(f: oxidd_bcdd_t) -> usize {
 ///
 /// @returns  `true` iff there is a satisfying assignment for `f`
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_satisfiable(f: oxidd_bcdd_t) -> bool {
+pub unsafe extern "C" fn oxidd_bcdd_satisfiable(f: bcdd_t) -> bool {
     f.get().expect(FUNC_UNWRAP_MSG).satisfiable()
 }
 
@@ -672,7 +652,7 @@ pub unsafe extern "C" fn oxidd_bcdd_satisfiable(f: oxidd_bcdd_t) -> bool {
 ///
 /// @returns  `true` iff there are only satisfying assignments for `f`
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_valid(f: oxidd_bcdd_t) -> bool {
+pub unsafe extern "C" fn oxidd_bcdd_valid(f: bcdd_t) -> bool {
     f.get().expect(FUNC_UNWRAP_MSG).valid()
 }
 
@@ -685,10 +665,7 @@ pub unsafe extern "C" fn oxidd_bcdd_valid(f: oxidd_bcdd_t) -> bool {
 ///
 /// @returns  The number of satisfying assignments
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_sat_count_double(
-    f: oxidd_bcdd_t,
-    vars: oxidd_level_no_t,
-) -> f64 {
+pub unsafe extern "C" fn oxidd_bcdd_sat_count_double(f: bcdd_t, vars: LevelNo) -> f64 {
     f.get()
         .expect(FUNC_UNWRAP_MSG)
         .sat_count::<F64, BuildHasherDefault<FxHasher>>(vars, &mut Default::default())
@@ -706,7 +683,7 @@ pub unsafe extern "C" fn oxidd_bcdd_sat_count_double(
 ///           case, the assignment can be deallocated using
 ///           oxidd_assignment_free().
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_pick_cube(f: oxidd_bcdd_t) -> oxidd_assignment_t {
+pub unsafe extern "C" fn oxidd_bcdd_pick_cube(f: bcdd_t) -> assignment_t {
     let res = f.get().expect(FUNC_UNWRAP_MSG).pick_cube([], |_, _| false);
     match res {
         Some(mut v) => {
@@ -714,9 +691,9 @@ pub unsafe extern "C" fn oxidd_bcdd_pick_cube(f: oxidd_bcdd_t) -> oxidd_assignme
             let len = v.len();
             let data = v.as_mut_ptr() as _;
             std::mem::forget(v);
-            oxidd_assignment_t { data, len }
+            assignment_t { data, len }
         }
-        None => oxidd_assignment_t {
+        None => assignment_t {
             data: std::ptr::null_mut(),
             len: 0,
         },
@@ -725,9 +702,9 @@ pub unsafe extern "C" fn oxidd_bcdd_pick_cube(f: oxidd_bcdd_t) -> oxidd_assignme
 
 /// Pair of a BCDD function and a Boolean
 #[repr(C)]
-pub struct oxidd_bcdd_bool_pair_t {
+pub struct bcdd_bool_pair_t {
     /// The function
-    func: oxidd_bcdd_t,
+    func: bcdd_t,
     /// The Boolean value
     val: bool,
 }
@@ -748,8 +725,8 @@ pub struct oxidd_bcdd_bool_pair_t {
 /// @returns  `f` evaluated with `args`
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_bcdd_eval(
-    f: oxidd_bcdd_t,
-    args: *const oxidd_bcdd_bool_pair_t,
+    f: bcdd_t,
+    args: *const bcdd_bool_pair_t,
     num_args: usize,
 ) -> bool {
     let args = std::slice::from_raw_parts(args, num_args);
