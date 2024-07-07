@@ -62,7 +62,7 @@ struct ArcItem<T> {
 /// SAFETY: `id` must be a valid terminal ID for `store`
 unsafe fn retain<T>(store: &[UnsafeCell<Slot<T>>], id: usize) {
     // SAFETY: Since `id` is a valid terminal ID, it is `<= store.len()`.
-    // Futhermore, we have shared access to the referenced slot and the `Slot`
+    // Furthermore, we have shared access to the referenced slot and the `Slot`
     // is a `node`.
     let item = unsafe { &(*store.get_unchecked(id).get()).node };
     let old_rc = item.rc.fetch_add(1, Relaxed);
@@ -127,7 +127,7 @@ where
     #[inline]
     unsafe fn get_terminal(&self, id: usize) -> &T {
         // SAFETY: Since `id` is a valid terminal ID, it is
-        // `<= self.store.len()`. Futhermore, we have shared access to the
+        // `<= self.store.len()`. Furthermore, we have shared access to the
         // referenced `Slot` and the slot is a `node`.
         &unsafe { &(*self.store.get_unchecked(id).get()).node }.value
     }
@@ -141,7 +141,7 @@ where
     #[inline]
     unsafe fn release(&self, id: usize) {
         // SAFETY: Since `id` is a valid terminal ID, it is
-        // `<= self.store.len()`. Futhermore, we have shared access to the
+        // `<= self.store.len()`. Furthermore, we have shared access to the
         // referenced `Slot` and the slot is a `node`.
         let item = unsafe { &(*self.store.get_unchecked(id).get()).node };
         // Synchronizes-with the load in `Self::gc()`
