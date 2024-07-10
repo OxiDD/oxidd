@@ -16,49 +16,31 @@
 
 use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::hash::BuildHasherDefault;
-use std::hash::Hash;
-use std::hash::Hasher;
+use std::hash::{BuildHasherDefault, Hash, Hasher};
 use std::iter::FusedIterator;
 use std::marker::PhantomData;
-use std::mem::align_of;
-use std::mem::ManuallyDrop;
-use std::mem::MaybeUninit;
-use std::ptr::addr_of;
-use std::ptr::addr_of_mut;
-use std::ptr::NonNull;
+use std::mem::{align_of, ManuallyDrop, MaybeUninit};
+use std::ptr::{addr_of, addr_of_mut, NonNull};
+use std::sync::atomic::AtomicU32;
+use std::sync::atomic::Ordering::Relaxed;
 
-use arcslab::ArcSlab;
-use arcslab::ArcSlabRef;
-use arcslab::AtomicRefCounted;
-use arcslab::ExtHandle;
-use arcslab::IntHandle;
+use arcslab::{ArcSlab, ArcSlabRef, AtomicRefCounted, ExtHandle, IntHandle};
 use bitvec::bitvec;
 use bitvec::vec::BitVec;
 use linear_hashtbl::raw::RawTable;
-use oxidd_core::util::GCContainer;
 use parking_lot::Mutex;
 use parking_lot::MutexGuard;
 use rustc_hash::FxHasher;
 
 use oxidd_core::function::EdgeOfFunc;
-use oxidd_core::util::AbortOnDrop;
-use oxidd_core::util::AllocResult;
-use oxidd_core::util::Borrowed;
-use oxidd_core::util::DropWith;
-use oxidd_core::DiagramRules;
-use oxidd_core::HasApplyCache;
-use oxidd_core::InnerNode;
-use oxidd_core::LevelNo;
-use oxidd_core::Node;
-use oxidd_core::Tag;
+use oxidd_core::util::{AbortOnDrop, AllocResult, Borrowed, DropWith, GCContainer};
+use oxidd_core::{DiagramRules, HasApplyCache, InnerNode, LevelNo, Node, Tag};
 
 use crate::node::NodeBase;
 use crate::terminal_manager::TerminalManager;
 use crate::util;
 use crate::util::rwlock::RwLock;
-use crate::util::Invariant;
-use crate::util::TryLock;
+use crate::util::{Invariant, TryLock};
 
 // === Type Constructors =======================================================
 
@@ -179,6 +161,7 @@ where
     gc_ongoing: TryLock,
     reorder_count: u64,
     workers: rayon::ThreadPool,
+    split_depth: AtomicU32,
     phantom: PhantomData<(TM, R)>,
 }
 
@@ -292,6 +275,7 @@ where
             .build()
             .expect("Failed to build thread pool");
 
+        let split_depth = AtomicU32::new(auto_split_depth(&workers));
         let data = RwLock::new(Manager {
             unique_table: Vec::new(),
             data: ManuallyDrop::new(data),
@@ -299,6 +283,7 @@ where
             gc_ongoing: TryLock::new(),
             reorder_count: 0,
             workers,
+            split_depth,
             phantom: PhantomData,
         });
         unsafe { std::ptr::write(addr_of_mut!((*slot).manager), data) };
@@ -777,6 +762,15 @@ where
     }
 }
 
+fn auto_split_depth(workers: &rayon::ThreadPool) -> u32 {
+    let threads = workers.current_num_threads();
+    if threads > 1 {
+        (4096 * threads).ilog2()
+    } else {
+        0
+    }
+}
+
 impl<'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32> oxidd_core::WorkerManager
     for Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
 where
@@ -786,10 +780,30 @@ where
     R: DiagramRules<Edge<'id, N, ET, TAG_BITS>, N, TM::TerminalNode>,
     MD: DropWith<Edge<'id, N, ET, TAG_BITS>> + GCContainer<Self> + Send + Sync,
 {
+    #[inline]
     fn current_num_threads(&self) -> usize {
         self.workers.current_num_threads()
     }
 
+    #[inline(always)]
+    fn split_depth(&self) -> u32 {
+        self.split_depth.load(Relaxed)
+    }
+
+    fn set_split_depth(&self, depth: Option<u32>) {
+        let depth = match depth {
+            Some(d) => d,
+            None => auto_split_depth(&self.workers),
+        };
+        self.split_depth.store(depth, Relaxed);
+    }
+
+    #[inline]
+    fn install<RA: Send>(&self, op: impl FnOnce() -> RA + Send) -> RA {
+        self.workers.install(op)
+    }
+
+    #[inline]
     fn join<RA: Send, RB: Send>(
         &self,
         op_a: impl FnOnce() -> RA + Send,
@@ -798,10 +812,10 @@ where
         self.workers.join(op_a, op_b)
     }
 
-    fn broadcast<RES: Send>(
+    fn broadcast<RA: Send>(
         &self,
-        op: impl Fn(oxidd_core::BroadcastContext) -> RES + Sync,
-    ) -> Vec<RES> {
+        op: impl Fn(oxidd_core::BroadcastContext) -> RA + Sync,
+    ) -> Vec<RA> {
         self.workers.broadcast(|ctx| {
             op(oxidd_core::BroadcastContext {
                 index: ctx.index() as u32,

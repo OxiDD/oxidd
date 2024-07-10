@@ -142,9 +142,9 @@ pub mod mt {
 
     impl ParallelRecursor {
         pub fn new<M: WorkerManager>(manager: &M) -> Self {
-            let n = manager.current_num_threads();
-            let remaining_depth = if n > 1 { (4096 * n).ilog2() } else { 0 };
-            Self { remaining_depth }
+            Self {
+                remaining_depth: manager.split_depth(),
+            }
         }
     }
 

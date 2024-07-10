@@ -207,6 +207,16 @@ impl WorkerManager for DummyManager {
         rayon::current_num_threads()
     }
 
+    fn split_depth(&self) -> u32 {
+        42
+    }
+
+    fn set_split_depth(&self, _depth: Option<u32>) {}
+
+    fn install<R: Send>(&self, op: impl FnOnce() -> R + Send) -> R {
+        op()
+    }
+
     fn join<RA: Send, RB: Send>(
         &self,
         op_a: impl FnOnce() -> RA + Send,

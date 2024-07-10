@@ -14,43 +14,30 @@
 //! | `RC`         | Diagram Rules Type Constructor    |
 //! | `OP`         | Operation                         |
 
-use std::cell::Cell;
-use std::cell::UnsafeCell;
+use std::cell::{Cell, UnsafeCell};
 use std::cmp::Ordering;
-use std::hash::Hash;
-use std::hash::Hasher;
+use std::hash::{Hash, Hasher};
 use std::iter::FusedIterator;
 use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
+use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering::{Acquire, Relaxed};
 use std::sync::Arc;
 
 use bitvec::vec::BitVec;
 use crossbeam_utils::CachePadded;
 use linear_hashtbl::raw::RawTable;
-use oxidd_core::function::EdgeOfFunc;
-use oxidd_core::util::GCContainer;
-use parking_lot::Condvar;
-use parking_lot::Mutex;
-use parking_lot::MutexGuard;
-use parking_lot::RwLock;
+use parking_lot::{Condvar, Mutex, MutexGuard, RwLock};
 use rayon::ThreadPool;
 use rustc_hash::FxHasher;
 
-use oxidd_core::util::AbortOnDrop;
-use oxidd_core::util::AllocResult;
-use oxidd_core::util::Borrowed;
-use oxidd_core::util::DropWith;
-use oxidd_core::util::OutOfMemory;
-use oxidd_core::DiagramRules;
-use oxidd_core::InnerNode;
-use oxidd_core::LevelNo;
-use oxidd_core::Tag;
+use oxidd_core::function::EdgeOfFunc;
+use oxidd_core::util::{AbortOnDrop, AllocResult, Borrowed, DropWith, GCContainer, OutOfMemory};
+use oxidd_core::{DiagramRules, InnerNode, LevelNo, Tag};
 
 use crate::node::NodeBase;
 use crate::terminal_manager::TerminalManager;
-use crate::util::Invariant;
-use crate::util::TryLock;
+use crate::util::{Invariant, TryLock};
 
 // === Type Constructors =======================================================
 
@@ -285,6 +272,7 @@ where
     reorder_count: u64,
     gc_ongoing: TryLock,
     workers: ThreadPool,
+    split_depth: AtomicU32,
 }
 
 /// Type "constructor" for the manager from `InnerNodeCons` etc.
@@ -1088,6 +1076,15 @@ where
     }
 }
 
+fn auto_split_depth(workers: &rayon::ThreadPool) -> u32 {
+    let threads = workers.current_num_threads();
+    if threads > 1 {
+        (4096 * threads).ilog2()
+    } else {
+        0
+    }
+}
+
 impl<'id, N, ET, TM, R, MD, const TERMINALS: usize> oxidd_core::WorkerManager
     for Manager<'id, N, ET, TM, R, MD, TERMINALS>
 where
@@ -1102,6 +1099,24 @@ where
         self.workers.current_num_threads()
     }
 
+    #[inline(always)]
+    fn split_depth(&self) -> u32 {
+        self.split_depth.load(Relaxed)
+    }
+
+    fn set_split_depth(&self, depth: Option<u32>) {
+        let depth = match depth {
+            Some(d) => d,
+            None => auto_split_depth(&self.workers),
+        };
+        self.split_depth.store(depth, Relaxed);
+    }
+
+    #[inline]
+    fn install<RA: Send>(&self, op: impl FnOnce() -> RA + Send) -> RA {
+        self.workers.install(op)
+    }
+
     #[inline]
     fn join<RA: Send, RB: Send>(
         &self,
@@ -1112,10 +1127,10 @@ where
     }
 
     #[inline]
-    fn broadcast<RES: Send>(
+    fn broadcast<RA: Send>(
         &self,
-        op: impl Fn(oxidd_core::BroadcastContext) -> RES + Sync,
-    ) -> Vec<RES> {
+        op: impl Fn(oxidd_core::BroadcastContext) -> RA + Sync,
+    ) -> Vec<RA> {
         self.workers.broadcast(|ctx| {
             op(oxidd_core::BroadcastContext {
                 index: ctx.index() as u32,
@@ -2002,6 +2017,7 @@ pub fn new_manager<
         .thread_name(|i| format!("oxidd mi {i}")) // "mi" for "manager index"
         .build()
         .expect("could not build thread pool");
+    let split_depth = AtomicU32::new(auto_split_depth(&workers));
 
     let gc_lwm = inner_node_capacity / 100 * 90;
     let gc_hwm = inner_node_capacity / 100 * 95;
@@ -2027,6 +2043,7 @@ pub fn new_manager<
             reorder_count: 0,
             gc_ongoing: TryLock::new(),
             workers,
+            split_depth,
         }),
         terminal_manager: TMC::T::<'static>::with_capacity(terminal_node_capacity),
         gc_signal: (Mutex::new(GCSignal::RunGc), Condvar::new()),

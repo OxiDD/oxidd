@@ -299,6 +299,15 @@ where
     Ok(h)
 }
 
+fn apply_not<M, R: Recursor<M>>(manager: &M, rec: R, f: Borrowed<M::Edge>) -> AllocResult<M::Edge>
+where
+    M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, ZBDDOp> + HasZBDDCache<M::Edge>,
+    M::InnerNode: HasLevel,
+{
+    let taut = manager.zbdd_cache().tautology(0);
+    apply_diff(manager, rec, taut.borrowed(), f)
+}
+
 /// Recursively apply the symmetric difference operator to `f` and `g`
 fn apply_symm_diff<M, R: Recursor<M>>(
     manager: &M,
@@ -661,9 +670,7 @@ where
         manager: &Self::Manager<'id>,
         edge: &EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        let rec = SequentialRecursor;
-        let taut = manager.zbdd_cache().tautology(0);
-        apply_diff(manager, rec, taut.borrowed(), edge.borrowed())
+        apply_not(manager, SequentialRecursor, edge.borrowed())
     }
 
     #[inline]
@@ -955,9 +962,12 @@ pub mod mt {
             set: &EdgeOfFunc<'id, Self>,
             var: &EdgeOfFunc<'id, Self>,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let rec = ParallelRecursor::new(manager);
-            let var_level = singleton_level(manager, var);
-            subset::<_, _, 0>(manager, rec, set.borrowed(), var.borrowed(), var_level)
+            let (set, var) = (set.borrowed(), var.borrowed());
+            manager.install(move || {
+                let rec = ParallelRecursor::new(manager);
+                let var_level = singleton_level(manager, &var);
+                subset::<_, _, 0>(manager, rec, set, var, var_level)
+            })
         }
 
         #[inline]
@@ -966,9 +976,12 @@ pub mod mt {
             set: &EdgeOfFunc<'id, Self>,
             var: &EdgeOfFunc<'id, Self>,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let rec = ParallelRecursor::new(manager);
-            let var_level = singleton_level(manager, var);
-            subset::<_, _, 1>(manager, rec, set.borrowed(), var.borrowed(), var_level)
+            let (set, var) = (set.borrowed(), var.borrowed());
+            manager.install(move || {
+                let rec = ParallelRecursor::new(manager);
+                let var_level = singleton_level(manager, &var);
+                subset::<_, _, 1>(manager, rec, set, var, var_level)
+            })
         }
 
         #[inline]
@@ -977,9 +990,12 @@ pub mod mt {
             set: &EdgeOfFunc<'id, Self>,
             var: &EdgeOfFunc<'id, Self>,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let rec = ParallelRecursor::new(manager);
-            let var_level = singleton_level(manager, var);
-            subset::<_, _, -1>(manager, rec, set.borrowed(), var.borrowed(), var_level)
+            let (set, var) = (set.borrowed(), var.borrowed());
+            manager.install(move || {
+                let rec = ParallelRecursor::new(manager);
+                let var_level = singleton_level(manager, &var);
+                subset::<_, _, -1>(manager, rec, set, var, var_level)
+            })
         }
 
         #[inline]
@@ -988,8 +1004,8 @@ pub mod mt {
             lhs: &EdgeOfFunc<'id, Self>,
             rhs: &EdgeOfFunc<'id, Self>,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let rec = ParallelRecursor::new(manager);
-            apply_union(manager, rec, lhs.borrowed(), rhs.borrowed())
+            let (lhs, rhs) = (lhs.borrowed(), rhs.borrowed());
+            manager.install(move || apply_union(manager, ParallelRecursor::new(manager), lhs, rhs))
         }
 
         #[inline]
@@ -998,8 +1014,8 @@ pub mod mt {
             lhs: &EdgeOfFunc<'id, Self>,
             rhs: &EdgeOfFunc<'id, Self>,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let rec = ParallelRecursor::new(manager);
-            apply_intsec(manager, rec, lhs.borrowed(), rhs.borrowed())
+            let (lhs, rhs) = (lhs.borrowed(), rhs.borrowed());
+            manager.install(move || apply_intsec(manager, ParallelRecursor::new(manager), lhs, rhs))
         }
 
         #[inline]
@@ -1008,8 +1024,8 @@ pub mod mt {
             lhs: &EdgeOfFunc<'id, Self>,
             rhs: &EdgeOfFunc<'id, Self>,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let rec = ParallelRecursor::new(manager);
-            apply_diff(manager, rec, lhs.borrowed(), rhs.borrowed())
+            let (lhs, rhs) = (lhs.borrowed(), rhs.borrowed());
+            manager.install(move || apply_diff(manager, ParallelRecursor::new(manager), lhs, rhs))
         }
     }
 
@@ -1062,9 +1078,12 @@ pub mod mt {
             manager: &Self::Manager<'id>,
             edge: &EdgeOfFunc<'id, Self>,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let rec = ParallelRecursor::new(manager);
-            let taut = manager.zbdd_cache().tautology(0);
-            apply_diff(manager, rec, taut.borrowed(), edge.borrowed())
+            let edge = edge.borrowed();
+            manager.install(move || {
+                let rec = ParallelRecursor::new(manager);
+                let taut = manager.zbdd_cache().tautology(0);
+                apply_diff(manager, rec, taut.borrowed(), edge)
+            })
         }
 
         #[inline]
@@ -1073,8 +1092,8 @@ pub mod mt {
             lhs: &EdgeOfFunc<'id, Self>,
             rhs: &EdgeOfFunc<'id, Self>,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let rec = ParallelRecursor::new(manager);
-            apply_intsec(manager, rec, lhs.borrowed(), rhs.borrowed())
+            let (lhs, rhs) = (lhs.borrowed(), rhs.borrowed());
+            manager.install(move || apply_intsec(manager, ParallelRecursor::new(manager), lhs, rhs))
         }
         #[inline]
         fn or_edge<'id>(
@@ -1082,8 +1101,8 @@ pub mod mt {
             lhs: &EdgeOfFunc<'id, Self>,
             rhs: &EdgeOfFunc<'id, Self>,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let rec = ParallelRecursor::new(manager);
-            apply_union(manager, rec, lhs.borrowed(), rhs.borrowed())
+            let (lhs, rhs) = (lhs.borrowed(), rhs.borrowed());
+            manager.install(move || apply_union(manager, ParallelRecursor::new(manager), lhs, rhs))
         }
         #[inline]
         fn nand_edge<'id>(
@@ -1091,8 +1110,12 @@ pub mod mt {
             lhs: &EdgeOfFunc<'id, Self>,
             rhs: &EdgeOfFunc<'id, Self>,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let and = Self::and_edge(manager, lhs, rhs)?;
-            Self::not_edge(manager, &*EdgeDropGuard::new(manager, and))
+            let (lhs, rhs) = (lhs.borrowed(), rhs.borrowed());
+            manager.install(move || {
+                let rec = ParallelRecursor::new(manager);
+                let and = EdgeDropGuard::new(manager, apply_intsec(manager, rec, lhs, rhs)?);
+                apply_not(manager, rec, and.borrowed())
+            })
         }
         #[inline]
         fn nor_edge<'id>(
@@ -1100,8 +1123,12 @@ pub mod mt {
             lhs: &EdgeOfFunc<'id, Self>,
             rhs: &EdgeOfFunc<'id, Self>,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let or = Self::or_edge(manager, lhs, rhs)?;
-            Self::not_edge(manager, &*EdgeDropGuard::new(manager, or))
+            let (lhs, rhs) = (lhs.borrowed(), rhs.borrowed());
+            manager.install(move || {
+                let rec = ParallelRecursor::new(manager);
+                let or = EdgeDropGuard::new(manager, apply_union(manager, rec, lhs, rhs)?);
+                apply_not(manager, rec, or.borrowed())
+            })
         }
         #[inline]
         fn xor_edge<'id>(
@@ -1109,8 +1136,9 @@ pub mod mt {
             lhs: &EdgeOfFunc<'id, Self>,
             rhs: &EdgeOfFunc<'id, Self>,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let rec = ParallelRecursor::new(manager);
-            apply_symm_diff(manager, rec, lhs.borrowed(), rhs.borrowed())
+            let (lhs, rhs) = (lhs.borrowed(), rhs.borrowed());
+            manager
+                .install(move || apply_symm_diff(manager, ParallelRecursor::new(manager), lhs, rhs))
         }
         #[inline]
         fn equiv_edge<'id>(
@@ -1118,8 +1146,12 @@ pub mod mt {
             lhs: &EdgeOfFunc<'id, Self>,
             rhs: &EdgeOfFunc<'id, Self>,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let xor = Self::xor_edge(manager, lhs, rhs)?;
-            Self::not_edge(manager, &*EdgeDropGuard::new(manager, xor))
+            let (lhs, rhs) = (lhs.borrowed(), rhs.borrowed());
+            manager.install(move || {
+                let rec = ParallelRecursor::new(manager);
+                let xor = EdgeDropGuard::new(manager, apply_symm_diff(manager, rec, lhs, rhs)?);
+                apply_not(manager, rec, xor.borrowed())
+            })
         }
         #[inline]
         fn imp_edge<'id>(
@@ -1127,7 +1159,12 @@ pub mod mt {
             lhs: &EdgeOfFunc<'id, Self>,
             rhs: &EdgeOfFunc<'id, Self>,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            Self::ite_edge(manager, lhs, rhs, manager.zbdd_cache().tautology(0))
+            let (lhs, rhs) = (lhs.borrowed(), rhs.borrowed());
+            manager.install(move || {
+                let rec = ParallelRecursor::new(manager);
+                let taut = manager.zbdd_cache().tautology(0);
+                apply_ite(manager, rec, lhs, rhs, taut.borrowed())
+            })
         }
         #[inline]
         fn imp_strict_edge<'id>(
@@ -1135,8 +1172,8 @@ pub mod mt {
             lhs: &EdgeOfFunc<'id, Self>,
             rhs: &EdgeOfFunc<'id, Self>,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let rec = ParallelRecursor::new(manager);
-            apply_diff(manager, rec, rhs.borrowed(), lhs.borrowed())
+            let (lhs, rhs) = (lhs.borrowed(), rhs.borrowed());
+            manager.install(move || apply_diff(manager, ParallelRecursor::new(manager), rhs, lhs))
         }
 
         #[inline]
@@ -1146,8 +1183,8 @@ pub mod mt {
             g: &EdgeOfFunc<'id, Self>,
             h: &EdgeOfFunc<'id, Self>,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let rec = ParallelRecursor::new(manager);
-            apply_ite(manager, rec, f.borrowed(), g.borrowed(), h.borrowed())
+            let (f, g, h) = (f.borrowed(), g.borrowed(), h.borrowed());
+            manager.install(move || apply_ite(manager, ParallelRecursor::new(manager), f, g, h))
         }
 
         #[inline]

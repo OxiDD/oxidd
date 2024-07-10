@@ -15,7 +15,7 @@ use oxidd::zbdd::ZBDDFunction;
 use oxidd::zbdd::ZBDDManagerRef;
 use oxidd::{
     BooleanFunction, BooleanFunctionQuant, BooleanOperator, BooleanVecSet, Function, FunctionSubst,
-    ManagerRef,
+    ManagerRef, WorkerManager,
 };
 
 use boolean_prop::Prop;
@@ -857,6 +857,7 @@ fn bdd_all_boolean_functions_2vars_t1() {
 #[cfg_attr(miri, ignore)]
 fn bdd_all_boolean_functions_2vars_t2() {
     let mref = oxidd::bdd::new_manager(65536, 1024, 2);
+    mref.with_manager_shared(|manager| manager.set_split_depth(Some(u32::MAX)));
     let vars = bdd_vars::<BDDFunction>(&mref, 2);
     let test = TestAllBooleanFunctions::init(&mref, &vars, &vars);
     test.basic();
@@ -879,6 +880,7 @@ fn bcdd_all_boolean_functions_2vars_t1() {
 #[cfg_attr(miri, ignore)]
 fn bcdd_all_boolean_functions_2vars_t2() {
     let mref = oxidd::bcdd::new_manager(65536, 1024, 2);
+    mref.with_manager_shared(|manager| manager.set_split_depth(Some(u32::MAX)));
     let vars = bdd_vars::<BCDDFunction>(&mref, 2);
     let test = TestAllBooleanFunctions::init(&mref, &vars, &vars);
     test.basic();
@@ -899,6 +901,7 @@ fn zbdd_all_boolean_functions_2vars_t1() {
 #[cfg_attr(miri, ignore)]
 fn zbdd_all_boolean_functions_2vars_t2() {
     let mref = oxidd::zbdd::new_manager(65536, 1024, 2);
+    mref.with_manager_shared(|manager| manager.set_split_depth(Some(u32::MAX)));
     let (singletons, vars) = zbdd_singletons_vars(&mref, 2);
     let test = TestAllBooleanFunctions::init(&mref, &vars, &singletons);
     test.basic();

@@ -947,7 +947,25 @@ pub trait WorkerManager: Manager + Sync {
     /// Get the current number of threads
     fn current_num_threads(&self) -> usize;
 
-    /// Execute `op_a` and `op_b` in parallel
+    /// Get the recursion depth up to which operations are split
+    fn split_depth(&self) -> u32;
+
+    /// Set the recursion depth up to which operations are split
+    ///
+    /// `None` means that the implementation should automatically choose the
+    /// depth. `Some(0)` means that no operations are split.
+    fn set_split_depth(&self, depth: Option<u32>);
+
+    /// Execute `op` within the thread pool
+    ///
+    /// If this method is called from another thread pool, it may cooperatively
+    /// yield execution to that pool until `op` has finished.
+    fn install<R: Send>(&self, op: impl FnOnce() -> R + Send) -> R;
+
+    /// Execute `op_a` and `op_b` in parallel within the thread pool
+    ///
+    /// Note that the split depth has no influence on this method. Checking
+    /// whether to split an operation must be done externally.
     fn join<RA: Send, RB: Send>(
         &self,
         op_a: impl FnOnce() -> RA + Send,
