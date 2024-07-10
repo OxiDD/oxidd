@@ -14,8 +14,8 @@ use bitvec::prelude::*;
 use clap::{Parser, ValueEnum};
 use num_bigint::BigUint;
 use oxidd::util::{AllocResult, SatCountCache};
-use oxidd::{BooleanFunction, Edge, LevelNo, Manager};
-use oxidd_core::{ApplyCache, HasApplyCache, HasLevel, ManagerRef, WorkerManager};
+use oxidd::{BooleanFunction, Edge, LevelNo, Manager, WorkerManager};
+use oxidd_core::{ApplyCache, HasApplyCache, HasLevel, ManagerRef};
 use oxidd_dump::{dddmp, dot};
 use oxidd_parser::load_file::load_file;
 use oxidd_parser::{ParseOptionsBuilder, Problem, Prop, Tree, VarSet};
@@ -91,6 +91,17 @@ struct Cli {
     #[arg(long)]
     count_models: bool,
 
+    /// Run multiple operations concurrently
+    #[arg(long)]
+    parallel: bool,
+
+    /// Split recursive operations into multiple tasks up to the specified
+    /// recursion depth
+    ///
+    /// If omitted, a reasonable value is determined automatically
+    #[arg(long)]
+    operation_split_depth: Option<u32>,
+
     /// Number of threads to use for concurrent operations
     ///
     /// A value of 0 means automatic detection
@@ -122,26 +133,23 @@ enum DDType {
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, ValueEnum)]
 enum CNFBuildOrder {
-    /// Sequential, using left-deep bracketing of the conjunctions in the input
-    /// order
+    /// left-deep bracketing of the conjunctions in the input
+    /// order. Incompatible with --parallel.
     LeftDeep,
-    /// Sequential, using (nearly) balanced bracketing of the conjunctions in
-    /// the input order
+    /// Approximately balanced bracketing of the conjunctions in the input order
     Balanced,
-    /// Multithreaded, using Rayon's reduce method. The bracketing is
-    /// non-deterministic but the order is kept as in the input
+    /// Non-deterministic bracketing as a result of work stealing (using Rayon's
+    /// reduce method) but the order is kept as in the input. Requires
+    /// --parallel.
     WorkStealing,
     /// Bracketing tree and order from the comment lines in the input file
     Tree,
-    /// Like tree, but with parallel construction
-    TreeParallel,
 }
 
 impl CNFBuildOrder {
     /// Whether an externally supplied clause order is necessary
     fn needs_clause_order(self) -> bool {
-        use CNFBuildOrder::*;
-        matches!(self, Tree | TreeParallel)
+        self == CNFBuildOrder::Tree
     }
 }
 
@@ -252,17 +260,56 @@ where
         iter: impl IntoIterator<Item = T>,
         mut f: impl for<'a> FnMut(&'a T, &'a T) -> T,
     ) -> Option<T> {
-        let mut buf: Vec<T> = iter.into_iter().collect();
-        let mut step = 1;
-        while step < buf.len() {
-            let mut i = 0;
-            while i + step < buf.len() {
-                buf[i] = f(&buf[i], &buf[i + step]);
-                i += 2 * step;
+        // We use `Option<T>` such that we can drop the values as soon as possible
+        let mut leaves: Vec<Option<T>> = iter.into_iter().map(Some).collect();
+
+        fn rec<T, F: for<'a> FnMut(&'a T, &'a T) -> T>(
+            leaves: &mut [Option<T>],
+            f: &mut F,
+        ) -> Option<T> {
+            match leaves {
+                [] => None,
+                [l] => l.take(),
+                _ => {
+                    let (l, r) = leaves.split_at_mut(leaves.len() / 2);
+                    let l = rec(l, f);
+                    let r = rec(r, f);
+                    match (l, r) {
+                        (None, v) | (v, None) => v,
+                        (Some(l), Some(r)) => Some(f(&l, &r)),
+                    }
+                }
             }
-            step *= 2;
         }
-        buf.into_iter().next()
+
+        rec(&mut leaves, &mut f)
+    }
+
+    fn balanced_reduce_par<T: Send>(
+        iter: impl IntoParallelIterator<Item = T>,
+        f: impl for<'a> Fn(&'a T, &'a T) -> T + Send + Copy,
+    ) -> Option<T> {
+        // We use `Option<T>` such that we can drop the values as soon as possible
+        let mut leaves: Vec<Option<T>> = iter.into_par_iter().map(Some).collect();
+
+        fn rec<T: Send>(
+            leaves: &mut [Option<T>],
+            f: impl for<'a> Fn(&'a T, &'a T) -> T + Send + Copy,
+        ) -> Option<T> {
+            match leaves {
+                [] => None,
+                [l] => l.take(),
+                _ => {
+                    let (l, r) = leaves.split_at_mut(leaves.len() / 2);
+                    match rayon::join(move || rec(l, f), move || rec(r, f)) {
+                        (None, v) | (v, None) => v,
+                        (Some(l), Some(r)) => Some(f(&l, &r)),
+                    }
+                }
+            }
+        }
+
+        rec(&mut leaves, f)
     }
 
     fn clause_tree_rec<B: BooleanFunction>(
@@ -292,19 +339,14 @@ where
     ) -> Option<B> {
         match clause_order {
             Tree::Leaf(n) => Some(clauses[*n].clone()),
-            Tree::Inner(sub) => ParallelIterator::reduce(
+            Tree::Inner(sub) => balanced_reduce_par(
                 sub.into_par_iter()
-                    .map(|t| clause_tree_par_rec(clauses, t, profiler)),
-                || None,
-                |lhs: Option<B>, rhs: Option<B>| match (lhs, rhs) {
-                    (None, None) => None,
-                    (None, Some(f)) | (Some(f), None) => Some(f),
-                    (Some(lhs), Some(rhs)) => {
-                        let op_start = profiler.start_op();
-                        let conj = handle_oom!(lhs.and(&rhs));
-                        profiler.finish_op(op_start, &conj);
-                        Some(conj)
-                    }
+                    .filter_map(|t| clause_tree_par_rec(clauses, t, profiler)),
+                |lhs: &B, rhs: &B| {
+                    let op_start = profiler.start_op();
+                    let conj = handle_oom!(lhs.and(rhs));
+                    profiler.finish_op(op_start, &conj);
+                    conj
                 },
             ),
         }
@@ -324,6 +366,7 @@ where
             });
 
             mref.with_manager_shared(|manager| {
+                manager.set_split_depth(Some(0));
                 let clauses = cnf.clauses_mut();
                 PROGRESS.set_task(
                     format!("build clauses (problem {problem_no})"),
@@ -364,6 +407,7 @@ where
                     HDuration(profiler.elapsed_time())
                 );
 
+                manager.set_split_depth(cli.operation_split_depth);
                 PROGRESS.set_task(
                     format!("conjoin clauses (problem {problem_no})"),
                     clauses.len() - 1,
@@ -371,8 +415,8 @@ where
                 if clauses.is_empty() {
                     B::t(manager)
                 } else {
-                    match cli.cnf_build_order {
-                        CNFBuildOrder::LeftDeep => {
+                    match (cli.cnf_build_order, cli.parallel) {
+                        (CNFBuildOrder::LeftDeep, false) => {
                             let init = clauses[0].clone();
                             clauses[1..].iter().fold(init, |acc, f| {
                                 let op_start = profiler.start_op();
@@ -381,19 +425,31 @@ where
                                 res
                             })
                         }
-                        CNFBuildOrder::Balanced => balanced_reduce(clauses, |lhs: &B, rhs: &B| {
-                            let op_start = profiler.start_op();
-                            let conj = handle_oom!(lhs.and(rhs));
-                            profiler.finish_op(op_start, &conj);
-                            conj
-                        })
-                        .unwrap(),
-                        CNFBuildOrder::WorkStealing => ParallelIterator::reduce(
+                        (CNFBuildOrder::LeftDeep, true) => unreachable!(),
+                        (CNFBuildOrder::Balanced, false) => {
+                            balanced_reduce(clauses, |lhs: &B, rhs: &B| {
+                                let op_start = profiler.start_op();
+                                let conj = handle_oom!(lhs.and(rhs));
+                                profiler.finish_op(op_start, &conj);
+                                conj
+                            })
+                            .unwrap()
+                        }
+                        (CNFBuildOrder::Balanced, true) => {
+                            balanced_reduce_par(clauses, |lhs: &B, rhs: &B| {
+                                let op_start = profiler.start_op();
+                                let conj = handle_oom!(lhs.and(rhs));
+                                profiler.finish_op(op_start, &conj);
+                                conj
+                            })
+                            .unwrap()
+                        }
+                        (CNFBuildOrder::WorkStealing, false) => unreachable!(),
+                        (CNFBuildOrder::WorkStealing, true) => ParallelIterator::reduce(
                             clauses.into_par_iter().map(|c| Some(c)),
                             || None,
                             |lhs: Option<B>, rhs: Option<B>| match (lhs, rhs) {
-                                (None, None) => None,
-                                (None, Some(f)) | (Some(f), None) => Some(f),
+                                (None, v) | (v, None) => v,
                                 (Some(lhs), Some(rhs)) => {
                                     let op_start = profiler.start_op();
                                     let res = handle_oom!(lhs.and(&rhs));
@@ -403,11 +459,11 @@ where
                             },
                         )
                         .unwrap(),
-                        CNFBuildOrder::Tree => {
+                        (CNFBuildOrder::Tree, false) => {
                             clause_tree_rec(&clauses, cnf.clause_order().unwrap(), &profiler)
                                 .unwrap()
                         }
-                        CNFBuildOrder::TreeParallel => {
+                        (CNFBuildOrder::Tree, true) => {
                             clause_tree_par_rec(&clauses, cnf.clause_order().unwrap(), &profiler)
                                 .unwrap()
                         }
@@ -424,7 +480,10 @@ where
             let vars = mref.with_manager_exclusive(|manager| {
                 make_vars::<B>(manager, prop.vars(), cli.read_var_order, var_name_map)
             });
-            mref.with_manager_shared(|manager| prop_rec(manager, prop.formula(), &vars, &profiler))
+            mref.with_manager_shared(|manager| {
+                manager.set_split_depth(cli.operation_split_depth);
+                prop_rec(manager, prop.formula(), &vars, &profiler)
+            })
         }
 
         _ => todo!(),
@@ -686,6 +745,18 @@ where
 
 fn main() {
     let cli = Cli::parse();
+
+    match (cli.cnf_build_order, cli.parallel) {
+        (CNFBuildOrder::LeftDeep, true) => {
+            eprintln!("--cnf-build-order=left-deep and --parallel are incompatible");
+            std::process::exit(1);
+        }
+        (CNFBuildOrder::WorkStealing, false) => {
+            eprintln!("--cnf-build-order=work-stealing requires --parallel");
+            std::process::exit(1);
+        }
+        _ => {}
+    }
 
     let mut inner_node_capacity = cli.inner_node_capacity;
 
