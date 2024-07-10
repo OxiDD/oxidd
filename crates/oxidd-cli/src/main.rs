@@ -18,7 +18,7 @@ use oxidd::{BooleanFunction, Edge, LevelNo, Manager};
 use oxidd_core::{ApplyCache, HasApplyCache, HasLevel, ManagerRef, WorkerManager};
 use oxidd_dump::{dddmp, dot};
 use oxidd_parser::load_file::load_file;
-use oxidd_parser::{ClauseOrderTree, ParseOptionsBuilder, Problem, Prop, Var};
+use oxidd_parser::{ParseOptionsBuilder, Problem, Prop, Tree, VarSet};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rustc_hash::{FxHashMap, FxHasher};
 
@@ -147,24 +147,38 @@ impl CNFBuildOrder {
 
 fn make_vars<'id, B: BooleanFunction>(
     manager: &mut B::Manager<'id>,
-    num_vars: u32,
-    var_order: Option<&[(Var, String)]>,
+    var_set: &VarSet,
+    use_order: bool,
     name_map: &mut FxHashMap<String, B>,
 ) -> Vec<B>
 where
     B::Manager<'id>: WorkerManager,
     <B::Manager<'id> as Manager>::InnerNode: HasLevel,
 {
-    if let Some(var_order) = var_order {
-        debug_assert_eq!(var_order.len(), num_vars as usize);
+    let num_vars = var_set.len();
+    if num_vars >= LevelNo::MAX as usize {
+        eprintln!("error: too many variables");
+        std::process::exit(1);
+    }
+
+    if use_order {
+        let Some(var_order) = var_set.order() else {
+            eprintln!("error: variable order not given");
+            std::process::exit(1);
+        };
+
         let mut vars: Vec<Option<B>> = vec![None; var_order.len()];
-        let mut order = Vec::with_capacity(num_vars as usize);
-        for (var, name) in var_order {
+        let mut order = Vec::with_capacity(num_vars);
+        for &var in var_order {
+            let name = match var_set.name(var) {
+                Some(s) => s.to_string(),
+                None => var.to_string(),
+            };
             let f = name_map
-                .entry(name.to_string())
+                .entry(name)
                 .or_insert_with(|| handle_oom!(B::new_var(manager)))
                 .clone();
-            vars[*var] = Some(f.clone());
+            vars[var] = Some(f.clone());
             order.push(f);
         }
         let vars: Vec<B> = vars
@@ -190,7 +204,7 @@ fn make_bool_dd<B>(
     problem: Problem,
     problem_no: usize,
     cli: &Cli,
-    vars: &mut FxHashMap<String, B>,
+    var_name_map: &mut FxHashMap<String, B>,
 ) -> B
 where
     B: BooleanFunction + Send + Sync + 'static,
@@ -253,12 +267,12 @@ where
 
     fn clause_tree_rec<B: BooleanFunction>(
         clauses: &[B],
-        clause_order: &ClauseOrderTree,
+        clause_order: &Tree<usize>,
         profiler: &Profiler,
     ) -> Option<B> {
         match clause_order {
-            ClauseOrderTree::Clause(n) => Some(clauses[*n].clone()),
-            ClauseOrderTree::Conj(sub) => balanced_reduce(
+            Tree::Leaf(n) => Some(clauses[*n].clone()),
+            Tree::Inner(sub) => balanced_reduce(
                 sub.iter()
                     .filter_map(|t| clause_tree_rec(clauses, t, profiler)),
                 |lhs: &B, rhs: &B| {
@@ -273,12 +287,12 @@ where
 
     fn clause_tree_par_rec<B: BooleanFunction + Send + Sync>(
         clauses: &[B],
-        clause_order: &ClauseOrderTree,
+        clause_order: &Tree<usize>,
         profiler: &Profiler,
     ) -> Option<B> {
         match clause_order {
-            ClauseOrderTree::Clause(n) => Some(clauses[*n].clone()),
-            ClauseOrderTree::Conj(sub) => ParallelIterator::reduce(
+            Tree::Leaf(n) => Some(clauses[*n].clone()),
+            Tree::Inner(sub) => ParallelIterator::reduce(
                 sub.into_par_iter()
                     .map(|t| clause_tree_par_rec(clauses, t, profiler)),
                 || None,
@@ -296,41 +310,17 @@ where
         }
     }
 
-    let check_var_count = move |vars: usize| {
-        if vars >= LevelNo::MAX as usize {
-            eprintln!("error: too many variables");
-            std::process::exit(1);
-        }
-        vars as LevelNo
-    };
-    #[inline]
-    fn check_var_order(
-        var_order: Option<&[(Var, String)]>,
-        read_var_order: bool,
-    ) -> Option<&[(Var, String)]> {
-        if !read_var_order {
-            None
-        } else if var_order.is_some() {
-            var_order
-        } else {
-            eprintln!("error: variable order not given");
-            std::process::exit(1);
-        }
-    }
-
     let profiler = Profiler::new(cli.size_profile.get(problem_no));
 
     let func = match problem {
         Problem::CNF(mut cnf) => {
-            let num_vars = check_var_count(cnf.vars());
-            let var_order = check_var_order(cnf.var_order(), cli.read_var_order);
             if cli.cnf_build_order.needs_clause_order() && cnf.clause_order().is_none() {
                 eprintln!("error: clause order not given");
                 std::process::exit(1);
             }
 
             let vars = mref.with_manager_exclusive(|manager| {
-                make_vars::<B>(manager, num_vars, var_order, vars)
+                make_vars::<B>(manager, cnf.vars(), cli.read_var_order, var_name_map)
             });
 
             mref.with_manager_shared(|manager| {
@@ -431,11 +421,8 @@ where
                 "build propositional formula",
                 prop_inner_nodes(prop.formula()),
             );
-            let num_vars = check_var_count(prop.vars());
-            let var_order = check_var_order(prop.var_order(), cli.read_var_order);
-
             let vars = mref.with_manager_exclusive(|manager| {
-                make_vars::<B>(manager, num_vars, var_order, vars)
+                make_vars::<B>(manager, prop.vars(), cli.read_var_order, var_name_map)
             });
             mref.with_manager_shared(|manager| prop_rec(manager, prop.formula(), &vars, &profiler))
         }

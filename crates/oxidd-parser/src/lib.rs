@@ -93,6 +93,24 @@ impl fmt::Debug for Literal {
     }
 }
 
+/// Rooted tree with values of type `T` at the leaves
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum Tree<T> {
+    /// Conjunction
+    Inner(Box<[Tree<T>]>),
+    /// Clause index (starting from 0)
+    Leaf(T),
+}
+
+impl<T: Clone> Tree<T> {
+    fn flatten_into(&self, into: &mut Vec<T>) {
+        match self {
+            Tree::Inner(sub) => sub.iter().for_each(|t| t.flatten_into(into)),
+            Tree::Leaf(v) => into.push(v.clone()),
+        }
+    }
+}
+
 /// Different problem kinds that may be returned by the problem parsers
 #[non_exhaustive]
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -105,20 +123,96 @@ pub enum Problem {
     AIG(Box<AIG>),
 }
 
+/// Variable set, potentially along with a variable order and variable names
+///
+/// The variable numbers are in range `0..self.len()`.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct VarSet {
+    /// Number of variables
+    len: usize,
+
+    /// Permutation of the variables. `order[0]` is supposed to be the number of
+    /// the top-most variable.
+    order: Vec<Var>,
+    /// If present, `order` is just the flattened tree
+    order_tree: Option<Tree<Var>>,
+
+    /// Mapping from variable numbers to optional names. Has minimal length,
+    /// i.e., `names.last() != Some(&None)`.
+    names: Vec<Option<String>>,
+}
+
+impl VarSet {
+    /// Create a variable set without a variable order and names
+    fn simple(n: usize) -> Self {
+        VarSet {
+            len: n,
+            order: Vec::new(),
+            order_tree: None,
+            names: Vec::new(),
+        }
+    }
+
+    /// Number of variables
+    #[inline(always)]
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Returns true iff the number of variables is 0
+    #[inline(always)]
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// Get the linear variable order, if present
+    ///
+    /// If [`self.order_tree()`][Self::order_tree] is not `None`, then it is the
+    /// flattened tree.
+    #[inline]
+    pub fn order(&self) -> Option<&[Var]> {
+        if self.len != self.order.len() {
+            None
+        } else {
+            Some(&self.order)
+        }
+    }
+
+    /// Get the tree of variable groups, if present
+    ///
+    /// This may be useful for, e.g., group sifting.
+    #[inline]
+    pub fn order_tree(&self) -> Option<&Tree<Var>> {
+        self.order_tree.as_ref()
+    }
+
+    /// Get the name for variable `var`
+    #[inline]
+    pub fn name(&self, var: Var) -> Option<&str> {
+        self.names.get(var)?.as_deref()
+    }
+
+    #[allow(unused)]
+    fn check_valid(&self) {
+        assert!(self.order.is_empty() || self.order.len() == self.len);
+        assert!(!self.order.is_empty() || self.order_tree.is_none());
+        assert_ne!(self.names.last(), Some(&None));
+    }
+}
+
 /// CNF problem instance
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct CNFProblem {
-    num_vars: usize,
-    var_order: Vec<(Var, String)>,
+    vars: VarSet,
     clauses: Vec2d<Literal>,
-    clause_order: Option<ClauseOrderTree>,
+    clause_order_tree: Option<Tree<usize>>,
 }
 
 impl CNFProblem {
-    /// Number of variables
+    /// Get the variable set
     #[inline(always)]
-    pub fn vars(&self) -> usize {
-        self.num_vars
+    pub fn vars(&self) -> &VarSet {
+        &self.vars
     }
 
     /// Get the clauses
@@ -131,60 +225,37 @@ impl CNFProblem {
         &mut self.clauses
     }
 
-    /// Variable order including variable names
+    /// Clause order tree
     ///
-    /// An entry `(1337, "Foo")` at index 42 means that the variable with number
-    /// 1337 in the problem should be placed at index 42.
+    /// Since conjunction is a commutative and associative operator, a list of
+    /// clauses may be processed in different ways. In some cases, `A ∧ (B ∧ C)`
+    /// may be much more efficient to process `(A ∧ B) ∧ C`.
     #[inline(always)]
-    pub fn var_order(&self) -> Option<&[(Var, String)]> {
-        if self.var_order.is_empty() {
-            None
-        } else {
-            Some(&self.var_order)
-        }
-    }
-
-    /// Binary tree representing the clause order
-    #[inline(always)]
-    pub fn clause_order(&self) -> Option<&ClauseOrderTree> {
-        self.clause_order.as_ref()
+    pub fn clause_order(&self) -> Option<&Tree<usize>> {
+        self.clause_order_tree.as_ref()
     }
 }
 
 /// Propositional formula problem
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct PropProblem {
-    num_vars: usize,
-    var_order: Vec<(Var, String)>,
+    vars: VarSet,
     xor: bool,
     eq: bool,
     ast: Prop,
 }
 
 impl PropProblem {
-    /// Number of variables
+    /// Get the variable set
     #[inline(always)]
-    pub fn vars(&self) -> usize {
-        self.num_vars
+    pub fn vars(&self) -> &VarSet {
+        &self.vars
     }
 
     /// Get the formula
     #[inline(always)]
     pub fn formula(&self) -> &Prop {
         &self.ast
-    }
-
-    /// Variable order including variable names
-    ///
-    /// An entry `(1337, "Foo")` at index 42 means that the variable with number
-    /// 1337 in the problem should be placed at index 42.
-    #[inline(always)]
-    pub fn var_order(&self) -> Option<&[(Var, String)]> {
-        if self.var_order.is_empty() {
-            None
-        } else {
-            Some(&self.var_order)
-        }
     }
 
     /// Whether the formula may contain exclusive disjunctions
@@ -197,20 +268,6 @@ impl PropProblem {
     pub fn eq_allowed(&self) -> bool {
         self.eq
     }
-}
-
-/// Binary clause order tree
-///
-/// Since conjunction is a commutative and associative operator, a list of
-/// clauses may be processed in different ways. In some cases, `A ∧ (B ∧ C)` may
-/// be much more efficient to process `(A ∧ B) ∧ C`. This is why
-/// [`Problem::CNF`] allows to specify a clause order.
-#[derive(Clone, PartialEq, Eq, Debug)]
-pub enum ClauseOrderTree {
-    /// Conjunction
-    Conj(Box<[ClauseOrderTree]>),
-    /// Clause index (starting from 0)
-    Clause(usize),
 }
 
 /// Propositional formula

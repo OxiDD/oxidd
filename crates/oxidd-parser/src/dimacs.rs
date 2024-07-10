@@ -8,12 +8,11 @@
 use bitvec::vec::BitVec;
 use rustc_hash::FxHashSet;
 
-use nom::branch::alt;
 use nom::bytes::complete::{tag, take, take_till};
 use nom::character::complete::{
     char, line_ending, multispace0, not_line_ending, space0, space1, u64,
 };
-use nom::combinator::{consumed, cut, eof, success, value};
+use nom::combinator::{consumed, cut, eof, value};
 use nom::error::{context, ContextError, ErrorKind, FromExternalError, ParseError};
 use nom::multi::many0_count;
 use nom::sequence::preceded;
@@ -22,9 +21,7 @@ use nom::{Err, IResult};
 use crate::util::{
     context_loc, fail, fail_with_contexts, line_span, trim_end, word, word_span, MAX_CAPACITY,
 };
-use crate::{ClauseOrderTree, ParseOptions, Problem, Var};
-
-type VarOrder = Vec<(Var, String)>;
+use crate::{ParseOptions, Problem, Tree, Var, VarSet};
 
 // spell-checker:ignore SATX,SATEX
 
@@ -50,39 +47,43 @@ fn comment<'a, E: ParseError<&'a [u8]>>(input: &'a [u8]) -> IResult<&'a [u8], ()
     Ok((input, ()))
 }
 
-/// Parse a clause order, e.g.:
+/// Parse a tree with unique `usize` leaves, e.g.: `[0, [2, 3, 1]]`
 ///
-/// `[0, [2, 3, 1]]`
-///
-/// Returns clause order (tree), as well as the maximal clause number and its
-/// span.
-fn clause_order<'a, E>(
-    input: &'a [u8],
-) -> IResult<&'a [u8], (ClauseOrderTree, (&'a [u8], usize)), E>
+/// Returns the tree, as well as the maximal number and its span.
+fn tree<'a, E>(
+    one_based: bool,
+) -> impl FnMut(&'a [u8]) -> IResult<&'a [u8], (Tree<usize>, (&'a [u8], usize)), E>
 where
     E: ParseError<&'a [u8]> + ContextError<&'a [u8]> + FromExternalError<&'a [u8], String>,
 {
     fn rec<'a, E: ParseError<&'a [u8]> + ContextError<&'a [u8]>>(
         input: &'a [u8],
         inserted: &mut BitVec,
-        buffer: &mut Vec<ClauseOrderTree>,
-    ) -> IResult<&'a [u8], (ClauseOrderTree, (&'a [u8], usize)), E> {
+        buffer: &mut Vec<Tree<usize>>,
+        one_based: bool,
+    ) -> IResult<&'a [u8], (Tree<usize>, (&'a [u8], usize)), E> {
         debug_assert!(space0::<_, E>(input).is_err());
 
         if let Ok((input, (span, n))) = consumed(u64::<_, E>)(input) {
             let (input, _) = space0(input)?;
 
             if n > MAX_CAPACITY {
-                return fail(span, "clause number too large");
+                return fail(span, "number too large");
             }
-            let n = n as usize;
+            let mut n = n as usize;
+            if one_based {
+                if n == 0 {
+                    return fail(span, "numbers must be greater than 0");
+                }
+                n -= 1;
+            }
             if inserted.len() <= n {
                 inserted.resize(n + 1, false);
             } else if inserted[n] {
-                return fail(span, "second occurrence of clause in order");
+                return fail(span, "second occurrence in tree");
             }
             inserted.set(n, true);
-            return Ok((input, (ClauseOrderTree::Clause(n), (span, n))));
+            return Ok((input, (Tree::Leaf(n), (span, n))));
         }
 
         if let Ok((mut input, _)) = char::<_, E>('[')(input) {
@@ -96,7 +97,7 @@ where
                 if let [b']', r @ ..] = input {
                     break r;
                 }
-                let (i, (sub, (sub_max_span, sub_max))) = rec(input, inserted, buffer)?;
+                let (i, (sub, (sub_max_span, sub_max))) = rec(input, inserted, buffer, one_based)?;
                 buffer.push(sub);
                 if sub_max >= max {
                     max = sub_max;
@@ -115,28 +116,35 @@ where
                 // flatten `[42]` into `42`
                 buffer.pop().unwrap()
             } else {
-                ClauseOrderTree::Conj(buffer.split_off(buffer_pos).into_boxed_slice())
+                Tree::Inner(buffer.split_off(buffer_pos).into_boxed_slice())
             };
             return Ok((input, (t, (max_span, max))));
         }
 
-        fail(word_span(input), "expected '[' or a clause number")
+        fail(word_span(input), "expected '[' or a number")
     }
 
-    let mut inserted = BitVec::new();
-    let (input, _) = space0(input)?;
-    let (input, (span, res)) = cut(consumed(|input| {
-        rec(input, &mut inserted, &mut Vec::with_capacity(65536))
-    }))(input)?;
-    if let Some(n) = inserted.first_zero() {
-        return Err(Err::Failure(E::from_external_error(
-            span,
-            ErrorKind::Fail,
-            format!("clause {} missing in order", n),
-        )));
+    move |input| {
+        let mut inserted = BitVec::new();
+        let (input, _) = space0(input)?;
+        let (input, (span, res)) = cut(consumed(|input| {
+            rec(
+                input,
+                &mut inserted,
+                &mut Vec::with_capacity(65536),
+                one_based,
+            )
+        }))(input)?;
+        if let Some(n) = inserted.first_zero() {
+            return Err(Err::Failure(E::from_external_error(
+                span,
+                ErrorKind::Fail,
+                format!("number {} missing in tree", n),
+            )));
+        }
+        let (input, _) = cut(preceded(space0, line_ending))(input)?;
+        Ok((input, res))
     }
-    let (input, _) = cut(preceded(space0, line_ending))(input)?;
-    Ok((input, res))
 }
 
 fn var_order_record<'a, E: ParseError<&'a [u8]> + ContextError<&'a [u8]>>(
@@ -152,25 +160,14 @@ fn var_order_record<'a, E: ParseError<&'a [u8]> + ContextError<&'a [u8]>>(
 fn format<'a, E: ParseError<&'a [u8]> + ContextError<&'a [u8]>>(
     input: &'a [u8],
 ) -> IResult<&'a [u8], Format, E> {
-    let inner = alt((
-        value(Format::CNF, tag("cnf")),
-        preceded(
-            tag("sat"),
-            alt((
-                // opt e, x
-                preceded(
-                    char('e'),
-                    alt((
-                        // opt x
-                        value(SATEX, char('x')),
-                        success(SATE),
-                    )),
-                ),
-                value(SATX, char('x')),
-                success(SAT),
-            )),
-        ),
-    ));
+    let inner = |input: &'a [u8]| match input {
+        [b'c', b'n', b'f', r @ ..] => Ok((r, Format::CNF)),
+        [b's', b'a', b't', b'e', b'x', r @ ..] => Ok((r, SATEX)),
+        [b's', b'a', b't', b'e', r @ ..] => Ok((r, SATE)),
+        [b's', b'a', b't', b'x', r @ ..] => Ok((r, SATX)),
+        [b's', b'a', b't', r @ ..] => Ok((r, SAT)),
+        _ => Err(Err::Error(E::from_error_kind(input, ErrorKind::Alt))),
+    };
 
     context_loc(
         || word_span(input),
@@ -226,34 +223,43 @@ fn problem_line<'a, E: ParseError<&'a [u8]> + ContextError<&'a [u8]>>(
     )(input)
 }
 
+#[derive(Clone, PartialEq, Eq, Debug)]
+struct Preamble {
+    format: Format,
+    vars: VarSet,
+    /// Number of clauses (CNF format, otherwise 0)
+    num_clauses: usize,
+    clause_order_tree: Option<Tree<usize>>,
+}
+
 /// Parses the preamble, i.e., all `c` and `p` lines at the beginning of the
 /// file
-///
-/// Returns the format, number of variables, number of clauses (in case of CNF
-/// format), the variable order (or an empty `Vec`), as well as the
-/// pre-linearized clause order tree (or an empty `Vec`).
 ///
 /// Note: `parse_orders` only instructs the parser to treat comment lines as
 /// order lines. In case a var or a clause order is given, this function ensures
 /// that they are valid. However, if no var order is given, then the returned
 /// var order is empty, and if no clause order is given, then the returned
 /// clause order is empty.
-fn preamble<'a, E>(
-    parse_orders: bool,
-) -> impl Fn(&'a [u8]) -> IResult<&'a [u8], (Format, usize, usize, VarOrder, Option<ClauseOrderTree>), E>
+fn preamble<'a, E>(parse_orders: bool) -> impl Fn(&'a [u8]) -> IResult<&'a [u8], Preamble, E>
 where
     E: ParseError<&'a [u8]> + ContextError<&'a [u8]> + FromExternalError<&'a [u8], String>,
 {
     move |mut input| {
         if parse_orders {
-            // var order
-            let mut inserted: BitVec = BitVec::new();
-            let mut var_order = Vec::new();
-            let mut max_var_span = [].as_slice();
-            let mut names: FxHashSet<&[u8]> = Default::default();
+            let mut vars = VarSet {
+                len: 0,
+                order: Vec::new(),
+                order_tree: None,
+                names: Vec::new(),
+            };
+
+            let mut max_var_span = [].as_slice(); // in the name mapping / linear order
+            let mut tree_max_var = ([].as_slice(), 0); // dummy value
+            let mut name_set: FxHashSet<&str> = Default::default();
+
             // clause order
-            let mut corder = None;
-            let mut corder_span = [].as_slice();
+            let mut clause_order = None;
+            let mut clause_order_span = [].as_slice();
             let mut max_clause = ([].as_slice(), 0); // dummy value
 
             loop {
@@ -262,20 +268,29 @@ where
                     Err(_) => break,
                 };
                 if let Ok((next_input, _)) = preceded(tag("co"), space1::<_, E>)(next_input) {
-                    // clause order line
-                    if corder.is_some() {
+                    // clause order tree
+                    if clause_order.is_some() {
                         return fail(line_span(input), "clause order may only be given once");
                     }
-                    let tree: ClauseOrderTree;
-                    (input, (corder_span, (tree, max_clause))) =
-                        consumed(clause_order)(next_input)?;
-                    corder = Some(tree);
-                    debug_assert!(corder.is_some());
+                    let t: Tree<usize>;
+                    (input, (clause_order_span, (t, max_clause))) =
+                        consumed(tree(false))(next_input)?;
+                    clause_order = Some(t);
                 } else if let Ok((next_input, _)) = preceded(tag("vo"), space1::<_, E>)(next_input)
                 {
-                    // variable order line (groups), not implemented yet
-                    let (next_input, _) = take_till(|c| c == b'\n')(next_input)?;
-                    (input, _) = take(1usize)(next_input)?;
+                    // variable order tree
+                    if vars.order_tree.is_some() {
+                        let msg = "variable order tree may only be given once";
+                        return fail(line_span(input), msg);
+                    }
+                    let t: Tree<Var>;
+                    (input, (t, tree_max_var)) = tree(true)(next_input)?;
+
+                    // The variable order tree takes precedence (and determines the linear order)
+                    vars.order.clear();
+                    vars.order.reserve(tree_max_var.1 + 1);
+                    t.flatten_into(&mut vars.order);
+                    vars.order_tree = Some(t);
                 } else if let Ok((next_input, ((var_span, var), name))) =
                     var_order_record::<E>(next_input)
                 {
@@ -291,27 +306,32 @@ where
                     let num_vars = var as usize;
                     let var = num_vars - 1;
 
-                    if num_vars > inserted.len() {
-                        inserted.resize(num_vars, false);
-                        var_order.reserve(num_vars - var_order.len());
+                    if num_vars > vars.names.len() {
+                        vars.names.resize(num_vars, None);
+                        vars.order.reserve(num_vars - vars.names.len());
                         max_var_span = var_span;
-                    } else if inserted[var] {
+                    } else if vars.names[var].is_some() {
                         return fail(var_span, "second occurrence of variable in order");
                     }
-                    inserted.set(var, true);
-                    if !names.insert(name) {
-                        return fail(name, "second occurrence of variable name");
+                    let Ok(name) = std::str::from_utf8(name) else {
+                        return fail(name, "invalid UTF-8");
+                    };
+                    if !name_set.insert(name) {
+                        return fail(name.as_bytes(), "second occurrence of variable name");
                     }
-                    var_order.push((var, String::from_utf8_lossy(name).to_string()));
+                    vars.names[var] = Some(name.to_owned());
+                    if vars.order_tree.is_none() {
+                        vars.order.push(var);
+                    }
                 } else {
                     return fail(
                         line_span(input),
-                        "expected a var order record ('c <var> <name>'), or a clause order ('c co <order>')",
+                        "expected a variable order record ('c <var> <name>'), a variable order tree ('c vo <tree>'), or a clause order tree ('c co <tree>')",
                     );
                 }
             }
 
-            if inserted.len() != var_order.len() {
+            if vars.order_tree.is_none() && vars.names.len() != vars.order.len() {
                 return fail_with_contexts([
                     (input, "expected another variable order line"),
                     (max_var_span, "note: maximal variable number given here"),
@@ -319,16 +339,33 @@ where
             }
 
             let (next_input, (format, num_vars, num_clauses)) = problem_line(input)?;
-            if !var_order.is_empty() && num_vars.1 != var_order.len() {
-                return fail_with_contexts([
-                    (num_vars.0, "number of variables does not match"),
-                    (max_var_span, "note: maximal variable number given here"),
-                ]);
-            }
-            if corder.is_some() {
-                if format.1 != Format::CNF {
+            if vars.order_tree.is_none() {
+                if !vars.order.is_empty() && num_vars.1 != vars.order.len() {
                     return fail_with_contexts([
-                        (corder_span, "clause order only supported for 'cnf' format"),
+                        (num_vars.0, "number of variables does not match"),
+                        (max_var_span, "note: maximal variable number given here"),
+                    ]);
+                }
+            } else {
+                if num_vars.1 != tree_max_var.1 + 1 {
+                    return fail_with_contexts([
+                        (num_vars.0, "number of variables does not match"),
+                        (tree_max_var.0, "note: maximal variable number given here"),
+                    ]);
+                }
+                if vars.names.len() > num_vars.1 {
+                    return fail_with_contexts([
+                        (max_var_span, "name assigned to non-existing variable"),
+                        (num_vars.0, "note: number of variables given here"),
+                    ]);
+                }
+            }
+
+            if clause_order.is_some() {
+                if format.1 != Format::CNF {
+                    let msg0 = "clause order only supported for 'cnf' format";
+                    return fail_with_contexts([
+                        (clause_order_span, msg0),
                         (format.0, "note: format given here"),
                     ]);
                 }
@@ -339,17 +376,27 @@ where
                     ]);
                 }
             }
-            Ok((
-                next_input,
-                (format.1, num_vars.1, num_clauses.1, var_order, corder),
-            ))
+
+            vars.len = num_vars.1;
+            #[cfg(debug_assertions)]
+            vars.check_valid();
+            let preamble = Preamble {
+                format: format.1,
+                vars,
+                num_clauses: num_clauses.1,
+                clause_order_tree: clause_order,
+            };
+            Ok((next_input, preamble))
         } else {
             let (input, (format, num_vars, num_clauses)) =
                 preceded(many0_count(comment), problem_line)(input)?;
-            Ok((
-                input,
-                (format.1, num_vars.1, num_clauses.1, Vec::new(), None),
-            ))
+            let preamble = Preamble {
+                format: format.1,
+                vars: VarSet::simple(num_vars.1),
+                num_clauses: num_clauses.1,
+                clause_order_tree: None,
+            };
+            Ok((input, preamble))
         }
     }
 }
@@ -363,9 +410,9 @@ mod cnf {
     use nom::{Err, IResult};
 
     use crate::util::fail;
-    use crate::{CNFProblem, ClauseOrderTree, Literal, Problem, Vec2d};
+    use crate::{CNFProblem, Literal, Problem, Vec2d};
 
-    use super::VarOrder;
+    use super::Preamble;
 
     #[derive(Clone, Copy, PartialEq, Eq, Debug)]
     enum CNFTokenKind {
@@ -397,15 +444,15 @@ mod cnf {
     }
 
     pub fn parse<'a, E>(
-        num_vars: usize,
-        num_clauses: usize,
-        var_order: VarOrder,
-        clause_order: Option<ClauseOrderTree>,
+        preamble: Preamble,
     ) -> impl FnOnce(&'a [u8]) -> IResult<&'a [u8], Problem, E>
     where
         E: ParseError<&'a [u8]> + ContextError<&'a [u8]> + FromExternalError<&'a [u8], String>,
     {
         move |input| {
+            let num_vars = preamble.vars.len();
+            let num_clauses = preamble.num_clauses;
+
             let mut clauses = Vec2d::with_capacity(num_clauses, num_clauses * 4);
             clauses.push_vec();
             let mut neg = false;
@@ -447,10 +494,9 @@ mod cnf {
             Ok((
                 input,
                 Problem::CNF(Box::new(CNFProblem {
-                    num_vars,
-                    var_order,
+                    vars: preamble.vars,
                     clauses,
-                    clause_order,
+                    clause_order_tree: preamble.clause_order_tree,
                 })),
             ))
         }
@@ -468,9 +514,7 @@ mod sat {
     use nom::IResult;
 
     use crate::util::{fail, map_res_fail, word};
-    use crate::{Literal, Problem, Prop, PropProblem, Var};
-
-    use super::VarOrder;
+    use crate::{Literal, Problem, Prop, PropProblem, Var, VarSet};
 
     #[derive(Clone, Copy, PartialEq, Eq, Debug)]
     enum TokenKind {
@@ -649,17 +693,15 @@ mod sat {
     }
 
     pub fn parse<'a, E: ParseError<&'a [u8]> + ContextError<&'a [u8]>>(
-        num_vars: usize,
-        var_order: VarOrder,
+        vars: VarSet,
         allow_xor: bool,
         allow_eq: bool,
     ) -> impl FnOnce(&'a [u8]) -> IResult<&'a [u8], Problem, E> {
-        move |input| match formula(num_vars, allow_xor, allow_eq)(input) {
+        move |input| match formula(vars.len(), allow_xor, allow_eq)(input) {
             Ok((input, ast)) => Ok((
                 input,
                 Problem::Prop(Box::new(PropProblem {
-                    num_vars,
-                    var_order,
+                    vars,
                     xor: allow_xor,
                     eq: allow_eq,
                     ast,
@@ -684,12 +726,11 @@ where
 {
     let parse_var_order = options.orders;
     move |input| {
-        let (input, (format, num_vars, num_clauses, var_order, corder)) =
-            preamble(parse_var_order)(input)?;
-        match format {
-            Format::CNF => cnf::parse(num_vars, num_clauses, var_order, corder)(input),
+        let (input, preamble) = preamble(parse_var_order)(input)?;
+        match preamble.format {
+            Format::CNF => cnf::parse(preamble)(input),
             Format::SAT { xor, eq } => {
-                let (input, res) = sat::parse(num_vars, var_order, xor, eq)(input)?;
+                let (input, res) = sat::parse(preamble.vars, xor, eq)(input)?;
                 let (input, _) = context(
                     "expected end of file (SAT files may only contain a single formula)",
                     preceded(multispace0, eof),
@@ -733,8 +774,8 @@ p cnf 4 3
             .unwrap();
         assert!(input.is_empty());
         if let Problem::CNF(cnf) = problem {
-            assert_eq!(cnf.vars(), 4);
-            assert!(cnf.var_order().is_none());
+            assert_eq!(cnf.vars().len(), 4);
+            assert!(cnf.vars.order().is_none());
             assert_eq!(
                 cnf.clauses(),
                 &Vec2d::from_iter([&[cv(1), cv(3), cv(-4)] as &[_], &[cv(4)], &[cv(2), cv(-3)]])
@@ -758,8 +799,8 @@ p cnf 4 3
             .unwrap();
         assert!(input.is_empty());
         if let Problem::CNF(cnf) = problem {
-            assert_eq!(cnf.vars(), 4);
-            assert!(cnf.var_order().is_none());
+            assert_eq!(cnf.vars().len(), 4);
+            assert!(cnf.vars().order().is_none());
             assert_eq!(
                 cnf.clauses(),
                 &Vec2d::from_iter([&[cv(1), cv(3), cv(-4)] as &[_], &[cv(4)], &[cv(2), cv(-3)]])
@@ -778,8 +819,7 @@ p cnf 4 3
             .unwrap();
         assert!(input.is_empty());
         if let Problem::CNF(cnf) = problem {
-            assert_eq!(cnf.vars(), 0);
-            assert!(cnf.var_order().is_none());
+            assert_eq!(cnf.vars().len(), 0);
             assert!(cnf.clauses().is_empty());
             assert!(cnf.clause_order().is_none());
         } else {
@@ -800,8 +840,8 @@ p sat 4
             .unwrap();
         assert!(input.is_empty());
         if let Problem::Prop(prop) = problem {
-            assert_eq!(prop.vars(), 4);
-            assert!(prop.var_order().is_none());
+            assert_eq!(prop.vars().len(), 4);
+            assert!(prop.vars().order().is_none());
             assert!(!prop.xor_allowed());
             assert!(!prop.eq_allowed());
             assert_eq!(
@@ -819,22 +859,46 @@ p sat 4
 
     #[test]
     fn preamble_satx() {
-        let (input, res) = preamble::<()>(false)(b"p satx 1337 \n").unwrap();
+        let (input, preamble) = preamble::<()>(false)(b"p satx 1337 \n").unwrap();
         assert!(input.is_empty());
-        assert_eq!(res, (SATX, 1337, 0, Vec::new(), None));
+        assert_eq!(
+            preamble,
+            Preamble {
+                format: SATX,
+                vars: VarSet::simple(1337),
+                num_clauses: 0,
+                clause_order_tree: None
+            }
+        );
     }
 
     #[test]
     fn preamble_sate() {
-        let (input, res) = preamble::<()>(false)(b"p sate 1\n").unwrap();
+        let (input, preamble) = preamble::<()>(false)(b"p sate 1\n").unwrap();
         assert!(input.is_empty());
-        assert_eq!(res, (SATE, 1, 0, Vec::new(), None));
+        assert_eq!(
+            preamble,
+            Preamble {
+                format: SATE,
+                vars: VarSet::simple(1),
+                num_clauses: 0,
+                clause_order_tree: None
+            }
+        );
     }
 
     #[test]
     fn preamble_satex() {
-        let (input, res) = preamble::<()>(false)(b"p satex 42 \n").unwrap();
+        let (input, preamble) = preamble::<()>(false)(b"p satex 42 \n").unwrap();
         assert!(input.is_empty());
-        assert_eq!(res, (SATEX, 42, 0, Vec::new(), None));
+        assert_eq!(
+            preamble,
+            Preamble {
+                format: SATEX,
+                vars: VarSet::simple(42),
+                num_clauses: 0,
+                clause_order_tree: None
+            }
+        );
     }
 }
