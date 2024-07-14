@@ -19,7 +19,7 @@ oxidd-derive = { version = "0.7", path = "crates/oxidd-derive", default-features
 oxidd-dump = { version = "0.2", path = "crates/oxidd-dump", default-features = false }
 oxidd-manager-index = { version = "0.7", path = "crates/oxidd-manager-index", default-features = false }
 oxidd-manager-pointer = { version = "0.2", path = "crates/oxidd-manager-pointer", default-features = false }
-oxidd-parser = { version = "0.2", path = "crates/oxidd-parser", default-features = false }
+oxidd-parser = { version = "0.3", path = "crates/oxidd-parser", default-features = false }
 oxidd-reorder = { version = "0.2", path = "crates/oxidd-reorder", default-features = false }
 oxidd-rules-bdd = { version = "0.7", path = "crates/oxidd-rules-bdd", default-features = false }
 oxidd-rules-mtbdd = { version = "0.2", path = "crates/oxidd-rules-mtbdd", default-features = false }
