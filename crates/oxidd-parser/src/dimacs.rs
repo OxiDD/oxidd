@@ -62,7 +62,7 @@ where
         buffer: &mut Vec<Tree<usize>>,
         one_based: bool,
     ) -> IResult<&'a [u8], (Tree<usize>, (&'a [u8], usize)), E> {
-        debug_assert!(space0::<_, E>(input).is_err());
+        debug_assert!(space1::<_, E>(input).is_err());
 
         if let Ok((input, (span, n))) = consumed(u64::<_, E>)(input) {
             let (input, _) = space0(input)?;
