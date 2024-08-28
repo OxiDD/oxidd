@@ -11,11 +11,12 @@ use rustc_hash::FxHashMap;
 
 use oxidd::bcdd::BCDDFunction;
 use oxidd::bdd::BDDFunction;
+use oxidd::util::OptBool;
 use oxidd::zbdd::ZBDDFunction;
 use oxidd::zbdd::ZBDDManagerRef;
 use oxidd::{
     BooleanFunction, BooleanFunctionQuant, BooleanOperator, BooleanVecSet, Function, FunctionSubst,
-    ManagerRef, WorkerManager,
+    InnerNode, Manager, ManagerRef, WorkerManager,
 };
 
 use boolean_prop::Prop;
@@ -421,9 +422,15 @@ struct TestAllBooleanFunctions<'a, B: BooleanFunction> {
     mref: &'a B::ManagerRef,
     vars: &'a [B],
     var_handles: &'a [B],
-    /// Stores all possible Boolean functions with `vars.len()` vars
+    /// Stores all possible Boolean functions over `vars.len()` variables
     boolean_functions: Vec<B>,
+    /// Map from Boolean functions as decision diagrams to their explicit
+    /// (truth table) representations
     dd_to_boolean_func: FxHashMap<B, ExplicitBFunc>,
+    /// Map from variables (`0..vars.len()`) to Boolean functions
+    ///
+    /// Example for three variables: `[0b01010101, 0b00110011, 0b00001111]`
+    var_functions: Vec<ExplicitBFunc>,
 }
 
 impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
@@ -447,7 +454,10 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
             };
             columns.push(("expected".to_string(), expected));
             columns.push(("actual".to_string(), actual));
-            let table = util::debug::TruthTable { vars, columns };
+            let table = util::debug::TruthTable {
+                vars,
+                columns: &columns,
+            };
             if sets.is_empty() {
                 panic!("Operation {desc} failed\n\n{table}");
             } else {
@@ -456,6 +466,29 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
                     util::debug::SetList { vars, sets }
                 );
             }
+        }
+    }
+
+    #[track_caller]
+    fn panic(&self, desc: impl fmt::Display, columns: &[(impl AsRef<str>, ExplicitBFunc)]) -> ! {
+        panic!(
+            "{desc}\n\n{}",
+            util::debug::TruthTable {
+                vars: self.vars.len() as u32,
+                columns,
+            }
+        )
+    }
+
+    #[track_caller]
+    fn check_cond(
+        &self,
+        cond: bool,
+        desc: impl fmt::Display,
+        columns: &[(impl AsRef<str>, ExplicitBFunc)],
+    ) {
+        if !cond {
+            self.panic(desc, columns)
         }
     }
 
@@ -518,13 +551,50 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
             }
         });
 
+        // Example for 3 vars: [0b01010101, 0b00110011, 0b00001111]
+        let var_functions: Vec<ExplicitBFunc> = (0..nvars)
+            .map(|i| {
+                let mut f = 0;
+                for assignment in 0..num_assignments {
+                    f |= (((assignment >> i) & 1) as ExplicitBFunc) << assignment;
+                }
+                f
+            })
+            .collect();
+
         Self {
             mref,
             vars,
             var_handles,
             boolean_functions,
             dd_to_boolean_func,
+            var_functions,
         }
+    }
+
+    fn make_var_set(&self, vars: u32) -> B {
+        let mut set = self.boolean_functions.last().unwrap().clone();
+        for (i, var) in self.vars.iter().enumerate() {
+            if vars & (1 << i) != 0 {
+                set = set.and(var).unwrap();
+            }
+        }
+        set
+    }
+
+    fn make_cube(&self, positive: u32, negative: u32) -> B {
+        assert_eq!(positive & negative, 0);
+
+        let mut cube = self.boolean_functions.last().unwrap().clone();
+        for (i, var) in self.vars.iter().enumerate() {
+            if (positive >> i) & 1 != 0 {
+                cube = cube.and(var).unwrap();
+            } else if (negative >> i) & 1 != 0 {
+                cube = cube.and(&var.not().unwrap()).unwrap();
+            }
+        }
+
+        cube
     }
 
     /// Test basic operations on all Boolean functions
@@ -617,6 +687,209 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
                     );
                 }
             }
+
+            for assignment in 0..num_assignments {
+                // At first, we test `pick_cube()` and `pick_cube_symbolic()`,
+                // specifically that:
+                //
+                // - The closure is called as specified (at most once for each level, `edge`
+                //   points to a node at that level)
+                // - The special case where `f` is ⊥ is handled correctly
+                // - In all other cases, the results of `pick_cube()` and `pick_cube_symbolic()`
+                //   * are equivalent (and the result of `pick_cube_symbolic()` can thus be
+                //     represented as a conjunction of literals)
+                //   * imply the function
+                // - If the choice function was called for some level, the respective choice is
+                //   taken into account
+                // - Whenever there is a choice for a variable, either the choice function is
+                //   called or the cube is independent of that variable (don't care)
+                //
+                // We do not (yet) check that don't cares are preserved, since that would
+                // require taking the variable order into account. It is not clear to me whether
+                // this would work for kinds of DDs without a linear variable order.
+
+                let mut choice_requested = 0u32;
+                let cube = f.pick_cube([], |manager, edge, level| {
+                    assert!(manager
+                        .get_node(edge)
+                        .unwrap_inner()
+                        .check_level(|l| l == level));
+                    if choice_requested & (1 << level) != 0 {
+                        panic!("choice requested twice for x{level}");
+                    } else {
+                        choice_requested |= 1 << level;
+                    }
+                    assignment & (1u32 << level) != 0
+                });
+                let mut choice_requested_sym = 0u32;
+                let dd_cube = f
+                    .pick_cube_symbolic(|manager, edge, level| {
+                        assert!(manager
+                            .get_node(edge)
+                            .unwrap_inner()
+                            .check_level(|l| l == level));
+                        if choice_requested_sym & (1 << level) != 0 {
+                            panic!("choice requested twice for x{level}");
+                        } else {
+                            choice_requested_sym |= 1 << level;
+                        }
+                        assignment & (1u32 << level) != 0
+                    })
+                    .unwrap();
+
+                let actual = self.dd_to_boolean_func[&dd_cube];
+                if f_explicit == 0 {
+                    self.check("f.pick_cube_symbolic(..)", actual, 0, &[f_explicit], &[]);
+                    assert_eq!(cube, None);
+                    assert_eq!(choice_requested, 0);
+                } else {
+                    let cube =
+                        cube.expect("f.pick_cube(..) returned None for a satisfiable function");
+                    assert_eq!(cube.len(), nvars as usize);
+                    self.check_cond(
+                        actual & !f_explicit == 0,
+                        "f.pick_cube_symbolic(..) does not imply f",
+                        &[("f", f_explicit), ("f.pick_cube_symbolic(..)", actual)],
+                    );
+
+                    let mut cube_func = func_mask;
+                    for (var, (&literal, &var_func)) in
+                        cube.iter().zip(&self.var_functions).enumerate()
+                    {
+                        if choice_requested & (1 << var) != 0 {
+                            assert_eq!(
+                                literal,
+                                OptBool::from(assignment & (1 << var) != 0),
+                                "If a choice was requested, the cube should reflect the choice"
+                            );
+                        } else if literal != OptBool::None {
+                            // The decision should have been enforced, i.e., the
+                            // function c' obtained flipping the literal in the
+                            // cube does not imply f:
+                            let flipped = if literal == OptBool::True {
+                                actual >> (1 << var)
+                            } else {
+                                actual << (1 << var)
+                            };
+
+                            self.check_cond(
+                                flipped & !f_explicit != 0,
+                                format_args!("f.pick_cube_symbolic(..) should call the choice function or leave a don't care for x{var}"),
+                                &[
+                                    ("f", f_explicit),
+                                    ("f.pick_cube_symbolic(..)", actual),
+                                    ("cube with flipped literal", flipped),
+                                ],
+                            );
+                        }
+                        match literal {
+                            OptBool::False => cube_func &= !var_func,
+                            OptBool::True => cube_func &= var_func,
+                            _ => {}
+                        }
+                    }
+
+                    self.check_cond(
+                        cube_func & !f_explicit == 0,
+                        "f.pick_cube(..) does not imply f",
+                        &[("f", f_explicit), ("f.pick_cube(..)", actual)],
+                    );
+
+                    self.check(
+                        "f.pick_cube_symbolic(choice_fn) does not agree with f.pick_cube([], choice_fn)",
+                        actual,
+                        cube_func,
+                        &[f_explicit],
+                        &[assignment],
+                    );
+                }
+
+                assert_eq!(
+                    choice_requested, choice_requested_sym,
+                    "pick_cube should request a choice iff pick_cube_symbolic requests a choice"
+                );
+            }
+
+            for pos in 0..num_assignments {
+                for neg in 0..num_assignments {
+                    if pos & neg != 0 {
+                        continue;
+                    }
+
+                    let literal_set = self.make_cube(pos, neg);
+                    let literal_set_explicit = self.dd_to_boolean_func[&literal_set];
+                    let actual =
+                        self.dd_to_boolean_func[&f.pick_cube_symbolic_set(&literal_set).unwrap()];
+
+                    if f_explicit == 0 {
+                        self.check(
+                            "f.pick_cube_symbolic_set(g)",
+                            actual,
+                            0,
+                            &[f_explicit, literal_set_explicit],
+                            &[],
+                        );
+                    } else {
+                        self.check_cond(
+                            actual & !f_explicit == 0,
+                            "f.pick_cube_symbolic_set(literal_set) does not imply f",
+                            &[
+                                ("f", f_explicit),
+                                ("literal_set", literal_set_explicit),
+                                ("f.pick_cube_symbolic_set(literal_set)", actual),
+                            ],
+                        );
+
+                        for (var, var_func) in self.var_functions.iter().enumerate() {
+                            if (actual & var_func) >> (1 << var) == actual & !var_func {
+                                continue; // var is don't care
+                            }
+                            let selected = if actual & var_func == 0 {
+                                // var is set to false
+                                if pos & (1 << var) == 0 {
+                                    continue; // was not requested to be true
+                                }
+                                false
+                            } else if actual & !var_func == 0 {
+                                // var is set to true
+                                if neg & (1 << var) == 0 {
+                                    continue; // was not requested to be false
+                                }
+                                true
+                            } else {
+                                self.panic(
+                                    format_args!("f.pick_cube_symbolic_set(literal_set) is not a cube (checking x{var})"),
+                                    &[
+                                        ("f", f_explicit),
+                                        ("literal_set", literal_set_explicit),
+                                        ("f.pick_cube_symbolic_set(literal_set)", actual),
+                                    ],
+                                )
+                            };
+
+                            // If the variable was selected to be the opposite
+                            // of the request, then the reason must be that the
+                            // cube would not have implied the function. We test this now.
+                            let flipped = if selected {
+                                actual >> (1 << var)
+                            } else {
+                                actual << (1 << var)
+                            };
+
+                            self.check_cond(
+                                flipped & !f_explicit != 0,
+                                format_args!("f.pick_cube_symbolic_set(literal_set) does not follow the requirements from literal_set (selecting {selected} for x{var})"),
+                                &[
+                                    ("f", f_explicit),
+                                    ("literal_set", literal_set_explicit),
+                                    ("f.pick_cube_symbolic_set(literal_set)", actual),
+                                    ("flipped", flipped),
+                                ],
+                            );
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -686,19 +959,6 @@ impl<'a, B: BooleanFunctionQuant> TestAllBooleanFunctions<'a, B> {
         let num_functions: ExplicitBFunc = 1 << num_assignments;
         let func_mask = num_functions - 1;
 
-        // Example for 3 vars: [0b01010101, 0b00110011, 0b00001111]
-        let var_functions: Vec<ExplicitBFunc> = (0..nvars)
-            .map(|i| {
-                let mut f = 0;
-                for assignment in 0..num_assignments {
-                    f |= (((assignment >> i) & 1) as ExplicitBFunc) << assignment;
-                }
-                f
-            })
-            .collect();
-
-        let t = self.mref.with_manager_shared(|manager| B::t(manager));
-
         // restrict
         for pos in 0..num_assignments {
             for neg in 0..num_assignments {
@@ -706,14 +966,7 @@ impl<'a, B: BooleanFunctionQuant> TestAllBooleanFunctions<'a, B> {
                     continue; // positive and negative set must be disjoint
                 }
 
-                let mut dd_literal_set = t.clone();
-                for (i, var) in self.vars.iter().enumerate() {
-                    if (pos >> i) & 1 != 0 {
-                        dd_literal_set = dd_literal_set.and(var).unwrap();
-                    } else if (neg >> i) & 1 != 0 {
-                        dd_literal_set = dd_literal_set.and(&var.not().unwrap()).unwrap();
-                    }
-                }
+                let dd_literal_set = self.make_cube(pos, neg);
 
                 for (f_explicit, f) in self.boolean_functions.iter().enumerate() {
                     let f_explicit = f_explicit as ExplicitBFunc;
@@ -733,17 +986,12 @@ impl<'a, B: BooleanFunctionQuant> TestAllBooleanFunctions<'a, B> {
         // quantification
         let mut assignment_to_mask: Vec<ExplicitBFunc> = vec![0; num_assignments as usize];
         for var_set in 0..num_assignments {
-            let mut dd_var_set = t.clone();
-            for (i, var) in self.vars.iter().enumerate() {
-                if var_set & (1 << i) != 0 {
-                    dd_var_set = dd_var_set.and(var).unwrap();
-                }
-            }
+            let dd_var_set = self.make_var_set(var_set);
 
             // precompute `assignment_to_mask`
             for (assignment, mask) in assignment_to_mask.iter_mut().enumerate() {
                 let mut tmp: ExplicitBFunc = func_mask;
-                for (i, func) in var_functions.iter().copied().enumerate() {
+                for (i, func) in self.var_functions.iter().copied().enumerate() {
                     if (var_set >> i) & 1 == 0 {
                         tmp &= if (assignment >> i) & 1 == 0 {
                             !func

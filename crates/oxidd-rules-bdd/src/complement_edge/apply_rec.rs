@@ -17,8 +17,11 @@ use oxidd_core::{
 use oxidd_derive::Function;
 use oxidd_dump::dot::DotStyle;
 
-use crate::recursor::{Recursor, SequentialRecursor};
-use crate::stat;
+use crate::{complement_edge::add_literal_to_cube, stat};
+use crate::{
+    complement_edge::is_false,
+    recursor::{Recursor, SequentialRecursor},
+};
 
 use super::collect_cofactors;
 use super::get_terminal;
@@ -1232,7 +1235,7 @@ where
         manager: &'a Self::Manager<'id>,
         edge: &'a EdgeOfFunc<'id, Self>,
         order: impl IntoIterator<IntoIter = I>,
-        choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>) -> bool,
+        choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>, LevelNo) -> bool,
     ) -> Option<Vec<OptBool>>
     where
         I: ExactSizeIterator<Item = &'a EdgeOfFunc<'id, Self>>,
@@ -1242,7 +1245,7 @@ where
             manager: &M,
             edge: Borrowed<M::Edge>,
             cube: &mut [OptBool],
-            mut choice: impl FnMut(&M, &M::Edge) -> bool,
+            mut choice: impl FnMut(&M, &M::Edge, LevelNo) -> bool,
         ) where
             M::InnerNode: HasLevel,
         {
@@ -1250,15 +1253,16 @@ where
                 return;
             };
             let tag = edge.tag();
+            let level = node.level();
             let (t, e) = collect_cofactors(tag, node);
-            let c = if manager.get_node(&t).is_any_terminal() && t.tag() == EdgeTag::Complemented {
+            let c = if is_false(manager, &t) {
                 false
-            } else if manager.get_node(&e).is_any_terminal() && e.tag() == EdgeTag::Complemented {
+            } else if is_false(manager, &e) {
                 true
             } else {
-                choice(manager, &edge)
+                choice(manager, &edge, level)
             };
-            cube[node.level() as usize] = OptBool::from(c);
+            cube[level as usize] = OptBool::from(c);
             inner(manager, if c { t } else { e }, cube, choice);
         }
 
@@ -1285,6 +1289,88 @@ where
                 .map(|e| cube[manager.get_node(e).unwrap_inner().level() as usize])
                 .collect()
         })
+    }
+
+    #[inline]
+    fn pick_cube_symbolic_edge<'id>(
+        manager: &Self::Manager<'id>,
+        edge: &EdgeOfFunc<'id, Self>,
+        choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>, LevelNo) -> bool,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        fn inner<M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal>>(
+            manager: &M,
+            edge: Borrowed<M::Edge>,
+            mut choice: impl FnMut(&M, &M::Edge, LevelNo) -> bool,
+        ) -> AllocResult<M::Edge>
+        where
+            M::InnerNode: HasLevel,
+        {
+            let Node::Inner(node) = manager.get_node(&edge) else {
+                return Ok(manager.clone_edge(&edge));
+            };
+
+            let (t, e) = collect_cofactors(edge.tag(), node);
+            let level = node.level();
+            let c = if is_false(manager, &t) {
+                false
+            } else if is_false(manager, &e) {
+                true
+            } else {
+                choice(manager, &edge, level)
+            };
+
+            let sub = inner(manager, if c { t } else { e }, choice)?;
+            add_literal_to_cube(manager, sub, level, c)
+        }
+
+        inner(manager, edge.borrowed(), choice)
+    }
+
+    fn pick_cube_symbolic_set_edge<'id>(
+        manager: &Self::Manager<'id>,
+        edge: &EdgeOfFunc<'id, Self>,
+        literal_set: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        fn inner<M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal>>(
+            manager: &M,
+            edge: Borrowed<M::Edge>,
+            literal_set: Borrowed<M::Edge>,
+        ) -> AllocResult<M::Edge>
+        where
+            M::InnerNode: HasLevel,
+        {
+            let Node::Inner(node) = manager.get_node(&edge) else {
+                return Ok(manager.clone_edge(&edge));
+            };
+            let level = node.level();
+
+            let literal_set = crate::set_pop(manager, literal_set, level);
+            let (literal_set, c) = match manager.get_node(&literal_set) {
+                Node::Inner(node) if node.level() == level => {
+                    let (t, e) = collect_cofactors(literal_set.tag(), node);
+                    if is_false(manager, &e) {
+                        (e, true)
+                    } else {
+                        (t, false)
+                    }
+                }
+                _ => (literal_set, false),
+            };
+
+            let (t, e) = collect_cofactors(edge.tag(), node);
+            let c = if is_false(manager, &t) {
+                false
+            } else if is_false(manager, &e) {
+                true
+            } else {
+                c
+            };
+
+            let sub = inner(manager, if c { t } else { e }, literal_set)?;
+            add_literal_to_cube(manager, sub, level, c)
+        }
+
+        inner(manager, edge.borrowed(), literal_set.borrowed())
     }
 
     #[inline]
@@ -1625,12 +1711,28 @@ pub mod mt {
             manager: &'a Self::Manager<'id>,
             edge: &'a EdgeOfFunc<'id, Self>,
             order: impl IntoIterator<IntoIter = I>,
-            choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>) -> bool,
+            choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>, LevelNo) -> bool,
         ) -> Option<Vec<OptBool>>
         where
             I: ExactSizeIterator<Item = &'a EdgeOfFunc<'id, Self>>,
         {
             BCDDFunction::<F>::pick_cube_edge(manager, edge, order, choice)
+        }
+        #[inline]
+        fn pick_cube_symbolic_edge<'id>(
+            manager: &Self::Manager<'id>,
+            edge: &EdgeOfFunc<'id, Self>,
+            choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>, LevelNo) -> bool,
+        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            BCDDFunction::<F>::pick_cube_symbolic_edge(manager, edge, choice)
+        }
+        #[inline]
+        fn pick_cube_symbolic_set_edge<'id>(
+            manager: &Self::Manager<'id>,
+            edge: &EdgeOfFunc<'id, Self>,
+            literal_set: &EdgeOfFunc<'id, Self>,
+        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            BCDDFunction::<F>::pick_cube_symbolic_set_edge(manager, edge, literal_set)
         }
 
         #[inline]

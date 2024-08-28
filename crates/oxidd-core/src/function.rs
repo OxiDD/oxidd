@@ -604,6 +604,12 @@ pub trait BooleanFunction: Function {
 
     /// Pick a cube of this function
     ///
+    /// A cube `c` of a function `f` is a satisfying assignment, i.e., `c → f`
+    /// holds, and can be represented as a conjunction of literals. It does
+    /// not necessarily define all variables in the function's domain (it is
+    /// not necessarily a canonical minterm). For most (if not all) kinds of
+    /// decision diagrams, cubes have at most one node per level.
+    ///
     /// `order` is a list of variables. If it is non-empty, it must contain as
     /// many variables as there are levels.
     ///
@@ -612,17 +618,20 @@ pub trait BooleanFunction: Function {
     /// (or the variable currently at the i-th level in case `order` is empty)
     /// is true, false, or "don't care".
     ///
-    /// Whenever there is a choice for a variable, `choice` is called to
-    /// determine the valuation for this variable. The [`Edge`] argument is
-    /// guaranteed to point to an inner node. (We pass an [`Edge`] and not an
-    /// [`InnerNode`] reference since [`Edge`]s provide more information, e.g.,
-    /// the [`NodeID`][Edge::node_id()].)
+    /// Whenever a value for a variable needs to be chosen (i.e., it cannot be
+    /// left as a don't care), `choice` is called to determine the valuation for
+    /// this variable. The argument of type [`LevelNo`] is the level
+    /// corresponding to that variable. It is guaranteed that `choice` will
+    /// only be called at most once for each level. The [`Edge`] argument is
+    /// guaranteed to point to an inner node at the respective level. (We
+    /// pass an [`Edge`] and not an [`InnerNode`] reference since [`Edge`]s
+    /// provide more information, e.g., the [`NodeID`][Edge::node_id()].)
     ///
     /// Locking behavior: acquires the manager's lock for shared access.
     fn pick_cube<'a, I: ExactSizeIterator<Item = &'a Self>>(
         &'a self,
         order: impl IntoIterator<IntoIter = I>,
-        choice: impl for<'id> FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>) -> bool,
+        choice: impl for<'id> FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>, LevelNo) -> bool,
     ) -> Option<Vec<OptBool>> {
         self.with_manager_shared(|manager, edge| {
             Self::pick_cube_edge(
@@ -634,15 +643,86 @@ pub trait BooleanFunction: Function {
         })
     }
 
+    /// Pick a symbolic cube of this function, i.e., as decision diagram
+    ///
+    /// A cube `c` of a function `f` is a satisfying assignment, i.e., `c → f`
+    /// holds, and can be represented as a conjunction of literals. It does
+    /// not necessarily define all variables in the function's domain (it is
+    /// not necessarily a canonical minterm). For most (if not all) kinds of
+    /// decision diagrams, cubes have at most one node per level.
+    ///
+    /// Whenever a value for a variable needs to be chosen (i.e., it cannot be
+    /// left as a don't care), `choice` is called to determine the valuation for
+    /// this variable. The argument of type [`LevelNo`] is the level
+    /// corresponding to that variable. It is guaranteed that `choice` will
+    /// only be called at most once for each level. The [`Edge`] argument is
+    /// guaranteed to point to an inner node at the respective level. (We
+    /// pass an [`Edge`] and not an [`InnerNode`] reference since [`Edge`]s
+    /// provide more information, e.g., the [`NodeID`][Edge::node_id()].)
+    ///
+    /// If `self` is `⊥`, then the return value will be `⊥`.
+    ///
+    /// Locking behavior: acquires the manager's lock for shared access.
+    fn pick_cube_symbolic(
+        &self,
+        choice: impl for<'id> FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>, LevelNo) -> bool,
+    ) -> AllocResult<Self> {
+        self.with_manager_shared(|manager, edge| {
+            let res = Self::pick_cube_symbolic_edge(manager, edge, choice)?;
+            Ok(Self::from_edge(manager, res))
+        })
+    }
+
+    /// Pick a symbolic cube of this function, i.e., as decision diagram, using
+    /// the literals in `literal_set` if there is a choice
+    ///
+    /// A cube `c` of a function `f` is a satisfying assignment, i.e., `c → f`
+    /// holds, and can be represented as a conjunction of literals. It does
+    /// not necessarily define all variables in the function's domain (it is
+    /// not necessarily a canonical minterm). For most (if not all) kinds of
+    /// decision diagrams, cubes have at most one node per level.
+    ///
+    /// `literal_set` is represented as a conjunction of literals. Whenever
+    /// there is a choice for a variable, it will be set to true if the variable
+    /// has a positive occurrence in `literal_set`, and set to false if it
+    /// occurs negated in `literal_set`. If the variable does not occur in
+    /// `literal_set`, then it will be left as don't care if possible, otherwise
+    /// an arbitrary (not necessarily random) choice will be performed.
+    ///
+    /// If `self` is `⊥`, then the return value will be `⊥`.
+    ///
+    /// Locking behavior: acquires the manager's lock for shared access.
+    fn pick_cube_symbolic_set(&self, literal_set: &Self) -> AllocResult<Self> {
+        self.with_manager_shared(|manager, edge| {
+            let res =
+                Self::pick_cube_symbolic_set_edge(manager, edge, literal_set.as_edge(manager))?;
+            Ok(Self::from_edge(manager, res))
+        })
+    }
+
     /// `Edge` version of [`Self::pick_cube()`]
     fn pick_cube_edge<'id, 'a, I>(
         manager: &'a Self::Manager<'id>,
         edge: &'a EdgeOfFunc<'id, Self>,
         order: impl IntoIterator<IntoIter = I>,
-        choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>) -> bool,
+        choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>, LevelNo) -> bool,
     ) -> Option<Vec<OptBool>>
     where
         I: ExactSizeIterator<Item = &'a EdgeOfFunc<'id, Self>>;
+
+    /// `Edge` version of [`Self::pick_cube_symbolic()`]
+    fn pick_cube_symbolic_edge<'id>(
+        manager: &Self::Manager<'id>,
+        edge: &EdgeOfFunc<'id, Self>,
+        choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>, LevelNo) -> bool,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
+
+    /// `Edge` version of [`Self::pick_cube_symbolic_set()`]
+    fn pick_cube_symbolic_set_edge<'id>(
+        manager: &Self::Manager<'id>,
+        edge: &EdgeOfFunc<'id, Self>,
+        literal_set: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
     /// Pick a random cube of this function, where each cube has the same
     /// probability of being chosen
@@ -690,7 +770,7 @@ pub trait BooleanFunction: Function {
         S: BuildHasher,
     {
         let vars = manager.num_levels();
-        Self::pick_cube_edge(manager, edge, order, |manager, edge| {
+        Self::pick_cube_edge(manager, edge, order, |manager, edge, _| {
             let tag = edge.tag();
             // `edge` is guaranteed to point to an inner node
             let node = manager.get_node(edge).unwrap_inner();

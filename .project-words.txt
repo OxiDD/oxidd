@@ -86,6 +86,7 @@ madvise
 manylinux
 mdbook
 memchr
+minterm
 Miri
 mmap
 MSVC

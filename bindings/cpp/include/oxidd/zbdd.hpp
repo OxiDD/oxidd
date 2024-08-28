@@ -618,6 +618,35 @@ public:
     return util::assignment(capi::oxidd_zbdd_pick_cube(_func));
   }
 
+  /// Pick a satisfying assignment, represented as ZBDD
+  ///
+  /// Locking behavior: acquires the manager's lock for shared access.
+  ///
+  /// @returns  A satisfying assignment if there exists one. Otherwise (i.e., if
+  ///           `f` is ⊥), ⊥ is returned.
+  [[nodiscard]] zbdd_function pick_cube_symbolic() const noexcept {
+    return capi::oxidd_zbdd_pick_cube_symbolic(_func);
+  }
+
+  /// Pick a satisfying assignment, represented as ZBDD, using the literals in
+  /// `literal_set` if there is a choice
+  ///
+  /// `literal_set` is represented as a conjunction of literals. Whenever there
+  /// is a choice for a variable, it will be set to true if the variable has a
+  /// positive occurrence in `literal_set`, and set to false if it occurs
+  /// negated in `literal_set`. If the variable does not occur in `literal_set`,
+  /// then it will be left as don't care if possible, otherwise an arbitrary
+  /// (not necessarily random) choice will be performed.
+  ///
+  /// Locking behavior: acquires the manager's lock for shared access.
+  ///
+  /// @returns  A satisfying assignment if there exists one. Otherwise (i.e., if
+  ///           `f` is ⊥), ⊥ is returned.
+  [[nodiscard]] zbdd_function
+  pick_cube_symbolic_set(const zbdd_function &literal_set) const noexcept {
+    return capi::oxidd_zbdd_pick_cube_symbolic_set(_func, literal_set._func);
+  }
+
   /// Evaluate this Boolean function with arguments `args`
   ///
   /// `args` determines the valuation for all variables. Missing values are

@@ -232,6 +232,12 @@ concept substitution = function_subst<typename S::function> &&
 /// - `f.pick_cube()` returns a satisfying `oxidd::util::assignment` if `f` is
 ///   satisfiable, or an empty `oxidd::util::assignment` otherwise. `f` must be
 ///   valid.
+/// - `f.pick_cube_symbolic()` returns a satisfying assignment as decision
+///   diagram if there is one or ⊥.
+/// - `f.pick_cube_symbolic_set(literal_set)` returns a satisfying assignment as
+///   decision diagram if there is one or ⊥. Whenever there is a choice for a
+///   variable, and the variable is defined in `literal_set`, the respective
+///   polarity is used.
 /// - `f.eval(args)` evaluates the Boolean function `f` with arguments `args`
 ///   and returns the respective result. `args` determines the valuation for all
 ///   variables. Missing values are assumed to be false. The order is
@@ -283,6 +289,8 @@ concept boolean_function =
       { f.sat_count_double(levels) } -> std::same_as<double>;
 
       { f.pick_cube() } -> std::same_as<util::assignment>;
+      { f.pick_cube_symbolic() } -> std::same_as<F>;
+      { f.pick_cube_symbolic_set(f) } -> std::same_as<F>;
 
       { f.eval(args) } -> std::same_as<bool>;
     } &&

@@ -748,7 +748,8 @@ pub unsafe extern "C" fn oxidd_bcdd_sat_count_double(f: bcdd_t, vars: LevelNo) -
 ///           oxidd_assignment_free().
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_bcdd_pick_cube(f: bcdd_t) -> assignment_t {
-    let res = f.get().expect(FUNC_UNWRAP_MSG).pick_cube([], |_, _| false);
+    let f = f.get().expect(FUNC_UNWRAP_MSG);
+    let res = f.pick_cube([], |_, _, _| false);
     match res {
         Some(mut v) => {
             v.shrink_to_fit();
@@ -762,6 +763,41 @@ pub unsafe extern "C" fn oxidd_bcdd_pick_cube(f: bcdd_t) -> assignment_t {
             len: 0,
         },
     }
+}
+
+/// Pick a satisfying assignment, represented as BCDD
+///
+/// Locking behavior: acquires the manager's lock for shared access.
+///
+/// @returns  A satisfying assignment if there exists one. Otherwise (i.e., if
+///           `f` is ⊥), ⊥ is returned.
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bcdd_pick_cube_symbolic(f: bcdd_t) -> bcdd_t {
+    f.get()
+        .and_then(|f| f.pick_cube_symbolic(|_, _, _| false))
+        .into()
+}
+
+/// Pick a satisfying assignment, represented as BCDD, using the literals in
+/// `literal_set` if there is a choice
+///
+/// `literal_set` is represented as a conjunction of literals. Whenever there is
+/// a choice for a variable, it will be set to true if the variable has a
+/// positive occurrence in `literal_set`, and set to false if it occurs negated
+/// in `literal_set`. If the variable does not occur in `literal_set`, then it
+/// will be left as don't care if possible, otherwise an arbitrary (not
+/// necessarily random) choice will be performed.
+///
+/// Locking behavior: acquires the manager's lock for shared access.
+///
+/// @returns  A satisfying assignment if there exists one. Otherwise (i.e., if
+///           `f` is ⊥), ⊥ is returned.
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bcdd_pick_cube_symbolic_set(
+    f: bcdd_t,
+    literal_set: bcdd_t,
+) -> bcdd_t {
+    op2(f, literal_set, BCDDFunction::pick_cube_symbolic_set)
 }
 
 /// Pair of a BCDD function and a Boolean

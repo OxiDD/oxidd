@@ -96,8 +96,8 @@ impl<E: Edge<Tag = EdgeTag>, N: InnerNode<E>> DiagramRules<E, N, BCDDTerminal> f
         }
 
         let tt = t.tag();
-        let et = e.tag();
         if tt == EdgeTag::Complemented {
+            let et = e.tag();
             let node = N::new(
                 level,
                 [t.with_tag_owned(EdgeTag::None), e.with_tag_owned(!et)],
@@ -173,6 +173,13 @@ impl<'a, E: Edge<Tag = EdgeTag>, I: ExactSizeIterator<Item = Borrowed<'a, E>>> E
     fn len(&self) -> usize {
         self.it.len()
     }
+}
+
+/// Check if `edge` represents the function `⊥`
+#[inline]
+#[must_use]
+fn is_false<M: Manager<EdgeTag = EdgeTag>>(manager: &M, edge: &M::Edge) -> bool {
+    edge.tag() == EdgeTag::Complemented && manager.get_node(edge).is_any_terminal()
 }
 
 /// Collect the two cofactors `(then, else)` assuming that the incoming edge is
@@ -434,6 +441,44 @@ where
         .expect_inner("Expected a variable but got a terminal node");
     debug_assert!(is_var(manager, node));
     node.level()
+}
+
+/// Add a literal for the variable at `level` to the cube `sub`. The literal
+/// has positive polarity iff `positive` is true. `level` must be above (less
+/// than) the level of the node referenced by `sub`.
+#[inline]
+fn add_literal_to_cube<M>(
+    manager: &M,
+    sub: M::Edge,
+    level: LevelNo,
+    positive: bool,
+) -> AllocResult<M::Edge>
+where
+    M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal>,
+    M::InnerNode: HasLevel,
+{
+    let sub = EdgeDropGuard::new(manager, sub);
+    debug_assert!(!is_false(manager, &sub));
+    debug_assert!(manager.get_node(&sub).level() > level);
+
+    let t = manager.get_terminal(BCDDTerminal)?;
+    let sub = sub.into_edge();
+    let (children, tag) = if positive {
+        let tag = sub.tag();
+        if tag == EdgeTag::Complemented {
+            ([sub.with_tag_owned(EdgeTag::None), t], tag)
+        } else {
+            ([sub, t.with_tag_owned(EdgeTag::Complemented)], tag)
+        }
+    } else {
+        ([t, not_owned(sub)], EdgeTag::Complemented)
+    };
+
+    let res = oxidd_core::LevelView::get_or_insert(
+        &mut manager.level(level),
+        M::InnerNode::new(level, children),
+    )?;
+    Ok(res.with_tag_owned(tag))
 }
 
 // --- Function Interface ------------------------------------------------------

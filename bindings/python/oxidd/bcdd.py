@@ -348,6 +348,19 @@ class BCDDFunction(
         return util.Assignment._from_raw(raw) if raw.len > 0 else None
 
     @override
+    def pick_cube_symbolic(self) -> Self:
+        return self.__class__._from_raw(_lib.oxidd_bcdd_pick_cube_symbolic(self._func))
+
+    @override
+    def pick_cube_symbolic_set(self, literal_set: Self) -> Self:
+        assert (
+            self._func._p == literal_set._func._p
+        ), "`self` and `literal_set` must belong to the same manager"
+        return self.__class__._from_raw(
+            _lib.oxidd_bcdd_pick_cube_symbolic_set(self._func, literal_set._func)
+        )
+
+    @override
     def eval(self, args: collections.abc.Collection[tuple[Self, bool]]) -> bool:
         n = len(args)
         c_args = util._alloc("oxidd_bcdd_bool_pair_t[]", n)

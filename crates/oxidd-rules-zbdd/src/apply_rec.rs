@@ -796,7 +796,7 @@ where
         manager: &'a Self::Manager<'id>,
         edge: &'a EdgeOfFunc<'id, Self>,
         order: impl IntoIterator<IntoIter = I>,
-        choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>) -> bool,
+        choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>, LevelNo) -> bool,
     ) -> Option<Vec<OptBool>>
     where
         I: ExactSizeIterator<Item = &'a EdgeOfFunc<'id, Self>>,
@@ -806,13 +806,14 @@ where
             manager: &M,
             edge: Borrowed<M::Edge>,
             cube: &mut [OptBool],
-            mut choice: impl FnMut(&M, &M::Edge) -> bool,
+            mut choice: impl FnMut(&M, &M::Edge, LevelNo) -> bool,
         ) where
             M::InnerNode: HasLevel,
         {
             let Node::Inner(node) = manager.get_node(&edge) else {
                 return;
             };
+            let level = node.level();
             let (hi, lo) = collect_children(node);
             let (val, next_edge) = if hi == lo {
                 (OptBool::None, hi)
@@ -820,11 +821,11 @@ where
                 let c = if manager.get_node(&lo).is_terminal(&ZBDDTerminal::Empty) {
                     true
                 } else {
-                    choice(manager, &edge)
+                    choice(manager, &edge, level)
                 };
                 (OptBool::from(c), if c { hi } else { lo })
             };
-            cube[node.level() as usize] = val;
+            cube[level as usize] = val;
             inner(manager, next_edge, cube, choice);
         }
 
@@ -854,6 +855,129 @@ where
                 .map(|e| cube[manager.get_node(e).unwrap_inner().level() as usize])
                 .collect()
         })
+    }
+
+    #[inline]
+    fn pick_cube_symbolic_edge<'id>(
+        manager: &Self::Manager<'id>,
+        edge: &EdgeOfFunc<'id, Self>,
+        choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>, LevelNo) -> bool,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        fn inner<M: Manager<Terminal = ZBDDTerminal>>(
+            manager: &M,
+            edge: Borrowed<M::Edge>,
+            mut choice: impl FnMut(&M, &M::Edge, LevelNo) -> bool,
+        ) -> AllocResult<M::Edge>
+        where
+            M::InnerNode: HasLevel,
+        {
+            let Node::Inner(node) = manager.get_node(&edge) else {
+                return Ok(manager.clone_edge(&edge));
+            };
+
+            let level = node.level();
+            let (hi, lo) = collect_children(node);
+            let do_not_care = hi == lo;
+            let c = if hi == lo || manager.get_node(&lo).is_terminal(&ZBDDTerminal::Empty) {
+                true
+            } else {
+                choice(manager, &edge, level)
+            };
+
+            let sub = inner(manager, if c { hi } else { lo }, choice);
+            if !c {
+                return sub;
+            }
+
+            let hi = EdgeDropGuard::new(manager, sub?);
+            let lo = if do_not_care {
+                manager.clone_edge(&hi)
+            } else {
+                manager.get_terminal(ZBDDTerminal::Empty)?
+            };
+            oxidd_core::LevelView::get_or_insert(
+                &mut manager.level(level),
+                M::InnerNode::new(level, [hi.into_edge(), lo]),
+            )
+        }
+
+        inner(manager, edge.borrowed(), choice)
+    }
+
+    #[inline]
+    fn pick_cube_symbolic_set_edge<'id>(
+        manager: &Self::Manager<'id>,
+        edge: &EdgeOfFunc<'id, Self>,
+        literal_set: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        #[inline] // tail-recursive
+        fn set_pop<'a, M: Manager>(
+            manager: &'a M,
+            edge: Borrowed<'a, M::Edge>,
+            until: LevelNo,
+        ) -> (Borrowed<'a, M::Edge>, Option<&'a M::InnerNode>)
+        where
+            M::InnerNode: HasLevel,
+        {
+            match manager.get_node(&edge) {
+                Node::Terminal(_) => (edge, None),
+                Node::Inner(node) => match node.level().cmp(&until) {
+                    Ordering::Less => set_pop(manager, node.child(0), until),
+                    Ordering::Equal => (edge, Some(node)),
+                    Ordering::Greater => (edge, None),
+                },
+            }
+        }
+
+        fn inner<M: Manager<Terminal = ZBDDTerminal>>(
+            manager: &M,
+            edge: Borrowed<M::Edge>,
+            literal_set: Borrowed<M::Edge>,
+        ) -> AllocResult<M::Edge>
+        where
+            M::InnerNode: HasLevel,
+        {
+            let Node::Inner(node) = manager.get_node(&edge) else {
+                return Ok(manager.clone_edge(&edge));
+            };
+            let level = node.level();
+
+            let (literal_set, set_node) = set_pop(manager, literal_set, level);
+
+            let (hi, lo) = collect_children(node);
+            let mut do_not_care = false;
+            let c = if manager.get_node(&lo).is_terminal(&ZBDDTerminal::Empty) {
+                true // enforced (otherwise `cube → function` would not hold)
+            } else if let Some(node) = set_node {
+                let (shi, slo) = collect_children(node);
+                if shi == slo {
+                    do_not_care = hi == lo;
+                } else {
+                    debug_assert!(manager.get_node(&slo).is_terminal(&ZBDDTerminal::Empty));
+                }
+                true // either don't care or selected
+            } else {
+                false // selected
+            };
+
+            let sub = inner(manager, if c { hi } else { lo }, literal_set);
+            if !c {
+                return sub;
+            }
+
+            let hi = EdgeDropGuard::new(manager, sub?);
+            let lo = if do_not_care {
+                manager.clone_edge(&hi)
+            } else {
+                manager.get_terminal(ZBDDTerminal::Empty)?
+            };
+            oxidd_core::LevelView::get_or_insert(
+                &mut manager.level(level),
+                M::InnerNode::new(level, [hi.into_edge(), lo]),
+            )
+        }
+
+        inner(manager, edge.borrowed(), literal_set.borrowed())
     }
 
     fn eval_edge<'id, 'a>(
@@ -1202,12 +1326,28 @@ pub mod mt {
             manager: &'a Self::Manager<'id>,
             edge: &'a EdgeOfFunc<'id, Self>,
             order: impl IntoIterator<IntoIter = I>,
-            choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>) -> bool,
+            choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>, LevelNo) -> bool,
         ) -> Option<Vec<OptBool>>
         where
             I: ExactSizeIterator<Item = &'a EdgeOfFunc<'id, Self>>,
         {
             ZBDDFunction::<F>::pick_cube_edge(manager, edge, order, choice)
+        }
+        #[inline]
+        fn pick_cube_symbolic_edge<'id>(
+            manager: &Self::Manager<'id>,
+            edge: &EdgeOfFunc<'id, Self>,
+            choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>, LevelNo) -> bool,
+        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            ZBDDFunction::<F>::pick_cube_symbolic_edge(manager, edge, choice)
+        }
+        #[inline]
+        fn pick_cube_symbolic_set_edge<'id>(
+            manager: &Self::Manager<'id>,
+            edge: &EdgeOfFunc<'id, Self>,
+            literal_set: &EdgeOfFunc<'id, Self>,
+        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            ZBDDFunction::<F>::pick_cube_symbolic_set_edge(manager, edge, literal_set)
         }
 
         #[inline]

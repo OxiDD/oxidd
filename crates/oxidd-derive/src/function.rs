@@ -447,6 +447,7 @@ pub fn derive_boolean_function(input: syn::DeriveInput) -> TokenStream {
             Binary("imp"),
             Binary("imp_strict"),
             Ternary("ite"),
+            Binary("pick_cube_symbolic_set"),
         ],
         |ctx| {
             let CustomMethodsCtx {
@@ -460,6 +461,7 @@ pub fn derive_boolean_function(input: syn::DeriveInput) -> TokenStream {
 
             let from_ft = struct_field.gen_from_inner(quote!(ft));
             let from_ff = struct_field.gen_from_inner(quote!(ff));
+            let from_res = struct_field.gen_from_inner(quote!(res));
 
             quote! {
                 #[inline]
@@ -539,7 +541,7 @@ pub fn derive_boolean_function(input: syn::DeriveInput) -> TokenStream {
                 fn pick_cube<'__a, __I: ::std::iter::ExactSizeIterator<Item = &'__a Self>>(
                     &'__a self,
                     order: impl ::std::iter::IntoIterator<IntoIter = __I>,
-                    choice: impl for<'__id> ::std::ops::FnMut(&#manager_ty, &#edge_ty) -> bool,
+                    choice: impl for<'__id> ::std::ops::FnMut(&#manager_ty, &#edge_ty, ::oxidd_core::LevelNo) -> bool,
                 ) -> ::std::option::Option<::std::vec::Vec<::oxidd_core::util::OptBool>> {
                     <#inner as #trait_path>::pick_cube(&self.#field, order.into_iter().map(|f| &f.#field), choice)
                 }
@@ -549,12 +551,30 @@ pub fn derive_boolean_function(input: syn::DeriveInput) -> TokenStream {
                     manager: &'__a #manager_ty,
                     edge: &'__a #edge_ty,
                     order: impl ::std::iter::IntoIterator<IntoIter = __I>,
-                    choice: impl ::std::ops::FnMut(&#manager_ty, &#edge_ty) -> bool,
+                    choice: impl ::std::ops::FnMut(&#manager_ty, &#edge_ty, ::oxidd_core::LevelNo) -> bool,
                 ) -> ::std::option::Option<::std::vec::Vec<::oxidd_core::util::OptBool>>
                 where
                     __I: ::std::iter::ExactSizeIterator<Item = &'__a #edge_ty>,
                 {
                     <#inner as #trait_path>::pick_cube_edge(manager, edge, order, choice)
+                }
+
+                #[inline]
+                fn pick_cube_symbolic(
+                    &self,
+                    choice: impl for<'__id> ::std::ops::FnMut(&#manager_ty, &#edge_ty, ::oxidd_core::LevelNo) -> bool,
+                ) -> ::oxidd_core::util::AllocResult<Self> {
+                    let res = <#inner as #trait_path>::pick_cube_symbolic(&self.#field, choice)?;
+                    Ok(#from_res)
+                }
+
+                #[inline]
+                fn pick_cube_symbolic_edge<'__id>(
+                    manager: &#manager_ty,
+                    edge: &#edge_ty,
+                    choice: impl ::std::ops::FnMut(&#manager_ty, &#edge_ty, ::oxidd_core::LevelNo) -> bool,
+                ) -> ::oxidd_core::util::AllocResult<#edge_ty> {
+                    <#inner as #trait_path>::pick_cube_symbolic_edge(manager, edge, choice)
                 }
 
                 #[inline]

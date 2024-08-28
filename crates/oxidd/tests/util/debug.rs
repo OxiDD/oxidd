@@ -2,19 +2,20 @@ use std::fmt::{Debug, Display, Formatter, Result, Write};
 
 pub type ExplicitBFunc = u32;
 
-pub struct TruthTable {
+pub struct TruthTable<'a, S: AsRef<str>> {
     pub(crate) vars: u32,
-    pub(crate) columns: Vec<(String, ExplicitBFunc)>,
+    pub(crate) columns: &'a [(S, ExplicitBFunc)],
 }
 
-impl Display for TruthTable {
+impl<S: AsRef<str>> Display for TruthTable<'_, S> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         let mut table_width = 0;
         for var in 0..self.vars {
             write!(f, " x{var} |")?;
             table_width += 5 + if var == 0 { 0 } else { var.ilog10() };
         }
-        for (column, _) in &self.columns {
+        for (column, _) in self.columns {
+            let column = column.as_ref();
             write!(f, "| {column} ")?;
             table_width += 3 + column.len() as u32;
         }
@@ -29,8 +30,8 @@ impl Display for TruthTable {
                 let val = (assignment >> var) & 1;
                 write!(f, " {val:>width$} |")?;
             }
-            for (name, func) in &self.columns {
-                let width = name.len();
+            for (name, func) in self.columns {
+                let width = name.as_ref().len();
                 let val = (func >> assignment) & 1;
                 write!(f, "| {val:>width$} ")?;
             }
@@ -39,7 +40,7 @@ impl Display for TruthTable {
         Ok(())
     }
 }
-impl Debug for TruthTable {
+impl<S: AsRef<str>> Debug for TruthTable<'_, S> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         Display::fmt(self, f)
     }

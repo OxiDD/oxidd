@@ -98,6 +98,26 @@ class AllBooleanFunctions(Generic[BF]):
             assert f not in self._dd_to_boolean_func
             self._dd_to_boolean_func[f] = explicit_f
 
+        def var_explicit_func(var: int) -> int:
+            f = 0
+            for assignment in range(num_assignments):
+                f |= ((assignment >> var) & 1) << assignment
+            return f
+
+        self._var_functions = [var_explicit_func(i) for i in range(nvars)]
+
+    def make_cube(self, positive: int, negative: int) -> BF:
+        assert positive & negative == 0
+
+        cube = self._boolean_functions[-1]  # ⊤
+        for i, var in enumerate(self._vars):
+            if (positive >> i) & 1 != 0:
+                cube &= var
+            elif (negative >> i) & 1 != 0:
+                cube &= ~var
+
+        return cube
+
     def basic(self):
         """Test basic operations on all Boolean function"""
 
@@ -174,6 +194,63 @@ class AllBooleanFunctions(Generic[BF]):
                     actual = self._dd_to_boolean_func[f.ite(g, h)]
                     assert actual == expected
 
+            # pick_cube() etc.
+
+            # This is a stripped-down version of the Rust test; we only test
+            # that the results of `pick_cube()` and `pick_cube_symbolic()` agree
+            # (therefore, both can be represented as a conjunction of literals),
+            # and that they imply `f`.
+
+            cube = f.pick_cube()
+            actual = self._dd_to_boolean_func[f.pick_cube_symbolic()]
+
+            if f_explicit == 0:
+                assert actual == 0
+                assert cube is None
+            else:
+                assert cube is not None
+                assert len(cube) == nvars
+                assert actual & ~f_explicit == 0
+
+                cube_func = func_mask
+                for var in range(nvars):
+                    val = cube[var]
+                    if val is None:
+                        continue
+                    var_func = self._var_functions[var]
+                    cube_func &= var_func if val else ~var_func
+
+                assert cube_func == actual
+
+            for pos in range(num_assignments):
+                for neg in range(num_assignments):
+                    if pos & neg:
+                        continue
+
+                    actual = self._dd_to_boolean_func[
+                        f.pick_cube_symbolic_set(self.make_cube(pos, neg))
+                    ]
+                    for var, var_func in enumerate(self._var_functions):
+                        if (actual & var_func) >> (1 << var) == actual & ~var_func:
+                            continue  # var is don't care
+                        if actual & var_func == 0:  # selected to be false
+                            if pos & (1 << var) == 0:
+                                continue  # was not requested to be true
+                            flipped = actual << (1 << var)
+                        else:
+                            assert (
+                                actual & ~var_func == 0
+                            ), "not a conjunction of literals"
+                            # selected to be false
+                            if neg & (1 << var) == 0:
+                                continue
+                            flipped = actual >> (1 << var)
+
+                        # If the variable was selected to be the opposite of the
+                        # request, then the reason must be that the cube would
+                        # not have implied the function.
+                        assert flipped & ~f_explicit
+
 
 class AllBooleanFunctionsQuantSubst(AllBooleanFunctions[BFQS]):
     def _subst_rec(self, replacements: list[Optional[int]], current_var: int):
@@ -228,14 +305,6 @@ class AllBooleanFunctionsQuantSubst(AllBooleanFunctions[BFQS]):
         num_functions = 1 << num_assignments
         func_mask = num_functions - 1
 
-        def var_explicit_func(i: int) -> int:
-            f = 0
-            for assignment in range(num_assignments):
-                f |= ((assignment >> i) & 1) << assignment
-            return f
-
-        var_functions = [var_explicit_func(i) for i in range(nvars)]
-
         # TODO: restrict (once we have it in the Python API)
 
         def assignment_to_mask(assignment: int, var_set: int) -> int:
@@ -243,7 +312,7 @@ class AllBooleanFunctionsQuantSubst(AllBooleanFunctions[BFQS]):
             for i in range(nvars):
                 if ((var_set >> i) & 1) != 0:
                     continue
-                f = var_functions[i]
+                f = self._var_functions[i]
                 mask &= f if ((assignment >> i) & 1) != 0 else ~f
             return mask
 

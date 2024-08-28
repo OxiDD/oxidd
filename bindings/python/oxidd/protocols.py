@@ -282,6 +282,33 @@ class BooleanFunction(Function, Protocol):
         raise NotImplementedError
 
     @abstractmethod
+    def pick_cube_symbolic(self) -> Self:
+        """Pick a satisfying assignment, represented as decision diagram
+
+        Returns ``⊥`` iff ``self`` is unsatisfiable.
+
+        Acquires the manager's lock for shared access.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def pick_cube_symbolic_set(self, literal_set: Self) -> Self:
+        """Pick a satisfying assignment, represented as BDD, using the
+        literals in ``literal_set`` if there is a choice
+
+        ``literal_set`` is represented as a conjunction of literals. Whenever
+        there is a choice for a variable, it will be set to true if the variable
+        has a positive occurrence in ``literal_set``, and set to false if it
+        occurs negated in ``literal_set``. If the variable does not occur in
+        ``literal_set``, then it will be left as don't care if possible,
+        otherwise an arbitrary (not necessarily random) choice will be
+        performed.
+
+        Acquires the manager's lock for shared access.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
     def eval(self, args: collections.abc.Collection[tuple[Self, bool]]) -> bool:
         """Evaluate this Boolean function with arguments ``args``
 

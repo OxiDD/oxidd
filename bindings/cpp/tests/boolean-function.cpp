@@ -121,9 +121,15 @@ using my_enumerate::enumerate;
 template <boolean_function_manager M> class test_all_boolean_functions {
   M _mgr;
   slice<typename M::function> _vars, _var_handles;
-  /// Stores all possible Boolean functions with `vars.size()` vars
+  /// Stores all possible Boolean functions over `vars.size()` variables
   std::vector<typename M::function> _boolean_functions;
+  /// Map from Boolean functions as decision diagrams to their explicit (truth
+  /// table) representations
   std::unordered_map<typename M::function, explicit_b_func> _dd_to_boolean_func;
+  /// Map from variables (`0..vars.size()`) to Boolean functions
+  ///
+  /// Example for three variables: `[0b01010101, 0b00110011, 0b00001111]`
+  std::vector<explicit_b_func> _var_functions;
 
 public:
   /// Initialize the test, generating DDs for all Boolean functions for the
@@ -191,8 +197,34 @@ public:
       assert(inserted &&
              "two different Boolean functions have the same representation");
     }
+
+    _var_functions.reserve(nvars);
+    for (unsigned i = 0; i < nvars; ++i) {
+      explicit_b_func f = 0;
+      for (unsigned assignment = 0; assignment < num_assignments; ++assignment)
+        f |= explicit_b_func{(assignment >> i) & 1} << assignment;
+      _var_functions.push_back(f);
+    }
   }
 
+private:
+  typename M::function make_cube(unsigned positive, unsigned negative) const {
+    assert((positive & negative) == 0);
+
+    typename M::function cube = _boolean_functions.back(); // ⊤
+    for (const auto &[i, var] : enumerate(_vars)) {
+      if (((positive >> i) & 1) != 0) {
+        cube &= var;
+      } else if (((negative >> i) & 1) != 0) {
+        cube &= ~var;
+      }
+    }
+
+    assert(!cube.is_invalid());
+    return cube;
+  }
+
+public:
   /// Test basic operations on all Boolean functions
   void basic() const {
     const unsigned nvars = _vars.size();
@@ -280,6 +312,79 @@ public:
           }
         }
       }
+
+      /* pick_cube() etc. */ {
+        // This is a stripped-down version of the Rust test; we only test that
+        // the results of `pick_cube()` and `pick_cube_symbolic()` agree
+        // (therefore, both can be represented as a conjunction of literals),
+        // and that they imply `f`.
+        const util::assignment cube = f.pick_cube();
+        const explicit_b_func actual =
+            _dd_to_boolean_func.at(f.pick_cube_symbolic());
+
+        if (f_explicit == 0) {
+          assert(actual == 0);
+          assert(cube.size() == 0);
+        } else {
+          assert(cube.size() == nvars);
+          assert((actual & ~f_explicit) == 0);
+
+          explicit_b_func cube_func = func_mask;
+          for (unsigned var = 0; var < nvars; ++var) {
+            switch (cube[var]) {
+            case util::opt_bool::NONE:
+              break;
+            case util::opt_bool::FALSE:
+              cube_func &= ~_var_functions[var];
+              break;
+            case util::opt_bool::TRUE:
+              cube_func &= _var_functions[var];
+              break;
+            }
+          }
+
+          assert(cube_func == actual);
+        }
+
+        for (unsigned pos = 0; pos < num_assignments; ++pos) {
+          for (unsigned neg = 0; neg < num_assignments; ++neg) {
+            if ((pos & neg) != 0)
+              continue;
+
+            const explicit_b_func actual = _dd_to_boolean_func.at(
+                f.pick_cube_symbolic_set(make_cube(pos, neg)));
+
+            if (f_explicit == 0) {
+              assert(actual == 0);
+            } else {
+              assert((actual & !f_explicit) == 0);
+
+              for (const auto &[var, var_func] : enumerate(_var_functions)) {
+                if ((actual & var_func) >> (1 << var) == (actual & ~var_func))
+                  continue; // var is don't care
+                explicit_b_func flipped = 0;
+                if ((actual & var_func) == 0) { // selected to be false
+                  if ((pos & (1 << var)) == 0)
+                    continue; // was not requested to be true
+                  flipped = actual << (1 << var);
+                } else {
+                  assert((actual & ~var_func) == 0 &&
+                         "not a conjunction of literals");
+                  // selected to be false
+                  if ((neg & (1 << var)) == 0)
+                    continue; // was not requested to be true
+                  flipped = actual >> (1 << var);
+                }
+
+                // If the variable was selected to be the opposite of the
+                // request, then the reason must be that the cube would not have
+                // implied the function.
+                assert((flipped & ~f_explicit) != 0);
+              }
+            }
+          }
+        }
+      }
     }
   }
 
@@ -356,16 +461,6 @@ public:
     const explicit_b_func num_functions = 1 << num_assignments;
     const explicit_b_func func_mask = num_functions - 1;
 
-    // Example for 3 vars: [0b01010101, 0b00110011, 0b00001111]
-    std::vector<explicit_b_func> var_functions;
-    var_functions.reserve(nvars);
-    for (unsigned i = 0; i < nvars; ++i) {
-      explicit_b_func f = 0;
-      for (unsigned assignment = 0; assignment < num_assignments; ++assignment)
-        f |= explicit_b_func{(assignment >> i) & 1} << assignment;
-      var_functions.push_back(f);
-    }
-
     // TODO: restrict (once we have it in the C/C++ API)
 
     // quantification
@@ -381,10 +476,10 @@ public:
       // precompute `assignment_to_mask`
       for (const auto &[assignment, mask] : enumerate(assignment_to_mask)) {
         explicit_b_func tmp = func_mask;
-        for (const auto [i, func] : enumerate(var_functions)) {
+        for (const auto [i, func] : enumerate(_var_functions)) {
           if (((var_set >> i) & 1) != 0)
             continue;
-          const explicit_b_func f = var_functions[i];
+          const explicit_b_func f = _var_functions[i];
           tmp &= ((assignment >> i) & 1) != 0 ? f : ~f;
         }
         mask = tmp;

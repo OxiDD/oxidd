@@ -311,7 +311,7 @@ where
 /// unspecified. Ideally the method panics.
 ///
 /// The set semantics of this new node is `lo ∪ {x ∪ {var} | x ∈ hi}`, the
-/// logical equivalent is `lo ∨ (var ∧ hi|ₓ₌₀)`.
+/// logical equivalent is `lo ∨ (var ∧ hi|ᵥₐᵣ₌₀)`.
 pub fn make_node<M>(manager: &M, var: &M::Edge, hi: M::Edge, lo: M::Edge) -> AllocResult<M::Edge>
 where
     M: Manager<Terminal = ZBDDTerminal>,
