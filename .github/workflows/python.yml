@@ -95,7 +95,7 @@ jobs:
       - name: Install cbindgen
         run: brew install cbindgen
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.18.1
+        uses: pypa/cibuildwheel@v2.20.0
         env:
           CIBW_ARCHS_MACOS: native
 
@@ -114,7 +114,7 @@ jobs:
       - name: Install Rust targets
         run: rustup target add aarch64-pc-windows-msvc
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.18.1
+        uses: pypa/cibuildwheel@v2.20.0
         env:
           CIBW_ARCHS_WINDOWS: all
           CIBW_TEST_SKIP: "*-win_arm64"
