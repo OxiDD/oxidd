@@ -136,7 +136,7 @@ jobs:
       steps:
       - uses: actions/checkout@v4
       - name: CMake Configure
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug
+        run: cmake -B build
       - name: Build
         run: cmake --build build --target bindings/cpp/tests/boolean-function
       - name: Run Tests
