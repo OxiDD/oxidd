@@ -186,6 +186,9 @@ class BCDDFunction(
     def cofactor_false(self) -> Self:
         return self.__class__._from_raw(_lib.oxidd_bcdd_cofactor_false(self._func))
 
+    def level(self) -> int:
+        return _lib.oxidd_bcdd_level(self._func)
+
     @override
     def __invert__(self) -> Self:
         return self.__class__._from_raw(_lib.oxidd_bcdd_not(self._func))
