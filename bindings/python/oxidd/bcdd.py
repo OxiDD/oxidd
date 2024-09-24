@@ -87,7 +87,9 @@ class BCDDSubstitution:
 
 
 class BCDDFunction(
-    protocols.BooleanFunctionQuant, protocols.FunctionSubst[BCDDSubstitution]
+    protocols.BooleanFunctionQuant,
+    protocols.FunctionSubst[BCDDSubstitution],
+    protocols.HasLevel,
 ):
     """Boolean function represented as a binary decision diagram with complement
     edges (BCDD)
@@ -176,6 +178,11 @@ class BCDDFunction(
     @override
     def cofactor_false(self) -> Self:
         return self.__class__._from_raw(_lib.oxidd_bcdd_cofactor_false(self._func))
+
+    @override
+    def level(self) -> Optional[int]:
+        val = _lib.oxidd_bcdd_level(self._func)
+        return val if val != util._LEVEL_NO_MAX else None
 
     @override
     def __invert__(self) -> Self:

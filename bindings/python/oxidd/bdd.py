@@ -87,7 +87,9 @@ class BDDSubstitution:
 
 
 class BDDFunction(
-    protocols.BooleanFunctionQuant, protocols.FunctionSubst[BDDSubstitution]
+    protocols.BooleanFunctionQuant,
+    protocols.FunctionSubst[BDDSubstitution],
+    protocols.HasLevel,
 ):
     """Boolean function represented as a simple binary decision diagram (BDD)
 
@@ -174,6 +176,11 @@ class BDDFunction(
     @override
     def cofactor_false(self) -> Self:
         return self.__class__._from_raw(_lib.oxidd_bdd_cofactor_false(self._func))
+
+    @override
+    def level(self) -> Optional[int]:
+        val = _lib.oxidd_bdd_level(self._func)
+        return val if val != util._LEVEL_NO_MAX else None
 
     @override
     def __invert__(self) -> Self:

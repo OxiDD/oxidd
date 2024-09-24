@@ -351,6 +351,19 @@ public:
     return capi::oxidd_bdd_cofactor_true(_func);
   }
 
+  /// Get the level of the underlying node
+  ///
+  /// Locking behavior: acquires the manager's lock for shared access.
+  ///
+  /// Runtime complexity: O(1)
+  ///
+  /// @returns  The level of the underlying inner node or
+  ///           `std::numeric_limits<oxidd::level_no>::max()` for terminals and
+  ///           invalid functions.
+  [[nodiscard]] level_no_t level() const noexcept {
+    return capi::oxidd_bdd_level(_func);
+  }
+
   /// Compute the BDD for the negation `¬this`
   ///
   /// Locking behavior: acquires the manager's lock for shared access.

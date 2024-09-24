@@ -416,9 +416,12 @@ def test_zbdd_all_boolean_functions_2vars_t1():
 def pick_cube(mgr: Union[oxidd.bdd.BDDManager, oxidd.bcdd.BCDDManager]):
     """Only works for B(C)DDs"""
     tt = mgr.true()
+    assert tt.level() is None
 
     x = mgr.new_var()
     y = mgr.new_var()
+    assert x.level() is not None
+    assert y.level() is not None
 
     c = tt.pick_cube()
     assert c is not None

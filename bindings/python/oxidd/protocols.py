@@ -10,6 +10,7 @@ __all__ = [
     "FunctionSubst",
     "BooleanFunction",
     "BooleanFunctionQuant",
+    "HasLevel",
 ]
 
 import collections.abc
@@ -108,6 +109,20 @@ class FunctionSubst(Function, Generic[S], Protocol):
 
         ``self`` and all functions in ``substitution`` must belong to the same
         manager.
+        """
+        raise NotImplementedError
+
+
+class HasLevel(Function, Protocol):
+    """Function whose decision diagram node is associated with a level"""
+
+    @abstractmethod
+    def level(self) -> Optional[int]:
+        """Get the level of the underlying node (``None`` for terminals)
+
+        Locking behavior: acquires the manager's lock for shared access.
+
+        Runtime complexity: O(1)
         """
         raise NotImplementedError
 

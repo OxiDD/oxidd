@@ -306,7 +306,7 @@ public:
   /// @name ZBDD Construction Operations
   /// @{
 
-  /// Get the cofactors `(f_true, f_false)` of `f`
+  /// Get the cofactors `(f_true, f_false)`
   ///
   /// Let f(x₀, …, xₙ) be represented by `f`, where x₀ is (currently) the
   /// top-most variable. Then f<sub>true</sub>(x₁, …, xₙ) = f(⊤, x₁, …, xₙ) and
@@ -359,6 +359,19 @@ public:
   ///           otherwise an invalid function.
   [[nodiscard]] zbdd_function cofactor_false() const noexcept {
     return capi::oxidd_zbdd_cofactor_true(_func);
+  }
+
+  /// Get the level of the underlying node
+  ///
+  /// Locking behavior: acquires the manager's lock for shared access.
+  ///
+  /// Runtime complexity: O(1)
+  ///
+  /// @returns  The level of the underlying inner node or
+  ///           `std::numeric_limits<oxidd::level_no>::max()` for terminals and
+  ///           invalid functions.
+  [[nodiscard]] level_no_t level() const noexcept {
+    return capi::oxidd_zbdd_level(_func);
   }
 
   /// Get the ZBDD Boolean function v for the singleton set {v}

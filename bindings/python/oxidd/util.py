@@ -13,6 +13,9 @@ from typing_extensions import Never, Self, overload, override
 #: CFFI allocator that does not zero the newly allocated region
 _alloc = _ffi.new_allocator(should_clear_after_alloc=False)
 
+#: Maximum numeric value of the Rust ``LevelNo`` type (used for terminals)
+_LEVEL_NO_MAX = (1 << 32) - 1
+
 
 class BooleanOperator(enum.IntEnum):
     """Binary operators on Boolean functions"""

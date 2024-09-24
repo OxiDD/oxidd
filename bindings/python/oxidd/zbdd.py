@@ -87,7 +87,7 @@ class ZBDDManager(protocols.BooleanFunctionManager["ZBDDFunction"]):
         return _lib.oxidd_zbdd_num_inner_nodes(self._mgr)
 
 
-class ZBDDFunction(protocols.BooleanFunction):
+class ZBDDFunction(protocols.BooleanFunction, protocols.HasLevel):
     """Boolean function 𝔹ⁿ → 𝔹 (or set of Boolean vectors 𝔹ⁿ) represented as
     zero-suppressed binary decision diagram
 
@@ -174,6 +174,11 @@ class ZBDDFunction(protocols.BooleanFunction):
     @override
     def cofactor_false(self) -> Self:
         return self.__class__._from_raw(_lib.oxidd_zbdd_cofactor_false(self._func))
+
+    @override
+    def level(self) -> Optional[int]:
+        val = _lib.oxidd_zbdd_level(self._func)
+        return val if val != util._LEVEL_NO_MAX else None
 
     def var_boolean_function(self) -> Self:
         """Get the ZBDD Boolean function v for the singleton set {v}
