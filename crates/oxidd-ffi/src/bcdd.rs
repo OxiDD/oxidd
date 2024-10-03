@@ -355,18 +355,16 @@ pub unsafe extern "C" fn oxidd_bcdd_cofactor_false(f: bcdd_t) -> bcdd_t {
 }
 
 /// Get the level of the underlying node (`LevelNo::MAX` for terminals)
-/// 
+///
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// Runtime complexity: O(1)
-/// 
+///
 /// @returns The level of the underlying node.
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_bcdd_level(f: bcdd_t) -> LevelNo {
     if let Ok(f) = f.get() {
-        f.with_manager_shared(|manager, edge| {
-            manager.get_node(edge).level()
-        })
+        f.with_manager_shared(|manager, edge| manager.get_node(edge).level())
     } else {
         LevelNo::MAX
     }
