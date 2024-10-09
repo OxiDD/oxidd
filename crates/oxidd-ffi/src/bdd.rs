@@ -861,6 +861,76 @@ pub unsafe extern "C" fn oxidd_bdd_eval(
         })
 }
 
+/// Export the decision diagram for function `f` to `filename` in DDDMP format.
+///
+/// `dd_name` is the name that is output to the `.dd` field, unless it is an
+/// empty string.
+///
+/// `function_name` is the name of the root function that is output to the `.dd`
+/// field, unless it is an empty string.
+///
+/// `vars` are edges representing *all* variables in the decision diagram. The
+/// order does not matter. `var_names` are the names of these variables. These
+/// must be `vars.len()` names in the same order as in `vars`.
+///
+/// `ascii` indicates whether to use the ASCII or binary format.
+///
+/// Locking behavior: acquires the manager's lock for shared access.
+///
+/// @returns  `true` on success
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_export_dddmp(
+    f: bdd_t,
+    path: *const c_char,
+    dd_name: *const c_char,
+    function_name: *const c_char,
+    vars: *const bdd_t,
+    var_names: *const *const c_char,
+    num_vars: usize,
+    ascii: bool,
+) -> bool {
+    let Ok(path) = CStr::from_ptr(path).to_str() else {
+        return false;
+    };
+    let Ok(file) = std::fs::File::create(path) else {
+        return false;
+    };
+
+    let f = f.get().expect("f must be valid");
+    f.with_manager_shared(|manager, _| {
+        // Collect the variables.
+        let vars: Vec<ManuallyDrop<BDDFunction>> = std::slice::from_raw_parts(vars, num_vars)
+            .iter()
+            .map(|g| g.get().expect("Invalid variable BDD"))
+            .collect();
+
+        let vars_ref: Vec<&BDDFunction> = vars.iter().map::<&BDDFunction, _>(|v| v).collect();
+
+        let var_names: Vec<&str> = std::slice::from_raw_parts(var_names, num_vars)
+            .iter()
+            .map(|&name| {
+                CStr::from_ptr(name)
+                    .to_str()
+                    .expect("the variable name is not a valid UTF-8 string")
+            })
+            .collect();
+
+        let func: &BDDFunction = &f;
+        oxidd_dump::dddmp::export(
+            file,
+            manager,
+            ascii,
+            &c_char_to_str(dd_name),
+            &vars_ref,
+            Some(&var_names),
+            &[func],
+            Some(&[&c_char_to_str(function_name)]),
+            |_| false,
+        )
+        .is_ok()
+    })
+}
+
 /// Dump the entire decision diagram represented by `manager` as Graphviz DOT
 /// code to a file at `path`
 ///

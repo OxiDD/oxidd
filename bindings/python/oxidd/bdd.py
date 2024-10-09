@@ -184,6 +184,32 @@ class BDDFunction(
     def __ge__(self, other: Self) -> bool:
         return (self._func._p, self._func._i) >= (other._func._p, other._func._i)
 
+    def export_dddmp(
+        self,
+        dd_name: str,
+        filename: str,
+        function_name: str,
+        variables: list[Self],
+        variable_names: list[str],
+        as_ascii: bool,
+    ) -> None:
+        """Export the decision diagram in to filename in DDDMP format"""
+        tmp_variables = [var._func for var in variables]
+        tmp_variable_names = [
+            _ffi.new("char[]", name.encode()) for name in variable_names
+        ]
+
+        _lib.oxidd_bdd_export_dddmp(
+            self._func,
+            filename.encode(),
+            dd_name.encode(),
+            function_name.encode(),
+            tmp_variables,
+            tmp_variable_names,
+            len(variables),
+            as_ascii,
+        )
+
     @override
     def __hash__(self) -> int:
         return hash((self._func._p, self._func._i))
