@@ -1,3 +1,6 @@
+use core::slice;
+use std::ffi::CStr;
+use std::fs::File;
 use std::hash::BuildHasherDefault;
 use std::mem::ManuallyDrop;
 
@@ -10,6 +13,7 @@ use oxidd::{
     BooleanFunction, BooleanFunctionQuant, Edge, Function, FunctionSubst, Manager, ManagerRef,
     RawFunction, RawManagerRef,
 };
+use oxidd_dump::{dddmp, dot};
 
 // We need to use the following items from `oxidd_core` since cbindgen only
 // parses `oxidd_ffi` and `oxidd_core`:
@@ -351,7 +355,8 @@ pub unsafe extern "C" fn oxidd_bdd_cofactor_false(f: bdd_t) -> bdd_t {
     }
 }
 
-/// Get the level of the underlying node (`LevelNo::MAX` for terminals)
+/// Get the level of the underlying node (`LevelNo::MAX` for terminals and
+/// invalid nodes)
 ///
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
@@ -466,6 +471,88 @@ pub unsafe extern "C" fn oxidd_bdd_imp_strict(lhs: bdd_t, rhs: bdd_t) -> bdd_t {
 pub unsafe extern "C" fn oxidd_bdd_ite(cond: bdd_t, then_case: bdd_t, else_case: bdd_t) -> bdd_t {
     op3(cond, then_case, else_case, BDDFunction::ite)
 }
+
+/// Export the decision diagram in to `filename`
+///
+/// `ascii` indicates whether to use the ASCII or binary format.
+///
+/// `dd_name` is the name that is output to the `.dd` field, unless it is an
+/// empty string.
+///
+/// `vars` are edges representing *all* variables in the decision diagram. The
+/// order does not matter. `var_names` are the names of these variables
+/// (optional). If given, there must be `vars.len()` names in the same order as
+/// in `vars`.
+///
+/// `functions` are edges pointing to the root nodes of functions.
+/// `function_names` are the corresponding names (optional). If given, there
+/// must be `functions.len()` names in the same order as in `function_names`.
+///
+/// `is_complemented` is a function that returns whether an edge is
+/// complemented.
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_export_dddmp(
+    f: bdd_t,
+    filename: *const i8,
+    dd_name: *const i8,
+    vars: *const bdd_t,
+    num_vars: usize,
+    ascii: bool,
+) -> bool {
+    let file = File::create(CStr::from_ptr(filename).to_str().unwrap()).unwrap();
+    f.get()
+        .and_then(|f| {
+            f.with_manager_shared(|manager, _| {
+                // Collect the variables.
+                let vars: Vec<ManuallyDrop<BDDFunction>> = slice::from_raw_parts(vars, num_vars).iter().map(|g| {
+                    g.get().unwrap()
+                }).collect();
+
+                let vars_ref: Vec<&BDDFunction> = vars.iter().map(|f| {
+                    let func: &BDDFunction = f;
+                    func
+                }).collect();
+
+                let func: &BDDFunction = &f;
+                dddmp::export(
+                    file,
+                    manager,
+                    ascii,
+                    CStr::from_ptr(dd_name).to_str().unwrap(),
+                    &vars_ref,
+                    None,
+                    &[func],
+                    None,
+                    |_| false,
+                )
+                .unwrap();
+                Ok(())
+            })
+        })
+        .is_ok()
+}
+
+/// Dump the entire decision diagram represented by `manager` as dot code to
+/// `file`
+///
+/// `variables` contains pairs of edges representing the variable and names
+/// (`VD`, implementing [`std::fmt::Display`]). `functions` contains pairs of
+/// edges representing the function and names (`FD`, implementing
+/// [`std::fmt::Display`]). In both cases, the order of elements does not
+/// matter.
+// #[no_mangle]
+// pub unsafe extern "C" fn oxidd_bdd_export_dot(f: bdd_t, filename: &str) -> bool {
+//     let mut file = File::create(filename).unwrap();
+//     f.get().and_then(|f| {
+//         f.with_manager_shared(|manager, edge| {
+//             Ok(dot::dump_all(
+//                 std::io::BufWriter::new(file),
+//                 manager,
+//                 [(_, _)].iter(),
+//                 [(f, "None")].iter()).unwrap())
+//         })
+//     }).is_ok()
+// }
 
 /// Substitute `vars` in the BDD `f` by `replacement`
 ///

@@ -506,7 +506,8 @@ pub unsafe extern "C" fn oxidd_zbdd_true(manager: zbdd_manager_t) -> zbdd_t {
         .with_manager_shared(|manager| ZBDDFunction::t(manager).into())
 }
 
-/// Get the level of the underlying node (`LevelNo::MAX` for terminals)
+/// Get the level of the underlying node (`LevelNo::MAX` for terminals and
+/// invalid nodes)
 ///
 /// Locking behavior: acquires the manager's lock for shared access.
 ///

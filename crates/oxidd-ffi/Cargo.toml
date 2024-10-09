@@ -19,6 +19,7 @@ crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
 oxidd-core = { workspace = true }
+oxidd-dump = { workspace = true, features = ["dddmp", "dot"] }
 oxidd = { workspace = true, features = ["bdd", "bcdd", "zbdd"] }
 
 rustc-hash = "2" # fast hash function

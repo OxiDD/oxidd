@@ -354,7 +354,8 @@ pub unsafe extern "C" fn oxidd_bcdd_cofactor_false(f: bcdd_t) -> bcdd_t {
     }
 }
 
-/// Get the level of the underlying node (`LevelNo::MAX` for terminals)
+/// Get the level of the underlying node (`LevelNo::MAX` for terminals and
+/// invalid nodes)
 ///
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
