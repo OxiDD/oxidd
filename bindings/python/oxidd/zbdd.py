@@ -184,6 +184,7 @@ class ZBDDFunction(protocols.BooleanFunction):
     def cofactor_false(self) -> Self:
         return self.__class__._from_raw(_lib.oxidd_zbdd_cofactor_false(self._func))
 
+    @override
     def level(self) -> int:
         return _lib.oxidd_zbdd_level(self._func)
 
