@@ -1,10 +1,9 @@
 use core::slice;
-use std::ffi::CStr;
+use std::ffi::{c_char, CStr};
 use std::fs::File;
 use std::hash::BuildHasherDefault;
 use std::mem::ManuallyDrop;
 
-use oxidd_dump::dot::dump_all;
 use rustc_hash::FxHasher;
 
 use oxidd::bdd::{BDDFunction, BDDManagerRef};
@@ -14,7 +13,8 @@ use oxidd::{
     BooleanFunction, BooleanFunctionQuant, Edge, Function, FunctionSubst, Manager, ManagerRef,
     RawFunction, RawManagerRef,
 };
-use oxidd_dump::{dddmp, dot};
+use oxidd_dump::dot::dump_all;
+use oxidd_dump::dddmp;
 
 // We need to use the following items from `oxidd_core` since cbindgen only
 // parses `oxidd_ffi` and `oxidd_core`:
@@ -486,15 +486,14 @@ pub unsafe extern "C" fn oxidd_bdd_ite(cond: bdd_t, then_case: bdd_t, else_case:
 /// must be `vars.len()` names in the same order as in `vars`.
 ///
 /// `ascii` indicates whether to use the ASCII or binary format.
-///
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_bdd_export_dddmp(
     f: bdd_t,
-    filename: *const i8,
-    dd_name: *const i8,
-    function_name: *const i8,
+    filename: *const c_char,
+    dd_name: *const c_char,
+    function_name: *const c_char,
     vars: *const bdd_t,
-    var_names: *const *const i8,
+    var_names: *const *const c_char,
     num_vars: usize,
     ascii: bool,
 ) {
@@ -565,14 +564,13 @@ pub unsafe extern "C" fn oxidd_bdd_export_dddmp(
 ///
 /// `var_names` are the names of these variables. These must be `num_vars`
 /// names.
-///
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_bdd_export_dot(
     f: bdd_t,
-    filename: *const i8,
-    function_name: *const i8,
+    filename: *const c_char,
+    function_name: *const c_char,
     vars: *const bdd_t,
-    var_names: *const *const i8,
+    var_names: *const *const c_char,
     num_vars: usize,
 ) {
     let file = File::create(

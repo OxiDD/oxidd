@@ -164,8 +164,8 @@ class BDDFunction(
         dd_name: str,
         filename: str,
         function_name: str,
-        variables: List[Self],
-        variable_names: List[str],
+        variables: list[Self],
+        variable_names: list[str],
         as_ascii: bool,
     ) -> None:
         """Export the decision diagram in to filename in DDDMP format"""
@@ -189,8 +189,8 @@ class BDDFunction(
         self,
         filename: str,
         function_name: str,
-        variables: List[Self],
-        variable_names: List[str],
+        variables: list[Self],
+        variable_names: list[str],
     ):
         """Export the decision diagram in to filename in Graphviz dot format"""
         tmp_variables = [var._func for var in variables]
