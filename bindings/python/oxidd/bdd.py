@@ -160,10 +160,19 @@ class BDDFunction(
         return (self._func._p, self._func._i) >= (other._func._p, other._func._i)
 
     def export_dddmp(
-        self, filename: str, function_name: str, variables: List[Self], as_ascii: bool
+        self,
+        dd_name: str,
+        filename: str,
+        function_name: str,
+        variables: List[Self],
+        variable_names: List[str],
+        as_ascii: bool,
     ) -> None:
         """Export the decision diagram in to filename in DDDMP format"""
         tmp_variables = [var._func for var in variables]
+        tmp_variable_names = [
+            _ffi.new("char[]", name.encode()) for name in variable_names
+        ]
 
         _lib.oxidd_bdd_export_dddmp(
             self._func,
@@ -179,15 +188,13 @@ class BDDFunction(
         filename: str,
         function_name: str,
         variables: List[Self],
-        variable_names: List[str] | None,
+        variable_names: List[str],
     ):
         """Export the decision diagram in to filename in Graphviz dot format"""
         tmp_variables = [var._func for var in variables]
-
-        if variable_names is not None:
-            tmp_variable_names = [_ffi.new("char[]", name.encode()) for name in variable_names]
-        else:
-            tmp_variable_names = None
+        tmp_variable_names = [
+            _ffi.new("char[]", name.encode()) for name in variable_names
+        ]
 
         _lib.oxidd_bdd_export_dot(
             self._func,

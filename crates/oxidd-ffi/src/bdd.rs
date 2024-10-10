@@ -475,26 +475,35 @@ pub unsafe extern "C" fn oxidd_bdd_ite(cond: bdd_t, then_case: bdd_t, else_case:
 
 /// Export the decision diagram for function `f` to `filename` in DDDMP format.
 ///
-/// `ascii` indicates whether to use the ASCII or binary format.
-///
 /// `dd_name` is the name that is output to the `.dd` field, unless it is an
 /// empty string.
 ///
+/// `function_name` is the name of the root function that is output to the `.dd`
+/// field, unless it is an empty string.
+///
 /// `vars` are edges representing *all* variables in the decision diagram. The
-/// order does not matter. `var_names` are the names of these variables
-/// (optional). If given, there must be `vars.len()` names in the same order as
-/// in `vars`.
+/// order does not matter. `var_names` are the names of these variables. These
+/// must be `vars.len()` names in the same order as in `vars`.
+///
+/// `ascii` indicates whether to use the ASCII or binary format.
+///
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_bdd_export_dddmp(
     f: bdd_t,
     filename: *const i8,
     dd_name: *const i8,
+    function_name: *const i8,
     vars: *const bdd_t,
     var_names: *const *const i8,
     num_vars: usize,
     ascii: bool,
 ) {
-    let file = File::create(CStr::from_ptr(filename).to_str().unwrap()).unwrap();
+    let file = File::create(
+        CStr::from_ptr(filename)
+            .to_str()
+            .expect("the file name is not a valid UTF-8 string"),
+    )
+    .expect("Unable to open file");
 
     f.get()
         .and_then(|f| {
@@ -502,7 +511,7 @@ pub unsafe extern "C" fn oxidd_bdd_export_dddmp(
                 // Collect the variables.
                 let vars: Vec<ManuallyDrop<BDDFunction>> = slice::from_raw_parts(vars, num_vars)
                     .iter()
-                    .map(|g| g.get().unwrap())
+                    .map(|g| g.get().expect("Invalid variable BDD"))
                     .collect();
 
                 let vars_ref: Vec<&BDDFunction> = vars
@@ -513,33 +522,50 @@ pub unsafe extern "C" fn oxidd_bdd_export_dddmp(
                     })
                     .collect();
 
+                let var_names: Vec<&str> = slice::from_raw_parts(var_names, num_vars)
+                    .iter()
+                    .map(|&name| {
+                        CStr::from_ptr(name)
+                            .to_str()
+                            .expect("the variable name is not a valid UTF-8 string")
+                    })
+                    .collect();
+
                 let func: &BDDFunction = &f;
                 dddmp::export(
                     file,
                     manager,
                     ascii,
-                    CStr::from_ptr(dd_name).to_str().unwrap(),
+                    CStr::from_ptr(dd_name)
+                        .to_str()
+                        .expect("the dd_name name is not a valid UTF-8 string"),
                     &vars_ref,
-                    None,
+                    Some(&var_names),
                     &[func],
-                    None,
+                    Some(&[CStr::from_ptr(function_name)
+                        .to_str()
+                        .expect("the function name is not a valid UTF-8 string")]),
                     |_| false,
                 )
-                .unwrap();
+                .expect("IO error while exporting the BDD");
                 Ok(())
             })
         })
-        .unwrap()
+        .expect("No allocation error should occur")
 }
 
 /// Dump the entire decision diagram represented by `manager` as dot code to
-/// `file`
+/// `filename` file.
 ///
-/// `variables` contains pairs of edges representing the variable and names
-/// (`VD`, implementing [`std::fmt::Display`]). `functions` contains pairs of
-/// edges representing the function and names (`FD`, implementing
-/// [`std::fmt::Display`]). In both cases, the order of elements does not
-/// matter.
+/// `function_name` is the name of the root function that is output to the
+/// `.dot`
+///
+/// `vars` are edges representing *all* variables in the decision diagram, with
+/// `num_vars` elements.
+///
+/// `var_names` are the names of these variables. These must be `num_vars`
+/// names.
+///
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_bdd_export_dot(
     f: bdd_t,
@@ -549,7 +575,12 @@ pub unsafe extern "C" fn oxidd_bdd_export_dot(
     var_names: *const *const i8,
     num_vars: usize,
 ) {
-    let file = File::create(CStr::from_ptr(filename).to_str().unwrap()).unwrap();
+    let file = File::create(
+        CStr::from_ptr(filename)
+            .to_str()
+            .expect("the file name is not a valid UTF-8 string"),
+    )
+    .expect("Unable to open file");
 
     f.get()
         .and_then(|f| {
@@ -557,7 +588,7 @@ pub unsafe extern "C" fn oxidd_bdd_export_dot(
                 // Collect the variables and their corresponding names.
                 let vars: Vec<ManuallyDrop<BDDFunction>> = slice::from_raw_parts(vars, num_vars)
                     .iter()
-                    .map(|g| g.get().unwrap())
+                    .map(|g| g.get().expect("Invalid variable BDD"))
                     .collect();
 
                 let variables: Vec<(&BDDFunction, &str)> = vars
@@ -565,7 +596,12 @@ pub unsafe extern "C" fn oxidd_bdd_export_dot(
                     .zip(slice::from_raw_parts(var_names, num_vars).iter())
                     .map(|(var, &name)| {
                         let var: &BDDFunction = var;
-                        (var, CStr::from_ptr(name).to_str().unwrap())
+                        (
+                            var,
+                            CStr::from_ptr(name)
+                                .to_str()
+                                .expect("the variable name is not a valid UTF-8 string"),
+                        )
                     })
                     .collect();
 
@@ -574,36 +610,19 @@ pub unsafe extern "C" fn oxidd_bdd_export_dot(
                     file,
                     manager,
                     variables,
-                    [(func, CStr::from_ptr(function_name).to_str().unwrap())],
+                    [(
+                        func,
+                        CStr::from_ptr(function_name)
+                            .to_str()
+                            .expect("the function name is not a valid UTF-8 string"),
+                    )],
                 )
-                .unwrap();
+                .expect("IO error while exporting the BDD");
                 Ok(())
             })
         })
-        .unwrap()
+        .expect("No allocation error should occur")
 }
-
-/// Dump the entire decision diagram represented by `manager` as dot code to
-/// `file`
-///
-/// `variables` contains pairs of edges representing the variable and names
-/// (`VD`, implementing [`std::fmt::Display`]). `functions` contains pairs of
-/// edges representing the function and names (`FD`, implementing
-/// [`std::fmt::Display`]). In both cases, the order of elements does not
-/// matter.
-// #[no_mangle]
-// pub unsafe extern "C" fn oxidd_bdd_export_dot(f: bdd_t, filename: &str) -> bool {
-//     let mut file = File::create(filename).unwrap();
-//     f.get().and_then(|f| {
-//         f.with_manager_shared(|manager, edge| {
-//             Ok(dot::dump_all(
-//                 std::io::BufWriter::new(file),
-//                 manager,
-//                 [(_, _)].iter(),
-//                 [(f, "None")].iter()).unwrap())
-//         })
-//     }).is_ok()
-// }
 
 /// Substitute `vars` in the BDD `f` by `replacement`
 ///
