@@ -3,7 +3,7 @@
 __all__ = ["BDDManager", "BDDFunction"]
 
 import collections.abc
-from typing import Optional
+from typing import List, Optional
 
 from _oxidd import ffi as _ffi
 from _oxidd import lib as _lib
@@ -159,6 +159,54 @@ class BDDFunction(
         """Same as ``not self < other``"""
         return (self._func._p, self._func._i) >= (other._func._p, other._func._i)
 
+    def export_dddmp(
+        self,
+        dd_name: str,
+        filename: str,
+        function_name: str,
+        variables: list[Self],
+        variable_names: list[str],
+        as_ascii: bool,
+    ) -> None:
+        """Export the decision diagram in to filename in DDDMP format"""
+        tmp_variables = [var._func for var in variables]
+        tmp_variable_names = [
+            _ffi.new("char[]", name.encode()) for name in variable_names
+        ]
+
+        _lib.oxidd_bdd_export_dddmp(
+            self._func,
+            filename.encode(),
+            dd_name.encode(),
+            function_name.encode(),
+            tmp_variables,
+            tmp_variable_names,
+            len(variables),
+            as_ascii,
+        )
+
+    def export_dot(
+        self,
+        filename: str,
+        function_name: str,
+        variables: list[Self],
+        variable_names: list[str],
+    ):
+        """Export the decision diagram in to filename in Graphviz dot format"""
+        tmp_variables = [var._func for var in variables]
+        tmp_variable_names = [
+            _ffi.new("char[]", name.encode()) for name in variable_names
+        ]
+
+        _lib.oxidd_bdd_export_dot(
+            self._func,
+            filename.encode(),
+            function_name.encode(),
+            tmp_variables,
+            tmp_variable_names,
+            len(variables),
+        )
+
     @override
     def __hash__(self) -> int:
         return hash((self._func._p, self._func._i))
@@ -183,6 +231,10 @@ class BDDFunction(
     @override
     def cofactor_false(self) -> Self:
         return self.__class__._from_raw(_lib.oxidd_bdd_cofactor_false(self._func))
+
+    @override
+    def level(self) -> int:
+        return _lib.oxidd_bdd_level(self._func)
 
     @override
     def __invert__(self) -> Self:

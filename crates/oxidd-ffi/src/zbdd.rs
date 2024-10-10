@@ -506,6 +506,23 @@ pub unsafe extern "C" fn oxidd_zbdd_true(manager: zbdd_manager_t) -> zbdd_t {
         .with_manager_shared(|manager| ZBDDFunction::t(manager).into())
 }
 
+/// Get the level of the underlying node (`LevelNo::MAX` for terminals and
+/// invalid nodes)
+///
+/// Locking behavior: acquires the manager's lock for shared access.
+///
+/// Runtime complexity: O(1)
+///
+/// @returns The level of the underlying node.
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_zbdd_level(f: zbdd_t) -> LevelNo {
+    if let Ok(f) = f.get() {
+        f.with_manager_shared(|manager, edge| manager.get_node(edge).level())
+    } else {
+        LevelNo::MAX
+    }
+}
+
 /// Compute the ZBDD for the negation `¬f`
 ///
 /// Locking behavior: acquires the manager's lock for shared access.

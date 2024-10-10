@@ -147,6 +147,19 @@ class BooleanFunction(Function, Protocol):
         raise NotImplementedError
 
     @abstractmethod
+    def level(self) -> int:
+        """Get the level of the underlying node (`LevelNo::MAX` for terminals and
+        invalid nodes)
+
+        Locking behavior: acquires the manager's lock for shared access.
+
+        Runtime complexity: O(1)
+
+        Returns The level of the underlying node.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
     def __invert__(self) -> Self:
         """Compute the negation ``¬self``
 
