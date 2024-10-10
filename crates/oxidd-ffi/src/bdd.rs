@@ -4,6 +4,7 @@ use std::fs::File;
 use std::hash::BuildHasherDefault;
 use std::mem::ManuallyDrop;
 
+use oxidd_dump::dot::dump_all;
 use rustc_hash::FxHasher;
 
 use oxidd::bdd::{BDDFunction, BDDManagerRef};
@@ -472,7 +473,7 @@ pub unsafe extern "C" fn oxidd_bdd_ite(cond: bdd_t, then_case: bdd_t, else_case:
     op3(cond, then_case, else_case, BDDFunction::ite)
 }
 
-/// Export the decision diagram in to `filename`
+/// Export the decision diagram for function `f` to `filename` in DDDMP format.
 ///
 /// `ascii` indicates whether to use the ASCII or binary format.
 ///
@@ -483,35 +484,34 @@ pub unsafe extern "C" fn oxidd_bdd_ite(cond: bdd_t, then_case: bdd_t, else_case:
 /// order does not matter. `var_names` are the names of these variables
 /// (optional). If given, there must be `vars.len()` names in the same order as
 /// in `vars`.
-///
-/// `functions` are edges pointing to the root nodes of functions.
-/// `function_names` are the corresponding names (optional). If given, there
-/// must be `functions.len()` names in the same order as in `function_names`.
-///
-/// `is_complemented` is a function that returns whether an edge is
-/// complemented.
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_bdd_export_dddmp(
     f: bdd_t,
     filename: *const i8,
     dd_name: *const i8,
     vars: *const bdd_t,
+    var_names: *const *const i8,
     num_vars: usize,
     ascii: bool,
-) -> bool {
+) {
     let file = File::create(CStr::from_ptr(filename).to_str().unwrap()).unwrap();
+
     f.get()
         .and_then(|f| {
             f.with_manager_shared(|manager, _| {
                 // Collect the variables.
-                let vars: Vec<ManuallyDrop<BDDFunction>> = slice::from_raw_parts(vars, num_vars).iter().map(|g| {
-                    g.get().unwrap()
-                }).collect();
+                let vars: Vec<ManuallyDrop<BDDFunction>> = slice::from_raw_parts(vars, num_vars)
+                    .iter()
+                    .map(|g| g.get().unwrap())
+                    .collect();
 
-                let vars_ref: Vec<&BDDFunction> = vars.iter().map(|f| {
-                    let func: &BDDFunction = f;
-                    func
-                }).collect();
+                let vars_ref: Vec<&BDDFunction> = vars
+                    .iter()
+                    .map(|f| {
+                        let func: &BDDFunction = f;
+                        func
+                    })
+                    .collect();
 
                 let func: &BDDFunction = &f;
                 dddmp::export(
@@ -529,7 +529,58 @@ pub unsafe extern "C" fn oxidd_bdd_export_dddmp(
                 Ok(())
             })
         })
-        .is_ok()
+        .unwrap()
+}
+
+/// Dump the entire decision diagram represented by `manager` as dot code to
+/// `file`
+///
+/// `variables` contains pairs of edges representing the variable and names
+/// (`VD`, implementing [`std::fmt::Display`]). `functions` contains pairs of
+/// edges representing the function and names (`FD`, implementing
+/// [`std::fmt::Display`]). In both cases, the order of elements does not
+/// matter.
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_export_dot(
+    f: bdd_t,
+    filename: *const i8,
+    function_name: *const i8,
+    vars: *const bdd_t,
+    var_names: *const *const i8,
+    num_vars: usize,
+) {
+    let file = File::create(CStr::from_ptr(filename).to_str().unwrap()).unwrap();
+
+    f.get()
+        .and_then(|f| {
+            f.with_manager_shared(|manager, _| {
+                // Collect the variables and their corresponding names.
+                let vars: Vec<ManuallyDrop<BDDFunction>> = slice::from_raw_parts(vars, num_vars)
+                    .iter()
+                    .map(|g| g.get().unwrap())
+                    .collect();
+
+                let variables: Vec<(&BDDFunction, &str)> = vars
+                    .iter()
+                    .zip(slice::from_raw_parts(var_names, num_vars).iter())
+                    .map(|(var, &name)| {
+                        let var: &BDDFunction = var;
+                        (var, CStr::from_ptr(name).to_str().unwrap())
+                    })
+                    .collect();
+
+                let func: &BDDFunction = &f;
+                dump_all(
+                    file,
+                    manager,
+                    variables,
+                    [(func, CStr::from_ptr(function_name).to_str().unwrap())],
+                )
+                .unwrap();
+                Ok(())
+            })
+        })
+        .unwrap()
 }
 
 /// Dump the entire decision diagram represented by `manager` as dot code to

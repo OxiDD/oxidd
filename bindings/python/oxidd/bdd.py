@@ -3,7 +3,7 @@
 __all__ = ["BDDManager", "BDDFunction"]
 
 import collections.abc
-from typing import Optional
+from typing import List, Optional
 
 from _oxidd import ffi as _ffi
 from _oxidd import lib as _lib
@@ -158,6 +158,45 @@ class BDDFunction(
     def __ge__(self, other: Self) -> bool:
         """Same as ``not self < other``"""
         return (self._func._p, self._func._i) >= (other._func._p, other._func._i)
+
+    def export_dddmp(
+        self, filename: str, function_name: str, variables: List[Self], as_ascii: bool
+    ) -> None:
+        """Export the decision diagram in to filename in DDDMP format"""
+        tmp_variables = [var._func for var in variables]
+
+        _lib.oxidd_bdd_export_dddmp(
+            self._func,
+            filename.encode(),
+            function_name.encode(),
+            tmp_variables,
+            len(variables),
+            as_ascii,
+        )
+
+    def export_dot(
+        self,
+        filename: str,
+        function_name: str,
+        variables: List[Self],
+        variable_names: List[str] | None,
+    ):
+        """Export the decision diagram in to filename in Graphviz dot format"""
+        tmp_variables = [var._func for var in variables]
+
+        if variable_names is not None:
+            tmp_variable_names = [_ffi.new("char[]", name.encode()) for name in variable_names]
+        else:
+            tmp_variable_names = None
+
+        _lib.oxidd_bdd_export_dot(
+            self._func,
+            filename.encode(),
+            function_name.encode(),
+            tmp_variables,
+            tmp_variable_names,
+            len(variables),
+        )
 
     @override
     def __hash__(self) -> int:

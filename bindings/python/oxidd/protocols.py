@@ -145,7 +145,7 @@ class BooleanFunction(Function, Protocol):
         Locking behavior: acquires the manager's lock for shared access.
         """
         raise NotImplementedError
-    
+
     @abstractmethod
     def level(self) -> int:
         """Get the level of the underlying node (`LevelNo::MAX` for terminals and
