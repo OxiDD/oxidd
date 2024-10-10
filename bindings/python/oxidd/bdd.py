@@ -177,8 +177,10 @@ class BDDFunction(
         _lib.oxidd_bdd_export_dddmp(
             self._func,
             filename.encode(),
+            dd_name.encode(),
             function_name.encode(),
             tmp_variables,
+            tmp_variable_names,
             len(variables),
             as_ascii,
         )
