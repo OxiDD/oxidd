@@ -2,6 +2,8 @@ use std::marker::PhantomData;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 
+pub mod rwlock;
+
 /// Invariant lifetime
 pub type Invariant<'id> = PhantomData<fn(&'id ()) -> &'id ()>;
 

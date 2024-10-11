@@ -27,7 +27,7 @@ use std::sync::Arc;
 use bitvec::vec::BitVec;
 use crossbeam_utils::CachePadded;
 use linear_hashtbl::raw::RawTable;
-use parking_lot::{Condvar, Mutex, MutexGuard, RwLock};
+use parking_lot::{Condvar, Mutex, MutexGuard};
 use rayon::ThreadPool;
 use rustc_hash::FxHasher;
 
@@ -37,7 +37,7 @@ use oxidd_core::{DiagramRules, InnerNode, LevelNo, Tag};
 
 use crate::node::NodeBase;
 use crate::terminal_manager::TerminalManager;
-use crate::util::{Invariant, TryLock};
+use crate::util::{rwlock::RwLock, Invariant, TryLock};
 
 // === Type Constructors =======================================================
 
@@ -894,6 +894,20 @@ where
 {
     // Get a reference to the store
     fn store(&self) -> &Store<'id, N, ET, TM, R, MD, TERMINALS> {
+        // We can simply get the store pointer by subtracting the offset of
+        // `Manager` in `Store`. The only issue is that this violates Rust's
+        // (proposed) aliasing rules. Hence, we only provide a hint that the
+        // store's address can be computed without loading the value.
+        let offset = const {
+            std::mem::offset_of!(Store<'static, N, ET, TM, R, MD, TERMINALS>, manager)
+                + RwLock::<Self>::DATA_OFFSET
+        };
+        // SAFETY: The resulting pointer is in bounds of the `Store` allocation.
+        if unsafe { (self as *const Self as *const u8).sub(offset) } != self.store as *const u8 {
+            // SAFETY: The pointers above are equal after initialization of `self.store`.
+            unsafe { std::hint::unreachable_unchecked() };
+        }
+
         // SAFETY: After initialization, `self.store` always points to the
         // containing `Store`.
         unsafe { &*self.store }
@@ -913,13 +927,25 @@ where
     type EdgeTag = ET;
     type InnerNode = N;
     type Terminal = TM::TerminalNode;
-    type TerminalRef<'a> = TM::TerminalNodeRef<'a> where Self: 'a;
+    type TerminalRef<'a>
+        = TM::TerminalNodeRef<'a>
+    where
+        Self: 'a;
     type Rules = R;
 
-    type TerminalIterator<'a> = TM::Iterator<'a> where Self: 'a;
+    type TerminalIterator<'a>
+        = TM::Iterator<'a>
+    where
+        Self: 'a;
     type NodeSet = NodeSet;
-    type LevelView<'a> = LevelView<'a, 'id, N, ET, TM, R, MD, TERMINALS> where Self: 'a;
-    type LevelIterator<'a> = LevelIter<'a, 'id, N, ET, TM, R, MD, TERMINALS> where Self: 'a;
+    type LevelView<'a>
+        = LevelView<'a, 'id, N, ET, TM, R, MD, TERMINALS>
+    where
+        Self: 'a;
+    type LevelIterator<'a>
+        = LevelIter<'a, 'id, N, ET, TM, R, MD, TERMINALS>
+    where
+        Self: 'a;
 
     #[inline]
     fn get_node(&self, edge: &Self::Edge) -> oxidd_core::Node<Self> {
@@ -1426,7 +1452,8 @@ where
     TM: TerminalManager<'id, N, ET, TERMINALS>,
     MD: DropWith<Edge<'id, N, ET>>,
 {
-    type Iterator<'b> = LevelViewIter<'b, 'id, N, ET>
+    type Iterator<'b>
+        = LevelViewIter<'b, 'id, N, ET>
     where
         Self: 'b,
         Edge<'id, N, ET>: 'b;
@@ -1544,7 +1571,8 @@ where
     TM: TerminalManager<'id, N, ET, TERMINALS>,
     MD: DropWith<Edge<'id, N, ET>>,
 {
-    type Iterator<'b> = LevelViewIter<'b, 'id, N, ET>
+    type Iterator<'b>
+        = LevelViewIter<'b, 'id, N, ET>
     where
         Self: 'b,
         Edge<'id, N, ET>: 'b;
@@ -1960,7 +1988,7 @@ impl<
         F: for<'id> FnOnce(&Self::Manager<'id>) -> T,
     {
         let local_guard = self.0.prepare_local_state();
-        let res = f(&self.0.manager.read());
+        let res = f(&self.0.manager.shared());
         drop(local_guard);
         res
     }
@@ -1970,7 +1998,7 @@ impl<
         F: for<'id> FnOnce(&mut Self::Manager<'id>) -> T,
     {
         let local_guard = self.0.prepare_local_state();
-        let res = f(&mut self.0.manager.write());
+        let res = f(&mut self.0.manager.exclusive());
         drop(local_guard);
         res
     }
@@ -2049,7 +2077,7 @@ pub fn new_manager<
         gc_signal: (Mutex::new(GCSignal::RunGc), Condvar::new()),
     });
 
-    let mut manager = arc.manager.write();
+    let mut manager = arc.manager.exclusive();
     manager.store = Arc::as_ptr(&arc);
 
     let store_addr = arc.addr();
@@ -2336,7 +2364,7 @@ unsafe impl<
         F: for<'id> FnOnce(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>) -> T,
     {
         let local_guard = self.store.0.prepare_local_state();
-        let res = f(&self.store.0.manager.read(), &self.edge);
+        let res = f(&self.store.0.manager.shared(), &self.edge);
         drop(local_guard);
         res
     }
@@ -2346,7 +2374,7 @@ unsafe impl<
         F: for<'id> FnOnce(&mut Self::Manager<'id>, &EdgeOfFunc<'id, Self>) -> T,
     {
         let local_guard = self.store.0.prepare_local_state();
-        let res = f(&mut self.store.0.manager.write(), &self.edge);
+        let res = f(&mut self.store.0.manager.exclusive(), &self.edge);
         drop(local_guard);
         res
     }
