@@ -45,6 +45,31 @@ class Function(Protocol):
         """
         raise NotImplementedError
 
+    def __lt__(self, other: Self) -> bool:
+        """Check if ``self`` is less than ``other`` according to an arbitrary
+        total order
+
+        The following restrictions apply: Assuming two functions ``f``, ``g``
+        with ``f < g``, then if either ``f`` or ``g`` is deleted and recreated
+        later on, ``f < g`` does not necessarily hold anymore. Moreover, assume
+        `f < g` and two structurally equivalent functions ``f2``, ``g2`` in
+        different managers (i.e., ``f ≅ f2`` but ``f != f2``, and ``g ≅ g2`` but
+        ``g != g2``), then ``f2 < g2`` does not necessarily hold.
+        """
+        raise NotImplementedError
+
+    def __gt__(self, other: Self) -> bool:
+        """Same as ``other < self``"""
+        raise NotImplementedError
+
+    def __le__(self, other: Self) -> bool:
+        """Same as ``not self > other``"""
+        raise NotImplementedError
+
+    def __ge__(self, other: Self) -> bool:
+        """Same as ``not self < other``"""
+        raise NotImplementedError
+
 
 S = TypeVar("S")
 

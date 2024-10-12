@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import Generic, Optional, Protocol, TypeVar
+from typing import Generic, Optional, Protocol, TypeVar, Union
 
 import oxidd
 from oxidd.protocols import (
@@ -413,7 +413,7 @@ def test_zbdd_all_boolean_functions_2vars_t1():
     test.basic()
 
 
-def pick_cube(mgr: BooleanFunctionManager):
+def pick_cube(mgr: Union[oxidd.bdd.BDDManager, oxidd.bcdd.BCDDManager]):
     """Only works for B(C)DDs"""
     tt = mgr.true()
 
@@ -466,7 +466,7 @@ def test_bcdd_pick_cube():
     pick_cube(oxidd.bcdd.BCDDManager(1024, 1024, 1))
 
 
-def ord_hash(mgr):
+def ord_hash(mgr: BooleanFunctionManager[BF]):
     assert hash(mgr) == hash(mgr)
 
     tt = mgr.true()
