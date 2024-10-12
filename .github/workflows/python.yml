@@ -69,6 +69,9 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - uses: docker/setup-qemu-action@v3
+    - uses: actions/setup-python@v5
+      with:
+        python-version: 3.x
     - name: Install cibuildwheel
       run: python3 -m pip install cibuildwheel
     - name: Build (linux-buildwheel.py)
