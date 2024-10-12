@@ -32,7 +32,7 @@ def run(*args: str) -> None:
 
 
 #: Python platform tag -> Rust target triple
-# spell-checker:ignore armv,gnueabi,musleabi
+# spell-checker:ignore armv,gnueabi,musleabihf
 linux_targets = {
     # manylinux
     # ---------
@@ -51,7 +51,7 @@ linux_targets = {
     "musllinux_1_2_x86_64": "x86_64-unknown-linux-musl",
     "musllinux_1_2_i686": "i686-unknown-linux-musl",
     "musllinux_1_2_aarch64": "aarch64-unknown-linux-musl",
-    "musllinux_1_2_armv7l": "armv7-unknown-linux-musleabi",
+    "musllinux_1_2_armv7l": "armv7-unknown-linux-musleabihf",
     # Currently tier 3 targets, so we cannot install them using rustup
     # "musllinux_1_2_ppc64le": "powerpc64le-unknown-linux-gnu",
     # "musllinux_1_2_s390x": "s390x-unknown-linux-gnu",
