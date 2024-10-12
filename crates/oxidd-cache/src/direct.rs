@@ -122,7 +122,7 @@ impl<M: Manager, O: Copy + Eq, const ARITY: usize> Entry<M, O, ARITY> {
     }
 }
 
-impl<'a, M: Manager, O, const ARITY: usize> Drop for EntryGuard<'a, M, O, ARITY> {
+impl<M: Manager, O, const ARITY: usize> Drop for EntryGuard<'_, M, O, ARITY> {
     #[inline]
     fn drop(&mut self) {
         // SAFETY: The entry is locked.
@@ -130,7 +130,7 @@ impl<'a, M: Manager, O, const ARITY: usize> Drop for EntryGuard<'a, M, O, ARITY>
     }
 }
 
-impl<'a, M: Manager, O, const ARITY: usize> EntryGuard<'a, M, O, ARITY>
+impl<M: Manager, O, const ARITY: usize> EntryGuard<'_, M, O, ARITY>
 where
     O: Copy + Eq,
 {
@@ -436,7 +436,7 @@ where
     }
 }
 
-impl<'a, M, O, const ARITY: usize> fmt::Debug for EntryGuard<'a, M, O, ARITY>
+impl<M, O, const ARITY: usize> fmt::Debug for EntryGuard<'_, M, O, ARITY>
 where
     M: Manager,
     M::Edge: fmt::Debug,

@@ -29,14 +29,13 @@ pub struct StaticTerminalManager<
 >(PhantomData<(&'id (), Terminal, InnerNode, EdgeTag, ManagerData)>);
 
 impl<
-        'id,
         Terminal: Countable,
         InnerNode,
         EdgeTag: Tag,
         ManagerData,
         const PAGE_SIZE: usize,
         const TAG_BITS: u32,
-    > StaticTerminalManager<'id, Terminal, InnerNode, EdgeTag, ManagerData, PAGE_SIZE, TAG_BITS>
+    > StaticTerminalManager<'_, Terminal, InnerNode, EdgeTag, ManagerData, PAGE_SIZE, TAG_BITS>
 {
     /// All "info" bits of edges: `TAG_BITS` for the `EdgeTag`, one bit for
     /// inner/terminal node, and `bit_width(Terminal::MAX_VALUE)` bits for the
@@ -175,8 +174,8 @@ pub struct StaticTerminalIterator<'id, InnerNode, EdgeTag, const TAG_BITS: u32> 
     phantom: PhantomData<Edge<'id, InnerNode, EdgeTag, TAG_BITS>>,
 }
 
-impl<'id, InnerNode, EdgeTag, const TAG_BITS: u32>
-    StaticTerminalIterator<'id, InnerNode, EdgeTag, TAG_BITS>
+impl<InnerNode, EdgeTag, const TAG_BITS: u32>
+    StaticTerminalIterator<'_, InnerNode, EdgeTag, TAG_BITS>
 {
     const TERMINAL_BIT: u32 = TAG_BITS;
 
@@ -219,13 +218,13 @@ impl<'id, InnerNode: NodeBase, EdgeTag: Tag, const TAG_BITS: u32> Iterator
     }
 }
 
-impl<'id, InnerNode: NodeBase, EdgeTag: Tag, const TAG_BITS: u32> FusedIterator
-    for StaticTerminalIterator<'id, InnerNode, EdgeTag, TAG_BITS>
+impl<InnerNode: NodeBase, EdgeTag: Tag, const TAG_BITS: u32> FusedIterator
+    for StaticTerminalIterator<'_, InnerNode, EdgeTag, TAG_BITS>
 {
 }
 
-impl<'id, InnerNode: NodeBase, EdgeTag: Tag, const TAG_BITS: u32> ExactSizeIterator
-    for StaticTerminalIterator<'id, InnerNode, EdgeTag, TAG_BITS>
+impl<InnerNode: NodeBase, EdgeTag: Tag, const TAG_BITS: u32> ExactSizeIterator
+    for StaticTerminalIterator<'_, InnerNode, EdgeTag, TAG_BITS>
 {
     fn len(&self) -> usize {
         self.count

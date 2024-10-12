@@ -138,12 +138,12 @@ pub struct Edge<'id, N, ET, const TAG_BITS: u32>(
     PhantomData<(Invariant<'id>, N, ET)>,
 );
 
-unsafe impl<'id, N: Send + Sync, ET: Send + Sync, const TAG_BITS: u32> Send
-    for Edge<'id, N, ET, TAG_BITS>
+unsafe impl<N: Send + Sync, ET: Send + Sync, const TAG_BITS: u32> Send
+    for Edge<'_, N, ET, TAG_BITS>
 {
 }
-unsafe impl<'id, N: Send + Sync, ET: Send + Sync, const TAG_BITS: u32> Sync
-    for Edge<'id, N, ET, TAG_BITS>
+unsafe impl<N: Send + Sync, ET: Send + Sync, const TAG_BITS: u32> Sync
+    for Edge<'_, N, ET, TAG_BITS>
 {
 }
 
@@ -571,7 +571,7 @@ impl<'id, N: NodeBase, ET: Tag, const TAG_BITS: u32> Edge<'id, N, ET, TAG_BITS> 
     }
 }
 
-impl<'id, N, ET, const TAG_BITS: u32> Drop for Edge<'id, N, ET, TAG_BITS> {
+impl<N, ET, const TAG_BITS: u32> Drop for Edge<'_, N, ET, TAG_BITS> {
     #[inline(never)]
     #[cold]
     fn drop(&mut self) {
@@ -877,8 +877,8 @@ where
     }
 }
 
-impl<'a, 'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32> ExactSizeIterator
-    for LevelIter<'a, 'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
+impl<'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32> ExactSizeIterator
+    for LevelIter<'_, 'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
 where
     N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>>,
     ET: Tag,
@@ -905,8 +905,8 @@ where
 {
 }
 
-impl<'a, 'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32> DoubleEndedIterator
-    for LevelIter<'a, 'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
+impl<'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32> DoubleEndedIterator
+    for LevelIter<'_, 'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
 where
     N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>>,
     ET: Tag,
@@ -930,35 +930,33 @@ where
     }
 }
 
-impl<'id, N, ET, const TAG_BITS: u32> PartialEq for Edge<'id, N, ET, TAG_BITS> {
+impl<N, ET, const TAG_BITS: u32> PartialEq for Edge<'_, N, ET, TAG_BITS> {
     fn eq(&self, other: &Self) -> bool {
         self.0 == other.0
     }
 }
 
-impl<'id, N, ET, const TAG_BITS: u32> Eq for Edge<'id, N, ET, TAG_BITS> {}
+impl<N, ET, const TAG_BITS: u32> Eq for Edge<'_, N, ET, TAG_BITS> {}
 
-impl<'id, N, ET, const TAG_BITS: u32> PartialOrd for Edge<'id, N, ET, TAG_BITS> {
+impl<N, ET, const TAG_BITS: u32> PartialOrd for Edge<'_, N, ET, TAG_BITS> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.0.cmp(&other.0))
     }
 }
 
-impl<'id, N, ET, const TAG_BITS: u32> Ord for Edge<'id, N, ET, TAG_BITS> {
+impl<N, ET, const TAG_BITS: u32> Ord for Edge<'_, N, ET, TAG_BITS> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.0.cmp(&other.0)
     }
 }
 
-impl<'id, N, ET, const TAG_BITS: u32> Hash for Edge<'id, N, ET, TAG_BITS> {
+impl<N, ET, const TAG_BITS: u32> Hash for Edge<'_, N, ET, TAG_BITS> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.hash(state);
     }
 }
 
-impl<'id, N: NodeBase, ET: Tag, const TAG_BITS: u32> oxidd_core::Edge
-    for Edge<'id, N, ET, TAG_BITS>
-{
+impl<N: NodeBase, ET: Tag, const TAG_BITS: u32> oxidd_core::Edge for Edge<'_, N, ET, TAG_BITS> {
     type Tag = ET;
 
     #[inline]
@@ -1191,8 +1189,8 @@ where
     }
 }
 
-impl<'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32> Drop
-    for LevelViewSet<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
+impl<N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32> Drop
+    for LevelViewSet<'_, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
 {
     #[inline]
     fn drop(&mut self) {
@@ -1202,8 +1200,8 @@ impl<'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32> Drop
     }
 }
 
-impl<'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32> Default
-    for LevelViewSet<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
+impl<N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32> Default
+    for LevelViewSet<'_, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
 {
     #[inline]
     fn default() -> Self {
@@ -1356,9 +1354,9 @@ where
     set: LevelViewSet<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>,
 }
 
-unsafe impl<'a, 'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32>
+unsafe impl<'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32>
     oxidd_core::LevelView<Edge<'id, N, ET, TAG_BITS>, N>
-    for TakenLevelView<'a, 'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
+    for TakenLevelView<'_, 'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
 where
     N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>>,
     ET: Tag,
@@ -1461,8 +1459,8 @@ where
     }
 }
 
-impl<'a, 'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32> Drop
-    for TakenLevelView<'a, 'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
+impl<'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32> Drop
+    for TakenLevelView<'_, 'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
 where
     N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>>,
     ET: Tag,
@@ -1501,9 +1499,7 @@ impl<'a, 'id, InnerNode, ET, const TAG_BITS: u32> Iterator
     }
 }
 
-impl<'a, 'id, N, ET, const TAG_BITS: u32> ExactSizeIterator
-    for LevelViewIter<'a, 'id, N, ET, TAG_BITS>
-{
+impl<N, ET, const TAG_BITS: u32> ExactSizeIterator for LevelViewIter<'_, '_, N, ET, TAG_BITS> {
     #[inline(always)]
     fn len(&self) -> usize {
         self.0.len()
@@ -2127,7 +2123,7 @@ unsafe impl<
     }
 }
 
-/// === Additional Trait Implementations =======================================
+// === Additional Trait Implementations ========================================
 
 impl<
         'id,

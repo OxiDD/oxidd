@@ -30,16 +30,16 @@ impl<'id, ET: Tag, const ARITY: usize> NodeWithLevel<'id, ET, ARITY> {
     const UNINIT_EDGE: MaybeUninit<manager::Edge<'id, Self, ET>> = MaybeUninit::uninit();
 }
 
-impl<'id, ET: Tag, const ARITY: usize> PartialEq for NodeWithLevel<'id, ET, ARITY> {
+impl<ET: Tag, const ARITY: usize> PartialEq for NodeWithLevel<'_, ET, ARITY> {
     #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
         // SAFETY: we have shared access to the node
         unsafe { *self.children.get() == *other.children.get() }
     }
 }
-impl<'id, ET: Tag, const ARITY: usize> Eq for NodeWithLevel<'id, ET, ARITY> {}
+impl<ET: Tag, const ARITY: usize> Eq for NodeWithLevel<'_, ET, ARITY> {}
 
-impl<'id, ET: Tag, const ARITY: usize> Hash for NodeWithLevel<'id, ET, ARITY> {
+impl<ET: Tag, const ARITY: usize> Hash for NodeWithLevel<'_, ET, ARITY> {
     #[inline(always)]
     fn hash<H: Hasher>(&self, state: &mut H) {
         // SAFETY: we have shared access to the node
@@ -54,7 +54,7 @@ impl<'id, ET: Tag, const ARITY: usize> Hash for NodeWithLevel<'id, ET, ARITY> {
 //   order
 // - No other functions modify the reference counter.
 // - `Self::load_rc()` loads the reference counter with the given `order`
-unsafe impl<'id, ET: Tag, const ARITY: usize> NodeBase for NodeWithLevel<'id, ET, ARITY> {
+unsafe impl<ET: Tag, const ARITY: usize> NodeBase for NodeWithLevel<'_, ET, ARITY> {
     #[inline(always)]
     fn retain(&self) {
         if self.rc.fetch_add(1, Relaxed) > (u32::MAX >> 1) {
@@ -173,7 +173,7 @@ impl<'id, ET: Tag, const ARITY: usize> InnerNode<manager::Edge<'id, Self, ET>>
     }
 }
 
-unsafe impl<'id, ET, const ARITY: usize> HasLevel for NodeWithLevel<'id, ET, ARITY> {
+unsafe impl<ET, const ARITY: usize> HasLevel for NodeWithLevel<'_, ET, ARITY> {
     #[inline(always)]
     fn level(&self) -> LevelNo {
         self.level.load(Relaxed)
@@ -185,8 +185,8 @@ unsafe impl<'id, ET, const ARITY: usize> HasLevel for NodeWithLevel<'id, ET, ARI
     }
 }
 
-unsafe impl<'id, ET: Send + Sync, const ARITY: usize> Send for NodeWithLevel<'id, ET, ARITY> {}
-unsafe impl<'id, ET: Send + Sync, const ARITY: usize> Sync for NodeWithLevel<'id, ET, ARITY> {}
+unsafe impl<ET: Send + Sync, const ARITY: usize> Send for NodeWithLevel<'_, ET, ARITY> {}
+unsafe impl<ET: Send + Sync, const ARITY: usize> Sync for NodeWithLevel<'_, ET, ARITY> {}
 
 pub struct NodeWithLevelCons<const ARITY: usize>;
 impl<ET: Tag + Send + Sync, const ARITY: usize> InnerNodeCons<ET> for NodeWithLevelCons<ARITY> {

@@ -311,7 +311,7 @@ unsafe impl<
 
 // --- Edge Impls --------------------------------------------------------------
 
-impl<'id, N: NodeBase, ET: Tag> Edge<'id, N, ET> {
+impl<N: NodeBase, ET: Tag> Edge<'_, N, ET> {
     const TAG_BITS: u32 = {
         let bits = usize::BITS - ET::MAX_VALUE.leading_zeros();
         assert!(bits <= 16, "Maximum value of edge tag is too large");
@@ -360,37 +360,37 @@ impl<'id, N: NodeBase, ET: Tag> Edge<'id, N, ET> {
     }
 }
 
-impl<'id, N, ET> PartialEq for Edge<'id, N, ET> {
+impl<N, ET> PartialEq for Edge<'_, N, ET> {
     #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
         self.0 == other.0
     }
 }
 
-impl<'id, N, ET> Eq for Edge<'id, N, ET> {}
+impl<N, ET> Eq for Edge<'_, N, ET> {}
 
-impl<'id, N, ET> PartialOrd for Edge<'id, N, ET> {
+impl<N, ET> PartialOrd for Edge<'_, N, ET> {
     #[inline(always)]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.0.cmp(&other.0))
     }
 }
 
-impl<'id, N, ET> Ord for Edge<'id, N, ET> {
+impl<N, ET> Ord for Edge<'_, N, ET> {
     #[inline(always)]
     fn cmp(&self, other: &Self) -> Ordering {
         self.0.cmp(&other.0)
     }
 }
 
-impl<'id, N, ET> Hash for Edge<'id, N, ET> {
+impl<N, ET> Hash for Edge<'_, N, ET> {
     #[inline(always)]
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.hash(state);
     }
 }
 
-impl<'id, N: NodeBase, ET: Tag> oxidd_core::Edge for Edge<'id, N, ET> {
+impl<N: NodeBase, ET: Tag> oxidd_core::Edge for Edge<'_, N, ET> {
     type Tag = ET;
 
     #[inline]
@@ -423,7 +423,7 @@ impl<'id, N: NodeBase, ET: Tag> oxidd_core::Edge for Edge<'id, N, ET> {
     }
 }
 
-impl<'id, N, ET> Drop for Edge<'id, N, ET> {
+impl<N, ET> Drop for Edge<'_, N, ET> {
     #[inline(never)]
     #[cold]
     fn drop(&mut self) {
@@ -826,8 +826,8 @@ where
 
 // --- LocalStoreStateGuard impl -----------------------------------------------
 
-impl<'a, 'id, N, ET, TM, R, MD, const TERMINALS: usize> Drop
-    for LocalStoreStateGuard<'a, 'id, N, ET, TM, R, MD, TERMINALS>
+impl<'id, N, ET, TM, R, MD, const TERMINALS: usize> Drop
+    for LocalStoreStateGuard<'_, 'id, N, ET, TM, R, MD, TERMINALS>
 where
     N: NodeBase + InnerNode<Edge<'id, N, ET>>,
     ET: Tag,
@@ -1370,8 +1370,8 @@ where
     }
 }
 
-impl<'id, N, ET, TM, R, MD, const TERMINALS: usize> Drop
-    for LevelViewSet<'id, N, ET, TM, R, MD, TERMINALS>
+impl<N, ET, TM, R, MD, const TERMINALS: usize> Drop
+    for LevelViewSet<'_, N, ET, TM, R, MD, TERMINALS>
 {
     #[inline]
     fn drop(&mut self) {
@@ -1381,8 +1381,8 @@ impl<'id, N, ET, TM, R, MD, const TERMINALS: usize> Drop
     }
 }
 
-impl<'id, N, ET, TM, R, MD, const TERMINALS: usize> Default
-    for LevelViewSet<'id, N, ET, TM, R, MD, TERMINALS>
+impl<N, ET, TM, R, MD, const TERMINALS: usize> Default
+    for LevelViewSet<'_, N, ET, TM, R, MD, TERMINALS>
 {
     #[inline]
     fn default() -> Self {
@@ -1421,7 +1421,7 @@ impl<'a, 'id, N, ET> Iterator for LevelViewIter<'a, 'id, N, ET> {
     }
 }
 
-impl<'a, 'id, N, ET> ExactSizeIterator for LevelViewIter<'a, 'id, N, ET> {
+impl<N, ET> ExactSizeIterator for LevelViewIter<'_, '_, N, ET> {
     #[inline(always)]
     fn len(&self) -> usize {
         self.0.len()
@@ -1562,9 +1562,9 @@ where
     set: LevelViewSet<'id, N, ET, TM, R, MD, TERMINALS>,
 }
 
-unsafe impl<'a, 'id, N, ET, TM, R, MD, const TERMINALS: usize>
+unsafe impl<'id, N, ET, TM, R, MD, const TERMINALS: usize>
     oxidd_core::LevelView<Edge<'id, N, ET>, N>
-    for TakenLevelView<'a, 'id, N, ET, TM, R, MD, TERMINALS>
+    for TakenLevelView<'_, 'id, N, ET, TM, R, MD, TERMINALS>
 where
     N: NodeBase + InnerNode<Edge<'id, N, ET>>,
     ET: Tag,
@@ -1669,8 +1669,8 @@ where
     }
 }
 
-impl<'a, 'id, N, ET, TM, R, MD, const TERMINALS: usize> Drop
-    for TakenLevelView<'a, 'id, N, ET, TM, R, MD, TERMINALS>
+impl<'id, N, ET, TM, R, MD, const TERMINALS: usize> Drop
+    for TakenLevelView<'_, 'id, N, ET, TM, R, MD, TERMINALS>
 where
     N: NodeBase + InnerNode<Edge<'id, N, ET>>,
     ET: Tag,
@@ -1733,8 +1733,8 @@ where
     }
 }
 
-impl<'a, 'id, N, ET, TM, R, MD, const TERMINALS: usize> ExactSizeIterator
-    for LevelIter<'a, 'id, N, ET, TM, R, MD, TERMINALS>
+impl<'id, N, ET, TM, R, MD, const TERMINALS: usize> ExactSizeIterator
+    for LevelIter<'_, 'id, N, ET, TM, R, MD, TERMINALS>
 where
     N: NodeBase + InnerNode<Edge<'id, N, ET>>,
     ET: Tag,
@@ -1757,8 +1757,8 @@ where
 {
 }
 
-impl<'a, 'id, N, ET, TM, R, MD, const TERMINALS: usize> DoubleEndedIterator
-    for LevelIter<'a, 'id, N, ET, TM, R, MD, TERMINALS>
+impl<'id, N, ET, TM, R, MD, const TERMINALS: usize> DoubleEndedIterator
+    for LevelIter<'_, 'id, N, ET, TM, R, MD, TERMINALS>
 where
     N: NodeBase + InnerNode<Edge<'id, N, ET>>,
     ET: Tag,
@@ -2444,7 +2444,7 @@ impl<'id, N: NodeBase, ET: Tag> oxidd_core::util::NodeSet<Edge<'id, N, ET>> for 
     }
 }
 
-/// === Additional Trait Implementations =======================================
+// === Additional Trait Implementations ========================================
 
 impl<
         'id,

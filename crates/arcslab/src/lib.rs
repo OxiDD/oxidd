@@ -745,7 +745,7 @@ pub struct IntHandle<'a, I: AtomicRefCounted, D, const PAGE_SIZE: usize>(
     PhantomData<(D, &'a ())>,
 );
 
-impl<'a, I: AtomicRefCounted, D, const PAGE_SIZE: usize> IntHandle<'a, I, D, PAGE_SIZE> {
+impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> IntHandle<'_, I, D, PAGE_SIZE> {
     /// Move the referenced item out in case `this` is the last reference,
     /// otherwise return `None`
     #[inline]
@@ -793,7 +793,7 @@ impl<'a, I: AtomicRefCounted, D, const PAGE_SIZE: usize> IntHandle<'a, I, D, PAG
     }
 }
 
-impl<'a, I: AtomicRefCounted, D, const PAGE_SIZE: usize> Clone for IntHandle<'a, I, D, PAGE_SIZE> {
+impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> Clone for IntHandle<'_, I, D, PAGE_SIZE> {
     #[inline]
     fn clone(&self) -> Self {
         unsafe { Slot::retain(self.0) };
@@ -801,14 +801,14 @@ impl<'a, I: AtomicRefCounted, D, const PAGE_SIZE: usize> Clone for IntHandle<'a,
     }
 }
 
-impl<'a, I: AtomicRefCounted, D, const PAGE_SIZE: usize> Drop for IntHandle<'a, I, D, PAGE_SIZE> {
+impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> Drop for IntHandle<'_, I, D, PAGE_SIZE> {
     #[inline]
     fn drop(&mut self) {
         unsafe { Slot::release::<D, PAGE_SIZE>(self.0, |_| {}) };
     }
 }
 
-impl<'a, I: AtomicRefCounted, D, const PAGE_SIZE: usize> Deref for IntHandle<'a, I, D, PAGE_SIZE> {
+impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> Deref for IntHandle<'_, I, D, PAGE_SIZE> {
     type Target = I;
 
     #[inline]
@@ -818,43 +818,39 @@ impl<'a, I: AtomicRefCounted, D, const PAGE_SIZE: usize> Deref for IntHandle<'a,
     }
 }
 
-impl<'a, I: AtomicRefCounted, D, const PAGE_SIZE: usize> PartialEq
-    for IntHandle<'a, I, D, PAGE_SIZE>
-{
+impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> PartialEq for IntHandle<'_, I, D, PAGE_SIZE> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.0 == other.0
     }
 }
-impl<'a, I: AtomicRefCounted, D, const PAGE_SIZE: usize> Eq for IntHandle<'a, I, D, PAGE_SIZE> {}
+impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> Eq for IntHandle<'_, I, D, PAGE_SIZE> {}
 
-impl<'a, I: AtomicRefCounted, D, const PAGE_SIZE: usize> PartialOrd
-    for IntHandle<'a, I, D, PAGE_SIZE>
-{
+impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> PartialOrd for IntHandle<'_, I, D, PAGE_SIZE> {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.0.cmp(&other.0))
     }
 }
-impl<'a, I: AtomicRefCounted, D, const PAGE_SIZE: usize> Ord for IntHandle<'a, I, D, PAGE_SIZE> {
+impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> Ord for IntHandle<'_, I, D, PAGE_SIZE> {
     #[inline]
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.0.cmp(&other.0)
     }
 }
 
-impl<'a, I: AtomicRefCounted, D, const PAGE_SIZE: usize> Hash for IntHandle<'a, I, D, PAGE_SIZE> {
+impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> Hash for IntHandle<'_, I, D, PAGE_SIZE> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.hash(state);
     }
 }
 
-unsafe impl<'a, I: AtomicRefCounted + Send + Sync, D: Send + Sync, const PAGE_SIZE: usize> Send
-    for IntHandle<'a, I, D, PAGE_SIZE>
+unsafe impl<I: AtomicRefCounted + Send + Sync, D: Send + Sync, const PAGE_SIZE: usize> Send
+    for IntHandle<'_, I, D, PAGE_SIZE>
 {
 }
-unsafe impl<'a, I: AtomicRefCounted + Send + Sync, D: Send + Sync, const PAGE_SIZE: usize> Sync
-    for IntHandle<'a, I, D, PAGE_SIZE>
+unsafe impl<I: AtomicRefCounted + Send + Sync, D: Send + Sync, const PAGE_SIZE: usize> Sync
+    for IntHandle<'_, I, D, PAGE_SIZE>
 {
 }
 

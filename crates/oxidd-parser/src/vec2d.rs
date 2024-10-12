@@ -329,9 +329,9 @@ impl<'a, T> Iterator for Vec2dIter<'a, T> {
     }
 }
 
-impl<'a, T> FusedIterator for Vec2dIter<'a, T> {}
+impl<T> FusedIterator for Vec2dIter<'_, T> {}
 
-impl<'a, T> ExactSizeIterator for Vec2dIter<'a, T> {
+impl<T> ExactSizeIterator for Vec2dIter<'_, T> {
     #[inline(always)]
     fn len(&self) -> usize {
         self.index.len()

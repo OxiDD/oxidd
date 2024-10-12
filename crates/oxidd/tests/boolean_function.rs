@@ -894,7 +894,7 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
     }
 }
 
-impl<'a, B: BooleanFunction + FunctionSubst> TestAllBooleanFunctions<'a, B> {
+impl<B: BooleanFunction + FunctionSubst> TestAllBooleanFunctions<'_, B> {
     /// Test all possible substitutions
     pub fn subst(&self) {
         self.subst_rec(&mut vec![None; self.vars.len()], 0);
@@ -951,7 +951,7 @@ impl<'a, B: BooleanFunction + FunctionSubst> TestAllBooleanFunctions<'a, B> {
     }
 }
 
-impl<'a, B: BooleanFunctionQuant> TestAllBooleanFunctions<'a, B> {
+impl<B: BooleanFunctionQuant> TestAllBooleanFunctions<'_, B> {
     /// Test quantification operations on all Boolean function
     pub fn quant(&self) {
         let nvars = self.vars.len() as ExplicitBFunc;

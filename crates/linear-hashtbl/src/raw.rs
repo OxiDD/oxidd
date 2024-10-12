@@ -810,14 +810,14 @@ impl<'a, T, S: Status> Iterator for Iter<'a, T, S> {
     }
 }
 
-impl<'a, T, S: Status> ExactSizeIterator for Iter<'a, T, S> {
+impl<T, S: Status> ExactSizeIterator for Iter<'_, T, S> {
     #[inline]
     fn len(&self) -> usize {
         self.len
     }
 }
 
-impl<'a, T, S: Status> FusedIterator for Iter<'a, T, S> {}
+impl<T, S: Status> FusedIterator for Iter<'_, T, S> {}
 
 // --- IterMut -----------------------------------------------------------------
 
@@ -850,14 +850,14 @@ impl<'a, T, S: Status> Iterator for IterMut<'a, T, S> {
     }
 }
 
-impl<'a, T, S: Status> ExactSizeIterator for IterMut<'a, T, S> {
+impl<T, S: Status> ExactSizeIterator for IterMut<'_, T, S> {
     #[inline]
     fn len(&self) -> usize {
         self.len
     }
 }
 
-impl<'a, T, S: Status> FusedIterator for IterMut<'a, T, S> {}
+impl<T, S: Status> FusedIterator for IterMut<'_, T, S> {}
 
 // --- IntoIter ----------------------------------------------------------------
 
@@ -920,7 +920,7 @@ impl<T, S: Status, A: Allocator> Drop for IntoIter<T, S, A> {
 
 // --- Drain -------------------------------------------------------------------
 
-impl<'a, T, S: Status> Iterator for Drain<'a, T, S> {
+impl<T, S: Status> Iterator for Drain<'_, T, S> {
     type Item = T;
 
     #[inline]
@@ -952,16 +952,16 @@ impl<'a, T, S: Status> Iterator for Drain<'a, T, S> {
     }
 }
 
-impl<'a, T, S: Status> ExactSizeIterator for Drain<'a, T, S> {
+impl<T, S: Status> ExactSizeIterator for Drain<'_, T, S> {
     #[inline]
     fn len(&self) -> usize {
         self.len
     }
 }
 
-impl<'a, T, S: Status> FusedIterator for Drain<'a, T, S> {}
+impl<T, S: Status> FusedIterator for Drain<'_, T, S> {}
 
-impl<'a, T, S: Status> Drop for Drain<'a, T, S> {
+impl<T, S: Status> Drop for Drain<'_, T, S> {
     fn drop(&mut self) {
         while self.len != 0 {
             let next = self.iter.next();

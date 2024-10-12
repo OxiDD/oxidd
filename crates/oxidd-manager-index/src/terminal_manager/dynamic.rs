@@ -77,7 +77,7 @@ fn hash<T: Hash>(terminal: &T) -> u64 {
     hasher.finish()
 }
 
-impl<'id, T, N, ET, const TERMINALS: usize> DynamicTerminalManager<'id, T, N, ET, TERMINALS> {
+impl<T, N, ET, const TERMINALS: usize> DynamicTerminalManager<'_, T, N, ET, TERMINALS> {
     const CHECK_TERMINALS: () = assert!(
         TERMINALS < (1 << (u32::BITS - 1)),
         "`TERMINALS` is too large"
@@ -252,12 +252,12 @@ where
     }
 }
 
-unsafe impl<'id, T: Send + Sync, N: Send + Sync, ET: Send + Sync, const TERMINALS: usize> Send
-    for DynamicTerminalManager<'id, T, N, ET, TERMINALS>
+unsafe impl<T: Send + Sync, N: Send + Sync, ET: Send + Sync, const TERMINALS: usize> Send
+    for DynamicTerminalManager<'_, T, N, ET, TERMINALS>
 {
 }
-unsafe impl<'id, T: Send + Sync, N: Send + Sync, ET: Send + Sync, const TERMINALS: usize> Sync
-    for DynamicTerminalManager<'id, T, N, ET, TERMINALS>
+unsafe impl<T: Send + Sync, N: Send + Sync, ET: Send + Sync, const TERMINALS: usize> Sync
+    for DynamicTerminalManager<'_, T, N, ET, TERMINALS>
 {
 }
 
@@ -281,7 +281,7 @@ pub struct DynamicTerminalIterator<'a, 'id, T, N, ET> {
     len: usize,
 }
 
-impl<'a, 'id, T, N: NodeBase, ET: Tag> Iterator for DynamicTerminalIterator<'a, 'id, T, N, ET> {
+impl<'id, T, N: NodeBase, ET: Tag> Iterator for DynamicTerminalIterator<'_, 'id, T, N, ET> {
     type Item = Edge<'id, N, ET>;
 
     #[inline(always)]
@@ -313,14 +313,9 @@ impl<'a, 'id, T, N: NodeBase, ET: Tag> Iterator for DynamicTerminalIterator<'a, 
     }
 }
 
-impl<'a, 'id, T, N: NodeBase, ET: Tag> FusedIterator
-    for DynamicTerminalIterator<'a, 'id, T, N, ET>
-{
-}
+impl<T, N: NodeBase, ET: Tag> FusedIterator for DynamicTerminalIterator<'_, '_, T, N, ET> {}
 
-impl<'a, 'id, T, N: NodeBase, ET: Tag> ExactSizeIterator
-    for DynamicTerminalIterator<'a, 'id, T, N, ET>
-{
+impl<T, N: NodeBase, ET: Tag> ExactSizeIterator for DynamicTerminalIterator<'_, '_, T, N, ET> {
     #[inline(always)]
     fn len(&self) -> usize {
         self.len

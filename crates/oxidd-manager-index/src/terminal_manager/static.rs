@@ -17,8 +17,8 @@ pub struct StaticTerminalManager<'id, T, N, ET, const TERMINALS: usize>(
     PhantomData<(&'id (), T, N, ET)>,
 );
 
-impl<'id, T: Countable, N, ET: Tag, const TERMINALS: usize>
-    StaticTerminalManager<'id, T, N, ET, TERMINALS>
+impl<T: Countable, N, ET: Tag, const TERMINALS: usize>
+    StaticTerminalManager<'_, T, N, ET, TERMINALS>
 {
     const CHECK_TERMINALS: () = assert!(TERMINALS > T::MAX_VALUE);
 }
@@ -110,7 +110,7 @@ pub struct StaticTerminalIterator<'id, InnerNode, EdgeTag> {
     phantom: PhantomData<Edge<'id, InnerNode, EdgeTag>>,
 }
 
-impl<'id, InnerNode, EdgeTag> StaticTerminalIterator<'id, InnerNode, EdgeTag> {
+impl<InnerNode, EdgeTag> StaticTerminalIterator<'_, InnerNode, EdgeTag> {
     #[inline(always)]
     pub fn new(count: u32) -> Self {
         Self {
@@ -147,13 +147,13 @@ impl<'id, InnerNode: NodeBase, EdgeTag: Tag> Iterator
     }
 }
 
-impl<'id, InnerNode: NodeBase, EdgeTag: Tag> FusedIterator
-    for StaticTerminalIterator<'id, InnerNode, EdgeTag>
+impl<InnerNode: NodeBase, EdgeTag: Tag> FusedIterator
+    for StaticTerminalIterator<'_, InnerNode, EdgeTag>
 {
 }
 
-impl<'id, InnerNode: NodeBase, EdgeTag: Tag> ExactSizeIterator
-    for StaticTerminalIterator<'id, InnerNode, EdgeTag>
+impl<InnerNode: NodeBase, EdgeTag: Tag> ExactSizeIterator
+    for StaticTerminalIterator<'_, InnerNode, EdgeTag>
 {
     #[inline(always)]
     fn len(&self) -> usize {

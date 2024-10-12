@@ -51,7 +51,7 @@ impl<T> RwLock<T> {
 /// RAII structure used to release the shared read access of a lock when
 /// dropped.
 pub struct RwLockSharedGuard<'a, T>(&'a RwLock<T>, PhantomData<*mut ()>);
-impl<'a, T> Deref for RwLockSharedGuard<'a, T> {
+impl<T> Deref for RwLockSharedGuard<'_, T> {
     type Target = T;
 
     #[inline]
@@ -61,7 +61,7 @@ impl<'a, T> Deref for RwLockSharedGuard<'a, T> {
         unsafe { &*ptr }
     }
 }
-impl<'a, T> Drop for RwLockSharedGuard<'a, T> {
+impl<T> Drop for RwLockSharedGuard<'_, T> {
     fn drop(&mut self) {
         // SAFETY: we have a shared lock
         unsafe { self.0.lock.unlock_shared() }
@@ -71,7 +71,7 @@ impl<'a, T> Drop for RwLockSharedGuard<'a, T> {
 /// RAII structure used to release the exclusive write access of a lock when
 /// dropped.
 pub struct RwLockExclusiveGuard<'a, T>(&'a RwLock<T>, PhantomData<*mut ()>);
-impl<'a, T> Deref for RwLockExclusiveGuard<'a, T> {
+impl<T> Deref for RwLockExclusiveGuard<'_, T> {
     type Target = T;
 
     #[inline]
@@ -81,14 +81,14 @@ impl<'a, T> Deref for RwLockExclusiveGuard<'a, T> {
         unsafe { &*ptr }
     }
 }
-impl<'a, T> DerefMut for RwLockExclusiveGuard<'a, T> {
+impl<T> DerefMut for RwLockExclusiveGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         let ptr = self.0.data.get();
         // SAFETY: we have an exclusive lock
         unsafe { &mut *ptr }
     }
 }
-impl<'a, T> Drop for RwLockExclusiveGuard<'a, T> {
+impl<T> Drop for RwLockExclusiveGuard<'_, T> {
     fn drop(&mut self) {
         // SAFETY: we have an exclusive lock
         unsafe { self.0.lock.unlock_exclusive() }

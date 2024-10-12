@@ -68,7 +68,7 @@ pub struct SetList<'a> {
     pub(crate) sets: &'a [u32],
 }
 
-impl<'a> Debug for SetList<'a> {
+impl Debug for SetList<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         let mut map = f.debug_map();
         let vars = self.vars;
