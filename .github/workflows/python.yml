@@ -64,13 +64,11 @@ jobs:
   buildwheel-linux:
     name: Build wheels for Linux
 
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
 
     steps:
     - uses: actions/checkout@v4
     - uses: docker/setup-qemu-action@v3
-      with:
-        platforms: arm64,s390x,ppc64le
     - name: Install cibuildwheel
       run: python3 -m pip install cibuildwheel
     - name: Build (linux-buildwheel.py)
@@ -95,7 +93,7 @@ jobs:
       - name: Install cbindgen
         run: brew install cbindgen
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.20.0
+        uses: pypa/cibuildwheel@v2.21.3
         env:
           CIBW_ARCHS_MACOS: native
 
@@ -114,7 +112,7 @@ jobs:
       - name: Install Rust targets
         run: rustup target add aarch64-pc-windows-msvc
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.20.0
+        uses: pypa/cibuildwheel@v2.21.3
         env:
           CIBW_ARCHS_WINDOWS: all
           CIBW_TEST_SKIP: "*-win_arm64"
