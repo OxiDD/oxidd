@@ -32,11 +32,16 @@ where
     EdgeTag: Tag,
 {
     type TerminalNode = Terminal;
-    type TerminalNodeRef<'a> = Terminal where Self: 'a;
-
-    type Iterator<'a> = StaticTerminalIterator<'id, InnerNode, EdgeTag>
+    type TerminalNodeRef<'a>
+        = Terminal
     where
-        Self: 'a, 'id: 'a;
+        Self: 'a;
+
+    type Iterator<'a>
+        = StaticTerminalIterator<'id, InnerNode, EdgeTag>
+    where
+        Self: 'a,
+        'id: 'a;
 
     fn with_capacity(_capacity: u32) -> Self {
         let _ = Self::CHECK_TERMINALS;

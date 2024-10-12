@@ -132,11 +132,20 @@ unsafe impl Manager for DummyManager {
     type InnerNode = DummyNode;
     type Terminal = ();
     type TerminalRef<'a> = &'a ();
-    type TerminalIterator<'a> = std::iter::Empty<DummyEdge> where Self: 'a;
+    type TerminalIterator<'a>
+        = std::iter::Empty<DummyEdge>
+    where
+        Self: 'a;
     type Rules = DummyRules;
     type NodeSet = HashSet<NodeID>;
-    type LevelView<'a> = DummyLevelView where Self: 'a;
-    type LevelIterator<'a> = std::iter::Empty<DummyLevelView> where Self: 'a;
+    type LevelView<'a>
+        = DummyLevelView
+    where
+        Self: 'a;
+    type LevelIterator<'a>
+        = std::iter::Empty<DummyLevelView>
+    where
+        Self: 'a;
 
     fn get_node(&self, _edge: &Self::Edge) -> Node<Self> {
         Node::Inner(&DummyNode)
@@ -239,7 +248,8 @@ impl WorkerManager for DummyManager {
 pub struct DummyLevelView;
 
 unsafe impl LevelView<DummyEdge, DummyNode> for DummyLevelView {
-    type Iterator<'a> = std::iter::Empty<&'a DummyEdge>
+    type Iterator<'a>
+        = std::iter::Empty<&'a DummyEdge>
     where
         Self: 'a,
         DummyEdge: 'a;
@@ -304,7 +314,8 @@ impl DropWith<DummyEdge> for DummyNode {
 impl InnerNode<DummyEdge> for DummyNode {
     const ARITY: usize = 0;
 
-    type ChildrenIter<'a> = std::iter::Empty<Borrowed<'a, DummyEdge>>
+    type ChildrenIter<'a>
+        = std::iter::Empty<Borrowed<'a, DummyEdge>>
     where
         Self: 'a;
 

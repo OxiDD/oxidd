@@ -76,7 +76,11 @@ fn not<E: Edge<Tag = EdgeTag>>(e: &E) -> Borrowed<E> {
 pub struct BCDDRules;
 
 impl<E: Edge<Tag = EdgeTag>, N: InnerNode<E>> DiagramRules<E, N, BCDDTerminal> for BCDDRules {
-    type Cofactors<'a> = Cofactors<'a, E, N::ChildrenIter<'a>> where N: 'a, E: 'a;
+    type Cofactors<'a>
+        = Cofactors<'a, E, N::ChildrenIter<'a>>
+    where
+        N: 'a,
+        E: 'a;
 
     #[inline]
     #[must_use]

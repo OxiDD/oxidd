@@ -92,11 +92,16 @@ where
     ET: Tag,
 {
     type TerminalNode = T;
-    type TerminalNodeRef<'a> = &'a T where Self: 'a;
-
-    type Iterator<'a> = DynamicTerminalIterator<'a, 'id, T, N, ET>
+    type TerminalNodeRef<'a>
+        = &'a T
     where
-        Self: 'a, 'id: 'a;
+        Self: 'a;
+
+    type Iterator<'a>
+        = DynamicTerminalIterator<'a, 'id, T, N, ET>
+    where
+        Self: 'a,
+        'id: 'a;
 
     fn with_capacity(capacity: u32) -> Self {
         let _ = Self::CHECK_TERMINALS;

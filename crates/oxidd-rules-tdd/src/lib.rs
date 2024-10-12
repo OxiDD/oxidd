@@ -23,7 +23,11 @@ mod apply_rec;
 pub struct TDDRules;
 
 impl<E: Edge, N: InnerNode<E>> DiagramRules<E, N, TDDTerminal> for TDDRules {
-    type Cofactors<'a> = N::ChildrenIter<'a> where N: 'a, E: 'a;
+    type Cofactors<'a>
+        = N::ChildrenIter<'a>
+    where
+        N: 'a,
+        E: 'a;
 
     #[inline]
     #[must_use]

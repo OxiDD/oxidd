@@ -428,7 +428,7 @@ mod cnf {
 
     fn lex<'a, E: ParseError<&'a [u8]> + ContextError<&'a [u8]>>(
         input: &'a [u8],
-    ) -> IResult<&'a [u8], CNFToken, E> {
+    ) -> IResult<&'a [u8], CNFToken<'a>, E> {
         let tok = alt((
             map(consumed(u64), |(span, n)| CNFToken {
                 span,
@@ -620,7 +620,7 @@ mod sat {
         num_vars: usize,
         allow_xor: bool,
         allow_eq: bool,
-    ) -> impl Fn(&'a [u8]) -> IResult<&'a [u8], Prop, SatParserErr<E>> {
+    ) -> impl Fn(&'a [u8]) -> IResult<&'a [u8], Prop, SatParserErr<'a, E>> {
         move |input| {
             let (input, tok) = lex(num_vars)(input)?;
             let tok = match tok {

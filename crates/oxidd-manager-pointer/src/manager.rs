@@ -604,19 +604,25 @@ where
     type EdgeTag = ET;
     type InnerNode = N;
     type Terminal = TM::TerminalNode;
-    type TerminalRef<'a> = TM::TerminalNodeRef<'a> where Self: 'a;
+    type TerminalRef<'a>
+        = TM::TerminalNodeRef<'a>
+    where
+        Self: 'a;
     type Rules = R;
 
-    type TerminalIterator<'a> = TM::Iterator<'a>
+    type TerminalIterator<'a>
+        = TM::Iterator<'a>
     where
         Self: 'a;
 
     type NodeSet = NodeSet<PAGE_SIZE, TAG_BITS>;
 
-    type LevelView<'a> = LevelView<'a, 'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
+    type LevelView<'a>
+        = LevelView<'a, 'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
     where
         Self: 'a;
-    type LevelIterator<'a> = LevelIter<'a, 'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
+    type LevelIterator<'a>
+        = LevelIter<'a, 'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
     where
         Self: 'a;
 
@@ -1244,7 +1250,8 @@ where
     MD: DropWith<Edge<'id, N, ET, TAG_BITS>>
         + GCContainer<Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>>,
 {
-    type Iterator<'b> = LevelViewIter<'b, 'id, N, ET, TAG_BITS>
+    type Iterator<'b>
+        = LevelViewIter<'b, 'id, N, ET, TAG_BITS>
     where
         Self: 'b;
 
@@ -1360,7 +1367,8 @@ where
     MD: DropWith<Edge<'id, N, ET, TAG_BITS>>
         + GCContainer<Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>>,
 {
-    type Iterator<'b> = LevelViewIter<'b, 'id, N, ET, TAG_BITS>
+    type Iterator<'b>
+        = LevelViewIter<'b, 'id, N, ET, TAG_BITS>
     where
         Self: 'b;
 

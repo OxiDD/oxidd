@@ -105,7 +105,12 @@ impl<'id, ET: Tag, const TAG_BITS: u32, const ARITY: usize>
 {
     const ARITY: usize = 2;
 
-    type ChildrenIter<'a> = BorrowedEdgeIter<'a, manager::Edge<'id, Self, ET, TAG_BITS>, std::slice::Iter<'a, manager::Edge<'id, Self, ET, TAG_BITS>>>
+    type ChildrenIter<'a>
+        = BorrowedEdgeIter<
+        'a,
+        manager::Edge<'id, Self, ET, TAG_BITS>,
+        std::slice::Iter<'a, manager::Edge<'id, Self, ET, TAG_BITS>>,
+    >
     where
         Self: 'a;
 

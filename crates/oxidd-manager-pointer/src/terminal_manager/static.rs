@@ -76,11 +76,16 @@ where
     EdgeTag: Tag,
 {
     type TerminalNode = Terminal;
-    type TerminalNodeRef<'a> = Terminal where Self: 'a;
-
-    type Iterator<'a> = StaticTerminalIterator<'id, InnerNode, EdgeTag, TAG_BITS>
+    type TerminalNodeRef<'a>
+        = Terminal
     where
-        Self: 'a, 'id: 'a;
+        Self: 'a;
+
+    type Iterator<'a>
+        = StaticTerminalIterator<'id, InnerNode, EdgeTag, TAG_BITS>
+    where
+        Self: 'a,
+        'id: 'a;
 
     #[inline(always)]
     unsafe fn new_in(_slot: *mut Self) {

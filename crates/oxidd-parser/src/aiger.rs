@@ -50,7 +50,7 @@ where
     )(input)
 }
 
-fn header<'a, E>(input: &'a [u8]) -> IResult<&'a [u8], Header, E>
+fn header<'a, E>(input: &'a [u8]) -> IResult<&'a [u8], Header<'a>, E>
 where
     E: ParseError<&'a [u8]> + ContextError<&'a [u8]> + FromExternalError<&'a [u8], String>,
 {

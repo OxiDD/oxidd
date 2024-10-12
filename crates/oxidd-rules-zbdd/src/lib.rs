@@ -28,7 +28,11 @@ mod recursor;
 pub struct ZBDDRules;
 
 impl<E: Edge, N: InnerNode<E>> DiagramRules<E, N, ZBDDTerminal> for ZBDDRules {
-    type Cofactors<'a> = N::ChildrenIter<'a> where N: 'a, E: 'a;
+    type Cofactors<'a>
+        = N::ChildrenIter<'a>
+    where
+        N: 'a,
+        E: 'a;
 
     #[inline]
     #[must_use]

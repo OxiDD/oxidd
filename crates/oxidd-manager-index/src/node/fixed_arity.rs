@@ -94,7 +94,12 @@ impl<'id, ET: Tag, const ARITY: usize> InnerNode<manager::Edge<'id, Self, ET>>
 {
     const ARITY: usize = ARITY;
 
-    type ChildrenIter<'a> = BorrowedEdgeIter<'a, manager::Edge<'id, Self, ET>, std::slice::Iter<'a, manager::Edge<'id, Self, ET>>>
+    type ChildrenIter<'a>
+        = BorrowedEdgeIter<
+        'a,
+        manager::Edge<'id, Self, ET>,
+        std::slice::Iter<'a, manager::Edge<'id, Self, ET>>,
+    >
     where
         Self: 'a;
 

@@ -26,7 +26,11 @@ mod apply_rec;
 pub struct MTBDDRules;
 
 impl<E: Edge, N: InnerNode<E>, T> DiagramRules<E, N, T> for MTBDDRules {
-    type Cofactors<'a> = N::ChildrenIter<'a> where N: 'a, E: 'a;
+    type Cofactors<'a>
+        = N::ChildrenIter<'a>
+    where
+        N: 'a,
+        E: 'a;
 
     #[inline]
     #[must_use]
