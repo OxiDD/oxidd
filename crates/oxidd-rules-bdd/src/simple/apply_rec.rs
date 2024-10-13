@@ -971,8 +971,19 @@ where
         cache.clear_if_invalid(manager, vars);
 
         let mut terminal_val = N::from(1u32);
-        terminal_val <<= vars;
-        inner(manager, edge.borrowed(), &terminal_val, cache)
+        let scale_exp = (-N::MIN_EXP) as u32;
+        terminal_val <<= if scale_exp != 0 && vars >= scale_exp {
+            // scale down to increase the precision if we use floating point
+            // numbers and have many variables
+            vars - scale_exp
+        } else {
+            vars
+        };
+        let mut res = inner(manager, edge.borrowed(), &terminal_val, cache);
+        if scale_exp != 0 && vars >= scale_exp {
+            res <<= scale_exp; // scale up again
+        }
+        res
     }
 
     fn pick_cube_edge<'id, 'a, I>(

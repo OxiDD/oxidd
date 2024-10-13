@@ -18,6 +18,7 @@ pub struct Saturating<T>(pub T);
 /// cbindgen:ignore
 impl<T> IsFloatingPoint for Saturating<T> {
     const FLOATING_POINT: bool = false;
+    const MIN_EXP: i32 = 0;
 }
 
 impl<T: From<u32>> From<u32> for Saturating<T> {
@@ -108,6 +109,7 @@ impl From<u32> for F64 {
 /// cbindgen:ignore
 impl IsFloatingPoint for F64 {
     const FLOATING_POINT: bool = true;
+    const MIN_EXP: i32 = f64::MIN_EXP;
 }
 
 impl<'a> AddAssign<&'a Self> for F64 {
@@ -130,6 +132,6 @@ impl ShlAssign<u32> for F64 {
 impl ShrAssign<u32> for F64 {
     #[allow(clippy::suspicious_op_assign_impl)]
     fn shr_assign(&mut self, rhs: u32) {
-        self.0 /= (rhs as f64).exp2()
+        self.0 *= (-(rhs as f64)).exp2()
     }
 }

@@ -481,12 +481,17 @@ pub type AllocResult<T> = Result<T, OutOfMemory>;
 pub trait IsFloatingPoint {
     /// `true` iff the underlying type is a floating point number
     const FLOATING_POINT: bool;
+
+    /// One greater than the minimum possible normal power of 2 exponent, see
+    /// [`f64::MIN_EXP`] for instance. `0` for integers
+    const MIN_EXP: i32;
 }
 
 // dirty hack until we have specialization
 /// cbindgen:ignore
 impl<T: std::ops::ShlAssign<i32>> IsFloatingPoint for T {
     const FLOATING_POINT: bool = false;
+    const MIN_EXP: i32 = 0;
 }
 
 /// A number type suitable for counting satisfying assignments

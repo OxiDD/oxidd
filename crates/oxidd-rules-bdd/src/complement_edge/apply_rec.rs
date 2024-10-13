@@ -1214,11 +1214,23 @@ where
 
         cache.clear_if_invalid(manager, vars);
 
-        let mut terminal_val = N::from(1u32);
-        terminal_val <<= vars;
         if N::FLOATING_POINT {
-            inner_floating(manager, edge.borrowed(), &terminal_val, cache)
+            let mut terminal_val = N::from(1u32);
+            let scale_exp = (-N::MIN_EXP) as u32;
+            terminal_val <<= if vars >= scale_exp {
+                // scale down to increase the precision if we have many variables
+                vars - scale_exp
+            } else {
+                vars
+            };
+            let mut res = inner_floating(manager, edge.borrowed(), &terminal_val, cache);
+            if vars >= scale_exp {
+                res <<= scale_exp; // scale up again
+            }
+            res
         } else {
+            let mut terminal_val = N::from(1u32);
+            terminal_val <<= vars;
             let n = inner(manager, edge.borrowed(), &terminal_val, cache);
             match edge.tag() {
                 EdgeTag::None => n,
