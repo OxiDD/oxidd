@@ -709,10 +709,10 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
 
                 let mut choice_requested = 0u32;
                 let cube = f.pick_cube([], |manager, edge, level| {
-                    assert!(manager
+                    manager
                         .get_node(edge)
                         .unwrap_inner()
-                        .check_level(|l| l == level));
+                        .assert_level_matches(level);
                     if choice_requested & (1 << level) != 0 {
                         panic!("choice requested twice for x{level}");
                     } else {
@@ -723,10 +723,10 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
                 let mut choice_requested_sym = 0u32;
                 let dd_cube = f
                     .pick_cube_dd(|manager, edge, level| {
-                        assert!(manager
+                        manager
                             .get_node(edge)
                             .unwrap_inner()
-                            .check_level(|l| l == level));
+                            .assert_level_matches(level);
                         if choice_requested_sym & (1 << level) != 0 {
                             panic!("choice requested twice for x{level}");
                         } else {

@@ -209,16 +209,32 @@ fn reduce<M>(
     level: LevelNo,
     t: M::Edge,
     e: M::Edge,
-    _op: BCDDOp,
+    op: BCDDOp,
 ) -> AllocResult<M::Edge>
 where
     M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag>,
 {
-    let tmp = <BCDDRules as DiagramRules<_, _, _>>::reduce(manager, level, [t, e]);
-    if let ReducedOrNew::Reduced(..) = &tmp {
-        stat!(reduced _op);
+    // We do not use `DiagramRules::reduce()` here, as the iterator is
+    // apparently not fully optimized away.
+    if t == e {
+        stat!(reduced op);
+        manager.drop_edge(e);
+        return Ok(t);
     }
-    tmp.then_insert(manager, level)
+
+    let tt = t.tag();
+    let (node, tag) = if tt == EdgeTag::Complemented {
+        let et = e.tag();
+        let node = M::InnerNode::new(
+            level,
+            [t.with_tag_owned(EdgeTag::None), e.with_tag_owned(!et)],
+        );
+        (node, EdgeTag::Complemented)
+    } else {
+        (M::InnerNode::new(level, [t, e]), EdgeTag::None)
+    };
+
+    Ok(oxidd_core::LevelView::get_or_insert(&mut manager.level(level), node)?.with_tag_owned(tag))
 }
 
 // --- Terminal Type -----------------------------------------------------------

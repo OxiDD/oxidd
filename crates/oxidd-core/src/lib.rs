@@ -230,6 +230,10 @@ pub trait InnerNode<E: Edge>: Sized + Eq + Hash + DropWith<E> {
     /// number and want to get the level number.
     fn check_level(&self, check: impl FnOnce(LevelNo) -> bool) -> bool;
 
+    /// Panics if the node types stores a level and the node's level is not
+    /// `level`
+    fn assert_level_matches(&self, level: LevelNo);
+
     /// Get the children of this node as an iterator
     #[must_use]
     fn children(&self) -> Self::ChildrenIter<'_>;
@@ -293,7 +297,8 @@ pub type AtomicLevelNo = std::sync::atomic::AtomicU32;
 /// 1. A node in a [`LevelView`] with level number L has level number L (i.e.
 ///    `self.level()` returns L).
 /// 2. [`InnerNode::check_level()`] with a check `c` must return
-///    `c(self.level())`.
+///    `c(self.level())`. Similarly, [`InnerNode::assert_level_matches()`] must
+///    panic if the level does not match.
 ///
 /// These conditions are crucial to enable concurrent level swaps as part of
 /// reordering (see the `oxidd-reorder` crate): The algorithm iterates over the

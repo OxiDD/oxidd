@@ -59,21 +59,21 @@ impl<E: Edge, N: InnerNode<E>> DiagramRules<E, N, BDDTerminal> for BDDRules {
 
 /// Apply the reduction rules, creating a node in `manager` if necessary
 #[inline(always)]
-fn reduce<M>(
-    manager: &M,
-    level: LevelNo,
-    t: M::Edge,
-    e: M::Edge,
-    _op: BDDOp,
-) -> AllocResult<M::Edge>
+fn reduce<M>(manager: &M, level: LevelNo, t: M::Edge, e: M::Edge, op: BDDOp) -> AllocResult<M::Edge>
 where
     M: Manager<Terminal = BDDTerminal>,
 {
-    let tmp = <BDDRules as DiagramRules<_, _, _>>::reduce(manager, level, [t, e]);
-    if let ReducedOrNew::Reduced(..) = &tmp {
-        stat!(reduced _op);
+    // We do not use `DiagramRules::reduce()` here, as the iterator is
+    // apparently not fully optimized away.
+    if t == e {
+        stat!(reduced op);
+        manager.drop_edge(e);
+        return Ok(t);
     }
-    tmp.then_insert(manager, level)
+    oxidd_core::LevelView::get_or_insert(
+        &mut manager.level(level),
+        M::InnerNode::new(level, [t, e]),
+    )
 }
 
 /// Collect the two children of a binary node

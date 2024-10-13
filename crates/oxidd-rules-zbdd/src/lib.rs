@@ -71,12 +71,17 @@ fn reduce<M>(
 where
     M: Manager<Terminal = ZBDDTerminal>,
 {
-    let _ = op;
-    let tmp = <ZBDDRules as DiagramRules<_, _, _>>::reduce(manager, level, [hi, lo]);
-    if let ReducedOrNew::Reduced(..) = &tmp {
+    // We do not use `DiagramRules::reduce()` here, as the iterator is
+    // apparently not fully optimized away.
+    if manager.get_node(&hi).is_terminal(&ZBDDTerminal::Empty) {
         stat!(reduced op);
+        manager.drop_edge(hi);
+        return Ok(lo);
     }
-    tmp.then_insert(manager, level)
+    oxidd_core::LevelView::get_or_insert(
+        &mut manager.level(level),
+        M::InnerNode::new(level, [hi, lo]),
+    )
 }
 
 #[inline(always)]

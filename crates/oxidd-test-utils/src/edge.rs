@@ -326,6 +326,7 @@ impl InnerNode<DummyEdge> for DummyNode {
     fn check_level(&self, _check: impl FnOnce(LevelNo) -> bool) -> bool {
         true
     }
+    fn assert_level_matches(&self, _level: LevelNo) {}
 
     fn children(&self) -> Self::ChildrenIter<'_> {
         std::iter::empty()

@@ -1004,7 +1004,7 @@ where
         Ok(e2)
     }
 
-    #[inline]
+    #[inline(always)]
     fn level(&self, no: LevelNo) -> Self::LevelView<'_> {
         LevelView {
             store: self.store(),
@@ -1486,19 +1486,13 @@ where
         // No need to check if the node referenced by `edge` is stored in
         // `self.store` due to lifetime restrictions.
         let nodes = &self.store.inner_nodes;
-        nodes.inner_node(&edge).check_level(|level| {
-            assert_eq!(level, self.level, "node level does not match");
-            true
-        });
+        nodes.inner_node(&edge).assert_level_matches(self.level);
         self.set.insert(nodes, edge)
     }
 
     #[inline(always)]
     fn get_or_insert(&mut self, node: N) -> AllocResult<Edge<'id, N, ET>> {
-        node.check_level(|level| {
-            assert_eq!(level, self.level, "node level does not match");
-            true
-        });
+        node.assert_level_matches(self.level);
         // No need to check if the children of `node` are stored in `self.store`
         // due to lifetime restrictions.
         self.set.get_or_insert(
@@ -1605,19 +1599,13 @@ where
         // No need to check if the node referenced by `edge` is stored in
         // `self.store` due to lifetime restrictions.
         let nodes = &self.store.inner_nodes;
-        nodes.inner_node(&edge).check_level(|level| {
-            assert_eq!(level, self.level, "node level does not match");
-            true
-        });
+        nodes.inner_node(&edge).assert_level_matches(self.level);
         self.set.insert(nodes, edge)
     }
 
     #[inline(always)]
     fn get_or_insert(&mut self, node: N) -> AllocResult<Edge<'id, N, ET>> {
-        node.check_level(|level| {
-            assert_eq!(level, self.level, "node level does not match");
-            true
-        });
+        node.assert_level_matches(self.level);
         // No need to check if the children of `node` are stored in `self.store`
         // due to lifetime restrictions.
         self.set.get_or_insert(

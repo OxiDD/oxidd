@@ -140,6 +140,15 @@ impl<'id, ET: Tag, const ARITY: usize> InnerNode<manager::Edge<'id, Self, ET>>
     fn check_level(&self, check: impl FnOnce(LevelNo) -> bool) -> bool {
         check(self.level.load(Relaxed))
     }
+    #[inline(always)]
+    #[track_caller]
+    fn assert_level_matches(&self, level: LevelNo) {
+        assert_eq!(
+            self.level.load(Relaxed),
+            level,
+            "the level number does not match"
+        );
+    }
 
     #[inline(always)]
     fn children(&self) -> Self::ChildrenIter<'_> {

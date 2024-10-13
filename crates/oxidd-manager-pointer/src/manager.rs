@@ -674,10 +674,7 @@ where
         let level_no = self.unique_table.len() as LevelNo;
         assert!(level_no < LevelNo::MAX, "too many levels");
         let node = f(level_no);
-        node.check_level(|l| {
-            assert_eq!(l, level_no, "node level does not match");
-            true
-        });
+        node.assert_level_matches(level_no);
 
         let [e1, e2] = add_node(self.store(), node)?;
 
@@ -690,7 +687,7 @@ where
         Ok(e2)
     }
 
-    #[inline]
+    #[inline(always)]
     fn level(&self, no: LevelNo) -> Self::LevelView<'_> {
         LevelView {
             store: self.store(),
@@ -1282,19 +1279,13 @@ where
             0,
             "can only insert untagged edges pointing to inner nodes"
         );
-        unsafe { edge.inner_node_unchecked() }.check_level(|l| {
-            assert_eq!(l, self.level, "node level does not match");
-            true
-        });
+        unsafe { edge.inner_node_unchecked() }.assert_level_matches(self.level);
         self.set.insert(edge)
     }
 
     #[inline(always)]
     fn get_or_insert(&mut self, node: N) -> AllocResult<Edge<'id, N, ET, TAG_BITS>> {
-        node.check_level(|l| {
-            assert_eq!(l, self.level, "node level does not match");
-            true
-        });
+        node.assert_level_matches(self.level);
         // No need to check if the children of `node` are stored in `self.store`
         // due to lifetime restrictions.
         LevelViewSet::get_or_insert(&mut *self.set, node, |node| add_node(self.store, node))
@@ -1399,19 +1390,13 @@ where
             0,
             "can only insert untagged edges pointing to inner nodes"
         );
-        unsafe { edge.inner_node_unchecked() }.check_level(|l| {
-            assert_eq!(l, self.level, "node level does not match");
-            true
-        });
+        unsafe { edge.inner_node_unchecked() }.assert_level_matches(self.level);
         self.set.insert(edge)
     }
 
     #[inline(always)]
     fn get_or_insert(&mut self, node: N) -> AllocResult<Edge<'id, N, ET, TAG_BITS>> {
-        node.check_level(|l| {
-            assert_eq!(l, self.level, "node level does not match");
-            true
-        });
+        node.assert_level_matches(self.level);
         // No need to check if the children of `node` are stored in `self.store`
         // due to lifetime restrictions.
         self.set
