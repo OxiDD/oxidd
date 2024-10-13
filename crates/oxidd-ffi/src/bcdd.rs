@@ -789,10 +789,8 @@ pub unsafe extern "C" fn oxidd_bcdd_pick_cube(f: bcdd_t) -> assignment_t {
 /// @returns  A satisfying assignment if there exists one. Otherwise (i.e., if
 ///           `f` is ⊥), ⊥ is returned.
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_pick_cube_symbolic(f: bcdd_t) -> bcdd_t {
-    f.get()
-        .and_then(|f| f.pick_cube_symbolic(|_, _, _| false))
-        .into()
+pub unsafe extern "C" fn oxidd_bcdd_pick_cube_dd(f: bcdd_t) -> bcdd_t {
+    f.get().and_then(|f| f.pick_cube_dd(|_, _, _| false)).into()
 }
 
 /// Pick a satisfying assignment, represented as BCDD, using the literals in
@@ -810,11 +808,8 @@ pub unsafe extern "C" fn oxidd_bcdd_pick_cube_symbolic(f: bcdd_t) -> bcdd_t {
 /// @returns  A satisfying assignment if there exists one. Otherwise (i.e., if
 ///           `f` is ⊥), ⊥ is returned.
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_pick_cube_symbolic_set(
-    f: bcdd_t,
-    literal_set: bcdd_t,
-) -> bcdd_t {
-    op2(f, literal_set, BCDDFunction::pick_cube_symbolic_set)
+pub unsafe extern "C" fn oxidd_bcdd_pick_cube_dd_set(f: bcdd_t, literal_set: bcdd_t) -> bcdd_t {
+    op2(f, literal_set, BCDDFunction::pick_cube_dd_set)
 }
 
 /// Pair of a BCDD function and a Boolean

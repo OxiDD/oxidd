@@ -672,8 +672,8 @@ public:
   ///
   /// @returns  A satisfying assignment if there exists one. Otherwise (i.e., if
   ///           `f` is ⊥), ⊥ is returned.
-  [[nodiscard]] bcdd_function pick_cube_symbolic() const noexcept {
-    return capi::oxidd_bcdd_pick_cube_symbolic(_func);
+  [[nodiscard]] bcdd_function pick_cube_dd() const noexcept {
+    return capi::oxidd_bcdd_pick_cube_dd(_func);
   }
 
   /// Pick a satisfying assignment, represented as BCDD, using the literals in
@@ -691,8 +691,8 @@ public:
   /// @returns  A satisfying assignment if there exists one. Otherwise (i.e., if
   ///           `f` is ⊥), ⊥ is returned.
   [[nodiscard]] bcdd_function
-  pick_cube_symbolic_set(const bcdd_function &literal_set) const noexcept {
-    return capi::oxidd_bcdd_pick_cube_symbolic_set(_func, literal_set._func);
+  pick_cube_dd_set(const bcdd_function &literal_set) const noexcept {
+    return capi::oxidd_bcdd_pick_cube_dd_set(_func, literal_set._func);
   }
 
   /// Evaluate this Boolean function with arguments `args`

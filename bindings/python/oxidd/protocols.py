@@ -322,7 +322,7 @@ class BooleanFunction(Function, Protocol):
         raise NotImplementedError
 
     @abstractmethod
-    def pick_cube_symbolic(self) -> Self:
+    def pick_cube_dd(self) -> Self:
         """Pick a satisfying assignment, represented as decision diagram
 
         Returns ``⊥`` iff ``self`` is unsatisfiable.
@@ -332,7 +332,7 @@ class BooleanFunction(Function, Protocol):
         raise NotImplementedError
 
     @abstractmethod
-    def pick_cube_symbolic_set(self, literal_set: Self) -> Self:
+    def pick_cube_dd_set(self, literal_set: Self) -> Self:
         """Pick a satisfying assignment, represented as BDD, using the
         literals in ``literal_set`` if there is a choice
 

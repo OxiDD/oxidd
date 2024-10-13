@@ -197,12 +197,12 @@ class AllBooleanFunctions(Generic[BF]):
             # pick_cube() etc.
 
             # This is a stripped-down version of the Rust test; we only test
-            # that the results of `pick_cube()` and `pick_cube_symbolic()` agree
+            # that the results of `pick_cube()` and `pick_cube_dd()` agree
             # (therefore, both can be represented as a conjunction of literals),
             # and that they imply `f`.
 
             cube = f.pick_cube()
-            actual = self._dd_to_boolean_func[f.pick_cube_symbolic()]
+            actual = self._dd_to_boolean_func[f.pick_cube_dd()]
 
             if f_explicit == 0:
                 assert actual == 0
@@ -228,7 +228,7 @@ class AllBooleanFunctions(Generic[BF]):
                         continue
 
                     actual = self._dd_to_boolean_func[
-                        f.pick_cube_symbolic_set(self.make_cube(pos, neg))
+                        f.pick_cube_dd_set(self.make_cube(pos, neg))
                     ]
                     for var, var_func in enumerate(self._var_functions):
                         if (actual & var_func) >> (1 << var) == actual & ~var_func:

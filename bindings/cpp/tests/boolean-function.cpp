@@ -315,12 +315,11 @@ public:
 
       /* pick_cube() etc. */ {
         // This is a stripped-down version of the Rust test; we only test that
-        // the results of `pick_cube()` and `pick_cube_symbolic()` agree
-        // (therefore, both can be represented as a conjunction of literals),
-        // and that they imply `f`.
+        // the results of `pick_cube()` and `pick_cube_dd()` agree (therefore,
+        // both can be represented as a conjunction of literals), and that they
+        // imply `f`.
         const util::assignment cube = f.pick_cube();
-        const explicit_b_func actual =
-            _dd_to_boolean_func.at(f.pick_cube_symbolic());
+        const explicit_b_func actual = _dd_to_boolean_func.at(f.pick_cube_dd());
 
         if (f_explicit == 0) {
           assert(actual == 0);
@@ -351,8 +350,8 @@ public:
             if ((pos & neg) != 0)
               continue;
 
-            const explicit_b_func actual = _dd_to_boolean_func.at(
-                f.pick_cube_symbolic_set(make_cube(pos, neg)));
+            const explicit_b_func actual =
+                _dd_to_boolean_func.at(f.pick_cube_dd_set(make_cube(pos, neg)));
 
             if (f_explicit == 0) {
               assert(actual == 0);

@@ -663,12 +663,12 @@ pub trait BooleanFunction: Function {
     /// If `self` is `⊥`, then the return value will be `⊥`.
     ///
     /// Locking behavior: acquires the manager's lock for shared access.
-    fn pick_cube_symbolic(
+    fn pick_cube_dd(
         &self,
         choice: impl for<'id> FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>, LevelNo) -> bool,
     ) -> AllocResult<Self> {
         self.with_manager_shared(|manager, edge| {
-            let res = Self::pick_cube_symbolic_edge(manager, edge, choice)?;
+            let res = Self::pick_cube_dd_edge(manager, edge, choice)?;
             Ok(Self::from_edge(manager, res))
         })
     }
@@ -692,10 +692,9 @@ pub trait BooleanFunction: Function {
     /// If `self` is `⊥`, then the return value will be `⊥`.
     ///
     /// Locking behavior: acquires the manager's lock for shared access.
-    fn pick_cube_symbolic_set(&self, literal_set: &Self) -> AllocResult<Self> {
+    fn pick_cube_dd_set(&self, literal_set: &Self) -> AllocResult<Self> {
         self.with_manager_shared(|manager, edge| {
-            let res =
-                Self::pick_cube_symbolic_set_edge(manager, edge, literal_set.as_edge(manager))?;
+            let res = Self::pick_cube_dd_set_edge(manager, edge, literal_set.as_edge(manager))?;
             Ok(Self::from_edge(manager, res))
         })
     }
@@ -710,15 +709,15 @@ pub trait BooleanFunction: Function {
     where
         I: ExactSizeIterator<Item = &'a EdgeOfFunc<'id, Self>>;
 
-    /// `Edge` version of [`Self::pick_cube_symbolic()`]
-    fn pick_cube_symbolic_edge<'id>(
+    /// `Edge` version of [`Self::pick_cube_dd()`]
+    fn pick_cube_dd_edge<'id>(
         manager: &Self::Manager<'id>,
         edge: &EdgeOfFunc<'id, Self>,
         choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>, LevelNo) -> bool,
     ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
-    /// `Edge` version of [`Self::pick_cube_symbolic_set()`]
-    fn pick_cube_symbolic_set_edge<'id>(
+    /// `Edge` version of [`Self::pick_cube_dd_set()`]
+    fn pick_cube_dd_set_edge<'id>(
         manager: &Self::Manager<'id>,
         edge: &EdgeOfFunc<'id, Self>,
         literal_set: &EdgeOfFunc<'id, Self>,

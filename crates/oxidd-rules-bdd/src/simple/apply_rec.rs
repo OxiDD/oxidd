@@ -1049,7 +1049,7 @@ where
     }
 
     #[inline]
-    fn pick_cube_symbolic_edge<'id>(
+    fn pick_cube_dd_edge<'id>(
         manager: &Self::Manager<'id>,
         edge: &EdgeOfFunc<'id, Self>,
         choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>, LevelNo) -> bool,
@@ -1092,7 +1092,7 @@ where
     }
 
     #[inline]
-    fn pick_cube_symbolic_set_edge<'id>(
+    fn pick_cube_dd_set_edge<'id>(
         manager: &Self::Manager<'id>,
         edge: &EdgeOfFunc<'id, Self>,
         literal_set: &EdgeOfFunc<'id, Self>,
@@ -1485,20 +1485,20 @@ pub mod mt {
             BDDFunction::<F>::pick_cube_edge(manager, edge, order, choice)
         }
         #[inline]
-        fn pick_cube_symbolic_edge<'id>(
+        fn pick_cube_dd_edge<'id>(
             manager: &Self::Manager<'id>,
             edge: &EdgeOfFunc<'id, Self>,
             choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>, LevelNo) -> bool,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            BDDFunction::<F>::pick_cube_symbolic_edge(manager, edge, choice)
+            BDDFunction::<F>::pick_cube_dd_edge(manager, edge, choice)
         }
         #[inline]
-        fn pick_cube_symbolic_set_edge<'id>(
+        fn pick_cube_dd_set_edge<'id>(
             manager: &Self::Manager<'id>,
             edge: &EdgeOfFunc<'id, Self>,
             literal_set: &EdgeOfFunc<'id, Self>,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            BDDFunction::<F>::pick_cube_symbolic_set_edge(manager, edge, literal_set)
+            BDDFunction::<F>::pick_cube_dd_set_edge(manager, edge, literal_set)
         }
 
         #[inline]

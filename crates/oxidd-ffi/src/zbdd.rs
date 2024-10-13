@@ -715,10 +715,8 @@ pub unsafe extern "C" fn oxidd_zbdd_pick_cube(f: zbdd_t) -> assignment_t {
 /// @returns  A satisfying assignment if there exists one. Otherwise (i.e., if
 ///           `f` is ⊥), ⊥ is returned.
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_zbdd_pick_cube_symbolic(f: zbdd_t) -> zbdd_t {
-    f.get()
-        .and_then(|f| f.pick_cube_symbolic(|_, _, _| false))
-        .into()
+pub unsafe extern "C" fn oxidd_zbdd_pick_cube_dd(f: zbdd_t) -> zbdd_t {
+    f.get().and_then(|f| f.pick_cube_dd(|_, _, _| false)).into()
 }
 
 /// Pick a satisfying assignment, represented as ZBDD, using the literals in
@@ -736,11 +734,8 @@ pub unsafe extern "C" fn oxidd_zbdd_pick_cube_symbolic(f: zbdd_t) -> zbdd_t {
 /// @returns  A satisfying assignment if there exists one. Otherwise (i.e., if
 ///           `f` is ⊥), ⊥ is returned.
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_zbdd_pick_cube_symbolic_set(
-    f: zbdd_t,
-    literal_set: zbdd_t,
-) -> zbdd_t {
-    op2(f, literal_set, ZBDDFunction::pick_cube_symbolic_set)
+pub unsafe extern "C" fn oxidd_zbdd_pick_cube_dd_set(f: zbdd_t, literal_set: zbdd_t) -> zbdd_t {
+    op2(f, literal_set, ZBDDFunction::pick_cube_dd_set)
 }
 
 /// Pair of a ZBDD function and a Boolean

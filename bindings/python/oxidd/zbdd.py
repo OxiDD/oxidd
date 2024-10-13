@@ -317,16 +317,16 @@ class ZBDDFunction(protocols.BooleanFunction, protocols.HasLevel):
         return util.Assignment._from_raw(raw) if raw.len > 0 else None
 
     @override
-    def pick_cube_symbolic(self) -> Self:
-        return self.__class__._from_raw(_lib.oxidd_zbdd_pick_cube_symbolic(self._func))
+    def pick_cube_dd(self) -> Self:
+        return self.__class__._from_raw(_lib.oxidd_zbdd_pick_cube_dd(self._func))
 
     @override
-    def pick_cube_symbolic_set(self, literal_set: Self) -> Self:
+    def pick_cube_dd_set(self, literal_set: Self) -> Self:
         assert (
             self._func._p == literal_set._func._p
         ), "`self` and `literal_set` must belong to the same manager"
         return self.__class__._from_raw(
-            _lib.oxidd_zbdd_pick_cube_symbolic_set(self._func, literal_set._func)
+            _lib.oxidd_zbdd_pick_cube_dd_set(self._func, literal_set._func)
         )
 
     @override

@@ -447,7 +447,7 @@ pub fn derive_boolean_function(input: syn::DeriveInput) -> TokenStream {
             Binary("imp"),
             Binary("imp_strict"),
             Ternary("ite"),
-            Binary("pick_cube_symbolic_set"),
+            Binary("pick_cube_dd_set"),
         ],
         |ctx| {
             let CustomMethodsCtx {
@@ -560,21 +560,21 @@ pub fn derive_boolean_function(input: syn::DeriveInput) -> TokenStream {
                 }
 
                 #[inline]
-                fn pick_cube_symbolic(
+                fn pick_cube_dd(
                     &self,
                     choice: impl for<'__id> ::std::ops::FnMut(&#manager_ty, &#edge_ty, ::oxidd_core::LevelNo) -> bool,
                 ) -> ::oxidd_core::util::AllocResult<Self> {
-                    let res = <#inner as #trait_path>::pick_cube_symbolic(&self.#field, choice)?;
+                    let res = <#inner as #trait_path>::pick_cube_dd(&self.#field, choice)?;
                     Ok(#from_res)
                 }
 
                 #[inline]
-                fn pick_cube_symbolic_edge<'__id>(
+                fn pick_cube_dd_edge<'__id>(
                     manager: &#manager_ty,
                     edge: &#edge_ty,
                     choice: impl ::std::ops::FnMut(&#manager_ty, &#edge_ty, ::oxidd_core::LevelNo) -> bool,
                 ) -> ::oxidd_core::util::AllocResult<#edge_ty> {
-                    <#inner as #trait_path>::pick_cube_symbolic_edge(manager, edge, choice)
+                    <#inner as #trait_path>::pick_cube_dd_edge(manager, edge, choice)
                 }
 
                 #[inline]

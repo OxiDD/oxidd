@@ -689,14 +689,13 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
             }
 
             for assignment in 0..num_assignments {
-                // At first, we test `pick_cube()` and `pick_cube_symbolic()`,
-                // specifically that:
+                // At first, we test `pick_cube()` and `pick_cube_dd()`, specifically that:
                 //
                 // - The closure is called as specified (at most once for each level, `edge`
                 //   points to a node at that level)
                 // - The special case where `f` is ⊥ is handled correctly
-                // - In all other cases, the results of `pick_cube()` and `pick_cube_symbolic()`
-                //   * are equivalent (and the result of `pick_cube_symbolic()` can thus be
+                // - In all other cases, the results of `pick_cube()` and `pick_cube_dd()`
+                //   * are equivalent (and the result of `pick_cube_dd()` can thus be
                 //     represented as a conjunction of literals)
                 //   * imply the function
                 // - If the choice function was called for some level, the respective choice is
@@ -723,7 +722,7 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
                 });
                 let mut choice_requested_sym = 0u32;
                 let dd_cube = f
-                    .pick_cube_symbolic(|manager, edge, level| {
+                    .pick_cube_dd(|manager, edge, level| {
                         assert!(manager
                             .get_node(edge)
                             .unwrap_inner()
@@ -739,7 +738,7 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
 
                 let actual = self.dd_to_boolean_func[&dd_cube];
                 if f_explicit == 0 {
-                    self.check("f.pick_cube_symbolic(..)", actual, 0, &[f_explicit], &[]);
+                    self.check("f.pick_cube_dd(..)", actual, 0, &[f_explicit], &[]);
                     assert_eq!(cube, None);
                     assert_eq!(choice_requested, 0);
                 } else {
@@ -748,8 +747,8 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
                     assert_eq!(cube.len(), nvars as usize);
                     self.check_cond(
                         actual & !f_explicit == 0,
-                        "f.pick_cube_symbolic(..) does not imply f",
-                        &[("f", f_explicit), ("f.pick_cube_symbolic(..)", actual)],
+                        "f.pick_cube_dd(..) does not imply f",
+                        &[("f", f_explicit), ("f.pick_cube_dd(..)", actual)],
                     );
 
                     let mut cube_func = func_mask;
@@ -774,10 +773,10 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
 
                             self.check_cond(
                                 flipped & !f_explicit != 0,
-                                format_args!("f.pick_cube_symbolic(..) should call the choice function or leave a don't care for x{var}"),
+                                format_args!("f.pick_cube_dd(..) should call the choice function or leave a don't care for x{var}"),
                                 &[
                                     ("f", f_explicit),
-                                    ("f.pick_cube_symbolic(..)", actual),
+                                    ("f.pick_cube_dd(..)", actual),
                                     ("cube with flipped literal", flipped),
                                 ],
                             );
@@ -796,7 +795,7 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
                     );
 
                     self.check(
-                        "f.pick_cube_symbolic(choice_fn) does not agree with f.pick_cube([], choice_fn)",
+                        "f.pick_cube_dd(choice_fn) does not agree with f.pick_cube([], choice_fn)",
                         actual,
                         cube_func,
                         &[f_explicit],
@@ -806,7 +805,7 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
 
                 assert_eq!(
                     choice_requested, choice_requested_sym,
-                    "pick_cube should request a choice iff pick_cube_symbolic requests a choice"
+                    "pick_cube should request a choice iff pick_cube_dd requests a choice"
                 );
             }
 
@@ -819,11 +818,11 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
                     let literal_set = self.make_cube(pos, neg);
                     let literal_set_explicit = self.dd_to_boolean_func[&literal_set];
                     let actual =
-                        self.dd_to_boolean_func[&f.pick_cube_symbolic_set(&literal_set).unwrap()];
+                        self.dd_to_boolean_func[&f.pick_cube_dd_set(&literal_set).unwrap()];
 
                     if f_explicit == 0 {
                         self.check(
-                            "f.pick_cube_symbolic_set(g)",
+                            "f.pick_cube_dd_set(g)",
                             actual,
                             0,
                             &[f_explicit, literal_set_explicit],
@@ -832,11 +831,11 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
                     } else {
                         self.check_cond(
                             actual & !f_explicit == 0,
-                            "f.pick_cube_symbolic_set(literal_set) does not imply f",
+                            "f.pick_cube_dd_set(literal_set) does not imply f",
                             &[
                                 ("f", f_explicit),
                                 ("literal_set", literal_set_explicit),
-                                ("f.pick_cube_symbolic_set(literal_set)", actual),
+                                ("f.pick_cube_dd_set(literal_set)", actual),
                             ],
                         );
 
@@ -858,11 +857,11 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
                                 true
                             } else {
                                 self.panic(
-                                    format_args!("f.pick_cube_symbolic_set(literal_set) is not a cube (checking x{var})"),
+                                    format_args!("f.pick_cube_dd_set(literal_set) is not a cube (checking x{var})"),
                                     &[
                                         ("f", f_explicit),
                                         ("literal_set", literal_set_explicit),
-                                        ("f.pick_cube_symbolic_set(literal_set)", actual),
+                                        ("f.pick_cube_dd_set(literal_set)", actual),
                                     ],
                                 )
                             };
@@ -878,11 +877,11 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
 
                             self.check_cond(
                                 flipped & !f_explicit != 0,
-                                format_args!("f.pick_cube_symbolic_set(literal_set) does not follow the requirements from literal_set (selecting {selected} for x{var})"),
+                                format_args!("f.pick_cube_dd_set(literal_set) does not follow the requirements from literal_set (selecting {selected} for x{var})"),
                                 &[
                                     ("f", f_explicit),
                                     ("literal_set", literal_set_explicit),
-                                    ("f.pick_cube_symbolic_set(literal_set)", actual),
+                                    ("f.pick_cube_dd_set(literal_set)", actual),
                                     ("flipped", flipped),
                                 ],
                             );
