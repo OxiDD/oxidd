@@ -1,5 +1,5 @@
 use oxidd_core::util::{AllocResult, Borrowed, EdgeDropGuard};
-use oxidd_core::{Manager, WorkerManager};
+use oxidd_core::Manager;
 
 type UnaryOp<M, R> = fn(&M, R, Borrowed<<M as Manager>::Edge>) -> AllocResult<<M as Manager>::Edge>;
 
@@ -62,10 +62,11 @@ pub trait Recursor<M: Manager>: Copy {
 
     /// Returns true if the algorithm should switch to a sequential recursor
     ///
-    /// With the current [`join()`][WorkerManager::join] implementations, we
-    /// observe a significant performance overhead compared to sequentially
-    /// calling the functions. Therefore, it may make sense to switch to the
-    /// sequential version after, e.g., a certain recursion depth.
+    /// With the current [`join()`][oxidd_core::WorkerManager::join]
+    /// implementations, we observe a significant performance overhead
+    /// compared to sequentially calling the functions. Therefore, it may
+    /// make sense to switch to the sequential version after, e.g., a
+    /// certain recursion depth.
     fn should_switch_to_sequential(self) -> bool;
 }
 
@@ -141,7 +142,7 @@ pub mod mt {
     }
 
     impl ParallelRecursor {
-        pub fn new<M: WorkerManager>(manager: &M) -> Self {
+        pub fn new<M: oxidd_core::WorkerManager>(manager: &M) -> Self {
             Self {
                 remaining_depth: manager.split_depth(),
             }
@@ -150,7 +151,7 @@ pub mod mt {
 
     impl<M> Recursor<M> for ParallelRecursor
     where
-        M: Manager + WorkerManager,
+        M: Manager + oxidd_core::WorkerManager,
         M::Edge: Send + Sync,
     {
         fn unary<'a>(
