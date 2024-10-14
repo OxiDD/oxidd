@@ -268,6 +268,11 @@ impl<T, S: Status, A: Clone + Allocator> RawTable<T, S, A> {
     }
 }
 
+/// Numerator for the fraction of usable slots
+const RATIO_N: usize = 3;
+/// Denominator for the fraction of usable slots
+const RATIO_D: usize = 4;
+
 impl<T, S: Status, A: Clone + Allocator> RawTable<T, S, A> {
     /// Get the next largest array capacity for `requested` elements
     ///
@@ -282,7 +287,7 @@ impl<T, S: Status, A: Clone + Allocator> RawTable<T, S, A> {
         if requested == 0 {
             return 0;
         }
-        let capacity = core::cmp::max((requested * 4 / 3).next_power_of_two(), 16);
+        let capacity = core::cmp::max((requested * RATIO_D / RATIO_N).next_power_of_two(), 16);
         S::check_capacity(capacity);
         capacity
     }
@@ -301,7 +306,7 @@ impl<T, S: Status, A: Clone + Allocator> RawTable<T, S, A> {
     /// Get the capacity (excluding spare slots)
     #[inline]
     pub fn capacity(&self) -> usize {
-        self.data.len() / 4 * 3
+        self.data.len() / RATIO_D * RATIO_N
     }
 
     /// Get the number of slots (i.e. [`Self::capacity()`] plus spare slots)
@@ -317,7 +322,8 @@ impl<T, S: Status, A: Clone + Allocator> RawTable<T, S, A> {
     /// of the table.
     #[inline]
     pub fn reserve(&mut self, additional: usize) {
-        if self.free < additional + self.data.len() / 4 {
+        let spare = additional + self.data.len() / RATIO_D * (RATIO_D - RATIO_N);
+        if self.free < spare {
             self.reserve_rehash(additional)
         }
     }
@@ -713,7 +719,7 @@ impl<T, S: Status, A: Clone + Allocator> RawTable<T, S, A> {
             }
             i -= 1;
             if i == 0 {
-                if self.len < self.data.len() / 4 {
+                if self.len < self.data.len() / RATIO_D * (RATIO_D - RATIO_N) {
                     // shrink the table
                     self.reserve_rehash(0);
                 }
