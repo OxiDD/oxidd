@@ -1,3 +1,5 @@
+use std::ffi::c_char;
+
 use oxidd_core::util::Substitution;
 
 /// cbindgen:ignore
@@ -53,5 +55,16 @@ impl<'a, V, R> Substitution for Subst<'a, V, R> {
     #[inline]
     fn pairs(&self) -> impl ExactSizeIterator<Item = (&'a V, &'a R)> {
         self.pairs.iter().map(|(v, r)| (v, r))
+    }
+}
+
+/// Equivalent to [`std::ffi::CStr::from_ptr()`] followed by
+/// [`std::ffi::CStr::to_string_lossy()`], except that it allows `ptr` to be
+/// null
+pub(crate) unsafe fn c_char_to_str<'a>(ptr: *const c_char) -> std::borrow::Cow<'a, str> {
+    if ptr.is_null() {
+        std::borrow::Cow::Borrowed("")
+    } else {
+        std::ffi::CStr::from_ptr(ptr).to_string_lossy()
     }
 }

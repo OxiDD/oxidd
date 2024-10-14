@@ -63,6 +63,38 @@ class BCDDManager(protocols.BooleanFunctionManager["BCDDFunction"]):
     def num_inner_nodes(self) -> int:
         return _lib.oxidd_bcdd_num_inner_nodes(self._mgr)
 
+    @override
+    def dump_all_dot_file(
+        self,
+        path: str,
+        functions: collections.abc.Iterable[tuple["BCDDFunction", str]] = [],
+        variables: collections.abc.Iterable[tuple["BCDDFunction", str]] = [],
+    ) -> bool:
+        fs = []
+        f_names = []
+        for f, name in functions:
+            fs.append(f._func)
+            f_names.append(_ffi.new("char[]", name.encode()))
+
+        vars = []
+        var_names = []
+        for f, name in variables:
+            vars.append(f._func)
+            var_names.append(_ffi.new("char[]", name.encode()))
+
+        return bool(
+            _lib.oxidd_bcdd_manager_dump_all_dot_file(
+                self._mgr,
+                path.encode(),
+                fs,
+                f_names,
+                len(fs),
+                vars,
+                var_names,
+                len(vars),
+            )
+        )
+
 
 class BCDDSubstitution:
     """Substitution mapping variables to replacement functions"""

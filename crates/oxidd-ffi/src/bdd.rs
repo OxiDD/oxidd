@@ -1,3 +1,4 @@
+use std::ffi::{c_char, CStr};
 use std::hash::BuildHasherDefault;
 use std::mem::ManuallyDrop;
 
@@ -16,7 +17,7 @@ use oxidd::{
 use oxidd_core::function::BooleanOperator;
 use oxidd_core::LevelNo;
 
-use crate::util::{assignment_t, FUNC_UNWRAP_MSG};
+use crate::util::{assignment_t, c_char_to_str, FUNC_UNWRAP_MSG};
 
 /// Reference to a manager of a simple binary decision diagram (BDD)
 ///
@@ -858,6 +859,86 @@ pub unsafe extern "C" fn oxidd_bdd_eval(
                 }),
             )
         })
+}
+
+/// Dump the entire decision diagram represented by `manager` as Graphviz DOT
+/// code to a file at `path`
+///
+/// If a file at `path` exists, it will be truncated, otherwise a new one will
+/// be created.
+///
+/// This function optionally allows to name BDD functions and variables. If
+/// `functions` and `function_names` are non-null and `num_function_names` is
+/// non-zero, then `functions` and `function_names` are assumed to point to an
+/// array of length (at least) `num_function_names`. In this case, the i-th
+/// function is labeled with the i-th function name. This similarly applies to
+/// `vars`, `var_names`, and `num_vars`.
+///
+/// The output may also include nodes that are not reachable from `functions`.
+///
+/// Locking behavior: acquires the manager's lock for shared access.
+///
+/// @returns  `true` on success
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_manager_dump_all_dot_file(
+    manager: bdd_manager_t,
+    path: *const c_char,
+    functions: *const bdd_t,
+    function_names: *const *const c_char,
+    num_function_names: usize,
+    vars: *const bdd_t,
+    var_names: *const *const c_char,
+    num_vars: usize,
+) -> bool {
+    let Ok(path) = CStr::from_ptr(path).to_str() else {
+        return false;
+    };
+    let Ok(file) = std::fs::File::create(path) else {
+        return false;
+    };
+
+    manager.get().with_manager_shared(|manager| {
+        // collect the functions and their corresponding names
+        let (functions, function_names) =
+            if !functions.is_null() && !function_names.is_null() && num_function_names != 0 {
+                (
+                    std::slice::from_raw_parts(functions, num_function_names)
+                        .iter()
+                        .map(|g| g.get().expect("Invalid function BDD"))
+                        .collect(),
+                    std::slice::from_raw_parts(function_names, num_function_names),
+                )
+            } else {
+                (Vec::new(), [].as_slice())
+            };
+
+        // collect the variables and their corresponding names
+        let (vars, var_names) = if !vars.is_null() && !var_names.is_null() && num_vars != 0 {
+            (
+                std::slice::from_raw_parts(vars, num_vars)
+                    .iter()
+                    .map(|g| g.get().expect("Invalid variable BDD"))
+                    .collect(),
+                std::slice::from_raw_parts(var_names, num_vars),
+            )
+        } else {
+            (Vec::new(), [].as_slice())
+        };
+
+        oxidd_dump::dot::dump_all(
+            file,
+            manager,
+            vars.iter().zip(var_names).map(|(var, &name)| {
+                let f: &BDDFunction = var;
+                (f, c_char_to_str(name))
+            }),
+            functions.iter().zip(function_names).map(|(f, &name)| {
+                let f: &BDDFunction = f;
+                (f, c_char_to_str(name))
+            }),
+        )
+        .is_ok()
+    })
 }
 
 /// Print statistics to stderr

@@ -449,7 +449,7 @@ class BooleanFunctionQuant(BooleanFunction, Protocol):
         raise NotImplementedError
 
 
-F = TypeVar("F", bound=Function, covariant=True)
+F = TypeVar("F", bound=Function, contravariant=True)
 
 
 class Manager(Generic[F], Protocol):
@@ -471,8 +471,31 @@ class Manager(Generic[F], Protocol):
         """
         raise NotImplementedError
 
+    @abstractmethod
+    def dump_all_dot_file(
+        self,
+        path: str,
+        functions: collections.abc.Iterable[tuple[F, str]] = [],
+        variables: collections.abc.Iterable[tuple[F, str]] = [],
+    ) -> bool:
+        """
+        Dump the entire decision diagram in this manager as Graphviz DOT code to
+        a file at ``path``
 
-BF = TypeVar("BF", bound=BooleanFunction, covariant=True)
+        If a file at ``path`` exists, it will be truncated, otherwise a new one
+        will be created.
+
+        This method optionally allows to name BDD functions and variables. The
+        output may also include nodes that are not reachable from ``functions``.
+
+        Returns ``true`` on success.
+
+        Locking behavior: acquires the manager's lock for shared access.
+        """
+        raise NotImplementedError
+
+
+BF = TypeVar("BF", bound=BooleanFunction)
 
 
 class BooleanFunctionManager(Manager[BF], Protocol):

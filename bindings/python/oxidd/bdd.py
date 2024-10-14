@@ -63,6 +63,38 @@ class BDDManager(protocols.BooleanFunctionManager["BDDFunction"]):
     def num_inner_nodes(self) -> int:
         return _lib.oxidd_bdd_num_inner_nodes(self._mgr)
 
+    @override
+    def dump_all_dot_file(
+        self,
+        path: str,
+        functions: collections.abc.Iterable[tuple["BDDFunction", str]] = [],
+        variables: collections.abc.Iterable[tuple["BDDFunction", str]] = [],
+    ) -> bool:
+        fs = []
+        f_names = []
+        for f, name in functions:
+            fs.append(f._func)
+            f_names.append(_ffi.new("char[]", name.encode()))
+
+        vars = []
+        var_names = []
+        for f, name in variables:
+            vars.append(f._func)
+            var_names.append(_ffi.new("char[]", name.encode()))
+
+        return bool(
+            _lib.oxidd_bdd_manager_dump_all_dot_file(
+                self._mgr,
+                path.encode(),
+                fs,
+                f_names,
+                len(fs),
+                vars,
+                var_names,
+                len(vars),
+            )
+        )
+
 
 class BDDSubstitution:
     """Substitution mapping variables to replacement functions"""
@@ -151,6 +183,31 @@ class BDDFunction(
     @override
     def __ge__(self, other: Self) -> bool:
         return (self._func._p, self._func._i) >= (other._func._p, other._func._i)
+
+    def export_dddmp(
+        self,
+        filename: str,
+        dd_name: str,
+        function_name: str,
+        variables: list[Self],
+        variable_names: list[str],
+        as_ascii: bool,
+    ) -> None:
+        """Export the decision diagram into ``filename`` in DDDMP format"""
+        tmp_variable_names = [
+            _ffi.new("char[]", name.encode()) for name in variable_names
+        ]
+
+        _lib.oxidd_bdd_export_dddmp(
+            self._func,
+            filename.encode(),
+            dd_name.encode(),
+            function_name.encode(),
+            [var._func for var in variables],
+            tmp_variable_names,
+            len(variables),
+            as_ascii,
+        )
 
     @override
     def __hash__(self) -> int:

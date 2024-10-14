@@ -2,7 +2,7 @@
 
 __all__ = ["ZBDDManager", "ZBDDFunction"]
 
-from collections.abc import Collection
+import collections.abc
 from typing import Optional
 
 from _oxidd import ffi as _ffi
@@ -85,6 +85,38 @@ class ZBDDManager(protocols.BooleanFunctionManager["ZBDDFunction"]):
     @override
     def num_inner_nodes(self) -> int:
         return _lib.oxidd_zbdd_num_inner_nodes(self._mgr)
+
+    @override
+    def dump_all_dot_file(
+        self,
+        path: str,
+        functions: collections.abc.Iterable[tuple["ZBDDFunction", str]] = [],
+        variables: collections.abc.Iterable[tuple["ZBDDFunction", str]] = [],
+    ) -> bool:
+        fs = []
+        f_names = []
+        for f, name in functions:
+            fs.append(f._func)
+            f_names.append(_ffi.new("char[]", name.encode()))
+
+        vars = []
+        var_names = []
+        for f, name in variables:
+            vars.append(f._func)
+            var_names.append(_ffi.new("char[]", name.encode()))
+
+        return bool(
+            _lib.oxidd_zbdd_manager_dump_all_dot_file(
+                self._mgr,
+                path.encode(),
+                fs,
+                f_names,
+                len(fs),
+                vars,
+                var_names,
+                len(vars),
+            )
+        )
 
 
 class ZBDDFunction(protocols.BooleanFunction, protocols.HasLevel):
@@ -330,7 +362,7 @@ class ZBDDFunction(protocols.BooleanFunction, protocols.HasLevel):
         )
 
     @override
-    def eval(self, args: Collection[tuple[Self, bool]]) -> bool:
+    def eval(self, args: collections.abc.Collection[tuple[Self, bool]]) -> bool:
         n = len(args)
         c_args = util._alloc("oxidd_zbdd_bool_pair_t[]", n)
         for c_arg, (f, v) in zip(c_args, args):
