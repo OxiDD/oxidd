@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use std::hash::{BuildHasherDefault, Hash, Hasher};
 use std::iter::FusedIterator;
 use std::marker::PhantomData;
-use std::mem::{align_of, ManuallyDrop, MaybeUninit};
+use std::mem::{align_of, ManuallyDrop};
 use std::ptr::{addr_of, addr_of_mut, NonNull};
 use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering::Relaxed;
@@ -300,28 +300,22 @@ where
     TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
     MD: DropWith<Edge<'id, N, ET, TAG_BITS>>,
 {
-    #[inline]
+    #[inline(always)]
     fn from_terminal_manager_ptr(ptr: *const TM) -> *const Self {
-        // Offset computation inspired by the `offset` crate
-        let byte_offset = unsafe {
-            let uninit: MaybeUninit<Self> = MaybeUninit::uninit();
-            let ptr = uninit.as_ptr();
-            (addr_of!((*ptr).terminal_manager) as *const u8).offset_from(ptr as *const u8)
-        };
-        unsafe { (ptr as *const u8).offset(-byte_offset) as *const Self }
+        let byte_offset = const { std::mem::offset_of!(Self, terminal_manager) as isize };
+        // SAFETY: For all uses of this function, `ptr` points to a terminal
+        // manager contained in a `StoreInner` allocation
+        unsafe { ptr.byte_offset(-byte_offset) as *const Self }
     }
 
-    #[inline]
+    #[inline(always)]
     fn from_manager_ptr(
         ptr: *const RwLock<Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>>,
     ) -> *const Self {
-        // Offset computation inspired by the `offset` crate
-        let byte_offset = unsafe {
-            let uninit: MaybeUninit<Self> = MaybeUninit::uninit();
-            let ptr = uninit.as_ptr();
-            (addr_of!((*ptr).manager) as *const u8).offset_from(ptr as *const u8)
-        };
-        unsafe { (ptr as *const u8).offset(-byte_offset) as *const Self }
+        let byte_offset = const { std::mem::offset_of!(Self, manager) as isize };
+        // SAFETY: For all uses of this function, `ptr` points to the manager
+        // field contained in a `StoreInner` allocation
+        unsafe { ptr.byte_offset(-byte_offset) as *const Self }
     }
 }
 
@@ -351,42 +345,44 @@ where
     TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
     MD: DropWith<Edge<'id, N, ET, TAG_BITS>>,
 {
+    /// Get the pointer to `StoreInner` for this manager
+    ///
+    /// This method must not be called during of store and manager. After
+    /// initialization, the returned pointer is safe to dereference.
+    #[inline(always)]
+    fn store_inner_ptr(&self) -> *const StoreInner<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS> {
+        let store_inner = self.store_inner;
+        // We can simply get the store pointer by subtracting the offset of
+        // `Manager` in `Store`. The only issue is that this violates Rust's
+        // (proposed) aliasing rules. Hence, we only provide a hint that the
+        // store's address can be computed without loading the value.
+        if store_inner != StoreInner::from_manager_ptr(RwLock::from_data_ptr(self)) {
+            // SAFETY: after initialization, the pointers are equal
+            unsafe { std::hint::unreachable_unchecked() };
+        }
+        store_inner
+    }
+
     /// Get the node store / `ArcSlab` for this manager
     ///
     /// Actually, this is the `ArcSlab`, in which this manager is stored. This
     /// means that it is only safe to call this method in case this `Manager`
     /// is embedded in an `ArcSlab<N, StoreInner<..>, PAGE_SIZE>`. But this
     /// holds by construction.
-    #[inline]
+    ///
+    /// This method must not be called during of store and manager.
+    #[inline(always)]
     fn store(
         &self,
     ) -> &ArcSlab<N, StoreInner<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>, PAGE_SIZE> {
-        let store_inner = self.store_inner;
-        debug_assert_eq!(
-            store_inner,
-            StoreInner::from_manager_ptr(RwLock::from_data_ptr(self))
-        );
-        // FIXME: From my mental model, the code below should be fine, but it
-        // seems to trigger optimizations that break the code. We still need to
-        // reduce the code to see if it actually is a compiler bug.
-        //if store_inner != StoreInner::from_manager_ptr(RwLock::from_data_ptr(self)) {
-        //    unsafe { std::hint::unreachable_unchecked() };
-        //}
-        let ptr = ArcSlab::from_data_ptr(store_inner);
+        let ptr = ArcSlab::from_data_ptr(self.store_inner_ptr());
+        // SAFETY: After initialization, the pointer is guaranteed to be valid
         unsafe { &*ptr }
     }
 
     #[inline]
     fn terminal_manager(&self) -> *const TM {
-        let store_inner = self.store_inner;
-        debug_assert_eq!(
-            store_inner,
-            StoreInner::from_manager_ptr(RwLock::from_data_ptr(self))
-        );
-        // See the FIXME above.
-        //if store_inner != StoreInner::from_manager_ptr(RwLock::from_data_ptr(self)) {
-        //    unsafe { std::hint::unreachable_unchecked() };
-        //}
+        let store_inner = self.store_inner_ptr();
         unsafe { addr_of!((*store_inner).terminal_manager) }
     }
 
@@ -1654,9 +1650,12 @@ impl<
     > From<&'a M<'id, NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>>
     for ManagerRef<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
 {
+    #[inline]
     fn from(manager: &'a M<'id, NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>) -> Self {
         manager.store().retain();
-        todo!()
+        let store_ptr =
+            ArcSlab::<NC::T<'id>, _, PAGE_SIZE>::from_data_ptr(manager.store_inner_ptr()) as *mut _;
+        Self(unsafe { ArcSlabRef::from_raw(NonNull::new_unchecked(store_ptr)) })
     }
 }
 
@@ -2078,7 +2077,9 @@ unsafe impl<
 
     #[inline]
     fn manager_ref(&self) -> Self::ManagerRef {
-        todo!()
+        let store_ptr = self.store();
+        unsafe { store_ptr.as_ref() }.retain();
+        ManagerRef(unsafe { ArcSlabRef::from_raw(store_ptr) })
     }
 
     #[inline]
