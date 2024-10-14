@@ -84,8 +84,8 @@ pub trait DotStyle<T: Tag> {
     }
 }
 
-/// Dump the entire decision diagram represented by `manager` as dot code to
-/// `file`
+/// Dump the entire decision diagram represented by `manager` as Graphviz DOT
+/// code to `file`
 ///
 /// `variables` contains pairs of edges representing the variable and names
 /// (`VD`, implementing [`std::fmt::Display`]). `functions` contains pairs of
@@ -150,7 +150,7 @@ where
                 } else {
                     writeln!(
                         file,
-                        "  {{ rank = same; l{level:x} [label=\"\", shape=none, tooltip=\"level {level}\"];"
+                        "  {{ rank = same; l{level:x} [label=\"{level}\", color=\"#AAAAAA\", shape=none, tooltip=\"level {level}\"];"
                     )?;
                 }
                 last_level = level;
