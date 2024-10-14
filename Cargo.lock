@@ -493,7 +493,7 @@ checksum = "1261fe7e33c73b354eab43b1273a57c8f967d0391e80353e51f764ac02cf6775"
 
 [[package]]
 name = "oxidd"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "cfg-if",
  "document-features",
@@ -513,7 +513,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-cache"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "allocator-api2",
  "document-features",
@@ -527,7 +527,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-cli"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "bitvec",
  "clap",
@@ -547,14 +547,14 @@ dependencies = [
 
 [[package]]
 name = "oxidd-core"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "nanorand",
 ]
 
 [[package]]
 name = "oxidd-derive"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "oxidd-core",
  "oxidd-test-utils",
@@ -567,7 +567,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-dump"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "bitvec",
  "document-features",
@@ -579,7 +579,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-ffi"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "oxidd",
  "oxidd-core",
@@ -589,7 +589,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-manager-index"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "bitvec",
  "crossbeam-utils",
@@ -602,7 +602,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-manager-pointer"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "arcslab",
  "bitvec",
@@ -629,7 +629,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-reorder"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "flume",
  "is_sorted",
@@ -641,7 +641,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-rules-bdd"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "bitvec",
  "document-features",
@@ -652,7 +652,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-rules-mtbdd"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "document-features",
  "oxidd-core",
@@ -662,7 +662,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-rules-tdd"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "document-features",
  "oxidd-core",
@@ -672,7 +672,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-rules-zbdd"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "bitvec",
  "document-features",
@@ -683,7 +683,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-test-utils"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "oxidd-core",
  "rayon",

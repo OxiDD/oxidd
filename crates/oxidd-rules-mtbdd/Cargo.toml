@@ -1,6 +1,6 @@
 [package]
 name = "oxidd-rules-mtbdd"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "Multi-terminal decision diagrams (MTBDDs) for OxiDD"
 readme = "../../README.md"

@@ -1,6 +1,6 @@
 [project]
 name = "oxidd"
-version = "0.7.0"
+version = "0.8.0"
 description = "Decision Diagrams"
 requires-python = ">=3.9"
 keywords = ["Decision Diagrams", "BDD", "ZBDD", "ZDD"]

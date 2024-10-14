@@ -1,6 +1,6 @@
 [package]
 name = "oxidd-manager-pointer"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "Pointer-based manager implementation for OxiDD"
 readme = "../../README.md"
