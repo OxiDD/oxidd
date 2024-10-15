@@ -27,7 +27,10 @@ parking_lot = "0.12"
 linear-hashtbl.workspace = true
 
 # fast hash function
-rustc-hash = "2"
+#
+# Note that there is a performance regression with 2.0, see
+# https://github.com/rust-lang/rustc-hash/issues/45
+rustc-hash = "1.1"
 
 # bit vectors
 bitvec = "1"

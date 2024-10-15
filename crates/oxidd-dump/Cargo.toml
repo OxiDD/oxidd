@@ -20,7 +20,10 @@ oxidd-core.workspace = true
 bitvec = { version = "1", optional = true }
 
 # fast hash function
-rustc-hash = { version = "2", optional = true }
+#
+# Note that there is a performance regression with 2.0, see
+# https://github.com/rust-lang/rustc-hash/issues/45
+rustc-hash = { version = "1.1", optional = true }
 
 # optimized searching for characters in &[u8]
 memchr = { version = "2", optional = true }

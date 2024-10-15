@@ -26,8 +26,13 @@ clap = { version = "4", features = ["derive", "wrap_help"] }
 # big integers
 num-bigint = "0.4"
 
+# fast hash function
+#
+# Note that there is a performance regression with 2.0, see
+# https://github.com/rust-lang/rustc-hash/issues/45
+rustc-hash = "1.1"
+
 parking_lot = "0.12" # fast alternative Mutex & RwLock implementation
-rustc-hash = "2"     # fast hash function
 rayon = "1.10"       # thread pools, parallel iterators etc.
 bitvec = "1"
 

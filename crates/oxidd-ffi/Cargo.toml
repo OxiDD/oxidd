@@ -22,7 +22,11 @@ oxidd-core = { workspace = true }
 oxidd-dump = { workspace = true, features = ["dddmp", "dot"] }
 oxidd = { workspace = true, features = ["bdd", "bcdd", "zbdd"] }
 
-rustc-hash = "2" # fast hash function
+# fast hash function
+#
+# Note that there is a performance regression with 2.0, see
+# https://github.com/rust-lang/rustc-hash/issues/45
+rustc-hash = "1.1"
 
 
 [features]

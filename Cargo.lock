@@ -493,7 +493,7 @@ checksum = "1261fe7e33c73b354eab43b1273a57c8f967d0391e80353e51f764ac02cf6775"
 
 [[package]]
 name = "oxidd"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "cfg-if",
  "document-features",
@@ -513,7 +513,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-cache"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "allocator-api2",
  "document-features",
@@ -527,7 +527,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-cli"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "bitvec",
  "clap",
@@ -567,7 +567,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-dump"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "bitvec",
  "document-features",
@@ -579,7 +579,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-ffi"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "oxidd",
  "oxidd-core",
@@ -589,7 +589,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-manager-index"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "bitvec",
  "crossbeam-utils",
@@ -602,7 +602,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-manager-pointer"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "arcslab",
  "bitvec",
@@ -616,7 +616,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-parser"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "bitvec",
  "codespan-reporting",
@@ -790,9 +790,9 @@ dependencies = [
 
 [[package]]
 name = "rustc-hash"
-version = "2.0.0"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "583034fd73374156e66797ed8e5b0d5690409c9226b22d87cb7f19821c05d152"
+checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
 
 [[package]]
 name = "rustix"
@@ -974,9 +974,9 @@ dependencies = [
 
 [[package]]
 name = "trybuild"
-version = "1.0.99"
+version = "1.0.100"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "207aa50d36c4be8d8c6ea829478be44a372c6a77669937bb39c698e52f1491e8"
+checksum = "8923cde76a6329058a86f04d033f0945a2c6df8b94093512e4ab188b3e3a8950"
 dependencies = [
  "glob",
  "serde",
