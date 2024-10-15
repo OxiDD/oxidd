@@ -5,7 +5,8 @@
 
 use is_sorted::IsSorted;
 use oxidd_core::util::OutOfMemory;
-use oxidd_core::WorkerManager;
+use oxidd_core::HasWorkers;
+use oxidd_core::WorkerPool;
 use smallvec::SmallVec;
 
 use oxidd_core::function::Function;
@@ -200,7 +201,7 @@ where
 /// The caller must not call [`manager.reorder()`][Manager::reorder].
 pub fn set_var_order<'id, F: Function>(manager: &mut F::Manager<'id>, order: &[F])
 where
-    F::Manager<'id>: Manager + WorkerManager,
+    F::Manager<'id>: Manager + HasWorkers,
     <F::Manager<'id> as Manager>::InnerNode: HasLevel,
 {
     if order.len() <= 1 {
@@ -462,7 +463,7 @@ fn bubble_sort(seq: &mut [LevelNo], mut swap: impl FnMut(LevelNo)) {
 /// time.
 fn concurrent_bubble_sort<M, F>(manager: &M, seq: Vec<LevelNo>, swap: F)
 where
-    M: WorkerManager,
+    M: HasWorkers,
     F: Fn(LevelNo) + Sync,
 {
     if IsSorted::is_sorted(&mut seq.iter()) {
@@ -511,7 +512,7 @@ where
         debug_assert!(IsSorted::is_sorted(&mut seq.iter()));
     });
 
-    manager.broadcast(|_| {
+    manager.workers().broadcast(|_| {
         while let Ok(upper) = task_receiver.recv() {
             swap(upper);
             done_sender.send(upper).unwrap();

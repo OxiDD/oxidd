@@ -10,4 +10,6 @@
 pub mod manager;
 pub mod node;
 pub mod terminal_manager;
-pub(crate) mod util;
+pub mod workers;
+
+mod util;

@@ -228,6 +228,16 @@ macro_rules! manager_ref_index_based {
             }
         }
 
+
+        impl$(<$($gen),*>)? $crate::HasWorkers for $name$(<$($gen),*>)? $(where $($where)*)? {
+            type WorkerPool = <$inner as $crate::HasWorkers>::WorkerPool;
+
+            #[inline]
+            fn workers(&self) -> &Self::WorkerPool {
+                self.0.workers()
+            }
+        }
+
         impl$(<$($gen),*>)? $name$(<$($gen),*>)? $(where $($where)*)? {
             /// Create a new manager instance
             ///
@@ -309,6 +319,15 @@ macro_rules! manager_ref_pointer_based {
             unsafe fn from_raw(raw: *const std::ffi::c_void) -> Self {
                 // SAFETY: Invariants are upheld by the caller.
                 Self(unsafe { ::oxidd_manager_pointer::manager::ManagerRef::from_raw(raw) })
+            }
+        }
+
+        impl $crate::HasWorkers for $name {
+            type WorkerPool = <$inner as $crate::HasWorkers>::WorkerPool;
+
+            #[inline]
+            fn workers(&self) -> &Self::WorkerPool {
+                self.0.workers()
             }
         }
 

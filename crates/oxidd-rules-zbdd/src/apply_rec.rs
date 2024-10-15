@@ -1024,7 +1024,7 @@ impl<F: Function, T: Tag> DotStyle<T> for ZBDDFunction<F> {}
 
 #[cfg(feature = "multi-threading")]
 pub mod mt {
-    use oxidd_core::WorkerManager;
+    use oxidd_core::HasWorkers;
 
     use crate::recursor::mt::ParallelRecursor;
 
@@ -1043,7 +1043,7 @@ pub mod mt {
 
     impl<F: Function> ZBDDFunctionMT<F>
     where
-        for<'id> F::Manager<'id>: WorkerManager,
+        for<'id> F::Manager<'id>: HasWorkers,
     {
         /// Convert `self` into the underlying [`Function`]
         #[inline(always)]
@@ -1057,7 +1057,7 @@ pub mod mt {
         for<'id> F::Manager<'id>: Manager<Terminal = ZBDDTerminal>
             + super::HasZBDDOpApplyCache<F::Manager<'id>>
             + super::HasZBDDCache<<F::Manager<'id> as Manager>::Edge>
-            + WorkerManager,
+            + HasWorkers,
         for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
         for<'id> <F::Manager<'id> as Manager>::Edge: Send + Sync,
     {
@@ -1152,7 +1152,7 @@ pub mod mt {
         for<'id> F::Manager<'id>: Manager<Terminal = ZBDDTerminal>
             + super::HasZBDDOpApplyCache<F::Manager<'id>>
             + super::HasZBDDCache<<F::Manager<'id> as Manager>::Edge>
-            + WorkerManager,
+            + HasWorkers,
         for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
         for<'id> <F::Manager<'id> as Manager>::Edge: Send + Sync,
     {

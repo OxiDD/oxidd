@@ -68,3 +68,21 @@ pub(crate) unsafe fn c_char_to_str<'a>(ptr: *const c_char) -> std::borrow::Cow<'
         std::ffi::CStr::from_ptr(ptr).to_string_lossy()
     }
 }
+
+pub(crate) fn run_in_worker_pool<M: oxidd::HasWorkers>(
+    manager: &M,
+    callback: extern "C" fn(*mut std::ffi::c_void) -> *mut std::ffi::c_void,
+    data: *mut std::ffi::c_void,
+) -> *mut std::ffi::c_void {
+    struct SendPtr(pub *mut std::ffi::c_void);
+    // SAFETY: Sending a pointer to another thread is not unsafe, only using
+    // that pointer for memory accesses may cause data races
+    unsafe impl Send for SendPtr {}
+
+    let data = SendPtr(data);
+    oxidd::WorkerPool::install(oxidd::HasWorkers::workers(manager), move || {
+        let data: SendPtr = data;
+        SendPtr(callback(data.0))
+    })
+    .0
+}

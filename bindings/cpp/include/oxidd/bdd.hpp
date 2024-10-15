@@ -6,6 +6,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <iterator>
 #include <tuple>
 #include <type_traits>
@@ -114,6 +115,26 @@ public:
   /// @returns  `true` iff this manager reference is invalid
   [[nodiscard]] bool is_invalid() const noexcept {
     return _manager._p == nullptr;
+  }
+
+  /// Execute `f()` in the worker thread pool of `manager`
+  ///
+  /// Recursive calls in the multithreaded apply algorithms are always executed
+  /// within the manager's thread pool, requiring a rather expensive context
+  /// switch if the apply algorithm is not called from within the thread pool.
+  /// If the algorithm takes long to execute anyway, this may not be important,
+  /// but for many small operations, this may easily make a difference by
+  /// factors.
+  ///
+  /// This method blocks until `f()` has finished.
+  ///
+  /// `this` must not be invalid (check via `is_invalid()`).
+  ///
+  /// @returns  The result of calling `f()`
+  template <typename R> R run_in_worker_pool(std::function<R()> f) const {
+    assert(_manager._p);
+    return oxidd::util::detail::run_in_worker_pool(
+        capi::oxidd_bdd_manager_run_in_worker_pool, _manager, std::move(f));
   }
 
   /// @name BDD Construction

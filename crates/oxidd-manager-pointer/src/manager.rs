@@ -21,8 +21,6 @@ use std::iter::FusedIterator;
 use std::marker::PhantomData;
 use std::mem::{align_of, ManuallyDrop};
 use std::ptr::{addr_of, addr_of_mut, NonNull};
-use std::sync::atomic::AtomicU32;
-use std::sync::atomic::Ordering::Relaxed;
 
 use arcslab::{ArcSlab, ArcSlabRef, AtomicRefCounted, ExtHandle, IntHandle};
 use bitvec::bitvec;
@@ -124,6 +122,7 @@ where
 {
     manager: RwLock<Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>>,
     terminal_manager: TM,
+    workers: crate::workers::Workers,
 }
 
 #[repr(transparent)]
@@ -160,8 +159,6 @@ where
     store_inner: *const StoreInner<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>,
     gc_ongoing: TryLock,
     reorder_count: u64,
-    workers: rayon::ThreadPool,
-    split_depth: AtomicU32,
     phantom: PhantomData<(TM, R)>,
 }
 
@@ -269,26 +266,20 @@ where
     MD: DropWith<Edge<'id, N, ET, TAG_BITS>>,
 {
     unsafe fn init_in(slot: *mut Self, data: MD, threads: u32) {
-        let workers = rayon::ThreadPoolBuilder::new()
-            .num_threads(threads as usize)
-            .thread_name(|i| format!("oxidd mp {i}"))
-            .build()
-            .expect("Failed to build thread pool");
-
-        let split_depth = AtomicU32::new(auto_split_depth(&workers));
         let data = RwLock::new(Manager {
             unique_table: Vec::new(),
             data: ManuallyDrop::new(data),
             store_inner: slot,
             gc_ongoing: TryLock::new(),
             reorder_count: 0,
-            workers,
-            split_depth,
             phantom: PhantomData,
         });
         unsafe { std::ptr::write(addr_of_mut!((*slot).manager), data) };
 
         unsafe { TM::new_in(addr_of_mut!((*slot).terminal_manager)) };
+
+        let workers = crate::workers::Workers::new(threads);
+        unsafe { std::ptr::write(addr_of_mut!((*slot).workers), workers) };
     }
 }
 
@@ -761,16 +752,7 @@ where
     }
 }
 
-fn auto_split_depth(workers: &rayon::ThreadPool) -> u32 {
-    let threads = workers.current_num_threads();
-    if threads > 1 {
-        (4096 * threads).ilog2()
-    } else {
-        0
-    }
-}
-
-impl<'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32> oxidd_core::WorkerManager
+impl<'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32> oxidd_core::HasWorkers
     for Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
 where
     N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>> + Send + Sync,
@@ -779,48 +761,11 @@ where
     R: DiagramRules<Edge<'id, N, ET, TAG_BITS>, N, TM::TerminalNode>,
     MD: DropWith<Edge<'id, N, ET, TAG_BITS>> + GCContainer<Self> + Send + Sync,
 {
-    #[inline]
-    fn current_num_threads(&self) -> usize {
-        self.workers.current_num_threads()
-    }
-
-    #[inline(always)]
-    fn split_depth(&self) -> u32 {
-        self.split_depth.load(Relaxed)
-    }
-
-    fn set_split_depth(&self, depth: Option<u32>) {
-        let depth = match depth {
-            Some(d) => d,
-            None => auto_split_depth(&self.workers),
-        };
-        self.split_depth.store(depth, Relaxed);
-    }
+    type WorkerPool = crate::workers::Workers;
 
     #[inline]
-    fn install<RA: Send>(&self, op: impl FnOnce() -> RA + Send) -> RA {
-        self.workers.install(op)
-    }
-
-    #[inline]
-    fn join<RA: Send, RB: Send>(
-        &self,
-        op_a: impl FnOnce() -> RA + Send,
-        op_b: impl FnOnce() -> RB + Send,
-    ) -> (RA, RB) {
-        self.workers.join(op_a, op_b)
-    }
-
-    fn broadcast<RA: Send>(
-        &self,
-        op: impl Fn(oxidd_core::BroadcastContext) -> RA + Sync,
-    ) -> Vec<RA> {
-        self.workers.broadcast(|ctx| {
-            op(oxidd_core::BroadcastContext {
-                index: ctx.index() as u32,
-                num_threads: ctx.num_threads() as u32,
-            })
-        })
+    fn workers(&self) -> &Self::WorkerPool {
+        &self.store().data().workers
     }
 }
 
@@ -1719,7 +1664,6 @@ impl<
         self.0 == other.0
     }
 }
-
 impl<
         NC: InnerNodeCons<ET, TAG_BITS>,
         ET: Tag,
@@ -1763,7 +1707,6 @@ impl<
         Some(self.0.cmp(&other.0))
     }
 }
-
 impl<
         NC: InnerNodeCons<ET, TAG_BITS>,
         ET: Tag,
@@ -1777,6 +1720,28 @@ impl<
     #[inline]
     fn cmp(&self, other: &Self) -> Ordering {
         self.0.cmp(&other.0)
+    }
+}
+
+impl<
+        NC: InnerNodeCons<ET, TAG_BITS>,
+        ET: Tag + Sync + Send,
+        TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
+        RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
+        MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
+        const PAGE_SIZE: usize,
+        const TAG_BITS: u32,
+    > oxidd_core::HasWorkers for ManagerRef<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
+where
+    NC::T<'static>: Send + Sync,
+    TMC::T<'static>: Send + Sync,
+    MDC::T<'static>: Send + Sync,
+{
+    type WorkerPool = crate::workers::Workers;
+
+    #[inline]
+    fn workers(&self) -> &Self::WorkerPool {
+        &self.0.data().workers
     }
 }
 

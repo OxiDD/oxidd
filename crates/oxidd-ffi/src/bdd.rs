@@ -194,6 +194,26 @@ pub unsafe extern "C" fn oxidd_bdd_manager_unref(manager: bdd_manager_t) {
     }
 }
 
+/// Execute `callback(data)` in the worker thread pool of `manager`
+///
+/// Recursive calls in the multithreaded apply algorithms are always executed
+/// within the manager's thread pool, requiring a rather expensive context
+/// switch if the apply algorithm is not called from within the thread pool. If
+/// the algorithm takes long to execute anyway, this may not be important, but
+/// for many small operations, this may easily make a difference by factors.
+///
+/// This function blocks until `callback(data)` has finished.
+///
+/// @returns  The result of calling `callback(data)`
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_manager_run_in_worker_pool(
+    manager: bdd_manager_t,
+    callback: extern "C" fn(*mut std::ffi::c_void) -> *mut std::ffi::c_void,
+    data: *mut std::ffi::c_void,
+) -> *mut std::ffi::c_void {
+    crate::util::run_in_worker_pool(&*manager.get(), callback, data)
+}
+
 /// Increment the reference counter of the node referenced by `f` as well as
 /// the manager storing the node
 ///

@@ -17,7 +17,9 @@ pub use oxidd_core::function::{
     NumberBase, PseudoBooleanFunction, TVLFunction,
 };
 pub use oxidd_core::util::{Subst, Substitution};
-pub use oxidd_core::{Edge, InnerNode, LevelNo, Manager, ManagerRef, NodeID, WorkerManager};
+pub use oxidd_core::{
+    Edge, HasWorkers, InnerNode, LevelNo, Manager, ManagerRef, NodeID, WorkerPool,
+};
 
 pub mod util;
 

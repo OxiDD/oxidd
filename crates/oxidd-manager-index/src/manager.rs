@@ -20,7 +20,6 @@ use std::hash::{Hash, Hasher};
 use std::iter::FusedIterator;
 use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
-use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering::{Acquire, Relaxed};
 use std::sync::Arc;
 
@@ -28,7 +27,6 @@ use bitvec::vec::BitVec;
 use crossbeam_utils::CachePadded;
 use linear_hashtbl::raw::RawTable;
 use parking_lot::{Condvar, Mutex, MutexGuard};
-use rayon::ThreadPool;
 use rustc_hash::FxHasher;
 
 use oxidd_core::function::EdgeOfFunc;
@@ -110,6 +108,7 @@ where
     terminal_manager: TM,
     state: CachePadded<Mutex<SharedStoreState>>,
     gc_signal: (Mutex<GCSignal>, Condvar),
+    workers: crate::workers::Workers,
 }
 
 unsafe impl<'id, N, ET, TM, R, MD, const TERMINALS: usize> Sync
@@ -271,8 +270,6 @@ where
     store: *const Store<'id, N, ET, TM, R, MD, TERMINALS>,
     reorder_count: u64,
     gc_ongoing: TryLock,
-    workers: ThreadPool,
-    split_depth: AtomicU32,
 }
 
 /// Type "constructor" for the manager from `InnerNodeCons` etc.
@@ -1102,16 +1099,7 @@ where
     }
 }
 
-fn auto_split_depth(workers: &rayon::ThreadPool) -> u32 {
-    let threads = workers.current_num_threads();
-    if threads > 1 {
-        (4096 * threads).ilog2()
-    } else {
-        0
-    }
-}
-
-impl<'id, N, ET, TM, R, MD, const TERMINALS: usize> oxidd_core::WorkerManager
+impl<'id, N, ET, TM, R, MD, const TERMINALS: usize> oxidd_core::HasWorkers
     for Manager<'id, N, ET, TM, R, MD, TERMINALS>
 where
     N: NodeBase + InnerNode<Edge<'id, N, ET>> + Send + Sync,
@@ -1120,49 +1108,11 @@ where
     R: oxidd_core::DiagramRules<Edge<'id, N, ET>, N, TM::TerminalNode>,
     MD: DropWith<Edge<'id, N, ET>> + GCContainer<Self> + Send + Sync,
 {
-    #[inline]
-    fn current_num_threads(&self) -> usize {
-        self.workers.current_num_threads()
-    }
-
-    #[inline(always)]
-    fn split_depth(&self) -> u32 {
-        self.split_depth.load(Relaxed)
-    }
-
-    fn set_split_depth(&self, depth: Option<u32>) {
-        let depth = match depth {
-            Some(d) => d,
-            None => auto_split_depth(&self.workers),
-        };
-        self.split_depth.store(depth, Relaxed);
-    }
+    type WorkerPool = crate::workers::Workers;
 
     #[inline]
-    fn install<RA: Send>(&self, op: impl FnOnce() -> RA + Send) -> RA {
-        self.workers.install(op)
-    }
-
-    #[inline]
-    fn join<RA: Send, RB: Send>(
-        &self,
-        op_a: impl FnOnce() -> RA + Send,
-        op_b: impl FnOnce() -> RB + Send,
-    ) -> (RA, RB) {
-        self.workers.join(op_a, op_b)
-    }
-
-    #[inline]
-    fn broadcast<RA: Send>(
-        &self,
-        op: impl Fn(oxidd_core::BroadcastContext) -> RA + Sync,
-    ) -> Vec<RA> {
-        self.workers.broadcast(|ctx| {
-            op(oxidd_core::BroadcastContext {
-                index: ctx.index() as u32,
-                num_threads: ctx.num_threads() as u32,
-            })
-        })
+    fn workers(&self) -> &Self::WorkerPool {
+        &self.store().workers
     }
 }
 
@@ -2028,13 +1978,6 @@ pub fn new_manager<
     };
     let inner_node_capacity = std::cmp::min(inner_node_capacity, max_inner_capacity);
 
-    let workers = rayon::ThreadPoolBuilder::new()
-        .num_threads(threads as usize)
-        .thread_name(|i| format!("oxidd mi {i}")) // "mi" for "manager index"
-        .build()
-        .expect("could not build thread pool");
-    let split_depth = AtomicU32::new(auto_split_depth(&workers));
-
     let gc_lwm = inner_node_capacity / 100 * 90;
     let gc_hwm = inner_node_capacity / 100 * 95;
 
@@ -2058,22 +2001,21 @@ pub fn new_manager<
             store: std::ptr::null(),
             reorder_count: 0,
             gc_ongoing: TryLock::new(),
-            workers,
-            split_depth,
         }),
         terminal_manager: TMC::T::<'static>::with_capacity(terminal_node_capacity),
         gc_signal: (Mutex::new(GCSignal::RunGc), Condvar::new()),
+        workers: crate::workers::Workers::new(threads),
     });
 
     let mut manager = arc.manager.exclusive();
     manager.store = Arc::as_ptr(&arc);
+    drop(manager);
 
     let store_addr = arc.addr();
-    manager.workers.spawn_broadcast(move |_| {
+    arc.workers.pool.spawn_broadcast(move |_| {
         // The workers are dedicated to this store.
         LOCAL_STORE_STATE.with(|state| state.current_store.set(store_addr))
     });
-    drop(manager);
 
     // spell-checker:ignore mref
     let gc_mref: ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS> = ManagerRef(arc.clone());
@@ -2114,6 +2056,23 @@ pub fn new_manager<
         .unwrap();
 
     ManagerRef(arc)
+}
+
+impl<
+        NC: InnerNodeCons<ET>,
+        ET: Tag + Send + Sync,
+        TMC: TerminalManagerCons<NC, ET, TERMINALS>,
+        RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
+        MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
+        const TERMINALS: usize,
+    > oxidd_core::HasWorkers for ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS>
+{
+    type WorkerPool = crate::workers::Workers;
+
+    #[inline]
+    fn workers(&self) -> &Self::WorkerPool {
+        &self.0.workers
+    }
 }
 
 // === Function ================================================================

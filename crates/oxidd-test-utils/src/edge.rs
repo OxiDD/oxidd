@@ -5,24 +5,14 @@
 
 use std::cmp::Ordering;
 use std::collections::HashSet;
-use std::hash::Hash;
-use std::hash::Hasher;
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-use oxidd_core::util::AllocResult;
-use oxidd_core::util::Borrowed;
-use oxidd_core::util::DropWith;
-use oxidd_core::BroadcastContext;
-use oxidd_core::DiagramRules;
-use oxidd_core::Edge;
-use oxidd_core::InnerNode;
-use oxidd_core::LevelNo;
-use oxidd_core::LevelView;
-use oxidd_core::Manager;
-use oxidd_core::Node;
-use oxidd_core::NodeID;
-use oxidd_core::ReducedOrNew;
-use oxidd_core::WorkerManager;
+use oxidd_core::util::{AllocResult, Borrowed, DropWith};
+use oxidd_core::{
+    DiagramRules, Edge, HasWorkers, InnerNode, LevelNo, LevelView, Manager, Node, NodeID,
+    ReducedOrNew,
+};
 
 /// Simple dummy edge implementation based on [`Arc`]
 ///
@@ -211,36 +201,11 @@ unsafe impl Manager for DummyManager {
     }
 }
 
-impl WorkerManager for DummyManager {
-    fn current_num_threads(&self) -> usize {
-        rayon::current_num_threads()
-    }
+impl HasWorkers for DummyManager {
+    type WorkerPool = crate::Workers;
 
-    fn split_depth(&self) -> u32 {
-        42
-    }
-
-    fn set_split_depth(&self, _depth: Option<u32>) {}
-
-    fn install<R: Send>(&self, op: impl FnOnce() -> R + Send) -> R {
-        op()
-    }
-
-    fn join<RA: Send, RB: Send>(
-        &self,
-        op_a: impl FnOnce() -> RA + Send,
-        op_b: impl FnOnce() -> RB + Send,
-    ) -> (RA, RB) {
-        rayon::join(op_a, op_b)
-    }
-
-    fn broadcast<R: Send>(&self, op: impl Fn(oxidd_core::BroadcastContext) -> R + Sync) -> Vec<R> {
-        rayon::broadcast(|ctx| {
-            op(BroadcastContext {
-                index: ctx.index() as u32,
-                num_threads: ctx.num_threads() as u32,
-            })
-        })
+    fn workers(&self) -> &Self::WorkerPool {
+        &crate::Workers
     }
 }
 

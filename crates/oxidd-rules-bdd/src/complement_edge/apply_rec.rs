@@ -1516,7 +1516,7 @@ impl<F: Function, T: Tag> DotStyle<T> for BCDDFunction<F> {}
 
 #[cfg(feature = "multi-threading")]
 pub mod mt {
-    use oxidd_core::WorkerManager;
+    use oxidd_core::HasWorkers;
 
     use crate::recursor::mt::ParallelRecursor;
 
@@ -1536,7 +1536,7 @@ pub mod mt {
 
     impl<F: Function> BCDDFunctionMT<F>
     where
-        for<'id> F::Manager<'id>: WorkerManager,
+        for<'id> F::Manager<'id>: HasWorkers,
     {
         /// Convert `self` into the underlying [`Function`]
         #[inline(always)]
@@ -1549,7 +1549,7 @@ pub mod mt {
     where
         for<'id> F::Manager<'id>: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag>
             + HasBCDDOpApplyCache<F::Manager<'id>>
-            + WorkerManager,
+            + HasWorkers,
         for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
         for<'id> <F::Manager<'id> as Manager>::Edge: Send + Sync,
     {
@@ -1573,7 +1573,7 @@ pub mod mt {
     where
         for<'id> F::Manager<'id>: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag>
             + HasBCDDOpApplyCache<F::Manager<'id>>
-            + WorkerManager,
+            + HasWorkers,
         for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
         for<'id> <F::Manager<'id> as Manager>::Edge: Send + Sync,
     {
@@ -1754,7 +1754,7 @@ pub mod mt {
     where
         for<'id> F::Manager<'id>: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag>
             + HasBCDDOpApplyCache<F::Manager<'id>>
-            + WorkerManager,
+            + HasWorkers,
         for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
         for<'id> <F::Manager<'id> as Manager>::Edge: Send + Sync,
     {

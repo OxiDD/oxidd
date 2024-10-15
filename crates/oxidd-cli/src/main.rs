@@ -14,7 +14,7 @@ use bitvec::prelude::*;
 use clap::{Parser, ValueEnum};
 use num_bigint::BigUint;
 use oxidd::util::{AllocResult, SatCountCache};
-use oxidd::{BooleanFunction, Edge, LevelNo, Manager, WorkerManager};
+use oxidd::{BooleanFunction, Edge, HasWorkers, LevelNo, Manager, WorkerPool};
 use oxidd_core::{ApplyCache, HasApplyCache, HasLevel, ManagerRef};
 use oxidd_dump::{dddmp, dot};
 use oxidd_parser::load_file::load_file;
@@ -160,7 +160,7 @@ fn make_vars<'id, B: BooleanFunction>(
     name_map: &mut FxHashMap<String, B>,
 ) -> Vec<B>
 where
-    B::Manager<'id>: WorkerManager,
+    B::Manager<'id>: HasWorkers,
     <B::Manager<'id> as Manager>::InnerNode: HasLevel,
 {
     let num_vars = var_set.len();
@@ -216,7 +216,7 @@ fn make_bool_dd<B>(
 ) -> B
 where
     B: BooleanFunction + Send + Sync + 'static,
-    for<'id> B::Manager<'id>: WorkerManager,
+    for<'id> B::Manager<'id>: HasWorkers,
     for<'id> <B::Manager<'id> as Manager>::InnerNode: HasLevel,
 {
     fn prop_rec<B: BooleanFunction>(
@@ -285,14 +285,16 @@ where
         rec(&mut leaves, &mut f)
     }
 
-    fn balanced_reduce_par<T: Send>(
+    fn balanced_reduce_par<W: WorkerPool, T: Send>(
+        workers: &W,
         iter: impl IntoParallelIterator<Item = T>,
         f: impl for<'a> Fn(&'a T, &'a T) -> T + Send + Copy,
     ) -> Option<T> {
         // We use `Option<T>` such that we can drop the values as soon as possible
         let mut leaves: Vec<Option<T>> = iter.into_par_iter().map(Some).collect();
 
-        fn rec<T: Send>(
+        fn rec<W: WorkerPool, T: Send>(
+            workers: &W,
             leaves: &mut [Option<T>],
             f: impl for<'a> Fn(&'a T, &'a T) -> T + Send + Copy,
         ) -> Option<T> {
@@ -301,7 +303,7 @@ where
                 [l] => l.take(),
                 _ => {
                     let (l, r) = leaves.split_at_mut(leaves.len() / 2);
-                    match rayon::join(move || rec(l, f), move || rec(r, f)) {
+                    match workers.join(move || rec(workers, l, f), move || rec(workers, r, f)) {
                         (None, v) | (v, None) => v,
                         (Some(l), Some(r)) => Some(f(&l, &r)),
                     }
@@ -309,7 +311,7 @@ where
             }
         }
 
-        rec(&mut leaves, f)
+        rec(workers, &mut leaves, f)
     }
 
     fn clause_tree_rec<B: BooleanFunction>(
@@ -332,7 +334,8 @@ where
         }
     }
 
-    fn clause_tree_par_rec<B: BooleanFunction + Send + Sync>(
+    fn clause_tree_par_rec<W: WorkerPool, B: BooleanFunction + Send + Sync>(
+        workers: &W,
         clauses: &[B],
         clause_order: &Tree<usize>,
         profiler: &Profiler,
@@ -340,8 +343,9 @@ where
         match clause_order {
             Tree::Leaf(n) => Some(clauses[*n].clone()),
             Tree::Inner(sub) => balanced_reduce_par(
+                workers,
                 sub.into_par_iter()
-                    .filter_map(|t| clause_tree_par_rec(clauses, t, profiler)),
+                    .filter_map(|t| clause_tree_par_rec(workers, clauses, t, profiler)),
                 |lhs: &B, rhs: &B| {
                     let op_start = profiler.start_op();
                     let conj = handle_oom!(lhs.and(rhs));
@@ -366,7 +370,7 @@ where
             });
 
             mref.with_manager_shared(|manager| {
-                manager.set_split_depth(Some(0));
+                manager.workers().set_split_depth(Some(0));
                 let clauses = cnf.clauses_mut();
                 PROGRESS.set_task(
                     format!("build clauses (problem {problem_no})"),
@@ -407,7 +411,7 @@ where
                     HDuration(profiler.elapsed_time())
                 );
 
-                manager.set_split_depth(cli.operation_split_depth);
+                manager.workers().set_split_depth(cli.operation_split_depth);
                 PROGRESS.set_task(
                     format!("conjoin clauses (problem {problem_no})"),
                     clauses.len() - 1,
@@ -436,7 +440,7 @@ where
                             .unwrap()
                         }
                         (CNFBuildOrder::Balanced, true) => {
-                            balanced_reduce_par(clauses, |lhs: &B, rhs: &B| {
+                            balanced_reduce_par(manager.workers(), clauses, |lhs: &B, rhs: &B| {
                                 let op_start = profiler.start_op();
                                 let conj = handle_oom!(lhs.and(rhs));
                                 profiler.finish_op(op_start, &conj);
@@ -463,10 +467,13 @@ where
                             clause_tree_rec(&clauses, cnf.clause_order().unwrap(), &profiler)
                                 .unwrap()
                         }
-                        (CNFBuildOrder::Tree, true) => {
-                            clause_tree_par_rec(&clauses, cnf.clause_order().unwrap(), &profiler)
-                                .unwrap()
-                        }
+                        (CNFBuildOrder::Tree, true) => clause_tree_par_rec(
+                            manager.workers(),
+                            &clauses,
+                            cnf.clause_order().unwrap(),
+                            &profiler,
+                        )
+                        .unwrap(),
                     }
                 }
             })
@@ -481,7 +488,7 @@ where
                 make_vars::<B>(manager, prop.vars(), cli.read_var_order, var_name_map)
             });
             mref.with_manager_shared(|manager| {
-                manager.set_split_depth(cli.operation_split_depth);
+                manager.workers().set_split_depth(cli.operation_split_depth);
                 prop_rec(manager, prop.formula(), &vars, &profiler)
             })
         }
@@ -500,7 +507,7 @@ where
     B: BooleanFunction + Send + Sync + 'static,
     B::ManagerRef: Send + 'static,
     for<'id> B: dot::DotStyle<<B::Manager<'id> as Manager>::EdgeTag>,
-    for<'id> B::Manager<'id>: WorkerManager + HasApplyCache<B::Manager<'id>, O>,
+    for<'id> B::Manager<'id>: HasWorkers + HasApplyCache<B::Manager<'id>, O>,
     for<'id> <B::Manager<'id> as Manager>::InnerNode: HasLevel,
     for<'id> <B::Manager<'id> as Manager>::EdgeTag: fmt::Debug,
     for<'id> <B::Manager<'id> as Manager>::Terminal: FromStr + fmt::Display + dddmp::AsciiDisplay,
@@ -785,7 +792,11 @@ fn main() {
         DDType::BDD => {
             let mref =
                 oxidd::bdd::new_manager(inner_node_capacity, cli.apply_cache_capacity, cli.threads);
-            bool_dd_main::<oxidd::bdd::BDDFunction, _>(&cli, mref);
+            // Run all operations from within the worker pool to reduce the number of
+            // context switches
+            mref.clone()
+                .workers()
+                .install(move || bool_dd_main::<oxidd::bdd::BDDFunction, _>(&cli, mref))
         }
         DDType::BCDD => {
             let mref = oxidd::bcdd::new_manager(
@@ -793,7 +804,9 @@ fn main() {
                 cli.apply_cache_capacity,
                 cli.threads,
             );
-            bool_dd_main::<oxidd::bcdd::BCDDFunction, _>(&cli, mref);
+            mref.clone()
+                .workers()
+                .install(move || bool_dd_main::<oxidd::bcdd::BCDDFunction, _>(&cli, mref))
         }
         DDType::ZBDD => todo!(),
     }

@@ -7,10 +7,12 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <initializer_list>
 #include <iterator>
 #include <optional>
 #include <tuple>
+#include <type_traits>
 #include <vector>
 #include <version>
 
@@ -370,6 +372,52 @@ concept pair_like =
     };
 
 #endif // __cpp_lib_concepts
+
+/// @cond
+
+namespace detail {
+
+extern "C" inline void *oxidd_callback_helper(void *f) {
+  return (*static_cast<std::function<void *()> *>(f))();
+}
+
+template <typename M, typename R>
+R run_in_worker_pool(void *(*run_fn)(M, void *(void *), void *), M manager,
+                     const std::function<R()> f) {
+  if constexpr (std::is_void_v<R>) {
+    const std::function<void *()> wrapper([f = std::move(f)]() -> void * {
+      f();
+      return nullptr;
+    });
+    run_fn(manager, oxidd_callback_helper, (void *)(&wrapper));
+  } else if constexpr (std::is_reference_v<R>) {
+    const std::function<void *()> wrapper(
+        [f = std::move(f)]() -> void * { return (void *)(&f()); });
+    return *static_cast<std::remove_reference_t<R> *>(
+        run_fn(manager, oxidd_callback_helper, (void *)(&wrapper)));
+  } else if constexpr (std::is_pointer_v<R>) {
+    const std::function<void *()> wrapper(
+        [f = std::move(f)]() -> void * { return (void *)f(); });
+    return static_cast<R>(
+        run_fn(manager, oxidd_callback_helper, (void *)(&wrapper)));
+  } else {
+    // union type to not call the R's default constructor (or even require one)
+    union {
+      R v;
+    } return_val;
+    const std::function<void *()> wrapper(
+        [f = std::move(f), &return_val]() -> void * {
+          return_val.v = f();
+          return nullptr;
+        });
+    run_fn(manager, oxidd_callback_helper, (void *)(&wrapper));
+    return return_val.v;
+  }
+}
+
+} // namespace detail
+
+/// @endcond
 
 } // namespace util
 

@@ -564,31 +564,37 @@ public:
 void bdd_all_boolean_functions_2vars_t1() {
   // NOLINTNEXTLINE(*-magic-numbers)
   bdd_manager mgr(65536, 1024, 1);
-  const std::array vars{mgr.new_var(), mgr.new_var()};
-  const test_all_boolean_functions test(mgr, vars, vars);
-  test.basic();
-  test.subst();
-  test.quant();
+  mgr.run_in_worker_pool<void>([&mgr]() {
+    const std::array vars{mgr.new_var(), mgr.new_var()};
+    const test_all_boolean_functions test(mgr, vars, vars);
+    test.basic();
+    test.subst();
+    test.quant();
+  });
 }
 
 void bcdd_all_boolean_functions_2vars_t1() {
   // NOLINTNEXTLINE(*-magic-numbers)
   bcdd_manager mgr(65536, 1024, 1);
-  const std::array vars{mgr.new_var(), mgr.new_var()};
-  const test_all_boolean_functions test(mgr, vars, vars);
-  test.basic();
-  test.subst();
-  test.quant();
+  mgr.run_in_worker_pool<void>([&mgr]() {
+    const std::array vars{mgr.new_var(), mgr.new_var()};
+    const test_all_boolean_functions test(mgr, vars, vars);
+    test.basic();
+    test.subst();
+    test.quant();
+  });
 }
 
 void zbdd_all_boolean_functions_2vars_t1() {
   // NOLINTNEXTLINE(*-magic-numbers)
   zbdd_manager mgr(65536, 1024, 1);
-  const std::array singletons{mgr.new_singleton(), mgr.new_singleton()};
-  const std::array vars{singletons[0].var_boolean_function(),
-                        singletons[1].var_boolean_function()};
-  const test_all_boolean_functions test(mgr, vars, singletons);
-  test.basic();
+  mgr.run_in_worker_pool<void>([&mgr]() {
+    const std::array singletons{mgr.new_singleton(), mgr.new_singleton()};
+    const std::array vars{singletons[0].var_boolean_function(),
+                          singletons[1].var_boolean_function()};
+    const test_all_boolean_functions test(mgr, vars, singletons);
+    test.basic();
+  });
 }
 
 int main() {

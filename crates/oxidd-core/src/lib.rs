@@ -943,12 +943,12 @@ pub trait HasApplyCache<M: Manager, O: Copy> {
     fn apply_cache_mut(&mut self) -> &mut Self::ApplyCache;
 }
 
-/// [`Manager`] that also has a thread pool
+/// Worker thread pool associated with a [`Manager`]
 ///
 /// A manager having its own thread pool has the advantage that it may use
-/// thread-local storage for its workers to pre-allocate some resources (e.g.
+/// thread-local storage for its workers to pre-allocate some resources (e.g.,
 /// slots for nodes) and thereby reduce lock contention.
-pub trait WorkerManager: Manager + Sync {
+pub trait WorkerPool: Sync {
     /// Get the current number of threads
     fn current_num_threads(&self) -> usize;
 
@@ -981,7 +981,7 @@ pub trait WorkerManager: Manager + Sync {
     fn broadcast<R: Send>(&self, op: impl Fn(BroadcastContext) -> R + Sync) -> Vec<R>;
 }
 
-/// Context provided to workers by [`WorkerManager::broadcast()`]
+/// Context provided to workers by [`WorkerPool::broadcast()`]
 #[derive(Clone, Copy, Debug)]
 pub struct BroadcastContext {
     /// Index of this worker (in range `0..num_threads`)
@@ -989,4 +989,14 @@ pub struct BroadcastContext {
 
     /// Number of threads receiving the broadcast
     pub num_threads: u32,
+}
+
+/// Helper trait to be implemented by [`Manager`] and [`ManagerRef`] if they
+/// feature a [`WorkerPool`].
+pub trait HasWorkers: Sync {
+    /// Type of the worker pool
+    type WorkerPool: WorkerPool;
+
+    /// Get the worker pool
+    fn workers(&self) -> &Self::WorkerPool;
 }
