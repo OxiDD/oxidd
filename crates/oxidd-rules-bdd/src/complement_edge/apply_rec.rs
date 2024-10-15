@@ -1564,10 +1564,8 @@ pub mod mt {
             let subst = substitute_prepare(manager, substitution.pairs())?;
             let edge = edge.borrowed();
             let cache_id = substitution.id();
-            manager.install(move || {
-                let rec = ParallelRecursor::new(manager);
-                substitute(manager, rec, edge, &subst, cache_id)
-            })
+            let rec = ParallelRecursor::new(manager);
+            substitute(manager, rec, edge, &subst, cache_id)
         }
     }
 
@@ -1618,7 +1616,7 @@ pub mod mt {
             rhs: &EdgeOfFunc<'id, Self>,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
             let (lhs, rhs) = (lhs.borrowed(), rhs.borrowed());
-            manager.install(move || apply_and(manager, ParallelRecursor::new(manager), lhs, rhs))
+            apply_and(manager, ParallelRecursor::new(manager), lhs, rhs)
         }
         #[inline]
         fn or_edge<'id>(
@@ -1627,9 +1625,8 @@ pub mod mt {
             rhs: &EdgeOfFunc<'id, Self>,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
             let (nl, nr) = (not(lhs), not(rhs));
-            Ok(not_owned(manager.install(move || {
-                apply_and(manager, ParallelRecursor::new(manager), nl, nr) // nor
-            })?))
+            let nor = apply_and(manager, ParallelRecursor::new(manager), nl, nr)?;
+            Ok(not_owned(nor))
         }
         #[inline]
         fn nand_edge<'id>(
@@ -1638,9 +1635,8 @@ pub mod mt {
             rhs: &EdgeOfFunc<'id, Self>,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
             let (lhs, rhs) = (lhs.borrowed(), rhs.borrowed());
-            Ok(not_owned(manager.install(move || {
-                apply_and(manager, ParallelRecursor::new(manager), lhs, rhs)
-            })?))
+            let and = apply_and(manager, ParallelRecursor::new(manager), lhs, rhs)?;
+            Ok(not_owned(and))
         }
         #[inline]
         fn nor_edge<'id>(
@@ -1649,7 +1645,7 @@ pub mod mt {
             rhs: &EdgeOfFunc<'id, Self>,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
             let (nl, nr) = (not(lhs), not(rhs));
-            manager.install(move || apply_and(manager, ParallelRecursor::new(manager), nl, nr))
+            apply_and(manager, ParallelRecursor::new(manager), nl, nr)
         }
         #[inline]
         fn xor_edge<'id>(
@@ -1658,10 +1654,8 @@ pub mod mt {
             rhs: &EdgeOfFunc<'id, Self>,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
             let (lhs, rhs) = (lhs.borrowed(), rhs.borrowed());
-            manager.install(move || {
-                let rec = ParallelRecursor::new(manager);
-                apply_bin::<_, _, { BCDDOp::Xor as u8 }>(manager, rec, lhs, rhs)
-            })
+            let rec = ParallelRecursor::new(manager);
+            apply_bin::<_, _, { BCDDOp::Xor as u8 }>(manager, rec, lhs, rhs)
         }
         #[inline]
         fn equiv_edge<'id>(
@@ -1670,10 +1664,10 @@ pub mod mt {
             rhs: &EdgeOfFunc<'id, Self>,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
             let (lhs, rhs) = (lhs.borrowed(), rhs.borrowed());
-            Ok(not_owned(manager.install(move || {
-                let rec = ParallelRecursor::new(manager);
-                apply_bin::<_, _, { BCDDOp::Xor as u8 }>(manager, rec, lhs, rhs)
-            })?))
+            let rec = ParallelRecursor::new(manager);
+            Ok(not_owned(apply_bin::<_, _, { BCDDOp::Xor as u8 }>(
+                manager, rec, lhs, rhs,
+            )?))
         }
         #[inline]
         fn imp_edge<'id>(
@@ -1683,9 +1677,8 @@ pub mod mt {
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
             // a → b ≡ ¬a ∨ b ≡ ¬(a ∧ ¬b)
             let (lhs, nr) = (lhs.borrowed(), not(rhs));
-            Ok(not_owned(manager.install(move || {
-                apply_and(manager, ParallelRecursor::new(manager), lhs, nr)
-            })?))
+            let not_imp = apply_and(manager, ParallelRecursor::new(manager), lhs, nr)?;
+            Ok(not_owned(not_imp))
         }
         #[inline]
         fn imp_strict_edge<'id>(
@@ -1694,7 +1687,7 @@ pub mod mt {
             rhs: &EdgeOfFunc<'id, Self>,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
             let (nl, rhs) = (not(lhs), rhs.borrowed());
-            manager.install(move || apply_and(manager, ParallelRecursor::new(manager), nl, rhs))
+            apply_and(manager, ParallelRecursor::new(manager), nl, rhs)
         }
 
         #[inline]
@@ -1705,7 +1698,7 @@ pub mod mt {
             h: &EdgeOfFunc<'id, Self>,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
             let (f, g, h) = (f.borrowed(), g.borrowed(), h.borrowed());
-            manager.install(move || apply_ite(manager, ParallelRecursor::new(manager), f, g, h))
+            apply_ite(manager, ParallelRecursor::new(manager), f, g, h)
         }
 
         #[inline]
@@ -1772,7 +1765,7 @@ pub mod mt {
             vars: &EdgeOfFunc<'id, Self>,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
             let (root, vars) = (root.borrowed(), vars.borrowed());
-            manager.install(move || restrict(manager, ParallelRecursor::new(manager), root, vars))
+            restrict(manager, ParallelRecursor::new(manager), root, vars)
         }
 
         #[inline]
@@ -1782,10 +1775,8 @@ pub mod mt {
             vars: &EdgeOfFunc<'id, Self>,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
             let (root, vars) = (root.borrowed(), vars.borrowed());
-            manager.install(move || {
-                let rec = ParallelRecursor::new(manager);
-                quant::<_, _, { BCDDOp::Forall as u8 }>(manager, rec, root, vars)
-            })
+            let rec = ParallelRecursor::new(manager);
+            quant::<_, _, { BCDDOp::Forall as u8 }>(manager, rec, root, vars)
         }
         #[inline]
         fn exist_edge<'id>(
@@ -1794,10 +1785,8 @@ pub mod mt {
             vars: &EdgeOfFunc<'id, Self>,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
             let (root, vars) = (root.borrowed(), vars.borrowed());
-            manager.install(move || {
-                let rec = ParallelRecursor::new(manager);
-                quant::<_, _, { BCDDOp::Exist as u8 }>(manager, rec, root, vars)
-            })
+            let rec = ParallelRecursor::new(manager);
+            quant::<_, _, { BCDDOp::Exist as u8 }>(manager, rec, root, vars)
         }
         #[inline]
         fn unique_edge<'id>(
@@ -1806,10 +1795,8 @@ pub mod mt {
             vars: &EdgeOfFunc<'id, Self>,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
             let (root, vars) = (root.borrowed(), vars.borrowed());
-            manager.install(move || {
-                let rec = ParallelRecursor::new(manager);
-                quant::<_, _, { BCDDOp::Unique as u8 }>(manager, rec, root, vars)
-            })
+            let rec = ParallelRecursor::new(manager);
+            quant::<_, _, { BCDDOp::Unique as u8 }>(manager, rec, root, vars)
         }
 
         #[inline]
@@ -1821,16 +1808,14 @@ pub mod mt {
             vars: &EdgeOfFunc<'id, Self>,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
             let (lhs, rhs, vars) = (lhs.borrowed(), rhs.borrowed(), vars.borrowed());
-            manager.install(move || {
-                apply_quant_dispatch::<_, _, { BCDDOp::Forall as u8 }, { BCDDOp::Exist as u8 }>(
-                    manager,
-                    ParallelRecursor::new(manager),
-                    op,
-                    lhs,
-                    rhs,
-                    vars,
-                )
-            })
+            apply_quant_dispatch::<_, _, { BCDDOp::Forall as u8 }, { BCDDOp::Exist as u8 }>(
+                manager,
+                ParallelRecursor::new(manager),
+                op,
+                lhs,
+                rhs,
+                vars,
+            )
         }
         #[inline]
         fn apply_exist_edge<'id>(
@@ -1841,16 +1826,14 @@ pub mod mt {
             vars: &EdgeOfFunc<'id, Self>,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
             let (lhs, rhs, vars) = (lhs.borrowed(), rhs.borrowed(), vars.borrowed());
-            manager.install(move || {
-                apply_quant_dispatch::<_, _, { BCDDOp::Exist as u8 }, { BCDDOp::Forall as u8 }>(
-                    manager,
-                    ParallelRecursor::new(manager),
-                    op,
-                    lhs,
-                    rhs,
-                    vars,
-                )
-            })
+            apply_quant_dispatch::<_, _, { BCDDOp::Exist as u8 }, { BCDDOp::Forall as u8 }>(
+                manager,
+                ParallelRecursor::new(manager),
+                op,
+                lhs,
+                rhs,
+                vars,
+            )
         }
         #[inline]
         fn apply_unique_edge<'id>(
@@ -1861,10 +1844,8 @@ pub mod mt {
             vars: &EdgeOfFunc<'id, Self>,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
             let (lhs, rhs, vars) = (lhs.borrowed(), rhs.borrowed(), vars.borrowed());
-            manager.install(move || {
-                let rec = ParallelRecursor::new(manager);
-                apply_quant_unique_dispatch(manager, rec, op, lhs, rhs, vars)
-            })
+            let rec = ParallelRecursor::new(manager);
+            apply_quant_unique_dispatch(manager, rec, op, lhs, rhs, vars)
         }
     }
 
