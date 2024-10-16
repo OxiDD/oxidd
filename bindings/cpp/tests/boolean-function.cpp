@@ -45,7 +45,11 @@ public:
   constexpr enumerate_view()
     requires std::default_initializable<V>
   = default;
+  // clang-format off
+  // Ubuntu 24.04. has clang-format 18.1.3, which wants to remove the space
+  // before `{}`. clang-format 18.1.8, however, wants the space.
   constexpr explicit enumerate_view(V base) : _base(std::move(base)) {};
+  // clang-format on
 
   [[nodiscard]] constexpr iterator begin() const {
     return iterator(std::ranges::begin(_base), 0);
