@@ -131,7 +131,7 @@ class BooleanFunction(Function, Protocol):
     """Boolean function represented as decision diagram"""
 
     @abstractmethod
-    def cofactors(self) -> tuple[Self, Self]:
+    def cofactors(self) -> Optional[tuple[Self, Self]]:
         r"""Get the cofactors ``(f_true, f_false)`` of ``self``
 
         Let f(x₀, …, xₙ) be represented by ``self``, where x₀ is (currently) the
@@ -157,7 +157,7 @@ class BooleanFunction(Function, Protocol):
         raise NotImplementedError
 
     @abstractmethod
-    def cofactor_true(self) -> Self:
+    def cofactor_true(self) -> Optional[Self]:
         """Get the cofactor ``f_true`` of ``self``
 
         This method is slightly more efficient than :meth:`Self::cofactors` in
@@ -172,7 +172,7 @@ class BooleanFunction(Function, Protocol):
         raise NotImplementedError
 
     @abstractmethod
-    def cofactor_false(self) -> Self:
+    def cofactor_false(self) -> Optional[Self]:
         """Get the cofactor ``f_true`` of ``self``
 
         This method is slightly more efficient than :meth:`Self::cofactors` in

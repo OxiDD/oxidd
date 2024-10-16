@@ -194,20 +194,25 @@ class BDDFunction(
         return BDDManager._from_raw(_lib.oxidd_bdd_containing_manager(self._func))
 
     @override
-    def cofactors(self) -> tuple[Self, Self]:
+    def cofactors(self) -> Optional[tuple[Self, Self]]:
         raw_pair = _lib.oxidd_bdd_cofactors(self._func)
+        if raw_pair.first._p == _ffi.NULL:
+            return None
+        assert raw_pair.second._p != _ffi.NULL
         return (
             self.__class__._from_raw(raw_pair.first),
             self.__class__._from_raw(raw_pair.second),
         )
 
     @override
-    def cofactor_true(self) -> Self:
-        return self.__class__._from_raw(_lib.oxidd_bdd_cofactor_true(self._func))
+    def cofactor_true(self) -> Optional[Self]:
+        raw = _lib.oxidd_bdd_cofactor_true(self._func)
+        return self.__class__._from_raw(raw) if raw._p != _ffi.NULL else None
 
     @override
-    def cofactor_false(self) -> Self:
-        return self.__class__._from_raw(_lib.oxidd_bdd_cofactor_false(self._func))
+    def cofactor_false(self) -> Optional[Self]:
+        raw = _lib.oxidd_bdd_cofactor_false(self._func)
+        return self.__class__._from_raw(raw) if raw._p != _ffi.NULL else None
 
     @override
     def level(self) -> Optional[int]:
