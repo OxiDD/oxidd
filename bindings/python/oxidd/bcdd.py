@@ -1,9 +1,10 @@
 """Binary decision diagrams with complement edges (BCDDs)"""
 
+from __future__ import annotations
+
 __all__ = ["BCDDManager", "BCDDFunction"]
 
 import collections.abc
-from typing import Optional
 
 from _oxidd import ffi as _ffi
 from _oxidd import lib as _lib
@@ -48,15 +49,15 @@ class BCDDManager(protocols.BooleanFunctionManager["BCDDFunction"]):
         return hash(self._mgr._p)
 
     @override
-    def new_var(self) -> "BCDDFunction":
+    def new_var(self) -> BCDDFunction:
         return BCDDFunction._from_raw(_lib.oxidd_bcdd_new_var(self._mgr))
 
     @override
-    def true(self) -> "BCDDFunction":
+    def true(self) -> BCDDFunction:
         return BCDDFunction._from_raw(_lib.oxidd_bcdd_true(self._mgr))
 
     @override
-    def false(self) -> "BCDDFunction":
+    def false(self) -> BCDDFunction:
         return BCDDFunction._from_raw(_lib.oxidd_bcdd_false(self._mgr))
 
     @override
@@ -67,8 +68,8 @@ class BCDDManager(protocols.BooleanFunctionManager["BCDDFunction"]):
     def dump_all_dot_file(
         self,
         path: str,
-        functions: collections.abc.Iterable[tuple["BCDDFunction", str]] = [],
-        variables: collections.abc.Iterable[tuple["BCDDFunction", str]] = [],
+        functions: collections.abc.Iterable[tuple[BCDDFunction, str]] = [],
+        variables: collections.abc.Iterable[tuple[BCDDFunction, str]] = [],
     ) -> bool:
         fs = []
         f_names = []
@@ -102,7 +103,7 @@ class BCDDSubstitution:
     _subst: ...  #: Wrapped FFI object (``oxidd_bcdd_substitution_t *``)
 
     def __init__(
-        self, pairs: collections.abc.Iterable[tuple["BCDDFunction", "BCDDFunction"]]
+        self, pairs: collections.abc.Iterable[tuple[BCDDFunction, BCDDFunction]]
     ):
         """Create a new substitution object for BCDDs
 
@@ -196,7 +197,7 @@ class BCDDFunction(
         return BCDDManager._from_raw(_lib.oxidd_bcdd_containing_manager(self._func))
 
     @override
-    def cofactors(self) -> Optional[tuple[Self, Self]]:
+    def cofactors(self) -> tuple[Self, Self] | None:
         raw_pair = _lib.oxidd_bcdd_cofactors(self._func)
         if raw_pair.first._p == _ffi.NULL:
             return None
@@ -207,17 +208,17 @@ class BCDDFunction(
         )
 
     @override
-    def cofactor_true(self) -> Optional[Self]:
+    def cofactor_true(self) -> Self | None:
         raw = _lib.oxidd_bcdd_cofactor_true(self._func)
         return self.__class__._from_raw(raw) if raw._p != _ffi.NULL else None
 
     @override
-    def cofactor_false(self) -> Optional[Self]:
+    def cofactor_false(self) -> Self | None:
         raw = _lib.oxidd_bcdd_cofactor_false(self._func)
         return self.__class__._from_raw(raw) if raw._p != _ffi.NULL else None
 
     @override
-    def level(self) -> Optional[int]:
+    def level(self) -> int | None:
         val = _lib.oxidd_bcdd_level(self._func)
         return val if val != util._LEVEL_NO_MAX else None
 
@@ -378,7 +379,7 @@ class BCDDFunction(
         return float(_lib.oxidd_bcdd_sat_count_double(self._func, vars))
 
     @override
-    def pick_cube(self) -> Optional[util.Assignment]:
+    def pick_cube(self) -> util.Assignment | None:
         raw = _lib.oxidd_bcdd_pick_cube(self._func)
         return util.Assignment._from_raw(raw) if raw.len > 0 else None
 

@@ -1,9 +1,10 @@
 """Zero-suppressed binary decision diagrams (ZBDDs)"""
 
+from __future__ import annotations
+
 __all__ = ["ZBDDManager", "ZBDDFunction"]
 
 import collections.abc
-from typing import Optional
 
 from _oxidd import ffi as _ffi
 from _oxidd import lib as _lib
@@ -47,7 +48,7 @@ class ZBDDManager(protocols.BooleanFunctionManager["ZBDDFunction"]):
     def __hash__(self) -> int:
         return hash(self._mgr._p)
 
-    def new_singleton(self) -> "ZBDDFunction":
+    def new_singleton(self) -> ZBDDFunction:
         """Get a fresh variable in the form of a singleton set
 
         This adds a new level to a decision diagram.
@@ -57,17 +58,17 @@ class ZBDDManager(protocols.BooleanFunctionManager["ZBDDFunction"]):
         return ZBDDFunction._from_raw(_lib.oxidd_zbdd_new_singleton(self._mgr))
 
     @override
-    def new_var(self) -> "ZBDDFunction":
+    def new_var(self) -> ZBDDFunction:
         return ZBDDFunction._from_raw(_lib.oxidd_zbdd_new_var(self._mgr))
 
-    def empty(self) -> "ZBDDFunction":
+    def empty(self) -> ZBDDFunction:
         """Get the ZBDD set ∅
 
         Acquires the manager's lock for shared access.
         """
         return ZBDDFunction._from_raw(_lib.oxidd_zbdd_empty(self._mgr))
 
-    def base(self) -> "ZBDDFunction":
+    def base(self) -> ZBDDFunction:
         """Get the ZBDD set {∅}
 
         Acquires the manager's lock for shared access.
@@ -75,11 +76,11 @@ class ZBDDManager(protocols.BooleanFunctionManager["ZBDDFunction"]):
         return ZBDDFunction._from_raw(_lib.oxidd_zbdd_base(self._mgr))
 
     @override
-    def true(self) -> "ZBDDFunction":
+    def true(self) -> ZBDDFunction:
         return ZBDDFunction._from_raw(_lib.oxidd_zbdd_true(self._mgr))
 
     @override
-    def false(self) -> "ZBDDFunction":
+    def false(self) -> ZBDDFunction:
         return ZBDDFunction._from_raw(_lib.oxidd_zbdd_false(self._mgr))
 
     @override
@@ -90,8 +91,8 @@ class ZBDDManager(protocols.BooleanFunctionManager["ZBDDFunction"]):
     def dump_all_dot_file(
         self,
         path: str,
-        functions: collections.abc.Iterable[tuple["ZBDDFunction", str]] = [],
-        variables: collections.abc.Iterable[tuple["ZBDDFunction", str]] = [],
+        functions: collections.abc.Iterable[tuple[ZBDDFunction, str]] = [],
+        variables: collections.abc.Iterable[tuple[ZBDDFunction, str]] = [],
     ) -> bool:
         fs = []
         f_names = []
@@ -192,7 +193,7 @@ class ZBDDFunction(protocols.BooleanFunction, protocols.HasLevel):
         return ZBDDManager._from_raw(_lib.oxidd_zbdd_containing_manager(self._func))
 
     @override
-    def cofactors(self) -> Optional[tuple[Self, Self]]:
+    def cofactors(self) -> tuple[Self, Self] | None:
         raw_pair = _lib.oxidd_zbdd_cofactors(self._func)
         if raw_pair.first._p == _ffi.NULL:
             return None
@@ -203,17 +204,17 @@ class ZBDDFunction(protocols.BooleanFunction, protocols.HasLevel):
         )
 
     @override
-    def cofactor_true(self) -> Optional[Self]:
+    def cofactor_true(self) -> Self | None:
         raw = _lib.oxidd_zbdd_cofactor_true(self._func)
         return self.__class__._from_raw(raw) if raw._p != _ffi.NULL else None
 
     @override
-    def cofactor_false(self) -> Optional[Self]:
+    def cofactor_false(self) -> Self | None:
         raw = _lib.oxidd_zbdd_cofactor_false(self._func)
         return self.__class__._from_raw(raw) if raw._p != _ffi.NULL else None
 
     @override
-    def level(self) -> Optional[int]:
+    def level(self) -> int | None:
         val = _lib.oxidd_zbdd_level(self._func)
         return val if val != util._LEVEL_NO_MAX else None
 
@@ -349,7 +350,7 @@ class ZBDDFunction(protocols.BooleanFunction, protocols.HasLevel):
         return float(_lib.oxidd_zbdd_sat_count_double(self._func, vars))
 
     @override
-    def pick_cube(self) -> Optional[util.Assignment]:
+    def pick_cube(self) -> util.Assignment | None:
         raw = _lib.oxidd_zbdd_pick_cube(self._func)
         return util.Assignment._from_raw(raw) if raw.len > 0 else None
 

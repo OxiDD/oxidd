@@ -1,10 +1,12 @@
 """Primitives and utilities"""
 
+from __future__ import annotations
+
 __all__ = ["BooleanOperator", "Assignment"]
 
 import enum
 from collections.abc import Iterator, Sequence
-from typing import Optional, Union
+from typing import Optional
 
 from _oxidd import ffi as _ffi
 from _oxidd import lib as _lib
@@ -68,7 +70,7 @@ class Assignment(Sequence[Optional[bool]]):
     def __len__(self) -> int:
         return int(self._data.len)
 
-    def _get_unchecked(self, index: int) -> Optional[bool]:
+    def _get_unchecked(self, index: int) -> bool | None:
         """Get the element at ``index`` without bounds checking
 
         SAFETY: ``index`` must be in bounds (``0 <= index < len(self)``)
@@ -78,16 +80,14 @@ class Assignment(Sequence[Optional[bool]]):
 
     @override
     @overload
-    def __getitem__(self, index: int) -> Optional[bool]: ...
+    def __getitem__(self, index: int) -> bool | None: ...
 
     @override
     @overload
-    def __getitem__(self, index: slice) -> list[Optional[bool]]: ...
+    def __getitem__(self, index: slice) -> list[bool | None]: ...
 
     @override
-    def __getitem__(
-        self, index: Union[int, slice]
-    ) -> Union[Optional[bool], list[Optional[bool]]]:
+    def __getitem__(self, index: int | slice) -> bool | None | list[bool | None]:
         n = len(self)
         if isinstance(index, slice):
             start, stop, step = index.indices(n)
@@ -99,9 +99,9 @@ class Assignment(Sequence[Optional[bool]]):
         return self._get_unchecked(i)
 
     @override
-    def __iter__(self) -> Iterator[Optional[bool]]:
+    def __iter__(self) -> Iterator[bool | None]:
         return (self._get_unchecked(i) for i in range(len(self)))
 
     @override
-    def __reversed__(self) -> Iterator[Optional[bool]]:
+    def __reversed__(self) -> Iterator[bool | None]:
         return (self._get_unchecked(i) for i in range(len(self) - 1, -1, -1))

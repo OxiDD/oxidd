@@ -3,6 +3,8 @@ The protocols classes declared in this module allow abstracting away the
 concrete decision diagram kind in a type-safe fashion.
 """
 
+from __future__ import annotations
+
 __all__ = [
     "Manager",
     "BooleanFunctionManager",
@@ -15,7 +17,7 @@ __all__ = [
 
 import collections.abc
 from abc import abstractmethod
-from typing import Generic, Optional, Protocol, TypeVar
+from typing import Generic, Protocol, TypeVar
 
 from typing_extensions import Self
 
@@ -32,7 +34,7 @@ class Function(Protocol):
 
     @property
     @abstractmethod
-    def manager(self) -> "Manager[Self]":
+    def manager(self) -> Manager[Self]:
         """The associated manager"""
         raise NotImplementedError
 
@@ -117,7 +119,7 @@ class HasLevel(Function, Protocol):
     """Function whose decision diagram node is associated with a level"""
 
     @abstractmethod
-    def level(self) -> Optional[int]:
+    def level(self) -> int | None:
         """Get the level of the underlying node (``None`` for terminals)
 
         Locking behavior: acquires the manager's lock for shared access.
@@ -131,7 +133,7 @@ class BooleanFunction(Function, Protocol):
     """Boolean function represented as decision diagram"""
 
     @abstractmethod
-    def cofactors(self) -> Optional[tuple[Self, Self]]:
+    def cofactors(self) -> tuple[Self, Self] | None:
         r"""Get the cofactors ``(f_true, f_false)`` of ``self``
 
         Let f(x₀, …, xₙ) be represented by ``self``, where x₀ is (currently) the
@@ -157,7 +159,7 @@ class BooleanFunction(Function, Protocol):
         raise NotImplementedError
 
     @abstractmethod
-    def cofactor_true(self) -> Optional[Self]:
+    def cofactor_true(self) -> Self | None:
         """Get the cofactor ``f_true`` of ``self``
 
         This method is slightly more efficient than :meth:`Self::cofactors` in
@@ -172,7 +174,7 @@ class BooleanFunction(Function, Protocol):
         raise NotImplementedError
 
     @abstractmethod
-    def cofactor_false(self) -> Optional[Self]:
+    def cofactor_false(self) -> Self | None:
         """Get the cofactor ``f_true`` of ``self``
 
         This method is slightly more efficient than :meth:`Self::cofactors` in
@@ -312,7 +314,7 @@ class BooleanFunction(Function, Protocol):
         raise NotImplementedError
 
     @abstractmethod
-    def pick_cube(self) -> Optional[Assignment]:
+    def pick_cube(self) -> Assignment | None:
         """Pick a satisfying assignment
 
         Returns ``None`` iff ``self`` is unsatisfiable.

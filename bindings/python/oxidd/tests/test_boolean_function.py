@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 from collections.abc import Sequence
-from typing import Generic, Optional, Protocol, TypeVar, Union
+from typing import Generic, Protocol, TypeVar
 
 import oxidd
 from oxidd.protocols import (
@@ -253,7 +255,7 @@ class AllBooleanFunctions(Generic[BF]):
 
 
 class AllBooleanFunctionsQuantSubst(AllBooleanFunctions[BFQS]):
-    def _subst_rec(self, replacements: list[Optional[int]], current_var: int):
+    def _subst_rec(self, replacements: list[int | None], current_var: int):
         assert len(replacements) == len(self._vars)
         if current_var < len(self._vars):
             replacements[current_var] = None
@@ -413,7 +415,7 @@ def test_zbdd_all_boolean_functions_2vars_t1():
     test.basic()
 
 
-def pick_cube(mgr: Union[oxidd.bdd.BDDManager, oxidd.bcdd.BCDDManager]):
+def pick_cube(mgr: oxidd.bdd.BDDManager | oxidd.bcdd.BCDDManager):
     """Only works for B(C)DDs"""
     tt = mgr.true()
     assert tt.level() is None

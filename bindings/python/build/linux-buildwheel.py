@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 
+from __future__ import annotations
+
 import argparse
 import os
 import sys
 from pathlib import Path
-from typing import Optional
 
 # Make relative imports work
 sys.path.append(str(Path(__file__).parent.parent))
@@ -25,7 +26,7 @@ wheelhouse_dir = repo_dir / "wheelhouse"
 include_dir.mkdir(parents=True, exist_ok=True)
 
 
-def install_targets(triples: list[str], toolchain: Optional[str]) -> None:
+def install_targets(triples: list[str], toolchain: str | None) -> None:
     """Install Rust targets using `rustup target add`"""
     rustup = which("rustup")
     toolchain_args = []
@@ -34,7 +35,7 @@ def install_targets(triples: list[str], toolchain: Optional[str]) -> None:
     run(rustup, "target", "add", *toolchain_args, *triples)
 
 
-def build(archs: str, triples: list[str], toolchain: Optional[str]) -> None:
+def build(archs: str, triples: list[str], toolchain: str | None) -> None:
     """Build wheels
 
     - `archs` is passed to cibuildwheel

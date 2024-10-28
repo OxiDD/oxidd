@@ -1,5 +1,8 @@
 """This script is run form setup.py (in the project root)"""
 
+from __future__ import annotations
+
+import io
 import os
 import platform
 import sys
@@ -69,7 +72,7 @@ class LinkMode(Enum):
     """
 
     @staticmethod
-    def from_env() -> "LinkMode":
+    def from_env() -> LinkMode:
         """Read from the OXIDD_PYFFI_LINK_MODE environment variable"""
         if container_build:
             return LinkMode.STATIC
@@ -144,7 +147,7 @@ def read_cdefs(header: Path) -> str:
     cannot deal with them.
     """
 
-    res = ""
+    res = io.StringIO()
     # encoding="utf-8" seems to be important on Windows
     with header.open("r", encoding="utf-8") as f:
         lines = iter(f)
@@ -168,8 +171,8 @@ def read_cdefs(header: Path) -> str:
                         if line.startswith("#endif"):
                             break
                 continue
-            res += line
-    return res
+            res.write(line)
+    return res.getvalue()
 
 
 cdefs = read_cdefs(oxidd_h)
