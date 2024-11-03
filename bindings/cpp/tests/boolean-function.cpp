@@ -24,6 +24,8 @@ using oxidd::util::slice;
 
 // spell-checker:ignore nvars
 
+namespace {
+
 using explicit_b_func = uint32_t;
 
 namespace my_enumerate {
@@ -600,6 +602,8 @@ void zbdd_all_boolean_functions_2vars_t1() {
     test.basic();
   });
 }
+
+} // namespace
 
 int main() {
   static_assert(boolean_function_manager<bdd_manager>);
