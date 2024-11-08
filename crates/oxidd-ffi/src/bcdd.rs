@@ -46,11 +46,11 @@ impl bcdd_manager_t {
 /// Boolean function represented as a binary decision diagram with complement
 /// edges (BCDD)
 ///
-/// /// This is essentially an optional (tagged) reference to a BCDD node. In
-/// case an operation runs out of memory, it returns an invalid BCDD function.
-/// Unless explicitly specified otherwise, an oxidd_bcdd_t parameter may be
-/// invalid to permit "chaining" operations without explicit checks in between.
-/// In this case, the returned BCDD function is also invalid.
+/// This is essentially an optional (tagged) reference to a BCDD node. In case
+/// an operation runs out of memory, it returns an invalid BCDD function. Unless
+/// explicitly specified otherwise, an oxidd_bcdd_t parameter may be invalid to
+/// permit "chaining" operations without explicit checks in between. In this
+/// case, the returned BCDD function is also invalid.
 ///
 /// An instance of this type contributes to both the reference count of the
 /// referenced node and the manager that stores this node. Unless explicitly
