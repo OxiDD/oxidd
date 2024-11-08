@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Generic, Protocol, TypeVar
+from typing import Any, Generic, Protocol, TypeVar
 
 import oxidd
 from oxidd.protocols import (
@@ -15,7 +15,7 @@ from oxidd.util import BooleanOperator
 # spell-checker:ignore nvars,BFQS
 
 
-class BooleanFunctionQuantSubst(BooleanFunctionQuant, FunctionSubst, Protocol):
+class BooleanFunctionQuantSubst(BooleanFunctionQuant, FunctionSubst[Any], Protocol):
     pass
 
 
@@ -120,7 +120,7 @@ class AllBooleanFunctions(Generic[BF]):
 
         return cube
 
-    def basic(self):
+    def basic(self) -> None:
         """Test basic operations on all Boolean function"""
 
         nvars = len(self._vars)
@@ -215,11 +215,11 @@ class AllBooleanFunctions(Generic[BF]):
                 assert actual & ~f_explicit == 0
 
                 cube_func = func_mask
-                for var in range(nvars):
-                    val = cube[var]
+                for vi in range(nvars):
+                    val = cube[vi]
                     if val is None:
                         continue
-                    var_func = self._var_functions[var]
+                    var_func = self._var_functions[vi]
                     cube_func &= var_func if val else ~var_func
 
                 assert cube_func == actual
@@ -232,21 +232,21 @@ class AllBooleanFunctions(Generic[BF]):
                     actual = self._dd_to_boolean_func[
                         f.pick_cube_dd_set(self.make_cube(pos, neg))
                     ]
-                    for var, var_func in enumerate(self._var_functions):
-                        if (actual & var_func) >> (1 << var) == actual & ~var_func:
+                    for vi, var_func in enumerate(self._var_functions):
+                        if (actual & var_func) >> (1 << vi) == actual & ~var_func:
                             continue  # var is don't care
                         if actual & var_func == 0:  # selected to be false
-                            if pos & (1 << var) == 0:
+                            if pos & (1 << vi) == 0:
                                 continue  # was not requested to be true
-                            flipped = actual << (1 << var)
+                            flipped = actual << (1 << vi)
                         else:
                             assert (
                                 actual & ~var_func == 0
                             ), "not a conjunction of literals"
                             # selected to be false
-                            if neg & (1 << var) == 0:
+                            if neg & (1 << vi) == 0:
                                 continue
-                            flipped = actual >> (1 << var)
+                            flipped = actual >> (1 << vi)
 
                         # If the variable was selected to be the opposite of the
                         # request, then the reason must be that the cube would
@@ -255,13 +255,13 @@ class AllBooleanFunctions(Generic[BF]):
 
 
 class AllBooleanFunctionsQuantSubst(AllBooleanFunctions[BFQS]):
-    def _subst_rec(self, replacements: list[int | None], current_var: int):
+    def _subst_rec(self, replacements: list[int | None], current_var: int) -> None:
         assert len(replacements) == len(self._vars)
         if current_var < len(self._vars):
             replacements[current_var] = None
             self._subst_rec(replacements, current_var + 1)
-            for f in range(0, len(self._boolean_functions)):
-                replacements[current_var] = f
+            for f_explicit in range(len(self._boolean_functions)):
+                replacements[current_var] = f_explicit
                 self._subst_rec(replacements, current_var + 1)
         else:
             nvars = len(self._vars)
@@ -295,11 +295,11 @@ class AllBooleanFunctionsQuantSubst(AllBooleanFunctions[BFQS]):
                 actual = self._dd_to_boolean_func[f.substitute(subst)]
                 assert actual == expected
 
-    def subst(self):
+    def subst(self) -> None:
         """Test all possible substitutions"""
         self._subst_rec([None] * len(self._vars), 0)
 
-    def quant(self):
+    def quant(self) -> None:
         """Test quantification operations on all Boolean function"""
 
         nvars = len(self._vars)
@@ -389,7 +389,7 @@ class AllBooleanFunctionsQuantSubst(AllBooleanFunctions[BFQS]):
                         assert f.apply_unique(op, g, dd_var_set) == expected
 
 
-def test_bdd_all_boolean_functions_2vars_t1():
+def test_bdd_all_boolean_functions_2vars_t1() -> None:
     mgr = oxidd.bdd.BDDManager(1024, 1024, 1)
     vars = [mgr.new_var() for _ in range(2)]
     test = AllBooleanFunctionsQuantSubst(mgr, vars, vars)
@@ -398,7 +398,7 @@ def test_bdd_all_boolean_functions_2vars_t1():
     test.quant()
 
 
-def test_bcdd_all_boolean_functions_2vars_t1():
+def test_bcdd_all_boolean_functions_2vars_t1() -> None:
     mgr = oxidd.bcdd.BCDDManager(1024, 1024, 1)
     vars = [mgr.new_var() for _ in range(2)]
     test = AllBooleanFunctionsQuantSubst(mgr, vars, vars)
@@ -407,7 +407,7 @@ def test_bcdd_all_boolean_functions_2vars_t1():
     test.quant()
 
 
-def test_zbdd_all_boolean_functions_2vars_t1():
+def test_zbdd_all_boolean_functions_2vars_t1() -> None:
     mgr = oxidd.zbdd.ZBDDManager(1024, 1024, 1)
     singletons = [mgr.new_singleton() for _ in range(2)]
     vars = [s.var_boolean_function() for s in singletons]
@@ -415,7 +415,7 @@ def test_zbdd_all_boolean_functions_2vars_t1():
     test.basic()
 
 
-def pick_cube(mgr: oxidd.bdd.BDDManager | oxidd.bcdd.BCDDManager):
+def pick_cube(mgr: oxidd.bdd.BDDManager | oxidd.bcdd.BCDDManager) -> None:
     """Only works for B(C)DDs"""
     tt = mgr.true()
     assert tt.level() is None
@@ -463,15 +463,15 @@ def pick_cube(mgr: oxidd.bdd.BDDManager | oxidd.bcdd.BCDDManager):
     assert mgr.false().pick_cube() is None
 
 
-def test_bdd_pick_cube():
+def test_bdd_pick_cube() -> None:
     pick_cube(oxidd.bdd.BDDManager(1024, 1024, 1))
 
 
-def test_bcdd_pick_cube():
+def test_bcdd_pick_cube() -> None:
     pick_cube(oxidd.bcdd.BCDDManager(1024, 1024, 1))
 
 
-def ord_hash(mgr: BooleanFunctionManager[BF]):
+def ord_hash(mgr: BooleanFunctionManager[BF]) -> None:
     assert hash(mgr) == hash(mgr)
 
     tt = mgr.true()
@@ -491,13 +491,13 @@ def ord_hash(mgr: BooleanFunctionManager[BF]):
     )
 
 
-def test_bdd_ord_hash():
+def test_bdd_ord_hash() -> None:
     ord_hash(oxidd.bdd.BDDManager(1024, 1024, 1))
 
 
-def test_bcdd_ord_hash():
+def test_bcdd_ord_hash() -> None:
     ord_hash(oxidd.bcdd.BCDDManager(1024, 1024, 1))
 
 
-def test_zbdd_ord_hash():
+def test_zbdd_ord_hash() -> None:
     ord_hash(oxidd.zbdd.ZBDDManager(1024, 1024, 1))
