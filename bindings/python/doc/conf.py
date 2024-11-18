@@ -1,10 +1,10 @@
-# Configuration file for the Sphinx documentation builder.
-#
-# For the full list of built-in configuration values, see the documentation:
-# https://www.sphinx-doc.org/en/master/usage/configuration.html
+"""Configuration file for the Sphinx documentation builder."""
 
 # spell-checker:ignore intersphinx,sphinxcontrib,katex,pydata
 # spell-checker:ignore prerender,sourcelink,subclasshook,bysource
+
+# For the full list of built-in configuration values, see the documentation:
+# https://www.sphinx-doc.org/en/master/usage/configuration.html
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
@@ -25,13 +25,14 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.autosummary",
     "sphinx.ext.intersphinx",
+    "sphinx.ext.napoleon",
 ]
 
 autodoc_class_signature = "separated"
 autodoc_default_options = {
     "members": True,
     "member-order": "bysource",
-    "inherited-members": True,
+    "inherited-members": False,
     "show-inheritance": True,
     "special-members": True,
     "exclude-members": (

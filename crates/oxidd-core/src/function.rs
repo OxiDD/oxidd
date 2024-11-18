@@ -782,13 +782,19 @@ pub trait BooleanFunction: Function {
 
     /// Evaluate this Boolean function
     ///
-    /// `args` determines the valuation for all variables. Missing values are
-    /// assumed to be false. However, note that the arguments may also determine
-    /// the domain, e.g., in case of ZBDDs. If values are specified multiple
-    /// times, the last one counts. Panics if any function in `args` refers to a
-    /// terminal node.
+    /// `args` consists of pairs `(variable, value)` and determines the
+    /// valuation for all variables. Missing values are assumed to be false.
+    /// However, note that the arguments may also determine the domain,
+    /// e.g., in case of ZBDDs. If values are specified multiple times, the
+    /// last one counts.
+    ///
+    /// Note that all variables in `args` must be handles for the respective
+    /// decision diagram levels, i.e., the Boolean function representing the
+    /// variable in case of B(C)DDs, and a singleton set for ZBDDs.
     ///
     /// Locking behavior: acquires the manager's lock for shared access.
+    ///
+    /// Panics if any function in `args` refers to a terminal node.
     fn eval<'a>(&'a self, args: impl IntoIterator<Item = (&'a Self, bool)>) -> bool {
         self.with_manager_shared(|manager, edge| {
             Self::eval_edge(
@@ -905,7 +911,7 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     /// `vars` is a set of variables, which in turn is just the conjunction of
     /// the variables. This operation removes all occurrences of the variables
     /// by universal quantification. Universal quantification `∀x. f(…, x, …)`
-    /// of a boolean function `f(…, x, …)` over a single variable `x` is
+    /// of a Boolean function `f(…, x, …)` over a single variable `x` is
     /// `f(…, 0, …) ∧ f(…, 1, …)`.
     ///
     /// Locking behavior: acquires the manager's lock for shared access.
@@ -923,7 +929,7 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     /// `vars` is a set of variables, which in turn is just the conjunction of
     /// the variables. This operation removes all occurrences of the variables
     /// by existential quantification. Existential quantification
-    /// `∃x. f(…, x, …)` of a boolean function `f(…, x, …)` over a single
+    /// `∃x. f(…, x, …)` of a Boolean function `f(…, x, …)` over a single
     /// variable `x` is `f(…, 0, …) ∨ f(…, 1, …)`.
     ///
     /// Locking behavior: acquires the manager's lock for shared access.
@@ -941,7 +947,7 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     /// `vars` is a set of variables, which in turn is just the conjunction of
     /// the variables. This operation removes all occurrences of the variables
     /// by unique quantification. Unique quantification `∃!x. f(…, x, …)` of a
-    /// boolean function `f(…, x, …)` over a single variable `x` is
+    /// Boolean function `f(…, x, …)` over a single variable `x` is
     /// `f(…, 0, …) ⊕ f(…, 1, …)`.
     ///
     /// Unique quantification is also known as the

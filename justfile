@@ -1,4 +1,4 @@
-# spell-checker:ignore Werror,pydata
+# spell-checker:ignore autodoc,pydata,stubtest,Werror
 
 # Print available recipes
 help:
@@ -32,19 +32,30 @@ lint-cpp:
 fmt-py:
     ruff format
 
-# Lint Python code using ruff and pyright
+# Lint Python code using ruff, mypy, and pyright
 lint-py:
     ruff check
     ruff format --check
+    mypy
+    python3 -m mypy.stubtest oxidd._oxidd
     pyright
 
 # Generate documentation for the Python bindings using Sphinx (output: `target/python/doc`)
 doc-py:
-    sphinx-build bindings/python/doc target/python/doc
+    @# Generate _oxidd.pyi
+    cargo check -p oxidd-ffi-python
+    @# We want Sphinx autodoc to look at the type annotations of the .pyi file
+    @# (we cannot provide the annotations in the compiled module). Hence, we
+    @# make a fake oxidd package without the compiled module and `_oxidd.pyi`
+    @# as `_oxidd.py`.
+    mkdir -p target/python/autodoc/oxidd
+    cp bindings/python/oxidd/*.py target/python/autodoc/oxidd
+    cp bindings/python/oxidd/_oxidd.pyi target/python/autodoc/oxidd/_oxidd.py
+    PYTHONPATH=target/python/autodoc sphinx-build bindings/python/doc target/python/doc
 
-# Test Python code using pytest and generate a coverage report in `target/python/coverage`
+# Test Python code using pytest
 test-py:
-    pytest -v --cov=oxidd --cov-report=html:target/python/coverage
+    pytest --verbose
 
 # `fmt-rust`
 fmt: fmt-rust
@@ -70,8 +81,7 @@ devtools-py-venv-warn:
 devtools-py: devtools-py-venv && devtools-py-venv-warn
     #!/bin/sh
     if [ "$VIRTUAL_ENV" = '' ]; then source .venv/bin/activate; fi
-    pip3 install --upgrade pip pyright ruff sphinx pydata-sphinx-theme pytest-cov
-    pip3 install --editable .
+    pip3 install --editable '.[dev,docs,test]'
 
 # Install all development tools
 devtools: devtools-py

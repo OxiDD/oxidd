@@ -8,7 +8,7 @@ authors = [{ name = "OxiDD Contributors", email = "info@oxidd.net" }]
 maintainers = [{ name = "Nils Husung", email = "nils@oxidd.net" }]
 readme = "bindings/python/README.md"
 
-dependencies = ["cffi ~= 1.12", "typing-extensions ~= 4.0"]
+dependencies = ["typing-extensions ~= 4.0"]
 
 # see https://pypi.org/classifiers/
 classifiers = [
@@ -25,6 +25,7 @@ classifiers = [
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "Programming Language :: Rust",
 
   "Topic :: Scientific/Engineering",
@@ -38,68 +39,87 @@ Documentation = "https://oxidd.net/api/python/dev/getting-started.html"
 Repository = "https://github.com/OxiDD/oxidd"
 Issues = "https://github.com/OxiDD/oxidd/issues"
 
-[build-system]
-requires = ["setuptools >= 61.0, <= 73.0", "setuptools_scm >= 8"]
-build-backend = "setuptools.build_meta"
+[project.optional-dependencies]
+# spell-checker:ignore pydata
+dev = ["mypy ~= 1.13", "pyright ~= 1.1", "ruff ~= 0.7"]
+docs = ["Sphinx ~= 8.0", "pydata-sphinx-theme ~= 0.16"]
+test = ["pytest >= 8.0"]
 
-[tool.setuptools]
-packages = ["oxidd"]
-package-dir = { "" = "bindings/python" }
-include-package-data = false
+
+[build-system]
+requires = ["maturin ~= 1.7.4"]
+build-backend = "maturin"
+
+[tool.maturin]
+# spell-checker:ignore auditwheel
+python-source = "bindings/python"
+include = ["bindings/python/oxidd/_oxidd.pyi"]
+exclude = [
+  "bindings/python/oxidd/tests/**",
+  "crates/oxidd-ffi-python/build.rs",
+  "crates/oxidd-ffi-python/stub_gen/**",
+]
+module-name = "oxidd._oxidd"
+manifest-path = "crates/oxidd-ffi-python/Cargo.toml"
+auditwheel = "check"
+
 
 [tool.pyright]
 include = ["bindings/python"]
 pythonVersion = "3.9"
-typeCheckingMode = "standard"
-strict = ["bindings/python/tests/**"]
+typeCheckingMode = "strict"
+
+[tool.mypy]
+packages = ["oxidd"]
+python_version = "3.9"
+strict = true
 
 [tool.ruff]
 target-version = "py39"
 
 [tool.ruff.lint]
 select = [
-  # pycodestyle
-  "E",
   # Pyflakes
   "F",
-  # pyupgrade
-  "UP",
-  # flake8-bugbear
-  "B",
-  # flake8-simplify
-  "SIM",
+  # pycodestyle
+  "E",
   # isort
   "I",
+  # pep8-naming
+  "N",
+  # pydocstyle
+  "D",
+  # pyupgrade
+  "UP",
+  # flake8
+  "B",
+  "FA",
+  "PIE",
+  "Q",
+  "RET",
+  "SIM",
+  # pylint
+  "PLE",
+  # ruff
+  "RUF",
+]
+ignore = [
+  "D203",   # one-blank-line-before-class
+  "D213",   # multi-line-summary-second-line
+  "D401",   # non-imperative-mood
+  "D413",   # blank-line-after-last-section
+  "D415",   # ends-in-punctuation (we have ends-in-period)
+  "RUF001", # ambiguous-unicode-character-string
+  "RUF002", # ambiguous-unicode-character-docstring
+  "RUF003", # ambiguous-unicode-character-comment
 ]
 
 [tool.ruff.format]
 docstring-code-format = true
 
-[tool.cibuildwheel]
-# `python -m build --wheel` is the current PyPA recommendation and prints better
-# error messages than `python -m pip wheel`
-build-frontend = "build"
+[tool.ruff.lint.per-file-ignores]
+"_oxidd.pyi" = ["E501"] # ignore too long lines
 
-# Skip all CPython versions >= 3.10 right away to avoid downloading additional
-# Python versions (macOS, Windows). This is possible as we build abi3 modules.
-build = ["cp39-*", "pp*"]
-# Skip every target that is not tier 1 or 2, see
-# https://doc.rust-lang.org/stable/rustc/platform-support.html
-skip = ["*-musllinux_ppc64le", "*-musllinux_s390x"]
-
-environment.OXIDD_PYFFI_LINK_MODE = "static"
-linux.environment.OXIDD_PYFFI_CONTAINER_BUILD = "1"
-
-# All Rust musl targets require musl 1.2
-musllinux-x86_64-image = "musllinux_1_2"
-musllinux-i686-image = "musllinux_1_2"
-musllinux-aarch64-image = "musllinux_1_2"
-
-# Ensure a clean build in the container (dev setups, should be a no-op in CI)
-linux.before-all = "rm -rf build"
-
-test-requires = "pytest"
-test-command = "pytest {project}/bindings/python/oxidd"
 
 [tool.pytest.ini_options]
 # spell-checker:ignore testpaths

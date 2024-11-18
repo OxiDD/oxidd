@@ -1,3 +1,5 @@
+"""Test all Boolean functions over a fixed number of variables."""
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -14,6 +16,8 @@ from oxidd.util import BooleanOperator
 
 # spell-checker:ignore nvars,BFQS
 
+__all__: list[str] = []
+
 
 class BooleanFunctionQuantSubst(BooleanFunctionQuant, FunctionSubst[Any], Protocol):
     pass
@@ -24,7 +28,7 @@ BFQS = TypeVar("BFQS", bound=BooleanFunctionQuantSubst)
 
 
 def bit_count(x: int) -> int:
-    """Count the number of one bits
+    """Count the number of one bits.
 
     To be replaced by int.bit_count() once we require Python 3.10
     """
@@ -36,8 +40,10 @@ def bit_count(x: int) -> int:
 
 
 class AllBooleanFunctions(Generic[BF]):
-    """Python translation of ``TestAllBooleanFunctions`` from
-    ``crates/oxidd/tests/boolean_function.rs``"""
+    """Python translation of ``TestAllBooleanFunctions``.
+
+    See ``crates/oxidd/tests/boolean_function.rs``
+    """
 
     _mgr: BooleanFunctionManager[BF]
     _vars: Sequence[BF]
@@ -52,10 +58,13 @@ class AllBooleanFunctions(Generic[BF]):
         vars: Sequence[BF],
         var_handles: Sequence[BF],
     ):
-        """Initialize the test, generating DDs for all Boolean functions for the
-        given variable set. ``vars`` are the Boolean functions representing the
-        variables identified by ``var_handles``. For BDDs, the two coincide, but
-        not for ZBDDs."""
+        """Initialize the test.
+
+        Generate DDs for all Boolean functions for the given variable set.
+
+        ``vars`` are the Boolean functions representing the variables identified
+        by ``var_handles``. For B(C)DDs, the two coincide, but not for ZBDDs.
+        """
         assert len(vars) == len(var_handles)
 
         self._mgr = manager
@@ -121,8 +130,7 @@ class AllBooleanFunctions(Generic[BF]):
         return cube
 
     def basic(self) -> None:
-        """Test basic operations on all Boolean function"""
-
+        """Test basic operations on all Boolean function."""
         nvars = len(self._vars)
         num_assignments = 1 << nvars
         num_functions = 1 << num_assignments
@@ -296,12 +304,11 @@ class AllBooleanFunctionsQuantSubst(AllBooleanFunctions[BFQS]):
                 assert actual == expected
 
     def subst(self) -> None:
-        """Test all possible substitutions"""
+        """Test all possible substitutions."""
         self._subst_rec([None] * len(self._vars), 0)
 
     def quant(self) -> None:
-        """Test quantification operations on all Boolean function"""
-
+        """Test quantification operations on all Boolean function."""
         nvars = len(self._vars)
         num_assignments = 1 << nvars
         num_functions = 1 << num_assignments
@@ -416,7 +423,10 @@ def test_zbdd_all_boolean_functions_2vars_t1() -> None:
 
 
 def pick_cube(mgr: oxidd.bdd.BDDManager | oxidd.bcdd.BCDDManager) -> None:
-    """Only works for B(C)DDs"""
+    """Tests related to ``pick_cube``.
+
+    Only works for B(C)DDs.
+    """
     tt = mgr.true()
     assert tt.level() is None
 

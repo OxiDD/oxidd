@@ -51,7 +51,7 @@ The main code is located in the [crates](crates) directory. The framework is cen
 
 ![Crate Dependency Graph](doc/book/src/img/crate-deps.svg)
 
-Besides the Rust code, there are also bindings for C/C++ and Python in the `bindings` directory. OxiDD has a foreign function interface (FFI) located in the `oxidd-ffi` crate. It does not expose the entire API that can be used from Rust, but it is sufficient to, e.g., create BDDs and apply various logical operators on them. In principle, you can use the FFI from any language that can call C functions. However, there are also more ergonomic C++ bindings that build on top of the C FFI. You can just use include this repository using CMake. To use OxiDD from Python, the easiest way is to use the package on PyPI (to be published soon).
+Besides the Rust code, there are also bindings for C/C++ and Python (located in the `bindings` directory with the corresponding Rust part in `crates/oxidd-ffi-*`). The bindings do not expose the entire API that can be used from Rust, but it is sufficient to, e.g., create BDDs and apply various logical operators on them. In principle, you can use the C FFI from any language that can call C functions. However, there are also more ergonomic C++ bindings built on top of the C FFI. To use them, you can just use include this repository using CMake. For Python, the easiest way is to use the package on [PyPI](https://pypi.org/project/oxidd/).
 
 
 ## FAQ

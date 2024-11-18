@@ -10,6 +10,7 @@ on:
     - CMakeLists.txt
     - crates/**
     - "!crates/oxidd-cli/**"
+    - "!crates/oxidd-ffi-python/**"
     - Cargo.*
 
 concurrency:

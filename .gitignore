@@ -38,6 +38,8 @@
 # clangd index (".clangd" is a config file now, thus trailing slash)
 .clangd/
 .cache
+# clangd compile flags
+compile_flags.txt
 # Coverage reports
 .coverage
 # Python cache

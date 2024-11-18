@@ -1,6 +1,8 @@
 name: Python
 
-# spell-checker:ignore awalsh,CIBW,jakebailey,pkgs,pydata,pyproject
+# spell-checker:ignore armv,autodoc,awalsh,CIBW,gnueabihf,jakebailey,musleabihf
+# spell-checker:ignore pkgs,pydata,pyproject,pythonx86,pythonarm64
+# spell-checker:ignore sdist,stubtest,xwin
 
 on:
   push:
@@ -10,6 +12,7 @@ on:
     - pyproject.toml
     - crates/**
     - "!crates/oxidd-cli/**"
+    - "!crates/oxidd-ffi/**"
     - Cargo.*
 
 concurrency:
@@ -20,33 +23,83 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  lint-test-doc:
-    name: Lint, Test & Doc
+  linux:
+    name: Lint, Test, Doc & Build Wheels for Linux
 
     runs-on: ubuntu-24.04
 
     steps:
     - uses: actions/checkout@v4
-    - uses: awalsh128/cache-apt-pkgs-action@latest
-      with:
-        packages: cbindgen
-        version: 1.0
     - uses: actions/setup-python@v5
       with:
-        python-version: 3.x
-    - name: Install tools & dependencies
-      run: python -m pip install --upgrade pip ruff sphinx pydata-sphinx-theme cibuildwheel pytest
+        python-version: |
+          pypy3.9
+          pypy3.10
+          3.x
     - name: Build
-      run: python -m pip install .
+      run: python -m pip install maturin[zig] mypy ruff -e '.[docs,test]'
     - name: Ruff check
       run: ruff check --output-format=github
     - name: Ruff format check
       run: ruff format --check
+    - name: mypy
+      run: mypy
+    - name: stubtest
+      run: python -m mypy.stubtest oxidd._oxidd
     - uses: jakebailey/pyright-action@v2
     - name: Test
       run: pytest
     - name: Sphinx
-      run: sphinx-build bindings/python/doc target/python/doc
+      run: |
+        mkdir -p target/python/autodoc/oxidd
+        cp bindings/python/oxidd/*.py target/python/autodoc/oxidd
+        cp bindings/python/oxidd/_oxidd.pyi target/python/autodoc/oxidd/_oxidd.py
+        PYTHONPATH=target/python/autodoc sphinx-build bindings/python/doc target/python/doc
+    - name: Add Rust targets to build wheels
+      run: |
+        rustup target add \
+          x86_64-unknown-linux-gnu x86_64-unknown-linux-musl \
+          i686-unknown-linux-gnu i686-unknown-linux-musl \
+          aarch64-unknown-linux-gnu aarch64-unknown-linux-musl \
+          armv7-unknown-linux-gnueabihf armv7-unknown-linux-musleabihf
+    - name: Build wheels
+      run: |
+        manylinux=manylinux2014
+        musllinux=musllinux_1_2
+
+        maturin sdist --out dist
+
+        for target in x86_64-unknown-linux-gnu i686-unknown-linux-gnu aarch64-unknown-linux-gnu armv7-unknown-linux-gnueabihf; do
+          maturin build --release --out dist --compatibility $manylinux --zig --target $target
+        done
+
+        for target in x86_64-unknown-linux-musl i686-unknown-linux-musl aarch64-unknown-linux-musl armv7-unknown-linux-musleabihf; do
+          maturin build --release --out dist --compatibility $musllinux --zig --target $target
+        done
+
+        for pypy in pypy3.9 pypy3.10; do
+          for target in x86_64-unknown-linux-gnu i686-unknown-linux-gnu aarch64-unknown-linux-gnu; do
+            maturin build --release --out dist --interpreter $pypy --compatibility $manylinux --zig --target $target
+          done
+          for target in x86_64-unknown-linux-musl i686-unknown-linux-musl aarch64-unknown-linux-musl; do
+            maturin build --release --out dist --interpreter $pypy --compatibility $musllinux --zig --target $target
+          done
+        done
+    - name: Test wheels
+      run: |
+        run_tests() {
+          $1 -m venv .venv-$1
+          .venv-$1/bin/pip install "${2}[test]"
+          .venv-$1/bin/pytest
+        }
+        run_tests python3 dist/oxidd-*-cp*-manylinux*_x86_64*.whl
+        run_tests pypy3.9 dist/oxidd-*-pp39-*-manylinux*_x86_64*.whl
+        run_tests pypy3.10 dist/oxidd-*-pp310-*-manylinux*_x86_64*.whl
+    - name: Upload wheels
+      uses: actions/upload-artifact@v4
+      with:
+        name: python-wheels-linux
+        path: dist
     - name: Deploy Docs
       if: ${{ github.repository == 'OxiDD/oxidd' && github.ref == 'refs/heads/main' }}
       working-directory: target/python/doc
@@ -61,31 +114,7 @@ jobs:
         KEY: ${{ secrets.WEBSITE_SSH_KEY }}
         KNOWN_HOSTS: ${{ secrets.WEBSITE_SSH_KNOWN_HOSTS }}
 
-  buildwheel-linux:
-    name: Build wheels for Linux
-
-    runs-on: ubuntu-24.04
-
-    steps:
-    - uses: actions/checkout@v4
-    - uses: docker/setup-qemu-action@v3
-    - uses: awalsh128/cache-apt-pkgs-action@latest
-      with:
-        packages: cbindgen
-        version: 1.0
-    - uses: actions/setup-python@v5
-      with:
-        python-version: 3.x
-    - name: Install cibuildwheel
-      run: python3 -m pip install cibuildwheel
-    - name: Build (linux-buildwheel.py)
-      run: python3 bindings/python/build/linux-buildwheel.py --install-targets --archs all
-    - uses: actions/upload-artifact@v4
-      with:
-        name: python-wheels-linux
-        path: wheelhouse/*.whl
-
-  buildwheel-mac:
+  mac:
     name: Build wheels for macOS
 
     runs-on: ${{ matrix.os.image }}
@@ -93,38 +122,91 @@ jobs:
       matrix:
         os:
         - { arch: x86_64, image: macos-13 }
-        - { arch: arm64, image: macos-14 }
+        - { arch: arm64,  image: macos-14 }
 
     steps:
-      - uses: actions/checkout@v4
-      - name: Install cbindgen
-        run: brew install cbindgen
-      - name: Build wheels
-        uses: pypa/cibuildwheel@v2.21.3
-        env:
-          CIBW_ARCHS_MACOS: native
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: |
+          pypy3.9
+          pypy3.10
+          3.x
+    - name: Install Python build dependencies
+      run: python -m pip install maturin ruff
+    - name: Build CPython wheel
+      run: maturin build --release --out dist
+    - name: Build PyPy 3.9 wheel
+      run: maturin build --release --out dist --interpreter pypy3.9
+    - name: Build PyPy 3.10 wheel
+      run: maturin build --release --out dist --interpreter pypy3.10
+    - name: Test wheels
+      run: |
+        run_tests() {
+          $1 -m venv .venv-$1
+          .venv-$1/bin/pip install "${2}[test]"
+          .venv-$1/bin/pytest
+        }
+        run_tests python3 dist/oxidd-*-cp*-*.whl
+        run_tests pypy3.9 dist/oxidd-*-pp39-*.whl
+        run_tests pypy3.10 dist/oxidd-*-pp310-*.whl
+    - uses: actions/upload-artifact@v4
+      with:
+        name: python-wheels-mac-${{ matrix.os.arch }}
+        path: dist
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: python-wheels-mac-${{ matrix.os.arch }}
-          path: ./wheelhouse/*.whl
-
-  buildwheel-win:
+  win:
     name: Build wheels for Windows
 
     runs-on: windows-2022
 
     steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust targets
-        run: rustup target add aarch64-pc-windows-msvc
-      - name: Build wheels
-        uses: pypa/cibuildwheel@v2.21.3
-        env:
-          CIBW_ARCHS_WINDOWS: all
-          CIBW_TEST_SKIP: "*-win_arm64"
+    - uses: actions/checkout@v4
+    - name: Install Rust targets
+      run: rustup target add x86_64-pc-windows-msvc i686-pc-windows-msvc aarch64-pc-windows-msvc
+    - name: Install Maturin
+      uses: baptiste0928/cargo-install@v3
+      with:
+        crate: maturin
+        args: --no-default-features # this is the important part: we don't want xwin
+    - uses: actions/setup-python@v5
+      with:
+        python-version: |
+          pypy3.9
+          pypy3.10
+          3.x
+    - name: Install Python (i686)
+      run: nuget install pythonx86 -OutputDirectory .python
+    - name: Install Python (aarch64)
+      run: nuget install pythonarm64 -OutputDirectory .python
+    - name: Install Python build dependencies
+      run: python -m pip install ruff
+    - name: Build CPython wheel (x86_64)
+      run: maturin build --release --out dist
+    - name: Build PyPy 3.9 wheel (x86_64)
+      run: maturin build --release --out dist --interpreter "$(where.exe pypy3.9)"
+    - name: Build PyPy 3.10 wheel (x86_64)
+      run: maturin build --release --out dist --interpreter "$(where.exe pypy3.10)"
+    - name: Build CPython wheel (i686)
+      run: maturin build --release --out dist --interpreter "$(get-item .python\pythonx86*\tools\python.exe)" --target i686-pc-windows-msvc
+    - name: Build CPython wheel (aarch64)
+      run: |
+        $env:PYO3_CROSS_LIB_DIR = "$(get-item .python\pythonarm64*\tools\libs)"
+        maturin build --release --out dist --target aarch64-pc-windows-msvc
+    - name: Test
+      run: |
+        python -m venv .venv-cp
+        pypy3.9 -m venv .venv-pp39
+        pypy3.10 -m venv .venv-pp310
+        foreach ($py in 'cp', 'pp39', 'pp310') {
+          & ".venv-$py\Scripts\pip.exe" install "$(get-item dist\oxidd-*-$py*-*amd64.whl)[test]"
+          & ".venv-$py\Scripts\pytest.exe"
+        }
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: python-wheels-win
-          path: ./wheelhouse/*.whl
+        & "$(get-item .python\pythonx86*\tools\python.exe)" -m venv .venv-cp-i686
+        .venv-cp-i686\Scripts\pip.exe install "$(get-item dist\oxidd-*-cp*-*win32.whl)[test]"
+        .venv-cp-i686\Scripts\pytest.exe
+    - uses: actions/upload-artifact@v4
+      with:
+        name: python-wheels-win
+        path: dist
