@@ -967,7 +967,7 @@ where
     /// SAFETY: The returned function must be called on untagged edges
     /// referencing inner nodes only.
     #[inline]
-    unsafe fn eq<'a>(node: &'a N) -> impl Fn(&Edge<'id, N, ET, TAG_BITS>) -> bool + 'a {
+    unsafe fn eq(node: &N) -> impl Fn(&Edge<'id, N, ET, TAG_BITS>) -> bool + '_ {
         move |edge| unsafe { edge.inner_node_unchecked() == node }
     }
 

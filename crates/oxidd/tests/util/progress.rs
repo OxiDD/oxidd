@@ -9,7 +9,7 @@ impl Progress {
     pub fn new(total: u64) -> Self {
         assert_ne!(total, 0);
         let enabled =
-            std::env::var("OXIDD_TESTING_PROGRESS").map_or(false, |v| !v.is_empty() && v != "0");
+            std::env::var("OXIDD_TESTING_PROGRESS").is_ok_and(|v| !v.is_empty() && v != "0");
         let mut this = Self {
             enabled,
             current: 0,
