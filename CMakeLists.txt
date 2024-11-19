@@ -52,31 +52,31 @@ find_program(CBINDGEN_EXECUTABLE
 # Generate oxidd/capi.h using cbindgen
 set(oxidd_capi_include ${PROJECT_BINARY_DIR}/include)
 set(oxidd_capi_h ${oxidd_capi_include}/oxidd/capi.h)
-file(GLOB_RECURSE oxidd_ffi_sources CONFIGURE_DEPENDS
+file(GLOB_RECURSE oxidd_ffi_c_sources CONFIGURE_DEPENDS
     ${PROJECT_SOURCE_DIR}/crates/oxidd-core/*.rs
-    ${PROJECT_SOURCE_DIR}/crates/oxidd-ffi/*.rs)
+    ${PROJECT_SOURCE_DIR}/crates/oxidd-ffi-c/*.rs)
 add_custom_command(
     OUTPUT ${oxidd_capi_h}
     COMMAND ${CBINDGEN_EXECUTABLE}
-    ARGS --output ${oxidd_capi_h} ${PROJECT_SOURCE_DIR}/crates/oxidd-ffi
-    DEPENDS ${oxidd_ffi_sources} ${PROJECT_SOURCE_DIR}/crates/oxidd-ffi/cbindgen.toml
+    ARGS --output ${oxidd_capi_h} ${PROJECT_SOURCE_DIR}/crates/oxidd-ffi-c
+    DEPENDS ${oxidd_ffi_c_sources} ${PROJECT_SOURCE_DIR}/crates/oxidd-ffi-c/cbindgen.toml
     COMMENT "Generating oxidd/capi.h using cbindgen"
     VERBATIM)
 # Custom target such that targets in other directories can depend on the header
 add_custom_target(oxidd-capi-header ALL DEPENDS ${oxidd_capi_h})
 
-# Import the oxidd-ffi crate specifically
+# Import the oxidd-ffi-c crate specifically
 corrosion_import_crate(
     MANIFEST_PATH Cargo.toml
     PROFILE ${OXIDD_CARGO_PROFILE}
-    CRATES oxidd-ffi
+    CRATES oxidd-ffi-c
     CRATE_TYPES cdylib staticlib)
-add_dependencies(oxidd_ffi oxidd-capi-header)
-target_include_directories(oxidd_ffi INTERFACE
+add_dependencies(oxidd_ffi_c oxidd-capi-header)
+target_include_directories(oxidd_ffi_c INTERFACE
     ${oxidd_capi_include}
     ${PROJECT_SOURCE_DIR}/bindings/cpp/include)
 
-add_library(oxidd ALIAS oxidd_ffi)
+add_library(oxidd ALIAS oxidd_ffi_c)
 
 add_subdirectory(bindings/cpp/tests EXCLUDE_FROM_ALL)
 
@@ -104,15 +104,15 @@ if(Rust_CARGO_TARGET_OS STREQUAL "windows")
     endif()
 
     # dynamic
-    install(FILES ${PROJECT_BINARY_DIR}/oxidd_ffi.dll
+    install(FILES ${PROJECT_BINARY_DIR}/oxidd_ffi_c.dll
         TYPE LIB
         RENAME oxidd.dll)
     # dynamic implib
-    install(FILES ${PROJECT_BINARY_DIR}/${lib_prefix}oxidd_ffi.dll.${lib_suffix}
+    install(FILES ${PROJECT_BINARY_DIR}/${lib_prefix}oxidd_ffi_c.dll.${lib_suffix}
         TYPE LIB
         RENAME ${lib_prefix}oxidd.dll.${lib_suffix})
     # static
-    install(FILES ${PROJECT_BINARY_DIR}/${lib_prefix}liboxidd_ffi.${lib_suffix}
+    install(FILES ${PROJECT_BINARY_DIR}/${lib_prefix}liboxidd_ffi_c.${lib_suffix}
         TYPE LIB
         RENAME ${lib_prefix}liboxidd.${lib_suffix})
 else()
@@ -127,13 +127,13 @@ else()
     endif()
 
     # dynamic
-    install(FILES ${PROJECT_BINARY_DIR}/liboxidd_ffi.${so_suffix}
+    install(FILES ${PROJECT_BINARY_DIR}/liboxidd_ffi_c.${so_suffix}
         DESTINATION ${CMAKE_INSTALL_LIBDIR}
         RENAME liboxidd.${so_ver_suffix})
     install(CODE "file(CREATE_LINK \"liboxidd.${so_ver_suffix}\" \"${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/liboxidd.${so_suffix}\" SYMBOLIC)")
     install(CODE "file(CREATE_LINK \"liboxidd.${so_ver_suffix}\" \"${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/liboxidd.${so_ver_major_suffix}\" SYMBOLIC)")
     # static
-    install(FILES ${PROJECT_BINARY_DIR}/liboxidd_ffi.a
+    install(FILES ${PROJECT_BINARY_DIR}/liboxidd_ffi_c.a
         DESTINATION ${CMAKE_INSTALL_LIBDIR}
         RENAME liboxidd.a)
 endif()

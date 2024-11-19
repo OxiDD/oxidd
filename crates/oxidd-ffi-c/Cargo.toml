@@ -1,5 +1,5 @@
 [package]
-name = "oxidd-ffi"
+name = "oxidd-ffi-c"
 version = "0.8.1"
 edition = "2021"
 description = "Foreign function interface for OxiDD"

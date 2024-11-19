@@ -1,9 +1,10 @@
 //! All items of this crate are not intended to be used from other Rust crates
 //! but only from Python. Consult the Python API documentation for details on
 //! the provided classes.
+
 use pyo3::prelude::*;
 
-// Docstrings in this crate follow Google Python Style Guide (see
+// Docstrings in this crate follow the Google Python Style Guide (see
 // https://google.github.io/styleguide/pyguide.html and
 // https://www.sphinx-doc.org/en/master/usage/extensions/napoleon.html)
 

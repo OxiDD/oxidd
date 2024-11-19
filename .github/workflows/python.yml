@@ -12,7 +12,7 @@ on:
     - pyproject.toml
     - crates/**
     - "!crates/oxidd-cli/**"
-    - "!crates/oxidd-ffi/**"
+    - "!crates/oxidd-ffi-c/**"
     - Cargo.*
 
 concurrency:

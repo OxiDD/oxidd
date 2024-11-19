@@ -13,7 +13,7 @@ use oxidd::{
 };
 
 // We need to use the following items from `oxidd_core` since cbindgen only
-// parses `oxidd_ffi` and `oxidd_core`:
+// parses `oxidd_ffi_c` and `oxidd_core`:
 use oxidd_core::function::BooleanOperator;
 use oxidd_core::LevelNo;
 
