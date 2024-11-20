@@ -122,6 +122,7 @@ pymethods
 pymodule
 pyobject
 pypa
+PyPI
 pyproject
 pypy
 pyright
