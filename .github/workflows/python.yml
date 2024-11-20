@@ -226,8 +226,9 @@ jobs:
 
     steps:
       - uses: actions/download-artifact@v4
-        path: dist
-        pattern: python-wheels-*
-        merge-multiple: true
+        with:
+          path: dist
+          pattern: python-wheels-*
+          merge-multiple: true
       - name: Publish package distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
