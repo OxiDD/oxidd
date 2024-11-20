@@ -65,7 +65,7 @@ checksum = "4c95c10ba0b00a02636238b814946408b1322d5ac4760326e6fb8ec956d85775"
 
 [[package]]
 name = "arcslab"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "crossbeam-utils",
  "libc",
@@ -350,7 +350,7 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "hugealloc"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "allocator-api2",
  "libc",
@@ -405,7 +405,7 @@ checksum = "561d97a539a36e26a9a5fad1ea11a3039a67714694aaa379433e580854bc3dc5"
 
 [[package]]
 name = "linear-hashtbl"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "allocator-api2",
 ]
@@ -514,7 +514,7 @@ checksum = "1261fe7e33c73b354eab43b1273a57c8f967d0391e80353e51f764ac02cf6775"
 
 [[package]]
 name = "oxidd"
-version = "0.8.1"
+version = "0.9.0"
 dependencies = [
  "cfg-if",
  "document-features",
@@ -534,7 +534,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-cache"
-version = "0.8.1"
+version = "0.9.0"
 dependencies = [
  "allocator-api2",
  "document-features",
@@ -548,7 +548,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-cli"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "bitvec",
  "clap",
@@ -568,14 +568,14 @@ dependencies = [
 
 [[package]]
 name = "oxidd-core"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "nanorand",
 ]
 
 [[package]]
 name = "oxidd-derive"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "oxidd-core",
  "oxidd-test-utils",
@@ -588,7 +588,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-dump"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "bitvec",
  "document-features",
@@ -600,7 +600,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-ffi-c"
-version = "0.8.1"
+version = "0.9.0"
 dependencies = [
  "oxidd",
  "oxidd-core",
@@ -610,7 +610,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-ffi-python"
-version = "0.8.1"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "num-bigint",
@@ -626,7 +626,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-manager-index"
-version = "0.8.1"
+version = "0.9.0"
 dependencies = [
  "bitvec",
  "crossbeam-utils",
@@ -639,7 +639,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-manager-pointer"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "arcslab",
  "bitvec",
@@ -666,7 +666,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-reorder"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "flume",
  "is_sorted",
@@ -678,7 +678,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-rules-bdd"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "bitvec",
  "document-features",
@@ -689,7 +689,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-rules-mtbdd"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "document-features",
  "oxidd-core",
@@ -699,7 +699,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-rules-tdd"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "document-features",
  "oxidd-core",
@@ -709,7 +709,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-rules-zbdd"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "bitvec",
  "document-features",
@@ -720,7 +720,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-test-utils"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "oxidd-core",
  "rayon",

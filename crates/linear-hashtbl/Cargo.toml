@@ -1,6 +1,6 @@
 [package]
 name = "linear-hashtbl"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Linear probing hash table"
 categories = ["data-structures"]

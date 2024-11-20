@@ -12,20 +12,20 @@ homepage = "https://oxidd.net"
 arcslab = { version = "0.1", path = "crates/arcslab", default-features = false }
 hugealloc = { version = "0.1", path = "crates/hugealloc", default-features = false }
 linear-hashtbl = { version = "0.1", path = "crates/linear-hashtbl", default-features = false }
-oxidd = { version = "0.8", path = "crates/oxidd", default-features = false }
-oxidd-cache = { version = "0.8", path = "crates/oxidd-cache", default-features = false }
-oxidd-core = { version = "0.8", path = "crates/oxidd-core", default-features = false }
-oxidd-derive = { version = "0.8", path = "crates/oxidd-derive", default-features = false }
-oxidd-dump = { version = "0.3", path = "crates/oxidd-dump", default-features = false }
-oxidd-manager-index = { version = "0.8", path = "crates/oxidd-manager-index", default-features = false }
-oxidd-manager-pointer = { version = "0.3", path = "crates/oxidd-manager-pointer", default-features = false }
+oxidd = { version = "0.9", path = "crates/oxidd", default-features = false }
+oxidd-cache = { version = "0.9", path = "crates/oxidd-cache", default-features = false }
+oxidd-core = { version = "0.9", path = "crates/oxidd-core", default-features = false }
+oxidd-derive = { version = "0.9", path = "crates/oxidd-derive", default-features = false }
+oxidd-dump = { version = "0.4", path = "crates/oxidd-dump", default-features = false }
+oxidd-manager-index = { version = "0.9", path = "crates/oxidd-manager-index", default-features = false }
+oxidd-manager-pointer = { version = "0.4", path = "crates/oxidd-manager-pointer", default-features = false }
 oxidd-parser = { version = "0.3", path = "crates/oxidd-parser", default-features = false }
-oxidd-reorder = { version = "0.3", path = "crates/oxidd-reorder", default-features = false }
-oxidd-rules-bdd = { version = "0.8", path = "crates/oxidd-rules-bdd", default-features = false }
-oxidd-rules-mtbdd = { version = "0.3", path = "crates/oxidd-rules-mtbdd", default-features = false }
-oxidd-rules-tdd = { version = "0.3", path = "crates/oxidd-rules-tdd", default-features = false }
-oxidd-rules-zbdd = { version = "0.8", path = "crates/oxidd-rules-zbdd", default-features = false }
-oxidd-test-utils = { version = "0.3", path = "crates/oxidd-test-utils", default-features = false }
+oxidd-reorder = { version = "0.4", path = "crates/oxidd-reorder", default-features = false }
+oxidd-rules-bdd = { version = "0.9", path = "crates/oxidd-rules-bdd", default-features = false }
+oxidd-rules-mtbdd = { version = "0.4", path = "crates/oxidd-rules-mtbdd", default-features = false }
+oxidd-rules-tdd = { version = "0.4", path = "crates/oxidd-rules-tdd", default-features = false }
+oxidd-rules-zbdd = { version = "0.9", path = "crates/oxidd-rules-zbdd", default-features = false }
+oxidd-test-utils = { version = "0.4", path = "crates/oxidd-test-utils", default-features = false }
 
 
 [profile.release]
