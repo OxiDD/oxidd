@@ -3,6 +3,7 @@
 use std::hash::BuildHasherDefault;
 use std::path::PathBuf;
 
+use num_bigint::BigUint;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyList, PyNone, PyTuple, PyType};
 use rustc_hash::FxHasher;
@@ -693,6 +694,23 @@ impl BCDDFunction {
     ///     bool: Whether all assignments satisfy the Boolean function
     fn valid(&self) -> bool {
         self.0.valid()
+    }
+
+    /// Count the number of satisfying assignments.
+    ///
+    /// Locking behavior: acquires the manager's lock for shared access.
+    ///
+    /// Args:
+    ///     vars (int): Assume that the function's domain has this many
+    ///         variables.
+    ///
+    /// Returns:
+    ///     int: The exact number of satisfying assignments
+    fn sat_count(&self, py: Python, vars: LevelNo) -> BigUint {
+        py.allow_threads(move || {
+            self.0
+                .sat_count::<BigUint, BuildHasherDefault<FxHasher>>(vars, &mut Default::default())
+        })
     }
 
     /// Count the number of satisfying assignments.

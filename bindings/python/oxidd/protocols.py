@@ -368,8 +368,23 @@ class BooleanFunction(Function, Protocol):
         raise NotImplementedError
 
     @abstractmethod
+    def sat_count(self, /, vars: int) -> int:
+        """Count the exact number of satisfying assignments.
+
+        Uses arbitrary precision integers.
+
+        Locking behavior: acquires the manager's lock for shared access.
+
+        Args:
+            vars: Assume that the function's domain has this many variables.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
     def sat_count_float(self, /, vars: int) -> float:
-        """Count the number of satisfying assignments.
+        """Count the (approximate) number of satisfying assignments.
+
+        Uses floating point numbers.
 
         Locking behavior: acquires the manager's lock for shared access.
 

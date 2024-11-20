@@ -613,6 +613,7 @@ name = "oxidd-ffi-python"
 version = "0.8.1"
 dependencies = [
  "anyhow",
+ "num-bigint",
  "oxidd",
  "oxidd-core",
  "oxidd-dump",
@@ -796,6 +797,7 @@ dependencies = [
  "indoc",
  "libc",
  "memoffset",
+ "num-bigint",
  "once_cell",
  "portable-atomic",
  "pyo3-build-config",

@@ -103,7 +103,9 @@ class AllBooleanFunctions(Generic[BF]):
                 ]
                 actual = f.eval(args)
                 assert actual == expected
-                assert int(f.sat_count_float(nvars)) == bit_count(explicit_f)
+                expected_count = bit_count(explicit_f)
+                assert f.sat_count(nvars) == expected_count
+                assert int(f.sat_count_float(nvars)) == expected_count
 
             self._boolean_functions.append(f)
             assert f not in self._dd_to_boolean_func
