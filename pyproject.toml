@@ -78,6 +78,7 @@ strict = true
 target-version = "py39"
 
 [tool.ruff.lint]
+# spell-checker:ignore dunder
 select = [
   # Pyflakes
   "F",
