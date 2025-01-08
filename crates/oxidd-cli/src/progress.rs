@@ -12,6 +12,7 @@ use parking_lot::{Mutex, MutexGuard};
 
 pub struct Progress {
     task: Mutex<String>,
+    problem: AtomicUsize,
     operations_total: AtomicUsize,
     operations_started: AtomicUsize,
     operations_done: AtomicUsize,
@@ -22,6 +23,10 @@ pub struct Progress {
 pub struct PauseProgressHandle<'a>(MutexGuard<'a, ()>);
 
 impl Progress {
+    pub fn set_problem_no(&self, problem: usize) {
+        self.problem.store(problem, Relaxed);
+    }
+
     pub fn set_task(&self, name: impl ToString, operations: usize) {
         let name = name.to_string();
         *self.task.lock() = name;
@@ -45,6 +50,7 @@ impl Progress {
 
 pub static PROGRESS: Progress = Progress {
     task: Mutex::new(String::new()),
+    problem: AtomicUsize::new(0),
     operations_total: AtomicUsize::new(0),
     operations_started: AtomicUsize::new(0),
     operations_done: AtomicUsize::new(0),
@@ -90,10 +96,14 @@ where
             });
 
             let task = PROGRESS.task.lock();
+            let problem = PROGRESS.problem.load(Relaxed);
             let ops_total = PROGRESS.operations_total.load(Relaxed);
             let ops_done = PROGRESS.operations_done.load(Relaxed);
             let ops_started = PROGRESS.operations_started.load(Relaxed);
-            println!("[{:08.2}] {task}, finished operations: {ops_done}, started {ops_started}, total: {ops_total}, inner nodes in manager: ~{inner_nodes}", start.elapsed().as_secs_f32());
+            println!(
+                "[{:08.2}|{problem}] {task}, finished operations: {ops_done}, started {ops_started}, total: {ops_total}, inner nodes in manager: ~{inner_nodes}",
+                start.elapsed().as_secs_f32(),
+            );
             drop(task);
             drop(print_lock);
         }

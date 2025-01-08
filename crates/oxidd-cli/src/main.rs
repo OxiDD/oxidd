@@ -13,19 +13,17 @@ use std::time::{Duration, Instant};
 use bitvec::prelude::*;
 use clap::{Parser, ValueEnum};
 use num_bigint::BigUint;
-use oxidd::util::{AllocResult, SatCountCache};
+use oxidd::util::SatCountCache;
 use oxidd::{BooleanFunction, Edge, HasWorkers, LevelNo, Manager, WorkerPool};
 use oxidd_core::{ApplyCache, HasApplyCache, HasLevel, ManagerRef};
 use oxidd_dump::{dddmp, dot};
-use oxidd_parser::load_file::load_file;
-use oxidd_parser::{ParseOptionsBuilder, Problem, Prop, Tree, VarSet};
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use oxidd_parser::{load_file, ParseOptionsBuilder, VarSet};
 use rustc_hash::{FxHashMap, FxHasher};
 
 mod progress;
+mod scheduler;
 use progress::PROGRESS;
 mod profiler;
-use profiler::Profiler;
 mod util;
 use util::{handle_oom, HDuration};
 
@@ -74,9 +72,14 @@ struct Cli {
     #[arg(long)]
     read_var_order: bool,
 
-    /// Order in which to apply operations when building a CNF
-    #[arg(value_enum, long, default_value_t = CNFBuildOrder::Balanced)]
-    cnf_build_order: CNFBuildOrder,
+    /// Read the CNF clause tree
+    #[arg(long)]
+    read_clause_tree: bool,
+
+    /// Order in which to apply operations when constructing a gate with more
+    /// than two inputs
+    #[arg(value_enum, long, default_value_t = GateBuildScheme::Balanced)]
+    gate_build_scheme: GateBuildScheme,
 
     /// For every DD operation of the problem(s), compute and print the size of
     /// the resulting DD function to the given CSV file
@@ -132,25 +135,14 @@ enum DDType {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, ValueEnum)]
-enum CNFBuildOrder {
-    /// left-deep bracketing of the conjunctions in the input
-    /// order. Incompatible with --parallel.
+enum GateBuildScheme {
+    /// left-deep bracketing of the operands in the input order
     LeftDeep,
-    /// Approximately balanced bracketing of the conjunctions in the input order
+    /// approximately balanced bracketing of the operands in the input order
     Balanced,
-    /// Non-deterministic bracketing as a result of work stealing (using Rayon's
-    /// reduce method) but the order is kept as in the input. Requires
-    /// --parallel.
+    /// Non-deterministic bracketing as a result of work stealing, but the order
+    /// is kept as in the input. Requires --parallel.
     WorkStealing,
-    /// Bracketing tree and order from the comment lines in the input file
-    Tree,
-}
-
-impl CNFBuildOrder {
-    /// Whether an externally supplied clause order is necessary
-    fn needs_clause_order(self) -> bool {
-        self == CNFBuildOrder::Tree
-    }
 }
 
 fn make_vars<'id, B: BooleanFunction>(
@@ -207,305 +199,10 @@ where
     }
 }
 
-fn make_bool_dd<B>(
-    mref: &B::ManagerRef,
-    problem: Problem,
-    problem_no: usize,
-    cli: &Cli,
-    var_name_map: &mut FxHashMap<String, B>,
-) -> B
-where
-    B: BooleanFunction + Send + Sync + 'static,
-    for<'id> B::Manager<'id>: HasWorkers,
-    for<'id> <B::Manager<'id> as Manager>::InnerNode: HasLevel,
-{
-    fn prop_rec<B: BooleanFunction>(
-        manager: &B::Manager<'_>,
-        prop: &Prop,
-        vars: &[B],
-        profiler: &Profiler,
-    ) -> B {
-        let fold = |ps: &[Prop], init: B, op: fn(&B, &B) -> AllocResult<B>| {
-            ps.iter().fold(init, |acc, p| {
-                let rhs = prop_rec(manager, p, vars, profiler);
-                let op_start = profiler.start_op();
-                let res = handle_oom!(op(&acc, &rhs));
-                profiler.finish_op(op_start, &res);
-                res
-            })
-        };
-
-        match prop {
-            Prop::Lit(l) if l.positive() => vars[l.variable()].clone(),
-            Prop::Lit(l) => handle_oom!(vars[l.variable()].not()),
-            Prop::Neg(p) => handle_oom!(prop_rec(manager, p, vars, profiler).not()),
-            Prop::And(ps) => fold(ps, B::t(manager), B::and),
-            Prop::Or(ps) => fold(ps, B::f(manager), B::or),
-            Prop::Xor(ps) => fold(ps, B::f(manager), B::xor),
-            Prop::Eq(ps) => fold(ps, B::t(manager), B::and),
-        }
-    }
-
-    fn prop_inner_nodes(prop: &Prop) -> usize {
-        match prop {
-            Prop::Lit(_) => 0,
-            Prop::Neg(p) => 1 + prop_inner_nodes(p),
-            Prop::And(ps) | Prop::Or(ps) | Prop::Xor(ps) | Prop::Eq(ps) => {
-                ps.len() + ps.iter().map(prop_inner_nodes).sum::<usize>()
-            }
-        }
-    }
-
-    fn balanced_reduce<T>(
-        iter: impl IntoIterator<Item = T>,
-        mut f: impl for<'a> FnMut(&'a T, &'a T) -> T,
-    ) -> Option<T> {
-        // We use `Option<T>` such that we can drop the values as soon as possible
-        let mut leaves: Vec<Option<T>> = iter.into_iter().map(Some).collect();
-
-        fn rec<T, F: for<'a> FnMut(&'a T, &'a T) -> T>(
-            leaves: &mut [Option<T>],
-            f: &mut F,
-        ) -> Option<T> {
-            match leaves {
-                [] => None,
-                [l] => l.take(),
-                _ => {
-                    let (l, r) = leaves.split_at_mut(leaves.len() / 2);
-                    let l = rec(l, f);
-                    let r = rec(r, f);
-                    match (l, r) {
-                        (None, v) | (v, None) => v,
-                        (Some(l), Some(r)) => Some(f(&l, &r)),
-                    }
-                }
-            }
-        }
-
-        rec(&mut leaves, &mut f)
-    }
-
-    fn balanced_reduce_par<W: WorkerPool, T: Send>(
-        workers: &W,
-        iter: impl IntoParallelIterator<Item = T>,
-        f: impl for<'a> Fn(&'a T, &'a T) -> T + Send + Copy,
-    ) -> Option<T> {
-        // We use `Option<T>` such that we can drop the values as soon as possible
-        let mut leaves: Vec<Option<T>> = iter.into_par_iter().map(Some).collect();
-
-        fn rec<W: WorkerPool, T: Send>(
-            workers: &W,
-            leaves: &mut [Option<T>],
-            f: impl for<'a> Fn(&'a T, &'a T) -> T + Send + Copy,
-        ) -> Option<T> {
-            match leaves {
-                [] => None,
-                [l] => l.take(),
-                _ => {
-                    let (l, r) = leaves.split_at_mut(leaves.len() / 2);
-                    match workers.join(move || rec(workers, l, f), move || rec(workers, r, f)) {
-                        (None, v) | (v, None) => v,
-                        (Some(l), Some(r)) => Some(f(&l, &r)),
-                    }
-                }
-            }
-        }
-
-        rec(workers, &mut leaves, f)
-    }
-
-    fn clause_tree_rec<B: BooleanFunction>(
-        clauses: &[B],
-        clause_order: &Tree<usize>,
-        profiler: &Profiler,
-    ) -> Option<B> {
-        match clause_order {
-            Tree::Leaf(n) => Some(clauses[*n].clone()),
-            Tree::Inner(sub) => balanced_reduce(
-                sub.iter()
-                    .filter_map(|t| clause_tree_rec(clauses, t, profiler)),
-                |lhs: &B, rhs: &B| {
-                    let op_start = profiler.start_op();
-                    let conj = handle_oom!(lhs.and(rhs));
-                    profiler.finish_op(op_start, &conj);
-                    conj
-                },
-            ),
-        }
-    }
-
-    fn clause_tree_par_rec<W: WorkerPool, B: BooleanFunction + Send + Sync>(
-        workers: &W,
-        clauses: &[B],
-        clause_order: &Tree<usize>,
-        profiler: &Profiler,
-    ) -> Option<B> {
-        match clause_order {
-            Tree::Leaf(n) => Some(clauses[*n].clone()),
-            Tree::Inner(sub) => balanced_reduce_par(
-                workers,
-                sub.into_par_iter()
-                    .filter_map(|t| clause_tree_par_rec(workers, clauses, t, profiler)),
-                |lhs: &B, rhs: &B| {
-                    let op_start = profiler.start_op();
-                    let conj = handle_oom!(lhs.and(rhs));
-                    profiler.finish_op(op_start, &conj);
-                    conj
-                },
-            ),
-        }
-    }
-
-    let profiler = Profiler::new(cli.size_profile.get(problem_no));
-
-    let func = match problem {
-        Problem::CNF(mut cnf) => {
-            if cli.cnf_build_order.needs_clause_order() && cnf.clause_order().is_none() {
-                eprintln!("error: clause order not given");
-                std::process::exit(1);
-            }
-
-            let vars = mref.with_manager_exclusive(|manager| {
-                make_vars::<B>(manager, cnf.vars(), cli.read_var_order, var_name_map)
-            });
-
-            mref.with_manager_shared(|manager| {
-                manager.workers().set_split_depth(Some(0));
-                let clauses = cnf.clauses_mut();
-                PROGRESS.set_task(
-                    format!("build clauses (problem {problem_no})"),
-                    clauses.len(),
-                );
-                let mut bdd_clauses = Vec::with_capacity(clauses.len());
-                let mut i = 0;
-                while let Some(clause) = clauses.get_mut(i) {
-                    if clause.is_empty() {
-                        println!("clause {i} is empty");
-                        return B::f(manager);
-                    }
-
-                    // Build clause bottom-up
-                    clause.sort_unstable_by_key(|lit| std::cmp::Reverse(lit.variable()));
-                    let l = clause[0];
-                    let init = &vars[l.variable()];
-                    let init = if l.positive() {
-                        init.clone()
-                    } else {
-                        handle_oom!(init.not())
-                    };
-                    bdd_clauses.push(clause[1..].iter().fold(init, |acc, l| {
-                        let var = &vars[l.variable()];
-                        if l.positive() {
-                            handle_oom!(acc.or(var))
-                        } else {
-                            handle_oom!(acc.or(&handle_oom!(var.not())))
-                        }
-                    }));
-
-                    i += 1;
-                }
-                let clauses = bdd_clauses;
-                println!(
-                    "all {} clauses built after {}",
-                    clauses.len(),
-                    HDuration(profiler.elapsed_time())
-                );
-
-                manager.workers().set_split_depth(cli.operation_split_depth);
-                PROGRESS.set_task(
-                    format!("conjoin clauses (problem {problem_no})"),
-                    clauses.len() - 1,
-                );
-                if clauses.is_empty() {
-                    B::t(manager)
-                } else {
-                    match (cli.cnf_build_order, cli.parallel) {
-                        (CNFBuildOrder::LeftDeep, false) => {
-                            let init = clauses[0].clone();
-                            clauses[1..].iter().fold(init, |acc, f| {
-                                let op_start = profiler.start_op();
-                                let res = handle_oom!(acc.and(f));
-                                profiler.finish_op(op_start, &res);
-                                res
-                            })
-                        }
-                        (CNFBuildOrder::LeftDeep, true) => unreachable!(),
-                        (CNFBuildOrder::Balanced, false) => {
-                            balanced_reduce(clauses, |lhs: &B, rhs: &B| {
-                                let op_start = profiler.start_op();
-                                let conj = handle_oom!(lhs.and(rhs));
-                                profiler.finish_op(op_start, &conj);
-                                conj
-                            })
-                            .unwrap()
-                        }
-                        (CNFBuildOrder::Balanced, true) => {
-                            balanced_reduce_par(manager.workers(), clauses, |lhs: &B, rhs: &B| {
-                                let op_start = profiler.start_op();
-                                let conj = handle_oom!(lhs.and(rhs));
-                                profiler.finish_op(op_start, &conj);
-                                conj
-                            })
-                            .unwrap()
-                        }
-                        (CNFBuildOrder::WorkStealing, false) => unreachable!(),
-                        (CNFBuildOrder::WorkStealing, true) => ParallelIterator::reduce(
-                            clauses.into_par_iter().map(|c| Some(c)),
-                            || None,
-                            |lhs: Option<B>, rhs: Option<B>| match (lhs, rhs) {
-                                (None, v) | (v, None) => v,
-                                (Some(lhs), Some(rhs)) => {
-                                    let op_start = profiler.start_op();
-                                    let res = handle_oom!(lhs.and(&rhs));
-                                    profiler.finish_op(op_start, &res);
-                                    Some(res)
-                                }
-                            },
-                        )
-                        .unwrap(),
-                        (CNFBuildOrder::Tree, false) => {
-                            clause_tree_rec(&clauses, cnf.clause_order().unwrap(), &profiler)
-                                .unwrap()
-                        }
-                        (CNFBuildOrder::Tree, true) => clause_tree_par_rec(
-                            manager.workers(),
-                            &clauses,
-                            cnf.clause_order().unwrap(),
-                            &profiler,
-                        )
-                        .unwrap(),
-                    }
-                }
-            })
-        }
-
-        Problem::Prop(prop) => {
-            PROGRESS.set_task(
-                "build propositional formula",
-                prop_inner_nodes(prop.formula()),
-            );
-            let vars = mref.with_manager_exclusive(|manager| {
-                make_vars::<B>(manager, prop.vars(), cli.read_var_order, var_name_map)
-            });
-            mref.with_manager_shared(|manager| {
-                manager.workers().set_split_depth(cli.operation_split_depth);
-                prop_rec(manager, prop.formula(), &vars, &profiler)
-            })
-        }
-
-        _ => todo!(),
-    };
-    println!(
-        "BDD building done within {}",
-        HDuration(profiler.elapsed_time())
-    );
-    func
-}
-
 fn bool_dd_main<B, O>(cli: &Cli, mref: B::ManagerRef)
 where
     B: BooleanFunction + Send + Sync + 'static,
-    B::ManagerRef: Send + 'static,
+    B::ManagerRef: HasWorkers + Send + 'static,
     for<'id> B: dot::DotStyle<<B::Manager<'id> as Manager>::EdgeTag>,
     for<'id> B::Manager<'id>: HasWorkers + HasApplyCache<B::Manager<'id>, O>,
     for<'id> <B::Manager<'id> as Manager>::InnerNode: HasLevel,
@@ -514,7 +211,8 @@ where
     O: Copy + Ord + Hash,
 {
     let parse_options = ParseOptionsBuilder::default()
-        .orders(cli.read_var_order || cli.cnf_build_order.needs_clause_order())
+        .var_order(cli.read_var_order)
+        .clause_tree(cli.read_clause_tree)
         .build()
         .unwrap();
 
@@ -636,17 +334,49 @@ where
     }
 
     // Construct DDs for input problems (e.g., from DIMACS files)
-    for (i, file) in cli.file.iter().enumerate() {
+    for (problem_no, file) in cli.file.iter().enumerate() {
+        PROGRESS.set_problem_no(problem_no);
+        let file_name = file.file_name().unwrap().to_string_lossy();
+
         let start = Instant::now();
         let Some(problem) = load_file(file, &parse_options) else {
             std::process::exit(1)
         };
         println!("parsing done within {}", HDuration(start.elapsed()));
 
-        funcs.push((
-            make_bool_dd(&mref, problem, i, cli, &mut vars),
-            file.file_name().unwrap().to_string_lossy().to_string(),
-        ));
+        let problem = {
+            let simplified = problem.simplify().unwrap().0;
+            drop(problem);
+            println!("simplified after {}", HDuration(start.elapsed()));
+            simplified
+        };
+
+        let vars = mref.with_manager_exclusive(|manager| {
+            make_vars::<B>(
+                manager,
+                problem.circuit.inputs(),
+                cli.read_var_order,
+                &mut vars,
+            )
+        });
+
+        match problem.details {
+            oxidd_parser::ProblemDetails::Root(root) => {
+                let mut result = [None];
+                scheduler::construct_bool_circuit(
+                    &mref,
+                    problem.circuit,
+                    cli,
+                    &vars,
+                    &[root],
+                    &mut result,
+                    cli.size_profile.get(problem_no),
+                );
+                let [result] = result;
+                funcs.push((result.unwrap(), file_name.to_string()));
+            }
+            oxidd_parser::ProblemDetails::AIGER(_aig) => todo!(),
+        }
 
         report_dd_node_count();
     }
@@ -753,16 +483,9 @@ where
 fn main() {
     let cli = Cli::parse();
 
-    match (cli.cnf_build_order, cli.parallel) {
-        (CNFBuildOrder::LeftDeep, true) => {
-            eprintln!("--cnf-build-order=left-deep and --parallel are incompatible");
-            std::process::exit(1);
-        }
-        (CNFBuildOrder::WorkStealing, false) => {
-            eprintln!("--cnf-build-order=work-stealing requires --parallel");
-            std::process::exit(1);
-        }
-        _ => {}
+    if let (GateBuildScheme::WorkStealing, false) = (cli.gate_build_scheme, cli.parallel) {
+        eprintln!("--gate-build-order=work-stealing requires --parallel");
+        std::process::exit(1);
     }
 
     let mut inner_node_capacity = cli.inner_node_capacity;

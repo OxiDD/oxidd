@@ -13,9 +13,11 @@ BibTeX
 binfmt
 binop
 bitflags
+bitslice
 bitvec
 bugprone
 buildwheel
+bumpalo
 capi
 cassert
 cbindgen
@@ -31,6 +33,7 @@ clippy
 codegen
 cofactor
 cofactors
+combinational
 compat
 condvar
 constexpr
@@ -44,7 +47,9 @@ Cython
 DDDMP
 dealloc
 decreasable
+deque
 DIMACS
+DNNF
 docstring
 docstrings
 Doxyfile
@@ -186,6 +191,7 @@ venv
 virtualenv
 wakeups
 wyrand
+XCNF
 ZBDD
 ZDDs
 ZSDDs

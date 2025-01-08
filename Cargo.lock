@@ -98,6 +98,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "bumpalo"
+version = "3.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "79296716171880943b8470b5f8d03aa55eb2e645a4874bdbb28adb49162e012c"
+
+[[package]]
 name = "cc"
 version = "1.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -665,6 +671,7 @@ name = "oxidd-parser"
 version = "0.3.2"
 dependencies = [
  "bitvec",
+ "bumpalo",
  "codespan-reporting",
  "derive_builder",
  "document-features",

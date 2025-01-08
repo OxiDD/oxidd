@@ -3,24 +3,16 @@
 use std::fmt;
 use std::iter::FusedIterator;
 
+pub(crate) mod with_metadata;
+
 /// Compact representation of a `Vec<Vec<T>>`
 #[derive(Clone, PartialEq, Eq)]
-pub struct Vec2d<T> {
-    /// Start indices of the inner vectors in `data`
-    ///
-    /// If the 2d vector is non-empty, the first element should be 0, but this
-    /// is not a requirement for correctness. With debug assertions disabled,
-    /// the user could push elements before creating the first inner vector.
-    index: Vec<usize>,
-    data: Vec<T>,
-}
+pub struct Vec2d<T>(with_metadata::Vec2d<T, 0>);
 
 impl<T> Default for Vec2d<T> {
+    #[inline(always)]
     fn default() -> Self {
-        Self {
-            index: Default::default(),
-            data: Default::default(),
-        }
+        Self(Default::default())
     }
 }
 
@@ -42,10 +34,7 @@ impl<T> Vec2d<T> {
     /// the capacity for the former `Vec`.
     #[inline(always)]
     pub fn with_capacity(vectors: usize, elements_sum: usize) -> Self {
-        Self {
-            index: Vec::with_capacity(vectors),
-            data: Vec::with_capacity(elements_sum),
-        }
+        Self(with_metadata::Vec2d::with_capacity(vectors, elements_sum))
     }
 
     /// Reserve space for at least `additional` more inner vectors. Note that
@@ -56,7 +45,7 @@ impl<T> Vec2d<T> {
     /// documentation there provides more details.
     #[inline(always)]
     pub fn reserve_vectors(&mut self, additional: usize) {
-        self.index.reserve(additional);
+        self.0.reserve_vectors(additional);
     }
     /// Reserve space for at least `additional` more elements in the inner
     /// vectors. The space is shared between the inner vectors: After reserving
@@ -67,188 +56,164 @@ impl<T> Vec2d<T> {
     /// documentation there provides more details.
     #[inline(always)]
     pub fn reserve_elements(&mut self, additional: usize) {
-        self.data.reserve(additional);
+        self.0.reserve_elements(additional);
     }
 
     /// Get the number of inner vectors
     #[inline(always)]
     pub fn len(&self) -> usize {
-        self.index.len()
+        self.0.len()
     }
     /// `true` iff there are no inner vectors
     ///
     /// Equivalent to [`self.len() == 0`][Self::len]
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
-        self.index.is_empty()
+        self.0.is_empty()
     }
 
     /// Get the vector at `index` if there is one
+    #[inline]
     pub fn get(&self, index: usize) -> Option<&[T]> {
-        if index + 1 < self.index.len() {
-            Some(&self.data[self.index[index]..self.index[index + 1]])
-        } else if index < self.index.len() {
-            Some(&self.data[self.index[index]..])
-        } else {
-            None
-        }
+        Some(self.0.get(index)?.1)
     }
     /// Get the vector at `index` if there is one
+    #[inline(always)]
     pub fn get_mut(&mut self, index: usize) -> Option<&mut [T]> {
-        if index + 1 < self.index.len() {
-            Some(&mut self.data[self.index[index]..self.index[index + 1]])
-        } else if index < self.index.len() {
-            Some(&mut self.data[self.index[index]..])
-        } else {
-            None
-        }
+        self.0.get_mut(index)
     }
     /// Get the first vector if there is one
+    #[inline]
     pub fn first(&self) -> Option<&[T]> {
-        if self.index.len() >= 2 {
-            Some(&self.data[self.index[0]..self.index[1]])
-        } else if self.index.len() == 1 {
-            Some(&self.data[self.index[0]..])
-        } else {
-            None
-        }
+        Some(self.0.first()?.1)
     }
     /// Get the first vector if there is one
+    #[inline(always)]
     pub fn first_mut(&mut self) -> Option<&mut [T]> {
-        if self.index.len() >= 2 {
-            Some(&mut self.data[self.index[0]..self.index[1]])
-        } else if self.index.len() == 1 {
-            Some(&mut self.data[self.index[0]..])
-        } else {
-            None
-        }
+        self.0.first_mut()
     }
     /// Get the last vector if there is one
+    #[inline]
     pub fn last(&self) -> Option<&[T]> {
-        let start = *self.index.last()?;
-        Some(&self.data[start..])
+        Some(self.0.last()?.1)
     }
     /// Get the last vector if there is one
+    #[inline(always)]
     pub fn last_mut(&mut self) -> Option<&mut [T]> {
-        let start = *self.index.last()?;
-        Some(&mut self.data[start..])
+        self.0.last_mut()
     }
 
     /// Iterate over the inner vector
     #[inline(always)]
     pub fn iter(&self) -> Vec2dIter<T> {
-        Vec2dIter {
-            index: &self.index,
-            end_index: self.data.len(),
-            data: &self.data,
-        }
+        Vec2dIter(self.0.iter())
     }
 
     /// Add an empty inner vector
     ///
     /// Elements can be added to that vector using [`Self::push_element()`]
+    #[inline(always)]
     pub fn push_vec(&mut self) {
-        self.index.push(self.data.len());
+        self.0.push_vec(0);
     }
 
     /// Remove the last vector (if there is one)
     ///
     /// Returns true iff the outer vector was non-empty before removal.
+    #[inline(always)]
     pub fn pop_vec(&mut self) -> bool {
-        match self.index.pop() {
-            Some(i) => {
-                self.data.truncate(i);
-                true
-            }
-            None => false,
-        }
+        self.0.pop_vec()
     }
 
     /// Truncate the outer vector to `len` inner vectors
     ///
     /// If `len` is greater or equal to [`self.len()`][Self::len()], this is a
     /// no-op.
+    #[inline(always)]
     pub fn truncate(&mut self, len: usize) {
-        if len < self.index.len() {
-            self.data.truncate(self.index[len]);
-            self.index.truncate(len);
-        }
+        self.0.truncate(len);
     }
 
     /// Push an element to the last vector
     ///
     /// The vector list must be non-empty.
+    #[track_caller]
+    #[inline(always)]
     pub fn push_element(&mut self, element: T) {
-        debug_assert!(
-            !self.is_empty(),
-            "The outer vector is empty. Use push_vec() to create the first vector."
-        );
-        self.data.push(element);
+        self.0.push_element(element);
     }
 
     /// Extend the last vector by the elements from `iter`
     ///
     /// There must be at least one inner vector (i.e.,
     /// [`!self.is_empty()`][Self::is_empty()]).
+    #[track_caller]
+    #[inline(always)]
     pub fn push_elements(&mut self, iter: impl IntoIterator<Item = T>) {
-        debug_assert!(
-            !self.is_empty(),
-            "The outer vector is empty. Use push_vec() to create the first vector."
-        );
-        self.data.extend(iter)
+        self.0.push_elements(iter);
     }
 
     /// Get a slice containing all elements, ignoring the boundaries of the
     /// inner vectors
     #[inline(always)]
     pub fn all_elements(&self) -> &[T] {
-        &self.data
+        self.0.all_elements()
     }
     /// Get a slice containing all elements, ignoring the boundaries of the
     /// inner vectors
     #[inline(always)]
     pub fn all_elements_mut(&mut self) -> &mut [T] {
-        &mut self.data
+        self.0.all_elements_mut()
     }
+}
+
+impl<T: Clone> Vec2d<T> {
+    /// Resize the last vector in-place such that its length is equal to
+    /// `new_len`
+    ///
+    /// If `new_len` is greater than the current length, the vector is extended
+    /// by the difference, with each additional slot filled with `value`. If
+    /// `new_len` is less than `len`, the `Vec` is simply truncated.
+    #[track_caller]
+    #[inline(always)]
+    pub fn resize_last(&mut self, new_len: usize, value: T) {
+        self.0.resize_last(new_len, value);
+    }
+}
+
+#[cold]
+#[inline(never)]
+fn panic_bounds_check(len: usize, index: usize) -> ! {
+    panic!("index out of bounds: the len is {len} but the index is {index}");
 }
 
 impl<T> std::ops::Index<usize> for Vec2d<T> {
     type Output = [T];
 
     #[track_caller]
-    #[inline]
+    #[inline(always)]
     fn index(&self, index: usize) -> &[T] {
-        if index + 1 < self.index.len() {
-            &self.data[self.index[index]..self.index[index + 1]]
-        } else {
-            assert!(index < self.index.len(), "index out of bounds");
-            &self.data[self.index[index]..]
+        if let Some(v) = self.get(index) {
+            return v;
         }
+        panic_bounds_check(self.len(), index)
     }
 }
 impl<T> std::ops::IndexMut<usize> for Vec2d<T> {
     #[track_caller]
-    #[inline]
+    #[inline(always)]
     fn index_mut(&mut self, index: usize) -> &mut [T] {
-        if index + 1 < self.index.len() {
-            &mut self.data[self.index[index]..self.index[index + 1]]
-        } else {
-            assert!(index < self.index.len(), "index out of bounds");
-            &mut self.data[self.index[index]..]
+        let len = self.len(); // moved up here due to borrow checker issues
+        if let Some(v) = self.get_mut(index) {
+            return v;
         }
+        panic_bounds_check(len, index)
     }
 }
 
 impl<'a, T: Copy> Extend<&'a [T]> for Vec2d<T> {
     fn extend<I: IntoIterator<Item = &'a [T]>>(&mut self, iter: I) {
-        let it = iter.into_iter();
-        let min_len = it.size_hint().0;
-        self.index.reserve(min_len);
-        self.data.reserve(min_len * 4);
-        for v in it {
-            self.index.push(self.data.len());
-            self.data.extend(v);
-        }
+        self.0.extend(iter.into_iter().map(|i| (0, i)));
     }
 }
 
@@ -268,64 +233,35 @@ impl<T: fmt::Debug> fmt::Debug for Vec2d<T> {
 }
 
 /// Iterator over the inner vectors of a [`Vec2d`]
-pub struct Vec2dIter<'a, T> {
-    /// Remaining `index`
-    index: &'a [usize],
-    /// Index of the first vector not referenced by `index` (or `data.len()`)
-    end_index: usize,
-    /// Full `data`
-    data: &'a [T],
-}
+#[derive(Clone)]
+pub struct Vec2dIter<'a, T>(with_metadata::Vec2dIter<'a, T, 0>);
 
 impl<'a, T> Iterator for Vec2dIter<'a, T> {
     type Item = &'a [T];
 
     #[inline]
     fn next(&mut self) -> Option<&'a [T]> {
-        match self.index {
-            [start, end, ..] => {
-                self.index = &self.index[1..];
-                Some(&self.data[*start..*end])
-            }
-            [start] => {
-                self.index = &self.index[1..];
-                Some(&self.data[*start..self.end_index])
-            }
-            [] => None,
-        }
+        Some(self.0.next()?.1)
     }
 
     #[inline(always)]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = self.len();
-        (len, Some(len))
+        self.0.size_hint()
     }
 
     // performance optimization
 
     #[inline(always)]
     fn count(self) -> usize {
-        self.len()
+        self.0.count()
     }
     #[inline(always)]
     fn last(self) -> Option<&'a [T]> {
-        match self.index {
-            [.., last] => Some(&self.data[*last..self.end_index]),
-            [] => None,
-        }
+        Some(self.0.last()?.1)
     }
     #[inline]
     fn nth(&mut self, n: usize) -> Option<&'a [T]> {
-        let len = self.index.len();
-        if n >= len {
-            self.index = &self.index[len..];
-            None
-        } else {
-            let start = self.index[n];
-            self.index = &self.index[n + 1..];
-            let end = self.index.first().copied().unwrap_or(self.end_index);
-            Some(&self.data[start..end])
-        }
+        Some(self.0.nth(n)?.1)
     }
 }
 
@@ -334,44 +270,20 @@ impl<T> FusedIterator for Vec2dIter<'_, T> {}
 impl<T> ExactSizeIterator for Vec2dIter<'_, T> {
     #[inline(always)]
     fn len(&self) -> usize {
-        self.index.len()
+        self.0.len()
     }
 }
 
 impl<'a, T> DoubleEndedIterator for Vec2dIter<'a, T> {
     #[inline]
     fn next_back(&mut self) -> Option<&'a [T]> {
-        match self.index {
-            [rem @ .., last] => {
-                self.index = rem;
-                let res = &self.data[*last..self.end_index];
-                self.end_index = *last;
-                Some(res)
-            }
-            [] => None,
-        }
+        Some(self.0.next_back()?.1)
     }
 
     // performance optimization
 
     #[inline]
     fn nth_back(&mut self, n: usize) -> Option<&'a [T]> {
-        let len = self.index.len();
-        if n >= len {
-            self.index = &self.index[..0];
-            // ignore `self.end_index`
-            None
-        } else {
-            let end = if n == 0 {
-                self.end_index
-            } else {
-                self.index[len - n]
-            };
-            let start = self.index[len - n - 1];
-            self.end_index = start;
-            let start = self.index[n];
-            self.index = &self.index[..len - n - 1];
-            Some(&self.data[start..end])
-        }
+        Some(self.0.nth_back(n)?.1)
     }
 }

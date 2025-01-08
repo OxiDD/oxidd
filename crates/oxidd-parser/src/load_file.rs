@@ -15,7 +15,7 @@ use nom::Offset;
 
 use crate::ParseOptions;
 use crate::Problem;
-use crate::{aiger, dimacs};
+use crate::{aiger, dimacs, nnf};
 
 /// File types
 ///
@@ -28,6 +28,10 @@ pub enum FileType {
     ///
     /// Extensions: `.cnf`, `.sat`, `.dimacs`
     DIMACS,
+    /// c2d negation normal form
+    ///
+    /// Extensions: `.nnf`
+    NNF,
     /// AIGER
     ///
     /// Extensions: `.aag`, `.aig`
@@ -40,6 +44,7 @@ impl FileType {
         let ext = path.extension()?;
         match ext.as_encoded_bytes() {
             b"cnf" | b"sat" | b"dimacs" => Some(FileType::DIMACS),
+            b"nnf" => Some(FileType::NNF),
             b"aag" | b"aig" => Some(FileType::AIGER),
             _ => None,
         }
@@ -104,25 +109,18 @@ pub fn parse<S: AsRef<str> + Clone + fmt::Display>(
     writer: &mut dyn WriteColor,
     config: &Config,
 ) -> Option<Problem> {
-    let errors = match file_type {
-        FileType::DIMACS => match dimacs::parse::<ParserReport<_>>(parse_options)(input) {
-            Ok((rest, problem)) => {
-                debug_assert!(rest.is_empty());
-                return Some(problem);
-            }
-            Err(e) => e,
-        },
-        FileType::AIGER => match aiger::parse::<ParserReport<_>>(parse_options)(input) {
-            Ok((rest, aig)) => {
-                debug_assert!(rest.is_empty());
-                return Some(Problem::AIG(aig));
-            }
-            Err(e) => e,
-        },
+    let parse_result = match file_type {
+        FileType::DIMACS => dimacs::parse::<ParserReport<_>>(parse_options)(input),
+        FileType::NNF => nnf::parse::<ParserReport<_>>(parse_options)(input),
+        FileType::AIGER => aiger::parse::<ParserReport<_>>(parse_options)(input),
     };
-    let errors = match errors {
-        nom::Err::Error(e) | nom::Err::Failure(e) => e.0,
-        nom::Err::Incomplete(_) => unreachable!("only using complete parsers"),
+    let errors = match parse_result {
+        Ok((rest, problem)) => {
+            debug_assert!(rest.is_empty());
+            return Some(problem);
+        }
+        Err(nom::Err::Error(e) | nom::Err::Failure(e)) => e.0,
+        Err(nom::Err::Incomplete(_)) => unreachable!("only using complete parsers"),
     };
 
     let range = move |span: &[u8]| {

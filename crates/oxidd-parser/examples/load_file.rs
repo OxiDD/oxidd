@@ -1,5 +1,4 @@
-use oxidd_parser::load_file::load_file;
-use oxidd_parser::ParseOptionsBuilder;
+use oxidd_parser::{load_file, ParseOptionsBuilder};
 
 fn main() {
     let parse_options = ParseOptionsBuilder::default().build().unwrap();

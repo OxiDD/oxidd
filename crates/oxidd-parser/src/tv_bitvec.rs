@@ -1,6 +1,6 @@
 //! Three-valued [`BitVec`]
 
-use std::fmt;
+use std::fmt::{self, Write};
 
 use bitvec::vec::BitVec;
 
@@ -66,11 +66,11 @@ enum OptBoolDebug {
 impl fmt::Debug for OptBoolDebug {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::None => write!(f, "-"),
-            Self::False => write!(f, "0"),
-            Self::True => write!(f, "1"),
-        }
+        f.write_char(match self {
+            Self::None => '-',
+            Self::False => '0',
+            Self::True => '1',
+        })
     }
 }
 

@@ -27,6 +27,9 @@ codespan-reporting = { version = "0.11", optional = true }
 # bit vectors
 bitvec = "1"
 
+# bump allocator
+bumpalo = { version = "3.16.0", features = ["boxed", "collections"] }
+
 # fast hash function
 #
 # Note that there is a performance regression with 2.0, see
@@ -43,7 +46,7 @@ document-features = "0.2"
 [features]
 default = ["load-file"]
 
-## Convenience functions etc. to load a problem from file ([`load_file`])
+## Convenience functions etc. to load a problem from file ([`load_file()`])
 load-file = ["dep:codespan-reporting"]
 
 
