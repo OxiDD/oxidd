@@ -8,9 +8,15 @@ pub struct Workers {
 
 impl Workers {
     pub(crate) fn new(threads: u32) -> Self {
+        let stack_size = std::env::var("OXIDD_STACK_SIZE")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1024 * 1024 * 1024); // default: 1 GiB
+
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(threads as usize)
             .thread_name(|i| format!("oxidd mi {i}")) // "mi" for "manager index"
+            .stack_size(stack_size)
             .build()
             .expect("could not build thread pool");
         let split_depth = AtomicU32::new(Workers::auto_split_depth(&pool));
