@@ -218,20 +218,25 @@ where
                     } else if vars.names[var].is_some() {
                         return fail(var_span, "second occurrence of variable in order");
                     }
-                    let Ok(name) = std::str::from_utf8(name) else {
-                        return fail(name, "invalid UTF-8");
-                    };
-                    if !name_set.insert(name) {
-                        return fail(name.as_bytes(), "second occurrence of variable name");
-                    }
-                    vars.names[var] = Some(name.to_owned());
+                    // always write Some to mark the variable as present
+                    vars.names[var] = Some(if let Some(name) = name {
+                        let Ok(name) = std::str::from_utf8(name) else {
+                            return fail(name, "invalid UTF-8");
+                        };
+                        if !name_set.insert(name) {
+                            return fail(name.as_bytes(), "second occurrence of variable name");
+                        }
+                        name.to_owned()
+                    } else {
+                        String::new()
+                    });
                     if vars.order_tree.is_none() {
                         vars.order.push(var);
                     }
                 } else {
                     return fail(
                         line_span(input),
-                        "expected a variable order record ('c <var> <name>'), a variable order tree ('c vo <tree>'), or a clause order tree ('c co <tree>')",
+                        "expected a variable order record ('c <var> [<name>]'), a variable order tree ('c vo <tree>'), or a clause order tree ('c co <tree>')",
                     );
                 }
             }
@@ -279,6 +284,13 @@ where
                         (num_clauses.0, "number of clauses does not match"),
                         (max_clause.0, "note: maximal clause number given here"),
                     ]);
+                }
+            }
+
+            // cleanup: we used `Some(String::new())` to mark unnamed variables as present
+            for name in &mut vars.names {
+                if name.as_ref().is_some_and(String::is_empty) {
+                    *name = None;
                 }
             }
 

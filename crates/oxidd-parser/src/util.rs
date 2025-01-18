@@ -205,12 +205,25 @@ where
     }
 }
 
+/// Remove leading spaces and tabs
+pub const fn trim_start(mut s: &[u8]) -> &[u8] {
+    while let [rest @ .., b' ' | b'\t'] = s {
+        s = rest;
+    }
+    s
+}
+
 /// Remove trailing spaces and tabs
 pub const fn trim_end(mut s: &[u8]) -> &[u8] {
     while let [rest @ .., b' ' | b'\t'] = s {
         s = rest;
     }
     s
+}
+
+/// Remove leading and trailing spaces and tabs
+pub const fn trim(s: &[u8]) -> &[u8] {
+    trim_end(trim_start(s))
 }
 
 // --- Higher-level parsers used for multiple formats --------------------------
@@ -228,12 +241,22 @@ pub fn comment<'a, E: ParseError<&'a [u8]>>(input: &'a [u8]) -> IResult<&'a [u8]
 
 pub fn var_order_record<'a, E: ParseError<&'a [u8]> + ContextError<&'a [u8]>>(
     input: &'a [u8],
-) -> IResult<&'a [u8], ((&'a [u8], u64), &'a [u8]), E> {
-    let (input, (var_span, var)) = consumed(u64)(input)?;
-    let (input, _) = space1(input)?;
-    let (input, name) = not_line_ending(input)?;
+) -> IResult<&'a [u8], ((&'a [u8], u64), Option<&'a [u8]>), E> {
+    let (input_before_name, (var_span, var)) = consumed(u64)(input)?;
+    let (input, name) = not_line_ending(input_before_name)?;
     let (input, _) = line_ending(input)?;
-    Ok((input, ((var_span, var), trim_end(name))))
+    let trimmed_name = trim(name);
+    let name = if trimmed_name.is_empty() {
+        None
+    } else if let [b' ' | b'\t', ..] = name {
+        Some(trimmed_name)
+    } else {
+        return Err(Err::Error(E::from_error_kind(
+            input_before_name,
+            ErrorKind::Space,
+        )));
+    };
+    Ok((input, ((var_span, var), name)))
 }
 
 /// Parse a tree with unique `usize` leaves, e.g.: `[0, [2, 3, 1]]`
