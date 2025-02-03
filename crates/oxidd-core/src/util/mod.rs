@@ -528,10 +528,10 @@ pub struct SatCountCache<N: SatCountNumber, S: BuildHasher> {
 
     /// Epoch to indicate if the cache is still valid.
     ///
-    /// While reordering preserves semantics (and therefore also the count of
-    /// satisfying assignments), nodes may be deleted and their [`NodeID`]s may
-    /// get reused afterwards. The `map` should only be considered valid if
-    /// `epoch` is [`Manager::reorder_count()`].
+    /// If we cached the number of satisfying assignments of a function that has
+    /// been dropped and garbage collected in the meantime, the [`NodeID`]s may
+    /// have been re-used for semantically different functions. The `map` should
+    /// only be considered valid if `epoch` is [`Manager::gc_count()`].
     epoch: u64,
 }
 
@@ -555,10 +555,10 @@ impl<N: SatCountNumber, S: BuildHasher> SatCountCache<N, S> {
         }
     }
 
-    /// Clear the cache if it has become invalid due to reordering or a change
-    /// in the number of variables
+    /// Clear the cache if it has become invalid due to garbage collections or a
+    /// change in the number of variables
     pub fn clear_if_invalid<M: Manager>(&mut self, manager: &M, vars: LevelNo) {
-        let epoch = manager.reorder_count();
+        let epoch = manager.gc_count();
         if epoch != self.epoch || vars != self.vars {
             self.epoch = epoch;
             self.vars = vars;

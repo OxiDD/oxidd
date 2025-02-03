@@ -21,6 +21,7 @@ use std::iter::FusedIterator;
 use std::marker::PhantomData;
 use std::mem::{align_of, ManuallyDrop};
 use std::ptr::{addr_of, addr_of_mut, NonNull};
+use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 
 use arcslab::{ArcSlab, ArcSlabRef, AtomicRefCounted, ExtHandle, IntHandle};
 use bitvec::bitvec;
@@ -158,6 +159,7 @@ where
     data: ManuallyDrop<MD>,
     store_inner: *const StoreInner<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>,
     gc_ongoing: TryLock,
+    gc_count: AtomicU64,
     reorder_count: u64,
     phantom: PhantomData<(TM, R)>,
 }
@@ -271,6 +273,7 @@ where
             data: ManuallyDrop::new(data),
             store_inner: slot,
             gc_ongoing: TryLock::new(),
+            gc_count: AtomicU64::new(0),
             reorder_count: 0,
             phantom: PhantomData,
         });
@@ -714,6 +717,7 @@ where
             // We don't want multiple garbage collections at the same time.
             return 0;
         }
+        self.gc_count.fetch_add(1, Relaxed);
         let guard = AbortOnDrop("Garbage collection panicked.");
         self.data.pre_gc(self);
 
@@ -742,8 +746,17 @@ where
         // SAFETY: We called `pre_gc()` and the reordering is done.
         unsafe { self.data.post_gc(self) };
         guard.defuse();
+        // Depending on the reordering implementation, garbage collections are
+        // preformed, but not necessarily through `Self::gc`. So we increment
+        // the GC count here.
+        *self.gc_count.get_mut() += 1;
         self.reorder_count += 1;
         res
+    }
+
+    #[inline]
+    fn gc_count(&self) -> u64 {
+        self.gc_count.load(Relaxed)
     }
 
     #[inline]

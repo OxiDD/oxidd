@@ -756,6 +756,12 @@ pub unsafe trait Manager: Sized {
     /// Returns the value returned by `f`.
     fn reorder<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T;
 
+    /// Get the count of garbage collections
+    ///
+    /// This counter should monotonically increase to ensure that caches are
+    /// invalidated accordingly.
+    fn gc_count(&self) -> u64;
+
     /// Get the count of reordering operations
     ///
     /// This counter should monotonically increase to ensure that caches are

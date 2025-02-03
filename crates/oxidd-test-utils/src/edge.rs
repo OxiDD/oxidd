@@ -196,6 +196,10 @@ unsafe impl Manager for DummyManager {
         f(self)
     }
 
+    fn gc_count(&self) -> u64 {
+        0
+    }
+
     fn reorder_count(&self) -> u64 {
         0
     }

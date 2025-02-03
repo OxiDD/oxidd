@@ -236,8 +236,14 @@ where
         None
     };
 
-    let report_dd_node_count = || {
+    let report_dd_node_count = |gc_count_before_construction: Option<u64>| {
         mref.with_manager_shared(|manager| {
+            if let Some(gc_count) = gc_count_before_construction {
+                println!(
+                    "garbage collections during construction: {}",
+                    manager.gc_count() - gc_count
+                );
+            }
             if !cli.no_prune_unreachable {
                 println!("node count before pruning: {}", manager.num_inner_nodes());
                 manager.apply_cache().clear(manager);
@@ -330,7 +336,7 @@ where
         PROGRESS.finish_op();
         println!(" done ({})", HDuration(start.elapsed()));
 
-        report_dd_node_count();
+        report_dd_node_count(None);
     }
 
     // Construct DDs for input problems (e.g., from DIMACS files)
@@ -351,13 +357,14 @@ where
             simplified
         };
 
-        let vars = mref.with_manager_exclusive(|manager| {
-            make_vars::<B>(
+        let (vars, gc_count) = mref.with_manager_exclusive(|manager| {
+            let vars = make_vars::<B>(
                 manager,
                 problem.circuit.inputs(),
                 cli.read_var_order,
                 &mut vars,
-            )
+            );
+            (vars, manager.gc_count())
         });
 
         match problem.details {
@@ -378,7 +385,7 @@ where
             oxidd_parser::ProblemDetails::AIGER(_aig) => todo!(),
         }
 
-        report_dd_node_count();
+        report_dd_node_count(Some(gc_count));
     }
 
     let pause_handle = PROGRESS.pause_progress_report();

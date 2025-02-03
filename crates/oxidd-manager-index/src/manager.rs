@@ -20,6 +20,7 @@ use std::hash::{Hash, Hasher};
 use std::iter::FusedIterator;
 use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
+use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering::{Acquire, Relaxed};
 use std::sync::Arc;
 
@@ -268,8 +269,9 @@ where
     /// Theoretically, we should be able to get the pointer from a `&Manager`
     /// reference, but this leads to provenance issues.
     store: *const Store<'id, N, ET, TM, R, MD, TERMINALS>,
-    reorder_count: u64,
+    gc_count: AtomicU64,
     gc_ongoing: TryLock,
+    reorder_count: u64,
 }
 
 /// Type "constructor" for the manager from `InnerNodeCons` etc.
@@ -1040,6 +1042,7 @@ where
             // We don't want two concurrent garbage collections
             return 0;
         }
+        self.gc_count.fetch_add(1, Relaxed);
         let guard = AbortOnDrop("Garbage collection panicked.");
 
         #[cfg(feature = "statistics")]
@@ -1089,8 +1092,17 @@ where
         // SAFETY: We called `pre_gc`, the reordering is done.
         unsafe { self.data.post_gc(self) };
         guard.defuse();
+        // Depending on the reordering implementation, garbage collections are
+        // preformed, but not necessarily through `Self::gc`. So we increment
+        // the GC count here.
+        *self.gc_count.get_mut() += 1;
         self.reorder_count += 1;
         res
+    }
+
+    #[inline]
+    fn gc_count(&self) -> u64 {
+        self.gc_count.load(Relaxed)
     }
 
     #[inline]
@@ -1999,8 +2011,9 @@ pub fn new_manager<
             unique_table: Vec::new(),
             data: ManuallyDrop::new(data),
             store: std::ptr::null(),
-            reorder_count: 0,
             gc_ongoing: TryLock::new(),
+            gc_count: AtomicU64::new(0),
+            reorder_count: 0,
         }),
         terminal_manager: TMC::T::<'static>::with_capacity(terminal_node_capacity),
         gc_signal: (Mutex::new(GCSignal::RunGc), Condvar::new()),
