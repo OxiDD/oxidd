@@ -250,9 +250,9 @@ class AllBooleanFunctions(Generic[BF]):
                                 continue  # was not requested to be true
                             flipped = actual << (1 << vi)
                         else:
-                            assert (
-                                actual & ~var_func == 0
-                            ), "not a conjunction of literals"
+                            assert actual & ~var_func == 0, (
+                                "not a conjunction of literals"
+                            )
                             # selected to be false
                             if neg & (1 << vi) == 0:
                                 continue

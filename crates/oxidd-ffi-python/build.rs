@@ -13,6 +13,19 @@ fn main() -> Result<()> {
         "\
 from __future__ import annotations
 
+__all__ = [
+    \"BDDFunction\",
+    \"BDDManager\",
+    \"BDDSubstitution\",
+    \"BCDDFunction\",
+    \"BCDDManager\",
+    \"BCDDSubstitution\",
+    \"ZBDDFunction\",
+    \"ZBDDManager\",
+    \"DDMemoryError\",
+    \"BooleanOperator\",
+]
+
 import enum
 from collections.abc import Iterable
 from os import PathLike

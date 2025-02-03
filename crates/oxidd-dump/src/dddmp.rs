@@ -723,7 +723,7 @@ where
 
     #[inline]
     const fn node_code(var: Code, t: Code, e_complement: bool, e: Code) -> u8 {
-        (var as u8) << 5 | (t as u8) << 3 | (e_complement as u8) << 2 | e as u8
+        ((var as u8) << 5) | ((t as u8) << 3) | ((e_complement as u8) << 2) | e as u8
     }
 
     let mut exported_nodes = 0;
@@ -1710,7 +1710,7 @@ mod test {
 
         let isize_min = isize::MIN.to_string();
         assert!(parse_edge_list(isize_min.as_bytes(), &mut res, 42).is_err());
-        assert!(parse_edge_list(isize_min[1..].as_bytes(), &mut res, 42).is_err());
+        assert!(parse_edge_list(&isize_min.as_bytes()[1..], &mut res, 42).is_err());
 
         Ok(())
     }

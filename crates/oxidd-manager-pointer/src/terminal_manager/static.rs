@@ -130,7 +130,7 @@ where
         terminal: Terminal,
     ) -> AllocResult<Edge<'id, InnerNode, EdgeTag, TAG_BITS>> {
         let ptr = sptr::Strict::map_addr(this as *mut (), |p| {
-            p | 1 << Self::TERMINAL_BIT | terminal.as_usize() << Self::VAL_LSB
+            p | (1 << Self::TERMINAL_BIT) | (terminal.as_usize() << Self::VAL_LSB)
         });
         Ok(unsafe { Edge::from_ptr(NonNull::new_unchecked(ptr)) })
     }
@@ -140,7 +140,7 @@ where
     where
         Self: 'a,
     {
-        let first = sptr::Strict::map_addr(this as *mut (), |p| p | 1 << Self::TERMINAL_BIT);
+        let first = sptr::Strict::map_addr(this as *mut (), |p| p | (1 << Self::TERMINAL_BIT));
         StaticTerminalIterator::new(NonNull::new(first).unwrap(), Terminal::MAX_VALUE + 1)
     }
 
