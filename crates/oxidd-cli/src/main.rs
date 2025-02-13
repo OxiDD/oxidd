@@ -111,6 +111,10 @@ struct Cli {
     #[arg(long, default_value_t = 0)]
     threads: u32,
 
+    /// Always output durations as seconds (floating point)
+    #[arg(long)]
+    durations_as_secs: bool,
+
     /// Report progress
     #[arg(long, short = 'p')]
     progress: bool,
@@ -489,6 +493,7 @@ where
 
 fn main() {
     let cli = Cli::parse();
+    util::DURATIONS_AS_SECS.store(cli.durations_as_secs, std::sync::atomic::Ordering::Relaxed);
 
     if let (GateBuildScheme::WorkStealing, false) = (cli.gate_build_scheme, cli.parallel) {
         eprintln!("--gate-build-order=work-stealing requires --parallel");

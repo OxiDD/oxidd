@@ -1,9 +1,12 @@
 use std::fmt;
+use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
 use std::time::Duration;
 
 use oxidd::util::AllocResult;
 
 // spell-checker:ignore subsec
+
+pub static DURATIONS_AS_SECS: AtomicBool = AtomicBool::new(false);
 
 /// Human-readable durations
 pub struct HDuration(pub Duration);
@@ -11,6 +14,9 @@ pub struct HDuration(pub Duration);
 impl fmt::Display for HDuration {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let d = self.0;
+        if DURATIONS_AS_SECS.load(Relaxed) {
+            return write!(f, "{} s", d.as_secs_f64());
+        }
         let s = d.as_secs();
         if s >= 60 {
             let (m, s) = (s / 60, s % 60);
