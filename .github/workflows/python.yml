@@ -177,8 +177,6 @@ jobs:
           3.x
     - name: Install Python (i686)
       run: nuget install pythonx86 -OutputDirectory .python
-    - name: Install Python (aarch64)
-      run: nuget install pythonarm64 -OutputDirectory .python
     - name: Install Python build dependencies
       run: python -m pip install ruff
     - name: Build CPython wheel (x86_64)
@@ -190,9 +188,9 @@ jobs:
     - name: Build CPython wheel (i686)
       run: maturin build --release --out dist --interpreter "$(get-item .python\pythonx86*\tools\python.exe)" --target i686-pc-windows-msvc
     - name: Build CPython wheel (aarch64)
-      run: |
-        $env:PYO3_CROSS_LIB_DIR = "$(get-item .python\pythonarm64*\tools\libs)"
-        maturin build --release --out dist --target aarch64-pc-windows-msvc
+      run: maturin build --release --out dist --target aarch64-pc-windows-msvc
+      env:
+        PYO3_CROSS: 1
     - name: Test
       run: |
         python -m venv .venv-cp

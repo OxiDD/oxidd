@@ -23,7 +23,12 @@ oxidd-core = { workspace = true }
 oxidd-dump = { workspace = true, features = ["dddmp", "dot"] }
 oxidd = { workspace = true, features = ["bdd", "bcdd", "zbdd"] }
 
-pyo3 = { version = "0.23.1", features = ["extension-module", "abi3-py39", "num-bigint"] }
+pyo3 = { version = "0.23.1", features = [
+  "extension-module",
+  "abi3-py39",
+  "num-bigint",
+  "generate-import-lib",
+] }
 
 # big integers
 num-bigint = "0.4"
