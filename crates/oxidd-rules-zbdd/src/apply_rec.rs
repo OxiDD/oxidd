@@ -40,6 +40,9 @@ where
     M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, ZBDDOp>,
     M::InnerNode: HasLevel,
 {
+    if rec.should_switch_to_sequential() {
+        return subset::<M, _, VAL>(manager, SequentialRecursor, f, var, var_level);
+    }
     let op = match VAL {
         -1 => ZBDDOp::Change,
         0 => ZBDDOp::Subset0,
@@ -53,7 +56,7 @@ where
     };
     let level = node.level();
     match level.cmp(&var_level) {
-        Ordering::Less => {}
+        Ordering::Less => {} // level above var_level
         Ordering::Equal => {
             if op == ZBDDOp::Change {
                 // The swap of `hi` and `lo` below is intentional
@@ -63,7 +66,19 @@ where
             return Ok(manager.clone_edge(&node.child(VAL as usize)));
         }
         Ordering::Greater => {
-            return Ok(manager.get_terminal(ZBDDTerminal::Empty).unwrap());
+            // var_level above level
+            return match op {
+                ZBDDOp::Subset0 => Ok(manager.clone_edge(&f)),
+                ZBDDOp::Subset1 => Ok(manager.get_terminal(ZBDDTerminal::Empty).unwrap()),
+                ZBDDOp::Change => reduce(
+                    manager,
+                    var_level,
+                    manager.clone_edge(&f),
+                    manager.get_terminal(ZBDDTerminal::Empty).unwrap(),
+                    ZBDDOp::Change,
+                ),
+                _ => unreachable!(),
+            };
         }
     }
 
