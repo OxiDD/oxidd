@@ -1201,7 +1201,7 @@ pub trait BooleanVecSet: Function {
         Self::from_edge(manager, Self::base_edge(manager))
     }
 
-    /// Get the set of subsets of `self` not containing `var`, formally
+    /// Get the subset of `self` not containing `var`, formally
     /// `{s ∈ self | var ∉ s}`
     ///
     /// `var` must be a singleton set, otherwise the result is unspecified.
@@ -1217,8 +1217,8 @@ pub trait BooleanVecSet: Function {
         })
     }
 
-    /// Get the set of subsets of `self` containing `var`, formally
-    /// `{s ∈ self | var ∈ s}`
+    /// Get the subset of `self` containing `var` with `var` removed afterwards,
+    /// formally `{s ∖ {var} | s ∈ self ∧ var ∈ s}`
     ///
     /// `var` must be a singleton set, otherwise the result is unspecified.
     /// Ideally, the implementation panics.
@@ -1233,9 +1233,8 @@ pub trait BooleanVecSet: Function {
         })
     }
 
-    /// Get the set of subsets derived from `self` by adding `var` to the
-    /// subsets that do not contain `var`, and removing `var` from the subsets
-    /// that contain `var`, formally
+    /// Swap [`subset0`][Self::subset0] and [`subset1`][Self::subset1] with
+    /// respect to `var`, formally
     /// `{s ∪ {var} | s ∈ self ∧ var ∉ s} ∪ {s ∖ {var} | s ∈ self ∧ var ∈ s}`
     ///
     /// `var` must be a singleton set, otherwise the result is unspecified.

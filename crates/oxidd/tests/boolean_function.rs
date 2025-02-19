@@ -893,6 +893,41 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
     }
 }
 
+impl<B: BooleanFunction + BooleanVecSet> TestAllBooleanFunctions<'_, B> {
+    fn subset_and_change(&self) {
+        for (f_explicit, f) in self.boolean_functions.iter().enumerate() {
+            let f_explicit = f_explicit as ExplicitBFunc;
+            for (v, (v_singleton, &v_func)) in
+                self.var_handles.iter().zip(&self.var_functions).enumerate()
+            {
+                self.check(
+                    "f.subset0(v)",
+                    self.dd_to_boolean_func[&f.subset0(v_singleton).unwrap()],
+                    f_explicit & !v_func,
+                    &[f_explicit],
+                    &[1 << v],
+                );
+
+                self.check(
+                    "f.subset1(v)",
+                    self.dd_to_boolean_func[&f.subset1(v_singleton).unwrap()],
+                    (f_explicit & v_func) >> (1 << v),
+                    &[f_explicit],
+                    &[1 << v],
+                );
+
+                self.check(
+                    "f.change(v)",
+                    self.dd_to_boolean_func[&f.change(v_singleton).unwrap()],
+                    ((f_explicit & !v_func) << (1 << v)) | ((f_explicit & v_func) >> (1 << v)),
+                    &[f_explicit],
+                    &[1 << v],
+                );
+            }
+        }
+    }
+}
+
 impl<B: BooleanFunction + FunctionSubst> TestAllBooleanFunctions<'_, B> {
     /// Test all possible substitutions
     pub fn subst(&self) {
@@ -1136,12 +1171,13 @@ fn bcdd_all_boolean_functions_2vars_t2() {
 }
 
 #[test]
-#[cfg_attr(miri, ignore)]
+//#[cfg_attr(miri, ignore)]
 fn zbdd_all_boolean_functions_2vars_t1() {
     let mref = oxidd::zbdd::new_manager(65536, 1024, 1);
     let (singletons, vars) = zbdd_singletons_vars(&mref, 2);
     let test = TestAllBooleanFunctions::init(&mref, &vars, &singletons);
     test.basic();
+    test.subset_and_change();
 }
 
 #[test]
@@ -1152,4 +1188,5 @@ fn zbdd_all_boolean_functions_2vars_t2() {
     let (singletons, vars) = zbdd_singletons_vars(&mref, 2);
     let test = TestAllBooleanFunctions::init(&mref, &vars, &singletons);
     test.basic();
+    test.subset_and_change();
 }

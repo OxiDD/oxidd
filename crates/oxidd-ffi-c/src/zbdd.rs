@@ -419,8 +419,8 @@ pub unsafe extern "C" fn oxidd_zbdd_cofactor_false(f: zbdd_t) -> zbdd_t {
     }
 }
 
-/// Get the set of subsets of `set` not containing `var`, formally
-/// `{s ∈ set | var ∉ s}`
+/// Get the subset of `self` not containing `var`, formally
+/// `{s ∈ self | var ∉ s}`
 ///
 /// `var` must be a singleton set.
 ///
@@ -432,8 +432,8 @@ pub unsafe extern "C" fn oxidd_zbdd_subset0(set: zbdd_t, var: zbdd_t) -> zbdd_t 
     op2(set, var, ZBDDFunction::subset0)
 }
 
-/// Get the set of subsets of `set` containing `var`, formally
-/// `{s ∈ set | var ∈ s}`
+/// Get the subsets of `set` containing `var` with `var` removed afterwards,
+/// formally `{s ∖ {var} | s ∈ set ∧ var ∈ s}`
 ///
 /// `var` must be a singleton set.
 ///
@@ -445,9 +445,7 @@ pub unsafe extern "C" fn oxidd_zbdd_subset1(set: zbdd_t, var: zbdd_t) -> zbdd_t 
     op2(set, var, ZBDDFunction::subset1)
 }
 
-/// Get the set of subsets derived from `set` by adding `var` to the
-/// subsets that do not contain `var`, and removing `var` from the subsets
-/// that contain `var`, formally
+/// Swap `subset0` and `subset1` with respect to `var`, formally
 /// `{s ∪ {var} | s ∈ set ∧ var ∉ s} ∪ {s ∖ {var} | s ∈ set ∧ var ∈ s}`
 ///
 /// `var` must be a singleton set.
