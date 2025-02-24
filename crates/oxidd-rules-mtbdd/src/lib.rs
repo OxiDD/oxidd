@@ -33,7 +33,6 @@ impl<E: Edge, N: InnerNode<E>, T> DiagramRules<E, N, T> for MTBDDRules {
         E: 'a;
 
     #[inline]
-    #[must_use]
     fn reduce<M: Manager<Edge = E, InnerNode = N, Terminal = T>>(
         manager: &M,
         level: LevelNo,
@@ -53,7 +52,6 @@ impl<E: Edge, N: InnerNode<E>, T> DiagramRules<E, N, T> for MTBDDRules {
     }
 
     #[inline]
-    #[must_use]
     fn cofactors(_tag: E::Tag, node: &N) -> Self::Cofactors<'_> {
         node.children()
     }

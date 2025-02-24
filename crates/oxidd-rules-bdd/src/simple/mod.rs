@@ -26,7 +26,6 @@ impl<E: Edge, N: InnerNode<E>> DiagramRules<E, N, BDDTerminal> for BDDRules {
         E: 'a;
 
     #[inline(always)]
-    #[must_use]
     fn reduce<M: Manager<Edge = E, InnerNode = N>>(
         manager: &M,
         level: LevelNo,
@@ -46,7 +45,6 @@ impl<E: Edge, N: InnerNode<E>> DiagramRules<E, N, BDDTerminal> for BDDRules {
     }
 
     #[inline(always)]
-    #[must_use]
     fn cofactors(_tag: E::Tag, node: &N) -> Self::Cofactors<'_> {
         node.children()
     }

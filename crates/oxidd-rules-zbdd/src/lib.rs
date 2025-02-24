@@ -35,7 +35,6 @@ impl<E: Edge, N: InnerNode<E>> DiagramRules<E, N, ZBDDTerminal> for ZBDDRules {
         E: 'a;
 
     #[inline]
-    #[must_use]
     fn reduce<M: Manager<Edge = E, InnerNode = N, Terminal = ZBDDTerminal>>(
         manager: &M,
         level: LevelNo,
@@ -54,7 +53,6 @@ impl<E: Edge, N: InnerNode<E>> DiagramRules<E, N, ZBDDTerminal> for ZBDDRules {
     }
 
     #[inline]
-    #[must_use]
     fn cofactors(_tag: E::Tag, node: &N) -> Self::Cofactors<'_> {
         node.children()
     }

@@ -30,7 +30,6 @@ impl<E: Edge, N: InnerNode<E>> DiagramRules<E, N, TDDTerminal> for TDDRules {
         E: 'a;
 
     #[inline]
-    #[must_use]
     fn reduce<M: Manager<Edge = E, InnerNode = N, Terminal = TDDTerminal>>(
         manager: &M,
         level: LevelNo,
@@ -52,7 +51,6 @@ impl<E: Edge, N: InnerNode<E>> DiagramRules<E, N, TDDTerminal> for TDDRules {
     }
 
     #[inline]
-    #[must_use]
     fn cofactors(_tag: E::Tag, node: &N) -> Self::Cofactors<'_> {
         node.children()
     }
