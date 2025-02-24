@@ -341,7 +341,7 @@ class AllBooleanFunctionsQuantSubst(AllBooleanFunctions[BFQS]):
             ]
 
             for f_explicit, f in enumerate(self._boolean_functions):
-                exist_expected = 0
+                exists_expected = 0
                 forall_expected = 0
                 unique_expected = 0
                 for assignment in range(num_assignments):
@@ -350,7 +350,7 @@ class AllBooleanFunctionsQuantSubst(AllBooleanFunctions[BFQS]):
 
                     # or of all bits under mask
                     if (f_explicit & mask) != 0:
-                        exist_expected |= bit
+                        exists_expected |= bit
                     # and of all bits under mask
                     if (f_explicit & mask) == mask:
                         forall_expected |= bit
@@ -358,8 +358,8 @@ class AllBooleanFunctionsQuantSubst(AllBooleanFunctions[BFQS]):
                     if (bit_count(f_explicit & mask) & 1) != 0:
                         unique_expected |= bit
 
-                exist_actual = self._dd_to_boolean_func[f.exist(dd_var_set)]
-                assert exist_actual == exist_expected
+                exists_actual = self._dd_to_boolean_func[f.exists(dd_var_set)]
+                assert exists_actual == exists_expected
 
                 forall_actual = self._dd_to_boolean_func[f.forall(dd_var_set)]
                 assert forall_actual == forall_expected
@@ -391,8 +391,8 @@ class AllBooleanFunctionsQuantSubst(AllBooleanFunctions[BFQS]):
                         expected = inner.forall(dd_var_set)
                         assert f.apply_forall(op, g, dd_var_set) == expected
 
-                        expected = inner.exist(dd_var_set)
-                        assert f.apply_exist(op, g, dd_var_set) == expected
+                        expected = inner.exists(dd_var_set)
+                        assert f.apply_exists(op, g, dd_var_set) == expected
 
                         expected = inner.unique(dd_var_set)
                         assert f.apply_unique(op, g, dd_var_set) == expected

@@ -527,7 +527,7 @@ where
     }
     let operator = match () {
         _ if Q == BDDOp::And as u8 => BDDOp::Forall,
-        _ if Q == BDDOp::Or as u8 => BDDOp::Exist,
+        _ if Q == BDDOp::Or as u8 => BDDOp::Exists,
         _ if Q == BDDOp::Xor as u8 => BDDOp::Unique,
         _ => unreachable!("invalid quantifier"),
     };
@@ -1206,7 +1206,7 @@ where
         quant::<_, _, { BDDOp::And as u8 }>(manager, rec, root.borrowed(), vars.borrowed())
     }
     #[inline]
-    fn exist_edge<'id>(
+    fn exists_edge<'id>(
         manager: &Self::Manager<'id>,
         root: &EdgeOfFunc<'id, Self>,
         vars: &EdgeOfFunc<'id, Self>,
@@ -1237,7 +1237,7 @@ where
         apply_quant_dispatch::<_, _, { BDDOp::And as u8 }>(manager, rec, op, lhs, rhs, vars)
     }
     #[inline]
-    fn apply_exist_edge<'id>(
+    fn apply_exists_edge<'id>(
         manager: &Self::Manager<'id>,
         op: BooleanOperator,
         lhs: &EdgeOfFunc<'id, Self>,
@@ -1521,7 +1521,7 @@ pub mod mt {
             quant::<_, _, { BDDOp::And as u8 }>(manager, rec, root, vars)
         }
         #[inline]
-        fn exist_edge<'id>(
+        fn exists_edge<'id>(
             manager: &Self::Manager<'id>,
             root: &EdgeOfFunc<'id, Self>,
             vars: &EdgeOfFunc<'id, Self>,
@@ -1554,7 +1554,7 @@ pub mod mt {
             apply_quant_dispatch::<_, _, { BDDOp::And as u8 }>(manager, rec, op, lhs, rhs, vars)
         }
         #[inline]
-        fn apply_exist_edge<'id>(
+        fn apply_exists_edge<'id>(
             manager: &Self::Manager<'id>,
             op: BooleanOperator,
             lhs: &EdgeOfFunc<'id, Self>,

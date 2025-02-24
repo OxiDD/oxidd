@@ -149,7 +149,7 @@ pub struct BDDSubstitution(Subst<oxidd::bdd::BDDFunction, Vec<oxidd::bdd::BDDFun
 impl BDDSubstitution {
     /// Create a new substitution object for BDDs.
     ///
-    /// See :meth:`BDDFunction.make_substitution` fore more details.
+    /// See :meth:`BDDFunction.make_substitution()` fore more details.
     ///
     /// Args:
     ///     pairs (Iterable[tuple[BDDFunction, BDDFunction]]):
@@ -480,7 +480,7 @@ impl BDDFunction {
     ///         is irrelevant.
     ///
     /// Returns:
-    ///     Self: The substitution to be used with :meth:`substitute`
+    ///     Self: The substitution to be used with :meth:`substitute()`
     #[classmethod]
     #[pyo3(signature = (pairs, /))]
     fn make_substitution(_cls: &Bound<PyType>, pairs: &Bound<PyAny>) -> PyResult<BDDSubstitution> {
@@ -496,7 +496,7 @@ impl BDDFunction {
     ///
     /// Args:
     ///     substitution (BDDSubstitution): A substitution object created using
-    ///         :meth:`make_substitution`. All contained DD functions must
+    ///         :meth:`make_substitution()`. All contained DD functions must
     ///         belong to the same manager as ``self``.
     ///
     /// Returns:
@@ -546,8 +546,24 @@ impl BDDFunction {
     ///
     /// Raises:
     ///     DDMemoryError: If the operation runs out of memory
+    fn exists(&self, py: Python, vars: &Self) -> PyResult<Self> {
+        py.allow_threads(move || self.0.exists(&vars.0)).try_into()
+    }
+    /// Deprecated alias for ``exists()``.
+    ///
+    /// Locking behavior: acquires the manager's lock for shared access.
+    ///
+    /// Args:
+    ///     vars (Self): Set of variables represented as conjunction thereof.
+    ///         Must belong to the same manager as ``self``.
+    ///
+    /// Returns:
+    ///     Self: ∃ vars: self
+    ///
+    /// Raises:
+    ///     DDMemoryError: If the operation runs out of memory
     fn exist(&self, py: Python, vars: &Self) -> PyResult<Self> {
-        py.allow_threads(move || self.0.exist(&vars.0)).try_into()
+        self.exists(py, vars)
     }
     /// Compute the unique quantification over ``vars``.
     ///
@@ -602,7 +618,36 @@ impl BDDFunction {
         py.allow_threads(move || self.0.apply_forall(op, &rhs.0, &vars.0))
             .try_into()
     }
-    /// Combined application of ``op`` and :meth:`exist()`.
+    /// Combined application of ``op`` and :meth:`exists()`.
+    ///
+    /// Locking behavior: acquires the manager's lock for shared access.
+    ///
+    /// Args:
+    ///     op (BooleanOperator): Binary Boolean operator to apply to ``self``
+    ///         and ``rhs``
+    ///     rhs (Self): Right-hand side of the operator. Must belong to the same
+    ///         manager as ``self``.
+    ///     vars (Self): Set of variables to quantify over. Represented as
+    ///         conjunction of variables. Must belong to the same manager as
+    ///         ``self``.
+    ///
+    /// Returns:
+    ///     Self: ``∃ vars. self <op> rhs``
+    ///
+    /// Raises:
+    ///     DDMemoryError: If the operation runs out of memory
+    fn apply_exists(
+        &self,
+        py: Python,
+        op: &Bound<PyAny>,
+        rhs: &Self,
+        vars: &Self,
+    ) -> PyResult<Self> {
+        let op = crate::util::boolean_operator(op)?;
+        py.allow_threads(move || self.0.apply_exists(op, &rhs.0, &vars.0))
+            .try_into()
+    }
+    /// Deprecated alias for ``apply_exists()``.
     ///
     /// Locking behavior: acquires the manager's lock for shared access.
     ///
@@ -627,9 +672,7 @@ impl BDDFunction {
         rhs: &Self,
         vars: &Self,
     ) -> PyResult<Self> {
-        let op = crate::util::boolean_operator(op)?;
-        py.allow_threads(move || self.0.apply_exist(op, &rhs.0, &vars.0))
-            .try_into()
+        self.apply_exists(py, op, rhs, vars)
     }
     /// Combined application of ``op`` and :meth:`unique()`.
     ///

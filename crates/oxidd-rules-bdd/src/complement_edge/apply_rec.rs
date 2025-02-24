@@ -616,8 +616,8 @@ where
 
 /// Compute the quantification `Q` over `vars`
 ///
-/// `Q` is one of `BCDDOp::Forall`, `BCDDOp::Exist`, or `BCDDOp::Forall` as
-/// `u8`.
+/// `Q` is one of [`BCDDOp::Forall`], [`BCDDOp::Exists`], or [`BCDDOp::Forall`]
+/// as `u8`.
 fn quant<M, R: Recursor<M>, const Q: u8>(
     manager: &M,
     rec: R,
@@ -633,7 +633,7 @@ where
     }
     let operator = match () {
         _ if Q == BCDDOp::Forall as u8 => BCDDOp::Forall,
-        _ if Q == BCDDOp::Exist as u8 => BCDDOp::Exist,
+        _ if Q == BCDDOp::Exists as u8 => BCDDOp::Exists,
         _ if Q == BCDDOp::Unique as u8 => BCDDOp::Unique,
         _ => unreachable!("invalid quantifier"),
     };
@@ -704,7 +704,7 @@ where
     let res = if flevel == vlevel {
         match operator {
             BCDDOp::Forall => apply_and(manager, rec, t.borrowed(), e.borrowed())?,
-            BCDDOp::Exist => not_owned(apply_and(manager, rec, not(&t), not(&e))?),
+            BCDDOp::Exists => not_owned(apply_and(manager, rec, not(&t), not(&e))?),
             BCDDOp::Unique => {
                 apply_bin::<M, R, { BCDDOp::Xor as u8 }>(manager, rec, t.borrowed(), e.borrowed())?
             }
@@ -852,7 +852,7 @@ where
     let res = if min_level == vlevel {
         if Q == BCDDOp::Forall as u8 {
             apply_and(manager, rec, t.borrowed(), e.borrowed())?
-        } else if Q == BCDDOp::Exist as u8 {
+        } else if Q == BCDDOp::Exists as u8 {
             not_owned(apply_and(manager, rec, not(&t), not(&e))?)
         } else if Q == BCDDOp::Unique as u8 {
             apply_bin::<M, R, { BCDDOp::Xor as u8 }>(manager, rec, t.borrowed(), e.borrowed())?
@@ -894,8 +894,8 @@ where
 
     const {
         assert!(
-            (Q == BCDDOp::Forall as u8 && QN == BCDDOp::Exist as u8)
-                || (Q == BCDDOp::Exist as u8 && QN == BCDDOp::Forall as u8)
+            (Q == BCDDOp::Forall as u8 && QN == BCDDOp::Exists as u8)
+                || (Q == BCDDOp::Exists as u8 && QN == BCDDOp::Forall as u8)
         );
     }
 
@@ -1446,13 +1446,13 @@ where
         quant::<_, _, { BCDDOp::Forall as u8 }>(manager, rec, root.borrowed(), vars.borrowed())
     }
     #[inline]
-    fn exist_edge<'id>(
+    fn exists_edge<'id>(
         manager: &Self::Manager<'id>,
         root: &EdgeOfFunc<'id, Self>,
         vars: &EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         let rec = SequentialRecursor;
-        quant::<_, _, { BCDDOp::Exist as u8 }>(manager, rec, root.borrowed(), vars.borrowed())
+        quant::<_, _, { BCDDOp::Exists as u8 }>(manager, rec, root.borrowed(), vars.borrowed())
     }
     #[inline]
     fn unique_edge<'id>(
@@ -1472,7 +1472,7 @@ where
         rhs: &EdgeOfFunc<'id, Self>,
         vars: &EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_quant_dispatch::<_, _, { BCDDOp::Forall as u8 }, { BCDDOp::Exist as u8 }>(
+        apply_quant_dispatch::<_, _, { BCDDOp::Forall as u8 }, { BCDDOp::Exists as u8 }>(
             manager,
             SequentialRecursor,
             op,
@@ -1482,14 +1482,14 @@ where
         )
     }
     #[inline]
-    fn apply_exist_edge<'id>(
+    fn apply_exists_edge<'id>(
         manager: &Self::Manager<'id>,
         op: BooleanOperator,
         lhs: &EdgeOfFunc<'id, Self>,
         rhs: &EdgeOfFunc<'id, Self>,
         vars: &EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_quant_dispatch::<_, _, { BCDDOp::Exist as u8 }, { BCDDOp::Forall as u8 }>(
+        apply_quant_dispatch::<_, _, { BCDDOp::Exists as u8 }, { BCDDOp::Forall as u8 }>(
             manager,
             SequentialRecursor,
             op,
@@ -1779,14 +1779,14 @@ pub mod mt {
             quant::<_, _, { BCDDOp::Forall as u8 }>(manager, rec, root, vars)
         }
         #[inline]
-        fn exist_edge<'id>(
+        fn exists_edge<'id>(
             manager: &Self::Manager<'id>,
             root: &EdgeOfFunc<'id, Self>,
             vars: &EdgeOfFunc<'id, Self>,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
             let (root, vars) = (root.borrowed(), vars.borrowed());
             let rec = ParallelRecursor::new(manager);
-            quant::<_, _, { BCDDOp::Exist as u8 }>(manager, rec, root, vars)
+            quant::<_, _, { BCDDOp::Exists as u8 }>(manager, rec, root, vars)
         }
         #[inline]
         fn unique_edge<'id>(
@@ -1808,7 +1808,7 @@ pub mod mt {
             vars: &EdgeOfFunc<'id, Self>,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
             let (lhs, rhs, vars) = (lhs.borrowed(), rhs.borrowed(), vars.borrowed());
-            apply_quant_dispatch::<_, _, { BCDDOp::Forall as u8 }, { BCDDOp::Exist as u8 }>(
+            apply_quant_dispatch::<_, _, { BCDDOp::Forall as u8 }, { BCDDOp::Exists as u8 }>(
                 manager,
                 ParallelRecursor::new(manager),
                 op,
@@ -1818,7 +1818,7 @@ pub mod mt {
             )
         }
         #[inline]
-        fn apply_exist_edge<'id>(
+        fn apply_exists_edge<'id>(
             manager: &Self::Manager<'id>,
             op: BooleanOperator,
             lhs: &EdgeOfFunc<'id, Self>,
@@ -1826,7 +1826,7 @@ pub mod mt {
             vars: &EdgeOfFunc<'id, Self>,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
             let (lhs, rhs, vars) = (lhs.borrowed(), rhs.borrowed(), vars.borrowed());
-            apply_quant_dispatch::<_, _, { BCDDOp::Exist as u8 }, { BCDDOp::Forall as u8 }>(
+            apply_quant_dispatch::<_, _, { BCDDOp::Exists as u8 }, { BCDDOp::Forall as u8 }>(
                 manager,
                 ParallelRecursor::new(manager),
                 op,

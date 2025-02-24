@@ -1040,22 +1040,22 @@ impl<B: BooleanFunctionQuant> TestAllBooleanFunctions<'_, B> {
             for (f_explicit, f) in self.boolean_functions.iter().enumerate() {
                 let f_explicit = f_explicit as ExplicitBFunc;
 
-                let mut exist_expected: ExplicitBFunc = 0;
+                let mut exists_expected: ExplicitBFunc = 0;
                 let mut forall_expected: ExplicitBFunc = 0;
                 let mut unique_expected: ExplicitBFunc = 0;
                 for (assignment, mask) in assignment_to_mask.iter().copied().enumerate() {
-                    let exist_bit = f_explicit & mask != 0; // or of all bits under mask
+                    let exists_bit = f_explicit & mask != 0; // or of all bits under mask
                     let forall_bit = f_explicit & mask == mask; // and of all bits under mask
                     let unique_bit = (f_explicit & mask).count_ones() & 1; // xor of all bits under mask
-                    exist_expected |= (exist_bit as ExplicitBFunc) << assignment;
+                    exists_expected |= (exists_bit as ExplicitBFunc) << assignment;
                     forall_expected |= (forall_bit as ExplicitBFunc) << assignment;
                     unique_expected |= (unique_bit as ExplicitBFunc) << assignment;
                 }
 
                 self.check(
                     "∃v. f",
-                    self.dd_to_boolean_func[&f.exist(&dd_var_set).unwrap()],
-                    exist_expected,
+                    self.dd_to_boolean_func[&f.exists(&dd_var_set).unwrap()],
+                    exists_expected,
                     &[f_explicit],
                     &[var_set],
                 );
@@ -1096,8 +1096,8 @@ impl<B: BooleanFunctionQuant> TestAllBooleanFunctions<'_, B> {
 
                         self.check(
                             format_args!("∃v. f {inner_symbol} g"),
-                            self.dd_to_boolean_func[&f.apply_exist(op, g, &dd_var_set).unwrap()],
-                            self.dd_to_boolean_func[&inner.exist(&dd_var_set).unwrap()],
+                            self.dd_to_boolean_func[&f.apply_exists(op, g, &dd_var_set).unwrap()],
+                            self.dd_to_boolean_func[&inner.exists(&dd_var_set).unwrap()],
                             &[f_explicit, g_explicit],
                             &[var_set],
                         );

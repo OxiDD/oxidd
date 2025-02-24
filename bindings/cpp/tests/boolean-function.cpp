@@ -491,7 +491,7 @@ public:
       }
 
       for (const auto &[f_explicit, f] : enumerate(_boolean_functions)) {
-        explicit_b_func exist_expected = 0, forall_expected = 0,
+        explicit_b_func exists_expected = 0, forall_expected = 0,
                         unique_expected = 0;
         for (unsigned assignment = 0; assignment < num_assignments;
              ++assignment) {
@@ -500,7 +500,7 @@ public:
 
           // or of all bits under mask
           if ((f_explicit & mask) != 0)
-            exist_expected |= bit;
+            exists_expected |= bit;
           // and of all bits under mask
           if ((f_explicit & mask) == mask)
             forall_expected |= bit;
@@ -509,9 +509,9 @@ public:
             unique_expected |= bit;
         }
 
-        const explicit_b_func exist_actual =
-            _dd_to_boolean_func.at(f.exist(dd_var_set));
-        assert(exist_actual == exist_expected);
+        const explicit_b_func exists_actual =
+            _dd_to_boolean_func.at(f.exists(dd_var_set));
+        assert(exists_actual == exists_expected);
 
         const explicit_b_func forall_actual =
             _dd_to_boolean_func.at(f.forall(dd_var_set));
@@ -557,7 +557,8 @@ public:
 
             assert(f.apply_forall(op, g, dd_var_set) ==
                    inner.forall(dd_var_set));
-            assert(f.apply_exist(op, g, dd_var_set) == inner.exist(dd_var_set));
+            assert(f.apply_exists(op, g, dd_var_set) ==
+                   inner.exists(dd_var_set));
             assert(f.apply_unique(op, g, dd_var_set) ==
                    inner.unique(dd_var_set));
           }

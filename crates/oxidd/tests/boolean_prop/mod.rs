@@ -240,7 +240,7 @@ impl Prop {
                 }
                 // Perform the quantification
                 match self {
-                    Exists(..) => prop.exist(&v_dd),
+                    Exists(..) => prop.exists(&v_dd),
                     Forall(..) => prop.forall(&v_dd),
                     Unique(..) => prop.unique(&v_dd),
                     _ => unreachable!(),

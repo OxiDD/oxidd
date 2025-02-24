@@ -627,8 +627,14 @@ pub unsafe extern "C" fn oxidd_bdd_forall(f: bdd_t, vars: bdd_t) -> bdd_t {
 ///
 /// @returns  The BDD function with its own reference count
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bdd_exist(f: bdd_t, vars: bdd_t) -> bdd_t {
-    op2(f, vars, BDDFunction::exist)
+pub unsafe extern "C" fn oxidd_bdd_exists(f: bdd_t, vars: bdd_t) -> bdd_t {
+    op2(f, vars, BDDFunction::exists)
+}
+/// Deprecated alias for `oxidd_bdd_exists()`
+#[deprecated]
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_exist(f: bdd_t, var: bdd_t) -> bdd_t {
+    oxidd_bdd_exists(f, var)
 }
 
 /// Compute the BDD for the unique quantification of `f` over `vars`
@@ -673,7 +679,7 @@ pub unsafe extern "C" fn oxidd_bdd_apply_forall(
         .into()
 }
 
-/// Combined application of `op` and `oxidd_bdd_exist()`
+/// Combined application of `op` and `oxidd_bdd_exists()`
 ///
 /// Passing a number as `op` that is not a valid `oxidd_boolean_operator`
 /// results in undefined behavior.
@@ -683,15 +689,26 @@ pub unsafe extern "C" fn oxidd_bdd_apply_forall(
 /// @returns  The BDD function `∃ vars. lhs <op> rhs` with its own reference
 ///           count
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bdd_apply_exist(
+pub unsafe extern "C" fn oxidd_bdd_apply_exists(
     op: BooleanOperator,
     lhs: bdd_t,
     rhs: bdd_t,
     vars: bdd_t,
 ) -> bdd_t {
     lhs.get()
-        .and_then(|f| f.apply_exist(op, &*rhs.get()?, &*vars.get()?))
+        .and_then(|f| f.apply_exists(op, &*rhs.get()?, &*vars.get()?))
         .into()
+}
+/// Deprecated alias for `oxidd_bdd_apply_exists()`
+#[no_mangle]
+#[deprecated]
+pub unsafe extern "C" fn oxidd_bdd_apply_exist(
+    op: BooleanOperator,
+    lhs: bdd_t,
+    rhs: bdd_t,
+    vars: bdd_t,
+) -> bdd_t {
+    oxidd_bdd_apply_exists(op, lhs, rhs, vars)
 }
 
 /// Combined application of `op` and `oxidd_bdd_unique()`

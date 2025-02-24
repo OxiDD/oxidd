@@ -98,7 +98,7 @@ class FunctionSubst(Function, Generic[S], Protocol):
                 ZBDDs. The order of the pairs is irrelevant.
 
         Returns:
-            The substitution to be used with :meth:`substitute`
+            The substitution to be used with :meth:`substitute()`
         """
         raise NotImplementedError
 
@@ -113,7 +113,7 @@ class FunctionSubst(Function, Generic[S], Protocol):
 
         Args:
             substitution: A substitution object created using
-                :meth:`make_substitution`. All contained DD functions must
+                :meth:`make_substitution()`. All contained DD functions must
                 belong to the same manager as ``self``.
         """
         raise NotImplementedError
@@ -495,7 +495,7 @@ class BooleanFunctionQuant(BooleanFunction, Protocol):
         raise NotImplementedError
 
     @abstractmethod
-    def exist(self, /, vars: Self) -> Self:
+    def exists(self, /, vars: Self) -> Self:
         """Compute the existential quantification over ``vars``.
 
         This operation removes all occurrences of variables in ``vars`` by
@@ -512,6 +512,11 @@ class BooleanFunctionQuant(BooleanFunction, Protocol):
         Raises:
             DDMemoryError: If the operation runs out of memory
         """
+        raise NotImplementedError
+
+    @abstractmethod
+    def exist(self, /, vars: Self) -> Self:
+        """Deprecated alias for meth:`exists()`."""
         raise NotImplementedError
 
     @abstractmethod
@@ -558,8 +563,8 @@ class BooleanFunctionQuant(BooleanFunction, Protocol):
         raise NotImplementedError
 
     @abstractmethod
-    def apply_exist(self, /, op: BooleanOperator, rhs: Self, vars: Self) -> Self:
-        """Combined application of ``op`` and :meth:`exist()`.
+    def apply_exists(self, /, op: BooleanOperator, rhs: Self, vars: Self) -> Self:
+        """Combined application of ``op`` and :meth:`exists()`.
 
         Locking behavior: acquires the manager's lock for shared access.
 
@@ -576,6 +581,11 @@ class BooleanFunctionQuant(BooleanFunction, Protocol):
         Raises:
             DDMemoryError: If the operation runs out of memory
         """
+        raise NotImplementedError
+
+    @abstractmethod
+    def apply_exist(self, /, op: BooleanOperator, rhs: Self, vars: Self) -> Self:
+        """Deprecated alias for meth:`apply_exists()`."""
         raise NotImplementedError
 
     @abstractmethod

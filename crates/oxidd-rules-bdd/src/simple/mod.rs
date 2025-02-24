@@ -285,7 +285,7 @@ pub enum BDDOp {
     /// Forall quantification
     Forall,
     /// Existential quantification
-    Exist,
+    Exists,
     /// Unique quantification
     Unique,
 
@@ -298,14 +298,14 @@ pub enum BDDOp {
     ForallImp,
     ForallImpStrict,
 
-    ExistAnd,
-    ExistOr,
-    ExistNand,
-    ExistNor,
-    ExistXor,
-    ExistEquiv,
-    ExistImp,
-    ExistImpStrict,
+    ExistsAnd,
+    ExistsOr,
+    ExistsNand,
+    ExistsNor,
+    ExistsXor,
+    ExistsEquiv,
+    ExistsImp,
+    ExistsImpStrict,
 
     UniqueAnd,
     UniqueOr,
@@ -333,14 +333,14 @@ impl BDDOp {
             }
         } else if q == BDDOp::Or as u8 {
             match () {
-                _ if op == BDDOp::And as u8 => BDDOp::ExistAnd,
-                _ if op == BDDOp::Or as u8 => BDDOp::ExistOr,
-                _ if op == BDDOp::Nand as u8 => BDDOp::ExistNand,
-                _ if op == BDDOp::Nor as u8 => BDDOp::ExistNor,
-                _ if op == BDDOp::Xor as u8 => BDDOp::ExistXor,
-                _ if op == BDDOp::Equiv as u8 => BDDOp::ExistEquiv,
-                _ if op == BDDOp::Imp as u8 => BDDOp::ExistImp,
-                _ if op == BDDOp::ImpStrict as u8 => BDDOp::ExistImpStrict,
+                _ if op == BDDOp::And as u8 => BDDOp::ExistsAnd,
+                _ if op == BDDOp::Or as u8 => BDDOp::ExistsOr,
+                _ if op == BDDOp::Nand as u8 => BDDOp::ExistsNand,
+                _ if op == BDDOp::Nor as u8 => BDDOp::ExistsNor,
+                _ if op == BDDOp::Xor as u8 => BDDOp::ExistsXor,
+                _ if op == BDDOp::Equiv as u8 => BDDOp::ExistsEquiv,
+                _ if op == BDDOp::Imp as u8 => BDDOp::ExistsImp,
+                _ if op == BDDOp::ImpStrict as u8 => BDDOp::ExistsImpStrict,
                 _ => panic!("invalid OP"),
             }
         } else if q == BDDOp::Xor as u8 {

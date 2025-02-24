@@ -548,8 +548,13 @@ public:
   ///
   /// @returns  The BCDD function (may be invalid if the operation runs out of
   ///           memory)
-  [[nodiscard]] bcdd_function exist(const bcdd_function &vars) const noexcept {
-    return capi::oxidd_bcdd_exist(_func, vars._func);
+  [[nodiscard]] bcdd_function exists(const bcdd_function &vars) const noexcept {
+    return capi::oxidd_bcdd_exists(_func, vars._func);
+  }
+  /// Deprecated alias for `exists()`
+  [[nodiscard, deprecated]]
+  bcdd_function exist(const bcdd_function &vars) const noexcept {
+    return exists(vars);
   }
   /// Compute the BCDD for the unique quantification over `vars`
   ///
@@ -588,18 +593,25 @@ public:
         vars._func);
   }
 
-  /// Combined application of `op` and `exist()`
+  /// Combined application of `op` and `exists()`
   ///
   /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// @returns  The BCDD function `∃ vars. this <op> rhs` (may be invalid if the
   ///           operation runs out of memory)
   [[nodiscard]] bcdd_function
-  apply_exist(const util::boolean_operator op, const bcdd_function &rhs,
-              const bcdd_function &vars) const noexcept {
-    return capi::oxidd_bcdd_apply_exist(
+  apply_exists(const util::boolean_operator op, const bcdd_function &rhs,
+               const bcdd_function &vars) const noexcept {
+    return capi::oxidd_bcdd_apply_exists(
         static_cast<capi::oxidd_boolean_operator>(op), _func, rhs._func,
         vars._func);
+  }
+  /// Deprecated alias for `apply_exists()`
+  [[nodiscard, deprecated]]
+  bcdd_function apply_exist(const util::boolean_operator op,
+                            const bcdd_function &rhs,
+                            const bcdd_function &vars) const noexcept {
+    return apply_exists(op, rhs, vars);
   }
 
   /// Combined application of `op` and `unique()`

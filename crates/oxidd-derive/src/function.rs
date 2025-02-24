@@ -631,7 +631,7 @@ pub fn derive_boolean_function_quant(input: syn::DeriveInput) -> TokenStream {
         &[
             Binary("restrict"),
             Binary("forall"),
-            Binary("exist"),
+            Binary("exists"),
             Binary("unique"),
         ],
         |ctx| {
@@ -647,7 +647,7 @@ pub fn derive_boolean_function_quant(input: syn::DeriveInput) -> TokenStream {
 
             let mut methods = TokenStream::new();
 
-            for name in ["apply_forall", "apply_exist", "apply_unique"] {
+            for name in ["apply_forall", "apply_exists", "apply_unique"] {
                 let method = syn::Ident::new(name, Span::call_site());
                 let func = struct_field.gen_from_inner(
                     quote!(#trait_path::#method(&self.#field, op, &rhs.#field, &vars.#field)?),

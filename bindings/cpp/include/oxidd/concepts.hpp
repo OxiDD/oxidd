@@ -320,7 +320,7 @@ concept boolean_function_manager =
 
 /// Quantification extension for `oxidd::concepts::boolean_function`
 ///
-/// `f.forall(vars)` computes the universal quantification, `f.exist(vars)` the
+/// `f.forall(vars)` computes the universal quantification, `f.exists(vars)` the
 /// existential, and `f.unique(vars)` the unique quantification over `vars`.
 /// `vars` is a set of variables, which in turn is just the conjunction of the
 /// variables. These operations remove all occurrences of the variables by the
@@ -334,7 +334,7 @@ concept boolean_function_manager =
 ///
 /// - `f.apply_forall(op, g, vars)` computes `∀ vars. f <op> g` (i.e., is
 ///   equivalent to `f.op(g).forall(vars)`)
-/// - `f.apply_exist(op, g, vars)` computes `∃ vars. f <op> g`
+/// - `f.apply_exists(op, g, vars)` computes `∃ vars. f <op> g`
 /// - `f.apply_unique(op, g, vars)` computes `∃! vars. f <op> g`
 ///
 /// All operations here acquire the manager's lock for shared access.
@@ -345,11 +345,11 @@ concept boolean_function_quant =
     // as a mutable reference, at least.
     requires(const F &f, const util::boolean_operator &op) {
       { f.forall(f) } -> std::same_as<F>;
-      { f.exist(f) } -> std::same_as<F>;
+      { f.exists(f) } -> std::same_as<F>;
       { f.unique(f) } -> std::same_as<F>;
 
       { f.apply_forall(op, f, f) } -> std::same_as<F>;
-      { f.apply_exist(op, f, f) } -> std::same_as<F>;
+      { f.apply_exists(op, f, f) } -> std::same_as<F>;
       { f.apply_unique(op, f, f) } -> std::same_as<F>;
     };
 

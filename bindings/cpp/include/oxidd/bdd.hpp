@@ -552,8 +552,13 @@ public:
   ///
   /// @returns  The BDD function (may be invalid if the operation runs out of
   ///           memory)
-  [[nodiscard]] bdd_function exist(const bdd_function &vars) const noexcept {
-    return capi::oxidd_bdd_exist(_func, vars._func);
+  [[nodiscard]] bdd_function exists(const bdd_function &vars) const noexcept {
+    return capi::oxidd_bdd_exists(_func, vars._func);
+  }
+  /// Deprecated alias for `exists()`
+  [[nodiscard, deprecated]]
+  bdd_function exist(const bdd_function &vars) const noexcept {
+    return exists(vars);
   }
   /// Compute the BDD for the unique quantification over `vars`
   ///
@@ -592,18 +597,25 @@ public:
         vars._func);
   }
 
-  /// Combined application of `op` and `exist()`
+  /// Combined application of `op` and `exists()`
   ///
   /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// @returns  The BDD function `∃ vars. this <op> rhs` (may be invalid if the
   ///           operation runs out of memory)
   [[nodiscard]] bdd_function
-  apply_exist(const util::boolean_operator op, const bdd_function &rhs,
-              const bdd_function &vars) const noexcept {
-    return capi::oxidd_bdd_apply_exist(
+  apply_exists(const util::boolean_operator op, const bdd_function &rhs,
+               const bdd_function &vars) const noexcept {
+    return capi::oxidd_bdd_apply_exists(
         static_cast<capi::oxidd_boolean_operator>(op), _func, rhs._func,
         vars._func);
+  }
+  /// Deprecated alias for `apply_exists()`
+  [[nodiscard, deprecated]]
+  bdd_function apply_exist(const util::boolean_operator op,
+                           const bdd_function &rhs,
+                           const bdd_function &vars) const noexcept {
+    return apply_exists(op, rhs, vars);
   }
 
   /// Combined application of `op` and `unique()`

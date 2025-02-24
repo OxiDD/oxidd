@@ -372,7 +372,7 @@ pub enum BCDDOp {
     /// Forall quantification
     Forall,
     /// Existential quantification
-    Exist,
+    Exists,
     /// Unique quantification
     Unique,
 
@@ -397,7 +397,7 @@ impl BCDDOp {
                 _ if op == BCDDOp::Xor as u8 => BCDDOp::ForallXor,
                 _ => panic!("invalid OP"),
             }
-        } else if q == BCDDOp::Exist as u8 {
+        } else if q == BCDDOp::Exists as u8 {
             match () {
                 _ if op == BCDDOp::And as u8 => BCDDOp::ExistAnd,
                 _ if op == BCDDOp::Xor as u8 => BCDDOp::ExistXor,
