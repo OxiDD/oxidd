@@ -51,9 +51,9 @@ requires = ["maturin ~= 1.8.0"]
 build-backend = "maturin"
 
 [tool.maturin]
-# spell-checker:ignore auditwheel
+# spell-checker:ignore auditwheel,sdist
 python-source = "bindings/python"
-include = ["bindings/python/oxidd/_oxidd.pyi"]
+include = ["bindings/python/oxidd/_oxidd.pyi", { path = "LICENSE-*", format = ["sdist", "wheel"] }]
 exclude = [
   "bindings/python/oxidd/tests/**",
   "crates/oxidd-ffi-python/build.rs",
