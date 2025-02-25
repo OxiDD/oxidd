@@ -496,6 +496,17 @@ impl VarSet {
     pub fn name(&self, var: Var) -> Option<&str> {
         self.names.get(var)?.as_deref()
     }
+    /// Set the name for variable `var`. Returns the previous name.
+    #[track_caller]
+    pub fn set_name(&mut self, var: Var, name: impl Into<String>) -> Option<String> {
+        if var >= self.names.len() {
+            if var >= self.len {
+                return None;
+            }
+            self.names.resize(var + 1, None);
+        }
+        self.names[var].replace(name.into())
+    }
 
     #[allow(unused)]
     fn check_valid(&self) {
@@ -607,6 +618,11 @@ impl Circuit {
     #[inline(always)]
     pub fn inputs(&self) -> &VarSet {
         &self.inputs
+    }
+    /// Get a mutable reference to the circuit inputs
+    #[inline(always)]
+    pub fn inputs_mut(&mut self) -> &mut VarSet {
+        &mut self.inputs
     }
 
     /// Reserve space for at least `additional` more gates. Note that this will

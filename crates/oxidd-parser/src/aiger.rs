@@ -275,7 +275,7 @@ mod ascii {
                 };
 
                 let (inp, (span, i)) = consumed(u64)(inp)?;
-                let (count_span, count) = counts[kind];
+                let (count_span, mut count) = counts[kind];
                 if i >= count as u64 {
                     return fail_with_contexts([(span, MSGS[kind].0), (count_span, MSGS[kind].1)]);
                 }
@@ -284,6 +284,9 @@ mod ascii {
                 if kind == 6 {
                     kind = 0;
                     i += header.inputs.1;
+                    count += header.inputs.1;
+                } else if kind == 0 {
+                    count += header.latches.1;
                 }
 
                 let (inp, _) = space1(inp)?;
@@ -955,19 +958,34 @@ mod tests {
             8 4 10\n\
             10 13 15\n\
             12 2 6\n\
-            14 3 7\n";
+            14 3 7\n\
+            i0 toggle\n\
+            i1 ~reset\n\
+            o0 q\n\
+            o1 ~q\n\
+            l0 q\n\
+            c foobar\n";
         let (_, problem) = super::parse::<()>(&OPTS_NO_ORDER)(aag).unwrap();
 
-        let expected = Problem::new_aig(VarSet::new(2))
-            .with_latches([Literal::from_gate(false, 0)])
-            .with_outputs([Literal::from_input(false, 2), Literal::from_input(true, 2)])
-            .with_and_gates([
-                (Literal::from_input(false, 1), Literal::from_gate(false, 1)),
-                (Literal::from_gate(true, 2), Literal::from_gate(true, 3)),
-                (Literal::from_input(false, 0), Literal::from_input(false, 2)),
-                (Literal::from_input(true, 0), Literal::from_input(true, 2)),
-            ])
-            .with_default_map();
+        let mut expected = Problem::new_aig(VarSet::with_names(vec![
+            Some("toggle".into()),
+            Some("~reset".into()),
+        ]))
+        .with_latches([Literal::from_gate(false, 0)])
+        .with_named_outputs([
+            (Literal::from_input(false, 2), "q"),
+            (Literal::from_input(true, 2), "~q"),
+        ])
+        .with_and_gates([
+            (Literal::from_input(false, 1), Literal::from_gate(false, 1)),
+            (Literal::from_gate(true, 2), Literal::from_gate(true, 3)),
+            (Literal::from_input(false, 0), Literal::from_input(false, 2)),
+            (Literal::from_input(true, 0), Literal::from_input(true, 2)),
+        ])
+        .with_default_map();
+
+        expected.circuit.inputs.set_name(2, "q");
+
         assert_eq!(problem, expected);
     }
 
