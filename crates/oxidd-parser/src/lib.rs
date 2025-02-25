@@ -1107,15 +1107,14 @@ impl fmt::Debug for Circuit {
     }
 }
 
-/// And-inverter graph
+/// Problem details such as latches, outputs, and bad states for an and-inverter
+/// graph
 ///
-/// A variable `i` (of a [`Literal`]) has the following meaning:
-/// - `0`: `⊥`
-/// - `1..(1 + inputs)`: input variable `i - 1`
-/// - `(1 + inputs)..(1 + inputs + latches.len())`: output of `latches[i - 1
-///   - inputs]`
-/// - `(1 + inputs + latches.len())..(1 + inputs + latches.len() +
-///   and_gates.len())`: output of `and_gates[i - 1 - inputs - latches.len()]`
+/// Latches are not natively supported by [`Circuit`s][Circuit], but each latch
+/// output is modeled as a an additional circuit input, and each latch input is
+/// modeled as a Boolean function, concretely a [`Literal`]. In the current
+/// implementation, the input numbers for latches are in range
+/// `(self.inputs() + 1)..(self.inputs() + self.latches().len())`.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct AIGERDetails {
     /// Number of input variables
@@ -1185,7 +1184,7 @@ impl AIGERDetails {
         self.inputs
     }
 
-    /// Get the input literals of latch
+    /// Get the input literals of each latch
     #[inline(always)]
     pub fn latches(&self) -> &[Literal] {
         &self.latches
@@ -1203,11 +1202,11 @@ impl AIGERDetails {
     }
 
     /// Map the given AIGER literal to a [`Literal`] for use with the
-    /// [`Circuit`]`
+    /// [`Circuit`]
     ///
     /// Note that the literals in [`AIGERDetails`] are already mapped
     /// accordingly. This method is useful if you want to refer to specific
-    /// gates or literals using the values
+    /// gates or literals using the values from the AIGER source.
     #[inline(always)]
     pub fn map_aiger_literal(&self, literal: usize) -> Option<Literal> {
         let l = *self.map.get(literal >> 1)?;
