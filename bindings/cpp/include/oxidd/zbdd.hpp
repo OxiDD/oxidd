@@ -379,7 +379,7 @@ public:
   /// @returns  `f_false` if `f` is valid and references an inner node,
   ///           otherwise an invalid function.
   [[nodiscard]] zbdd_function cofactor_false() const noexcept {
-    return capi::oxidd_zbdd_cofactor_true(_func);
+    return capi::oxidd_zbdd_cofactor_false(_func);
   }
 
   /// Get the level of the underlying node

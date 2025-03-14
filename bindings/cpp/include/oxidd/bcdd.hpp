@@ -366,7 +366,7 @@ public:
   /// @returns  `f_false` if `f` is valid and references an inner node,
   ///           otherwise an invalid function.
   [[nodiscard]] bcdd_function cofactor_false() const noexcept {
-    return capi::oxidd_bcdd_cofactor_true(_func);
+    return capi::oxidd_bcdd_cofactor_false(_func);
   }
 
   /// Get the level of the underlying node
