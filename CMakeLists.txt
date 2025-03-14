@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.15)
 
 project(OxiDD
-    VERSION 0.10.0
+    VERSION 0.10.1
     DESCRIPTION "Concurrent Decision Diagram Library"
     HOMEPAGE_URL "https://oxidd.net"
     LANGUAGES CXX)
