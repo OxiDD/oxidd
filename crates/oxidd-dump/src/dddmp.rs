@@ -835,7 +835,9 @@ fn write_escaped(mut writer: impl io::Write, buf: &[u8]) -> io::Result<()> {
 }
 
 /// Read and unescape a byte. Counterpart of [`write_escaped()`]
-fn read_unescape(input: impl io::Read) -> io::Result<u8> {
+fn read_unescape(input: impl io::BufRead) -> io::Result<u8> {
+    // In principle, `io::Read` (instead of `io::BufRead`) is enough, but not
+    // passing a buffered reader would be very bad for performance.
     let mut bytes = input.bytes();
     let eof_msg = "unexpected end of file";
     match bytes.next() {
@@ -859,7 +861,7 @@ fn read_unescape(input: impl io::Read) -> io::Result<u8> {
 
 /// 7-bit decode a number from `input` (unescaping the bytes via
 /// [`read_unescape()`])
-fn decode_7bit(mut input: impl io::Read) -> io::Result<usize> {
+fn decode_7bit(mut input: impl io::BufRead) -> io::Result<usize> {
     let mut res = 0usize;
     loop {
         let b = read_unescape(&mut input)?;
@@ -1032,7 +1034,7 @@ where
             ));
         }
 
-        let res = if children.iter().any(|&c| c == 0) {
+        let res = if children.contains(&0) {
             // terminal
             let string = match std::str::from_utf8(var_id) {
                 Ok(s) => s,
