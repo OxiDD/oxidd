@@ -568,6 +568,27 @@ public:
   }
 };
 
+template <boolean_function F>
+void test_cofactors(const F &ff, const F &tt, slice<F> vars) {
+  const auto [ff_t, ff_e] = ff.cofactors();
+  assert(ff_t.is_invalid() && ff_e.is_invalid());
+  assert(ff.cofactor_true().is_invalid());
+  assert(ff.cofactor_false().is_invalid());
+
+  const auto [tt_t, tt_e] = tt.cofactors();
+  assert(tt_t.is_invalid() && tt_e.is_invalid());
+  assert(tt.cofactor_true().is_invalid());
+  assert(tt.cofactor_false().is_invalid());
+
+  for (const F &v : vars) {
+    const auto [v_t, v_e] = v.cofactors();
+    assert(v_t == v.cofactor_true());
+    assert(v_e == v.cofactor_false());
+    assert(v_t == tt);
+    assert(v_e == ff);
+  }
+}
+
 void bdd_all_boolean_functions_2vars_t1() {
   // NOLINTNEXTLINE(*-magic-numbers)
   bdd_manager mgr(65536, 1024, 1);
@@ -577,6 +598,8 @@ void bdd_all_boolean_functions_2vars_t1() {
     test.basic();
     test.subst();
     test.quant();
+
+    test_cofactors<bdd_function>(mgr.f(), mgr.t(), vars);
   });
 }
 
@@ -589,6 +612,8 @@ void bcdd_all_boolean_functions_2vars_t1() {
     test.basic();
     test.subst();
     test.quant();
+
+    test_cofactors<bcdd_function>(mgr.f(), mgr.t(), vars);
   });
 }
 
@@ -601,6 +626,10 @@ void zbdd_all_boolean_functions_2vars_t1() {
                           singletons[1].var_boolean_function()};
     const test_all_boolean_functions test(mgr, vars, singletons);
     test.basic();
+
+    // The test function only operates on structural properties, so we can reuse
+    // it here with `mgr.base()` and the singleton sets.
+    test_cofactors<zbdd_function>(mgr.empty(), mgr.base(), singletons);
   });
 }
 
