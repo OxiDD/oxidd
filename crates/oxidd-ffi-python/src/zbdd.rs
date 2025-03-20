@@ -335,6 +335,56 @@ impl ZBDDFunction {
         .try_into()
     }
 
+    /// Get the subset of ``self`` not containing ``var``.
+    ///
+    /// Locking behavior: acquires a shared manager lock
+    ///
+    /// Args:
+    ///     var (Self): Singleton set ``{var}``. Must belong to the same manager
+    ///         as ``self``
+    ///
+    /// Returns:
+    ///     Self: ``{s ∈ self | var ∉ s}``
+    ///
+    /// Raises:
+    ///     DDMemoryError: If the operation runs out of memory
+    fn subset0(&self, py: Python, var: &Self) -> PyResult<Self> {
+        py.allow_threads(move || self.0.subset0(&var.0)).try_into()
+    }
+    /// Get the subset of ``self`` containing ``var``, with ``var`` removed.
+    ///
+    /// Locking behavior: acquires a shared manager lock
+    ///
+    /// Args:
+    ///     var (Self): Singleton set ``{var}``. Must belong to the same manager
+    ///         as ``self``
+    ///
+    /// Returns:
+    ///     Self: ``{s ∖ {var} | s ∈ self ∧ var ∈ s}``
+    ///
+    /// Raises:
+    ///     DDMemoryError: If the operation runs out of memory
+    fn subset1(&self, py: Python, var: &Self) -> PyResult<Self> {
+        py.allow_threads(move || self.0.subset1(&var.0)).try_into()
+    }
+    /// Swap :meth:`subset0` and :meth:`subset1` with respect to ``var``.
+    ///
+    /// Locking behavior: acquires a shared manager lock
+    ///
+    /// Args:
+    ///     var (Self): Singleton set ``{var}``. Must belong to the same manager
+    ///         as ``self``
+    ///
+    /// Returns:
+    ///     Self: ``{s ∪ {var} | s ∈ self ∧ var ∉ s}
+    ///     ∪ {s ∖ {var} | s ∈ self ∧ var ∈ s}``
+    ///
+    /// Raises:
+    ///     DDMemoryError: If the operation runs out of memory
+    fn change(&self, py: Python, var: &Self) -> PyResult<Self> {
+        py.allow_threads(move || self.0.change(&var.0)).try_into()
+    }
+
     /// Compute the negation ``¬self``.
     ///
     /// Locking behavior: acquires the manager's lock for shared access.
