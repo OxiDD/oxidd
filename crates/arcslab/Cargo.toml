@@ -13,7 +13,7 @@ repository.workspace = true
 [dependencies]
 
 # strict provenance polyfill
-# (TODO: remove this once the `strict_provenance` feature becomes stable)
+# (TODO: remove this once we raise the MSRV to 1.84)
 sptr = "0.3"
 
 # fast alternative Mutex & RwLock implementation

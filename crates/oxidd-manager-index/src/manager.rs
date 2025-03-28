@@ -533,7 +533,7 @@ where
 
     #[inline(always)]
     fn addr(&self) -> usize {
-        // TODO: Use the respective strict provenance method once stable
+        // TODO: Use `pointer::addr()` once we raise the MSRV to 1.84
         self as *const Self as usize
     }
 

@@ -9,6 +9,7 @@ authors.workspace = true
 license.workspace = true
 homepage.workspace = true
 repository.workspace = true
+rust-version.workspace = true
 
 
 # spell-checker:ignore mpmc
@@ -20,7 +21,7 @@ oxidd-core.workspace = true
 smallvec = { version = "1", features = ["union", "const_generics"] }
 
 # check whether an iterator is sorted
-# (TODO: remove this once the `is_sorted` feature becomes stable)
+# (TODO: remove this once we raise the MSRV to 1.82)
 is_sorted = "0.1"
 
 # thread pools, parallel iterators, etc.

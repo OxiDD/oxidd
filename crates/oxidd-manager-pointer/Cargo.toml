@@ -9,6 +9,7 @@ authors.workspace = true
 license.workspace = true
 homepage.workspace = true
 repository.workspace = true
+rust-version.workspace = true
 
 
 [dependencies]
@@ -17,7 +18,7 @@ oxidd-core.workspace = true
 arcslab.workspace = true
 
 # strict provenance polyfill
-# (TODO: remove this once the `strict_provenance` feature becomes stable)
+# (TODO: remove this once we raise the MSRV to 1.84)
 sptr = "0.3"
 
 # fast alternative Mutex & RwLock implementation
