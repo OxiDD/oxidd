@@ -172,6 +172,12 @@ where
             }
 
             // cleanup: we used `Some(String::new())` to mark unnamed variables as present
+            while let Some(name) = vars.names.last() {
+                if !name.as_ref().is_some_and(String::is_empty) {
+                    break;
+                }
+                vars.names.pop();
+            }
             for name in &mut vars.names {
                 if name.as_ref().is_some_and(String::is_empty) {
                     *name = None;
