@@ -142,7 +142,7 @@ unsafe impl Status for usize {
 
     #[inline]
     fn is_hash(self) -> bool {
-        self <= usize::MAX >> 1
+        self >> (usize::BITS - 1) == 0 // most significant bit is unset
     }
 
     #[inline]
@@ -173,7 +173,7 @@ unsafe impl Status for u32 {
 
     #[inline]
     fn is_hash(self) -> bool {
-        self <= u32::MAX >> 1
+        self >> (u32::BITS - 1) == 0 // most significant bit is unset
     }
 
     #[inline]
@@ -224,9 +224,7 @@ impl<T, S: Status> RawTable<T, S> {
     pub fn with_capacity(capacity: usize) -> Self {
         let capacity = Self::next_capacity(capacity);
         let mut data = Vec::with_capacity(capacity);
-        for _ in 0..capacity {
-            data.push(Slot::FREE);
-        }
+        data.resize_with(capacity, || Slot::FREE);
         RawTable {
             data: data.into_boxed_slice(),
             len: 0,
@@ -253,12 +251,7 @@ impl<T, S: Status, A: Clone + Allocator> RawTable<T, S, A> {
     pub fn with_capacity_in(capacity: usize, alloc: A) -> Self {
         let capacity = Self::next_capacity(capacity);
         let mut data = Vec::with_capacity_in(capacity, alloc);
-        for _ in 0..capacity {
-            data.push(Slot {
-                status: S::FREE,
-                data: MaybeUninit::uninit(),
-            });
-        }
+        data.resize_with(capacity, || Slot::FREE);
         RawTable {
             data: data.into_boxed_slice(),
             len: 0,
@@ -272,6 +265,9 @@ impl<T, S: Status, A: Clone + Allocator> RawTable<T, S, A> {
 const RATIO_N: usize = 3;
 /// Denominator for the fraction of usable slots
 const RATIO_D: usize = 4;
+
+/// Minimal non-zero capacity (including spare slots)
+const MIN_CAP: usize = 16;
 
 impl<T, S: Status, A: Clone + Allocator> RawTable<T, S, A> {
     /// Get the next largest array capacity for `requested` elements
@@ -287,7 +283,7 @@ impl<T, S: Status, A: Clone + Allocator> RawTable<T, S, A> {
         if requested == 0 {
             return 0;
         }
-        let capacity = core::cmp::max((requested * RATIO_D / RATIO_N).next_power_of_two(), 16);
+        let capacity = core::cmp::max((requested * RATIO_D / RATIO_N).next_power_of_two(), MIN_CAP);
         S::check_capacity(capacity);
         capacity
     }
@@ -333,20 +329,17 @@ impl<T, S: Status, A: Clone + Allocator> RawTable<T, S, A> {
         let new_cap = Self::next_capacity(self.len + additional);
 
         #[cfg(feature = "allocator-api2")]
-        let (empty, mut new_data) = {
-            let alloc = Box::allocator(&self.data).clone();
-            let empty = Vec::new_in(alloc.clone());
-            (empty, Vec::with_capacity_in(new_cap, alloc))
-        };
+        let mut new_data = Vec::with_capacity_in(new_cap, Box::allocator(&self.data).clone());
         #[cfg(not(feature = "allocator-api2"))]
-        let (empty, mut new_data) = (Vec::new(), Vec::with_capacity(new_cap));
-
-        let old_data = core::mem::replace(&mut self.data, empty.into_boxed_slice()).into_vec();
+        let mut new_data = Vec::with_capacity(new_cap);
 
         new_data.resize_with(new_cap, || Slot::FREE);
+        let old_data = core::mem::replace(&mut self.data, new_data.into_boxed_slice());
 
+        let new_data = &mut self.data[..];
         let new_mask = new_cap - 1;
-        for slot in old_data {
+        // `.into_vec()` is needed for `allocator-api2` boxes
+        for slot in old_data.into_vec() {
             let status = slot.status;
             if !status.is_hash() {
                 continue;
@@ -367,7 +360,6 @@ impl<T, S: Status, A: Clone + Allocator> RawTable<T, S, A> {
             }
         }
 
-        self.data = new_data.into_boxed_slice();
         self.free = new_cap - self.len;
     }
 
@@ -417,7 +409,7 @@ impl<T, S: Status, A: Clone + Allocator> RawTable<T, S, A> {
 
     /// Like [`Self::clear_no_drop()`], but also sets the capacity to 0
     ///
-    /// If the space is not needed anymore, this should generally be faster
+    /// If the space is not needed anymore, this should generally be faster than
     /// [`Self::clear_no_drop()`], since we do not need to mark every slot as
     /// free.
     #[inline]
@@ -502,7 +494,7 @@ impl<T, S: Status, A: Clone + Allocator> RawTable<T, S, A> {
                 }
             } else if slot.status == S::FREE {
                 return Err(first_tombstone.unwrap_or(index));
-            } else if slot.status == S::TOMBSTONE {
+            } else if slot.status == S::TOMBSTONE && first_tombstone.is_none() {
                 first_tombstone = Some(index);
             }
             index = (index + 1) & mask;
@@ -621,7 +613,7 @@ impl<T, S: Status, A: Clone + Allocator> RawTable<T, S, A> {
         debug_assert!(self.data[slot].status.is_hash());
         let next_slot_index = (slot + 1) & (self.data.len() - 1);
         // SAFETY (next 2): The caller ensures that `slot` is in bounds, hence
-        // `self.data.len() != 0` and `next_slot_index` index is in bounds, too.
+        // `self.data.len() != 0` and `next_slot_index` is in bounds, too.
         let next_slot_status = unsafe { self.data.get_unchecked(next_slot_index) }.status;
         let slot = unsafe { self.data.get_unchecked_mut(slot) };
         slot.status = if next_slot_status == S::FREE {
@@ -660,10 +652,10 @@ impl<T, S: Status, A: Clone + Allocator> RawTable<T, S, A> {
     /// A draining iterator removes all elements from the table but does not
     /// change the table's capacity.
     ///
-    /// Note: Forgetting the returned `Drain` (e.g. via [`core::mem::forget()`])
-    /// and using the table afterwards is a very bad idea. It is not `unsafe`
-    /// but it causes correctness issues since there exist non-empty slots while
-    /// the length is already set to `0`.
+    /// Note: Forgetting the returned `Drain` (e.g., via
+    /// [`core::mem::forget()`]) and using the table afterwards is a very
+    /// bad idea. It is not `unsafe` but it causes correctness issues since
+    /// there exist non-empty slots while the length is already set to `0`.
     #[inline]
     pub fn drain(&mut self) -> Drain<T, S> {
         let len = self.len;
@@ -687,6 +679,7 @@ impl<T, S: Status, A: Clone + Allocator> RawTable<T, S, A> {
         debug_assert!(self.data.len() >= self.len);
         let mut i = self.len;
         let mut last_is_free = self.data[0].status == S::FREE;
+        // iterate from the back such that we can potentially remove tombstones
         for slot in self.data.iter_mut().rev() {
             if !slot.status.is_hash() {
                 if slot.status == S::FREE {
@@ -721,7 +714,9 @@ impl<T, S: Status, A: Clone + Allocator> RawTable<T, S, A> {
             }
             i -= 1;
             if i == 0 {
-                if self.len < self.data.len() / RATIO_D * (RATIO_D - RATIO_N) {
+                if self.len < self.data.len() / RATIO_D * (RATIO_D - RATIO_N)
+                    && self.data.len() >= MIN_CAP
+                {
                     // shrink the table
                     self.reserve_rehash(0);
                 }
