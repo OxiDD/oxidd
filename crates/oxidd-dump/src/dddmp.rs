@@ -1163,13 +1163,19 @@ where
             Code::Relative1 => 1,
         };
 
-        let t = manager.clone_edge(&nodes[idx(&mut input, node_id, t_code)?]);
+        let t = EdgeDropGuard::new(
+            manager,
+            manager.clone_edge(&nodes[idx(&mut input, node_id, t_code)?]),
+        );
         let t_level = manager.get_node(&t).level();
-        let e = manager.clone_edge(&nodes[idx(&mut input, node_id, e_code)?]);
+        let e = EdgeDropGuard::new(
+            manager,
+            manager.clone_edge(&nodes[idx(&mut input, node_id, e_code)?]),
+        );
         let e_level = manager.get_node(&e).level();
         let e = if e_complement {
-            match complement(manager, e) {
-                Ok(e) => e,
+            match complement(manager, e.into_edge()) {
+                Ok(e) => EdgeDropGuard::new(manager, e),
                 Err(OutOfMemory) => {
                     return Err(io::ErrorKind::OutOfMemory.into());
                 }
@@ -1203,7 +1209,8 @@ where
             return err("node level must be less than the children's levels");
         }
 
-        match <M::Rules as DiagramRules<_, _, _>>::reduce(manager, level, [t, e])
+        let children = [t.into_edge(), e.into_edge()];
+        match <M::Rules as DiagramRules<_, _, _>>::reduce(manager, level, children)
             .then_insert(manager, level)
         {
             Ok(e) => nodes.push(e),
