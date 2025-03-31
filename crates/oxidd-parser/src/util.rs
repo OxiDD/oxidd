@@ -207,7 +207,7 @@ where
 
 /// Remove leading spaces and tabs
 pub const fn trim_start(mut s: &[u8]) -> &[u8] {
-    while let [rest @ .., b' ' | b'\t'] = s {
+    while let [b' ' | b'\t', rest @ ..] = s {
         s = rest;
     }
     s
