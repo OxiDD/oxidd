@@ -1798,7 +1798,7 @@ impl<
     pub fn into_raw(self) -> *const std::ffi::c_void {
         let this = ManuallyDrop::new(self);
         // SAFETY: we move out of `this`
-        Arc::into_raw(unsafe { std::ptr::read(&this.0) }) as _
+        Arc::into_raw(unsafe { std::ptr::read(&this.0) }).cast()
     }
 
     /// Convert `raw` into a `ManagerRef`
@@ -1812,7 +1812,7 @@ impl<
     #[inline(always)]
     pub unsafe fn from_raw(raw: *const std::ffi::c_void) -> Self {
         // SAFETY: Invariants are upheld by the caller.
-        Self(unsafe { Arc::from_raw(raw as _) })
+        Self(unsafe { Arc::from_raw(raw.cast()) })
     }
 }
 
@@ -1880,9 +1880,7 @@ impl<
 {
     #[inline]
     fn cmp(&self, other: &Self) -> Ordering {
-        let a = &*self.0 as *const Store<_, _, _, _, _, TERMINALS>;
-        let b = &*other.0 as *const _;
-        a.cmp(&b)
+        std::ptr::from_ref(&*self.0).cmp(&std::ptr::from_ref(&*other.0))
     }
 }
 impl<
@@ -1896,8 +1894,7 @@ impl<
 {
     #[inline]
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let ptr = &*self.0 as *const Store<_, _, _, _, _, TERMINALS>;
-        ptr.hash(state);
+        std::ptr::from_ref(&*self.0).hash(state);
     }
 }
 
@@ -1914,7 +1911,8 @@ impl<
     for ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS>
 {
     fn from(manager: &'a M<'id, NC, ET, TMC, RC, MDC, TERMINALS>) -> Self {
-        let ptr = manager as *const _ as *const M<'static, NC, ET, TMC, RC, MDC, TERMINALS>;
+        let ptr: *const M<'static, NC, ET, TMC, RC, MDC, TERMINALS> =
+            std::ptr::from_ref(manager).cast();
         // SAFETY:
         // - We just changed "identifier" lifetimes.
         // - The pointer was obtained via `Arc::into_raw()`, and since we have a
@@ -2271,8 +2269,7 @@ unsafe impl<
 
     #[inline]
     fn from_edge<'id>(manager: &Self::Manager<'id>, edge: EdgeOfFunc<'id, Self>) -> Self {
-        #[allow(clippy::unnecessary_cast)] // this cast is necessary
-        let ptr = manager as *const Self::Manager<'id> as *const Self::Manager<'static>;
+        let ptr: *const Self::Manager<'static> = std::ptr::from_ref(manager).cast();
         // SAFETY:
         // - We just changed "identifier" lifetimes.
         // - The pointer was obtained via `Arc::into_raw()`, and since we have a
@@ -2298,7 +2295,7 @@ unsafe impl<
             "This function does not belong to `manager`"
         );
 
-        let ptr = &*self.edge as *const EdgeOfFunc<'static, Self> as *const EdgeOfFunc<'id, Self>;
+        let ptr: *const EdgeOfFunc<'id, Self> = std::ptr::from_ref(&*self.edge).cast();
         // SAFETY: Just changing lifetimes; we checked that `self.edge` belongs
         // to `manager` above.
         unsafe { &*ptr }

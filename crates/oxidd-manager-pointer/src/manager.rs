@@ -298,7 +298,7 @@ where
         let byte_offset = const { std::mem::offset_of!(Self, terminal_manager) as isize };
         // SAFETY: For all uses of this function, `ptr` points to a terminal
         // manager contained in a `StoreInner` allocation
-        unsafe { ptr.byte_offset(-byte_offset) as *const Self }
+        unsafe { ptr.byte_offset(-byte_offset) }.cast()
     }
 
     #[inline(always)]
@@ -308,7 +308,7 @@ where
         let byte_offset = const { std::mem::offset_of!(Self, manager) as isize };
         // SAFETY: For all uses of this function, `ptr` points to the manager
         // field contained in a `StoreInner` allocation
-        unsafe { ptr.byte_offset(-byte_offset) as *const Self }
+        unsafe { ptr.byte_offset(-byte_offset) }.cast()
     }
 }
 
@@ -1573,8 +1573,7 @@ impl<
     /// `ManagerRef`.
     #[inline(always)]
     pub fn into_raw(self) -> *const std::ffi::c_void {
-        let ptr = ArcSlabRef::into_raw(self.0);
-        ptr.as_ptr() as _
+        ArcSlabRef::into_raw(self.0).as_ptr().cast()
     }
 
     /// Convert `raw` into a `ManagerRef`
@@ -1587,7 +1586,7 @@ impl<
     /// depending on the usage of the returned `ManagerRef`.
     #[inline(always)]
     pub unsafe fn from_raw(raw: *const std::ffi::c_void) -> Self {
-        let ptr = NonNull::new(raw as *mut _).expect("expected a non-null pointer");
+        let ptr = NonNull::new(raw.cast_mut().cast()).expect("expected a non-null pointer");
         // SAFETY: Invariants are upheld by the caller.
         Self(unsafe { ArcSlabRef::from_raw(ptr) })
     }
@@ -1609,8 +1608,9 @@ impl<
     #[inline]
     fn from(manager: &'a M<'id, NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>) -> Self {
         manager.store().retain();
-        let store_ptr =
-            ArcSlab::<NC::T<'id>, _, PAGE_SIZE>::from_data_ptr(manager.store_inner_ptr()) as *mut _;
+        let store_ptr: *const ArcSlab<NC::T<'id>, _, PAGE_SIZE> =
+            ArcSlab::<NC::T<'id>, _, PAGE_SIZE>::from_data_ptr(manager.store_inner_ptr());
+        let store_ptr: *mut ArcSlab<NC::T<'static>, _, PAGE_SIZE> = store_ptr.cast_mut().cast();
         Self(unsafe { ArcSlabRef::from_raw(NonNull::new_unchecked(store_ptr)) })
     }
 }
@@ -1874,7 +1874,7 @@ impl<
     pub fn into_raw(self) -> *const std::ffi::c_void {
         let ptr = self.0;
         std::mem::forget(self);
-        ptr.as_ptr() as _
+        ptr.as_ptr().cast()
     }
 
     /// Convert `raw` into a `Function`
@@ -1887,7 +1887,7 @@ impl<
     /// depending on the usage of the returned `Function`.
     #[inline(always)]
     pub unsafe fn from_raw(raw: *const std::ffi::c_void) -> Self {
-        let ptr = NonNull::new(raw as *mut ()).expect("expected a non-null pointer");
+        let ptr = NonNull::new(raw.cast_mut().cast()).expect("expected a non-null pointer");
         Self(ptr, PhantomData)
     }
 }
