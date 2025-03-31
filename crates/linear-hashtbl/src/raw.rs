@@ -446,10 +446,10 @@ impl<T, S: Status, A: Clone + Allocator> RawTable<T, S, A> {
     /// Find the index of an element or a slot
     #[inline]
     pub fn find(&self, hash: u64, eq: impl Fn(&T) -> bool) -> Option<usize> {
-        debug_assert_ne!(self.free, 0, "find may diverge");
         if self.len == 0 {
             return None;
         }
+        debug_assert_ne!(self.free, 0, "find may diverge");
 
         debug_assert!(self.data.len().is_power_of_two());
         let mask = self.data.len() - 1;
