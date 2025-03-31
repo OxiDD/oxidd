@@ -186,7 +186,7 @@ struct LocalStoreState {
     /// require `TERMINALS >= 1`), there is no ambiguity.
     next_free: Cell<u32>,
 
-    /// All slots in range `..initialized` are not `uninit`, i.e. either a
+    /// All slots in range `..initialized` are not `uninit`, i.e., either a
     /// `node` or a `next_free` ID. All slots until the next multiple of
     /// `CHUNK_SIZE` can be used by the local thread. So if
     /// `initialized % CHUNK_SIZE == 0` the worker needs to allocate a new chunk
@@ -230,8 +230,12 @@ where
     TM: TerminalManager<'id, N, ET, TERMINALS>,
     MD: DropWith<Edge<'id, N, ET>>;
 
+/// Node slot. We distinguish three states, corresponding to the variants:
+/// "containing a node," "free," and "uninitialized."
 union Slot<N> {
     node: ManuallyDrop<N>,
+    /// ID of the next free slot or `0` if there is none. Subtract `TERMINALS`
+    /// to get the `SlotSlice` index.
     next_free: u32,
     #[allow(unused)]
     uninit: (),
@@ -329,7 +333,7 @@ impl<N: NodeBase, ET: Tag> Edge<'_, N, ET> {
         self.0
     }
 
-    /// Get the node ID, i.e. the edge value without any tags
+    /// Get the node ID, i.e., the edge value without any tags
     #[inline(always)]
     fn node_id(&self) -> usize {
         (self.0 & !Self::TAG_MASK) as usize
@@ -351,7 +355,7 @@ impl<N: NodeBase, ET: Tag> Edge<'_, N, ET> {
     ///
     /// # Safety
     ///
-    /// `id` must be a terminal ID, i.e. `id < TERMINALS`, and the caller must
+    /// `id` must be a terminal ID, i.e., `id < TERMINALS`, and the caller must
     /// update the reference count for the terminal accordingly.
     #[inline(always)]
     pub unsafe fn from_terminal_id(id: u32) -> Self {
@@ -623,7 +627,8 @@ where
     ///
     /// `delta` is added to the shared node count.
     ///
-    /// Returns the ID of a free slot.
+    /// Unless out of memory, this method returns the ID of a free or
+    /// uninitialized slot as well as a reference pointing to that slot.
     #[cold]
     fn get_slot_from_shared(&self, delta: i32) -> AllocResult<(u32, &mut Slot<N>)> {
         LOCAL_STORE_STATE.with(|local| {
@@ -714,7 +719,7 @@ where
         unsafe { self.free_slot(&mut *slot_ptr, id) };
     }
 
-    /// Free `slot`, i.e. drop the node and add its ID (`id`) to the free list
+    /// Free `slot`, i.e., drop the node and add its ID (`id`) to the free list
     ///
     /// SAFETY: `slot` must contain a node. `id` is the ID of `slot`.
     #[inline]
@@ -850,6 +855,8 @@ where
                     debug_assert!(start <= u32::MAX - CHUNK_SIZE);
                     let end = (start / CHUNK_SIZE + 1) * CHUNK_SIZE;
                     let last_slot = &slots[(end - 1) as usize];
+                    // SAFETY (next 2): We have exclusive access to the (uninitialized) slots in the
+                    // range from `local.initialized` up to the next multiple of `CHUNK_SIZE`.
                     unsafe { &mut *last_slot.get() }.next_free = local.next_free.get();
                     for (slot, next_id) in slots[start as usize..(end - 1) as usize]
                         .iter()
@@ -1276,10 +1283,10 @@ where
         }
     }
 
-    /// Perform garbage collection, i.e. remove all nodes without references
+    /// Perform garbage collection, i.e., remove all nodes without references
     /// besides the internal edge
     ///
-    /// SAFETY: There must not be any "weak" edges, i.e. edges where the
+    /// SAFETY: There must not be any "weak" edges, i.e., edges where the
     /// reference count is not materialized (apply cache implementations exploit
     /// this).
     unsafe fn gc(&mut self, store: &Store<'id, N, ET, TM, R, MD, TERMINALS>) {
@@ -1298,8 +1305,8 @@ where
 
                 // SAFETY: Since `rc` is 1, this is the last reference. We use
                 // `Acquire` order above and `Release` order when decrementing
-                // reference counters, so we have exclusive node access now. It
-                // contains a node. `id` is the ID of the slot.
+                // reference counters, so we have exclusive node access now. The
+                // slot contains a node. `id` is the ID of the slot.
                 unsafe { store.free_slot(&mut *slot_ptr, id) };
             },
         );
@@ -1309,7 +1316,7 @@ where
     ///
     /// Returns `Some(edge)` if `node` was present, `None` otherwise
     ///
-    /// SAFETY: There must not be any "weak" edges, i.e. edges where the
+    /// SAFETY: There must not be any "weak" edges, i.e., edges where the
     /// reference count is not materialized (apply cache implementations exploit
     /// this).
     #[inline]
@@ -1668,18 +1675,14 @@ where
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        match self.it.next() {
-            Some(mutex) => {
-                let level = self.level_front;
-                self.level_front += 1;
-                Some(LevelView {
-                    store: self.store,
-                    level,
-                    set: mutex.lock(),
-                })
-            }
-            None => None,
-        }
+        let mutex = self.it.next()?;
+        let level = self.level_front;
+        self.level_front += 1;
+        Some(LevelView {
+            store: self.store,
+            level,
+            set: mutex.lock(),
+        })
     }
 
     #[inline]
@@ -1721,17 +1724,13 @@ where
     MD: DropWith<Edge<'id, N, ET>>,
 {
     fn next_back(&mut self) -> Option<Self::Item> {
-        match self.it.next_back() {
-            Some(mutex) => {
-                self.level_back -= 1;
-                Some(LevelView {
-                    store: self.store,
-                    level: self.level_back,
-                    set: mutex.lock(),
-                })
-            }
-            None => None,
-        }
+        let mutex = self.it.next_back()?;
+        self.level_back -= 1;
+        Some(LevelView {
+            store: self.store,
+            level: self.level_back,
+            set: mutex.lock(),
+        })
     }
 }
 
@@ -1788,7 +1787,7 @@ impl<
         const TERMINALS: usize,
     > ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS>
 {
-    /// Convert `self` into a raw pointer, e.g. for usage in a foreign function
+    /// Convert `self` into a raw pointer, e.g., for usage in a foreign function
     /// interface.
     ///
     /// This method does not change any reference counters. To avoid a memory
@@ -1917,11 +1916,11 @@ impl<
         // - We just changed "identifier" lifetimes.
         // - The pointer was obtained via `Arc::into_raw()`, and since we have a
         //   `&Manager` reference, the counter is at least 1.
-        unsafe {
+        ManagerRef(unsafe {
             let manager = &*ptr;
             Arc::increment_strong_count(manager.store);
-            ManagerRef(Arc::from_raw(manager.store))
-        }
+            Arc::from_raw(manager.store)
+        })
     }
 }
 
@@ -2115,7 +2114,7 @@ impl<
         const TERMINALS: usize,
     > Function<NC, ET, TMC, RC, MDC, TERMINALS>
 {
-    /// Convert `self` into a raw pointer and edge value, e.g. for usage in a
+    /// Convert `self` into a raw pointer and edge value, e.g., for usage in a
     /// foreign function interface.
     ///
     /// This method does not change any reference counters. To avoid a memory
@@ -2274,11 +2273,11 @@ unsafe impl<
         // - We just changed "identifier" lifetimes.
         // - The pointer was obtained via `Arc::into_raw()`, and since we have a
         //   `&Manager` reference, the counter is at least 1.
-        let store = unsafe {
+        let store = ManagerRef(unsafe {
             let manager = &*ptr;
             Arc::increment_strong_count(manager.store);
-            ManagerRef(Arc::from_raw(manager.store))
-        };
+            Arc::from_raw(manager.store)
+        });
         // Avoid transmuting `edge` for changing lifetimes
         let id = edge.0;
         std::mem::forget(edge);

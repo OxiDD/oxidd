@@ -60,8 +60,8 @@ impl<E> Operand<E> {
 
     fn write_edge(&mut self, edge: Borrowed<E>) {
         // SAFETY: The referenced node lives at least until the next garbage
-        // collection / reordering. Before this operation garbage
-        // collection, we clear the entire cache.
+        // collection / reordering. Before that operation, we clear the entire
+        // cache.
         self.edge = unsafe { Borrowed::into_inner(edge) };
     }
 
@@ -83,7 +83,7 @@ struct Entry<M: Manager, O, const ARITY: usize> {
     /// Operands of the key. The first `edge_operands` elements are edges, the
     /// following `numeric_operands` are numeric.
     operands: UnsafeCell<[Operand<M::Edge>; ARITY]>,
-    /// Initialized if `arity != 0`
+    /// Initialized if `edge_operands != 0`
     value: UnsafeCell<MaybeUninit<M::Edge>>,
 }
 
@@ -94,17 +94,17 @@ unsafe impl<M: Manager, O: Send, const ARITY: usize> Send for Entry<M, O, ARITY>
 unsafe impl<M: Manager, O: Send, const ARITY: usize> Sync for Entry<M, O, ARITY> where M::Edge: Send {}
 
 impl<M: Manager, O: Copy + Eq, const ARITY: usize> Entry<M, O, ARITY> {
-    #[inline]
-    fn new() -> Self {
-        Self {
-            mutex: crate::util::RawMutex::INIT,
-            operator: UnsafeCell::new(MaybeUninit::uninit()),
-            edge_operands: UnsafeCell::new(0),
-            numeric_operands: UnsafeCell::new(0),
-            operands: UnsafeCell::new([Operand::UNINIT; ARITY]),
-            value: UnsafeCell::new(MaybeUninit::uninit()),
-        }
-    }
+    // Regarding the lint: the intent here is not to modify the `AtomicBool` in
+    // a const context but to create the `RawMutex` in a const context.
+    #[allow(clippy::declare_interior_mutable_const)]
+    const INIT: Self = Self {
+        mutex: crate::util::RawMutex::INIT,
+        operator: UnsafeCell::new(MaybeUninit::uninit()),
+        edge_operands: UnsafeCell::new(0),
+        numeric_operands: UnsafeCell::new(0),
+        operands: UnsafeCell::new([Operand::UNINIT; ARITY]),
+        value: UnsafeCell::new(MaybeUninit::uninit()),
+    };
 
     #[inline]
     fn lock(&self) -> EntryGuard<M, O, ARITY> {
@@ -201,7 +201,9 @@ where
     /// If `self` is already occupied and the key matches, the entry is not
     /// updated (`operands` and `value` are not cloned).
     ///
-    /// Assumes that `operands.len() + numeric_operands.len() <= ARITY`
+    /// Assumes that
+    /// - `!operands.is_empty()`
+    /// - `operands.len() + numeric_operands.len() <= ARITY`
     #[inline]
     fn set(
         &mut self,
@@ -212,6 +214,7 @@ where
         value: Borrowed<M::Edge>,
     ) {
         debug_assert_ne!(operands.len(), 0);
+        debug_assert!(operands.len() + numeric_operands.len() <= ARITY);
         self.clear();
 
         #[cfg(feature = "statistics")]
@@ -284,10 +287,7 @@ where
         #[cfg(feature = "hugealloc")]
         let mut vec = Vec::with_capacity_in(buckets, hugealloc::HugeAlloc);
 
-        for _ in 0..buckets {
-            vec.push(Entry::new())
-        }
-
+        vec.resize_with(buckets, || Entry::INIT);
         DMApplyCache(vec.into_boxed_slice(), PhantomData)
     }
 

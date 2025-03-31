@@ -806,18 +806,14 @@ where
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        match self.it.next() {
-            Some(mutex) => {
-                let level = self.level_front;
-                self.level_front += 1;
-                Some(LevelView {
-                    store: self.store,
-                    level,
-                    set: mutex.lock(),
-                })
-            }
-            None => None,
-        }
+        let mutex = self.it.next()?;
+        let level = self.level_front;
+        self.level_front += 1;
+        Some(LevelView {
+            store: self.store,
+            level,
+            set: mutex.lock(),
+        })
     }
 
     #[inline]
@@ -865,17 +861,13 @@ where
 {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
-        match self.it.next_back() {
-            Some(mutex) => {
-                self.level_back -= 1;
-                Some(LevelView {
-                    store: self.store,
-                    level: self.level_back,
-                    set: mutex.lock(),
-                })
-            }
-            None => None,
-        }
+        let mutex = self.it.next_back()?;
+        self.level_back -= 1;
+        Some(LevelView {
+            store: self.store,
+            level: self.level_back,
+            set: mutex.lock(),
+        })
     }
 }
 
