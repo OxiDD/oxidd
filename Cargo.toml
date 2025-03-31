@@ -11,7 +11,7 @@ homepage = "https://oxidd.net"
 [workspace.dependencies]
 arcslab = { version = "0.1", path = "crates/arcslab", default-features = false }
 hugealloc = { version = "0.1", path = "crates/hugealloc", default-features = false }
-linear-hashtbl = { version = "0.1", path = "crates/linear-hashtbl", default-features = false }
+linear-hashtbl = { version = "0.1.2", path = "crates/linear-hashtbl", default-features = false }
 oxidd = { version = "0.10", path = "crates/oxidd", default-features = false }
 oxidd-cache = { version = "0.10", path = "crates/oxidd-cache", default-features = false }
 oxidd-core = { version = "0.10", path = "crates/oxidd-core", default-features = false }
