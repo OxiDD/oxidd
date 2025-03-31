@@ -901,11 +901,16 @@ where
             std::mem::offset_of!(Store<'static, N, ET, TM, R, MD, TERMINALS>, manager)
                 + RwLock::<Self>::DATA_OFFSET
         };
-        // SAFETY: The resulting pointer is in bounds of the `Store` allocation.
-        if unsafe { (self as *const Self as *const u8).sub(offset) } != self.store as *const u8 {
-            // SAFETY: The pointers above are equal after initialization of `self.store`.
-            unsafe { std::hint::unreachable_unchecked() };
-        }
+        // SAFETY:
+        // - The pointer resulting from the subtraction is in bounds of the `Store`
+        //   allocation.
+        // - The pointers are equal after initialization of `self.store`.
+        unsafe {
+            std::hint::assert_unchecked(std::ptr::eq(
+                std::ptr::from_ref(self).cast::<u8>().sub(offset).cast(),
+                self.store,
+            ))
+        };
 
         // SAFETY: After initialization, `self.store` always points to the
         // containing `Store`.
@@ -2289,7 +2294,7 @@ unsafe impl<
     #[inline]
     fn as_edge<'id>(&self, manager: &Self::Manager<'id>) -> &EdgeOfFunc<'id, Self> {
         assert!(
-            crate::util::ptr_eq_untyped(self.store.0.manager.data_ptr(), manager),
+            std::ptr::eq(self.store.0.manager.data_ptr().cast(), manager),
             "This function does not belong to `manager`"
         );
 
@@ -2302,7 +2307,7 @@ unsafe impl<
     #[inline]
     fn into_edge<'id>(self, manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self> {
         assert!(
-            crate::util::ptr_eq_untyped(self.store.0.manager.data_ptr(), manager),
+            std::ptr::eq(self.store.0.manager.data_ptr().cast(), manager),
             "This function does not belong to `manager`"
         );
         // We only want to drop the store ref (but `Function` implements `Drop`,

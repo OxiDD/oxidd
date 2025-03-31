@@ -479,7 +479,7 @@ impl<I, D, const PAGE_SIZE: usize> Page<I, D, PAGE_SIZE> {
         } / size_of::<Slot<I>>() as isize;
         let mut slot = first_slot;
         let last_slot = unsafe { slot.offset(count - 1) };
-        while slot != last_slot {
+        while !std::ptr::eq(slot, last_slot) {
             let next = unsafe { slot.offset(1) };
             unsafe { ptr::write(addr_of_mut!((*slot).next_free), next) };
             slot = next;

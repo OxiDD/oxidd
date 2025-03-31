@@ -37,7 +37,6 @@ use oxidd_core::{DiagramRules, HasApplyCache, InnerNode, LevelNo, Node, Tag};
 
 use crate::node::NodeBase;
 use crate::terminal_manager::TerminalManager;
-use crate::util;
 use crate::util::rwlock::RwLock;
 use crate::util::{Invariant, TryLock};
 
@@ -350,10 +349,9 @@ where
         // `Manager` in `Store`. The only issue is that this violates Rust's
         // (proposed) aliasing rules. Hence, we only provide a hint that the
         // store's address can be computed without loading the value.
-        if store_inner != StoreInner::from_manager_ptr(RwLock::from_data_ptr(self)) {
-            // SAFETY: after initialization, the pointers are equal
-            unsafe { std::hint::unreachable_unchecked() };
-        }
+        let offset_ptr = StoreInner::from_manager_ptr(RwLock::from_data_ptr(self));
+        // SAFETY: after initialization, the pointers are equal
+        unsafe { std::hint::assert_unchecked(std::ptr::eq(store_inner, offset_ptr)) };
         store_inner
     }
 
@@ -2040,7 +2038,7 @@ unsafe impl<
 
     #[inline]
     fn as_edge<'id>(&self, manager: &Self::Manager<'id>) -> &EdgeOfFunc<'id, Self> {
-        assert!(util::ptr_eq_untyped(self.store().as_ptr(), manager.store()));
+        assert!(std::ptr::eq(self.store().as_ptr().cast(), manager.store()));
         // SAFETY: `Function` and `Edge` have the same representation
         unsafe { std::mem::transmute(self) }
     }
@@ -2048,7 +2046,7 @@ unsafe impl<
     #[inline]
     fn into_edge<'id>(self, manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self> {
         let store = manager.store();
-        assert!(util::ptr_eq_untyped(self.store().as_ptr(), store));
+        assert!(std::ptr::eq(self.store().as_ptr().cast(), store));
         unsafe { ArcSlab::release(NonNull::from(store)) };
         Edge(ManuallyDrop::new(self).0, PhantomData)
     }

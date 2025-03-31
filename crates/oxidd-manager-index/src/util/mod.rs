@@ -7,12 +7,6 @@ pub mod rwlock;
 /// Invariant lifetime
 pub type Invariant<'id> = PhantomData<fn(&'id ()) -> &'id ()>;
 
-/// Untyped comparison of pointers
-#[inline(always)]
-pub fn ptr_eq_untyped<T, U>(a: *const T, b: *const U) -> bool {
-    std::ptr::eq(a as *const (), b as *const ())
-}
-
 pub struct TryLock(AtomicBool);
 
 impl TryLock {
