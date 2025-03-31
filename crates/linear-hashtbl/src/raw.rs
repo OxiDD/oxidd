@@ -716,6 +716,8 @@ impl<T, S: Status, A: Clone + Allocator> RawTable<T, S, A> {
                 // status to `FREE` or `TOMBSTONE` above, so we don't duplicate
                 // the value.
                 drop(unsafe { slot.data.assume_init_read() });
+            } else {
+                last_is_free = false;
             }
             i -= 1;
             if i == 0 {
