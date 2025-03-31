@@ -22,7 +22,7 @@ nom = "7"
 memchr = "2"
 
 # error reporting
-codespan-reporting = { version = "0.11", optional = true }
+codespan-reporting = { version = "0.12", optional = true }
 
 # bit vectors
 bitvec = "1"

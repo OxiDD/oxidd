@@ -1,7 +1,6 @@
 //! All items of this crate are not intended to be used from other Rust crates
 //! but only from Python. Consult the Python API documentation for details on
 //! the provided classes.
-#![allow(clippy::useless_conversion)] // apparently, PyO3 v0.23.3 macros generate useless conversions
 
 use pyo3::prelude::*;
 
