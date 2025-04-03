@@ -778,6 +778,7 @@ impl<M: Manager + HasApplyCache<M, BDDOp>> HasBDDOpApplyCache<M> for M {}
 
 /// Boolean function backed by a binary decision diagram
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Function, Debug)]
+#[repr_id = "BDD"]
 #[repr(transparent)]
 pub struct BDDFunction<F: Function>(F);
 
@@ -1275,6 +1276,7 @@ pub mod mt {
     /// Boolean function backed by a binary decision diagram, multi-threaded
     /// version
     #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Function, Debug)]
+    #[repr_id = "BCDD"]
     #[repr(transparent)]
     pub struct BDDFunctionMT<F: Function>(F);
 

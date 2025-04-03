@@ -45,6 +45,9 @@ pub type INodeOfFunc<'id, F> = <<F as Function>::Manager<'id> as Manager>::Inner
 /// maintain this link accordingly. In particular, [`Self::as_edge()`] and
 /// [`Self::into_edge()`] must panic as specified there.
 pub unsafe trait Function: Clone + Ord + Hash {
+    /// Representation identifier such as "BDD" or "MTBDD"
+    const REPR_ID: &str; // `str` and not an `enum` for extensibility
+
     /// Type of the associated manager
     ///
     /// This type is generic over a lifetime `'id` to permit the "lifetime

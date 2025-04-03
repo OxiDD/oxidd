@@ -2017,6 +2017,8 @@ unsafe impl<
         const TAG_BITS: u32,
     > oxidd_core::function::Function for Function<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
 {
+    const REPR_ID: &str = "<none>";
+
     type Manager<'id> =
         Manager<'id, NC::T<'id>, ET, TMC::T<'id>, RC::T<'id>, MDC::T<'id>, PAGE_SIZE, TAG_BITS>;
 

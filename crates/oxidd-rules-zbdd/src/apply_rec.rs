@@ -531,6 +531,7 @@ trait HasZBDDOpApplyCache<M: Manager>: HasApplyCache<M, ZBDDOp> {}
 impl<M: Manager + HasApplyCache<M, ZBDDOp>> HasZBDDOpApplyCache<M> for M {}
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Function, Debug)]
+#[repr_id = "ZBDD"]
 #[repr(transparent)]
 pub struct ZBDDFunction<F: Function>(F);
 
@@ -1044,6 +1045,7 @@ pub mod mt {
     use super::*;
 
     #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Function, Debug)]
+    #[repr_id = "ZBDD"]
     #[repr(transparent)]
     pub struct ZBDDFunctionMT<F: Function>(F);
 

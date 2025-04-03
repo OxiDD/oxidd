@@ -80,6 +80,7 @@ impl<M: Manager + HasApplyCache<M, MTBDDOp>> HasMTBDDOpApplyCache<M> for M {}
 
 /// Boolean function backed by a binary decision diagram
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Function, Debug)]
+#[repr_id = "MTBDD"]
 #[repr(transparent)]
 pub struct MTBDDFunction<F: Function>(F);
 

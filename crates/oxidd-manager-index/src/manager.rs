@@ -2262,6 +2262,8 @@ unsafe impl<
         const TERMINALS: usize,
     > oxidd_core::function::Function for Function<NC, ET, TMC, RC, MDC, TERMINALS>
 {
+    const REPR_ID: &str = "<none>";
+
     type Manager<'id> = M<'id, NC, ET, TMC, RC, MDC, TERMINALS>;
 
     type ManagerRef = ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS>;

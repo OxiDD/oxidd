@@ -253,6 +253,7 @@ impl<M: Manager + HasApplyCache<M, TDDOp>> HasTDDOpApplyCache<M> for M {}
 
 /// Three value logic function backed by a ternary decision diagram
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Function, Debug)]
+#[repr_id = "TDD"]
 #[repr(transparent)]
 pub struct TDDFunction<F: Function>(F);
 

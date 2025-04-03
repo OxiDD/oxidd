@@ -965,6 +965,7 @@ impl<M: Manager + HasApplyCache<M, BCDDOp>> HasBCDDOpApplyCache<M> for M {}
 
 /// Boolean function backed by a complement edge binary decision diagram
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Function, Debug)]
+#[repr_id = "BCDD"]
 #[repr(transparent)]
 pub struct BCDDFunction<F: Function>(F);
 
@@ -1524,6 +1525,7 @@ pub mod mt {
 
     /// Boolean function backed by a complement edge binary decision diagram
     #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Function, Debug)]
+    #[repr_id = "BCDD"]
     #[repr(transparent)]
     pub struct BCDDFunctionMT<F: Function>(F);
 

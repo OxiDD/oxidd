@@ -104,6 +104,7 @@ pub fn derive_function(input: syn::DeriveInput) -> TokenStream {
     let ident = input.ident;
 
     let mut manager_ref_attr = None;
+    let mut repr_id = None;
     for attr in input.attrs {
         let syn::AttrStyle::Outer = attr.style else {
             continue;
@@ -128,6 +129,22 @@ pub fn derive_function(input: syn::DeriveInput) -> TokenStream {
                 span,
                 "expected `#[use_manager_ref(ManagerRefType, expr_to_convert_from(inner))]`"
             );
+        } else if meta.path().is_ident("repr_id") {
+            if repr_id.is_some() {
+                emit_error!(
+                    meta.span(),
+                    "the `repr_id` attribute may only be given once per item"
+                );
+            }
+            if let syn::Meta::NameValue(val) = &meta {
+                if let syn::Expr::Lit(lit) = &val.value {
+                    if let syn::Lit::Str(s) = &lit.lit {
+                        repr_id = Some(s.to_token_stream());
+                        continue;
+                    }
+                }
+            }
+            emit_error!(meta.span(), "expected `#[repr_id = \"MY_BDD\"]`");
         }
     }
 
@@ -156,10 +173,15 @@ pub fn derive_function(input: syn::DeriveInput) -> TokenStream {
         ),
     };
 
+    let repr_id =
+        repr_id.unwrap_or_else(|| quote!(<#ty as ::oxidd_core::function::Function>::REPR_ID));
+
     // SAFETY of the generated implementation is inherited from the inner
     // `Function` implementation
     quote! {
         unsafe impl #impl_generics ::oxidd_core::function::Function for #ident #ty_generics #where_clause {
+            const REPR_ID: &'static str = #repr_id;
+
             type Manager<'__id> = <#ty as ::oxidd_core::function::Function>::Manager<'__id>;
 
             type ManagerRef = #manager_ref;

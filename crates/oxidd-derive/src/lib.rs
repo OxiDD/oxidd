@@ -33,8 +33,11 @@ pub fn derive_countable(input: proc_macro::TokenStream) -> proc_macro::TokenStre
 ///
 /// You may specify the associated `ManagerRef` type using an attribute
 /// `#[use_manager_ref(YourManagerRefType)]`.
+///
+/// To influence the representation identifier, use the attribute
+/// `#[repr_id = "MY_BDD"]`.
 #[proc_macro_error::proc_macro_error]
-#[proc_macro_derive(Function, attributes(use_manager_ref))]
+#[proc_macro_derive(Function, attributes(use_manager_ref, repr_id))]
 pub fn derive_function(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
     let expanded = function::derive_function(input);
