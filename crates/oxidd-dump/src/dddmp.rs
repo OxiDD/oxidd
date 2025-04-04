@@ -455,14 +455,8 @@ fn cmp_strict<T: Ord>(a: &T, b: &T) -> Option<std::cmp::Ordering> {
     Some(a.cmp(b).then(std::cmp::Ordering::Greater))
 }
 
-/// Like [`std::fmt::Display`], but the format should use ASCII characters only
-pub trait AsciiDisplay {
-    /// Format the value with the given formatter
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error>;
-}
-
 struct Ascii<T>(T);
-impl<T: AsciiDisplay> fmt::Display for Ascii<&T> {
+impl<T: crate::AsciiDisplay> fmt::Display for Ascii<&T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
     }
@@ -500,7 +494,7 @@ pub fn export<'id, F: Function>(
 ) -> io::Result<()>
 where
     <F::Manager<'id> as Manager>::InnerNode: HasLevel,
-    <F::Manager<'id> as Manager>::Terminal: AsciiDisplay,
+    <F::Manager<'id> as Manager>::Terminal: crate::AsciiDisplay,
 {
     assert!(var_names.is_none() || var_names.unwrap().len() == vars.len());
     assert!(function_names.is_none() || function_names.unwrap().len() == functions.len());

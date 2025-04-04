@@ -211,7 +211,8 @@ where
     for<'id> B::Manager<'id>: HasWorkers + HasApplyCache<B::Manager<'id>, O>,
     for<'id> <B::Manager<'id> as Manager>::InnerNode: HasLevel,
     for<'id> <B::Manager<'id> as Manager>::EdgeTag: fmt::Debug,
-    for<'id> <B::Manager<'id> as Manager>::Terminal: FromStr + fmt::Display + dddmp::AsciiDisplay,
+    for<'id> <B::Manager<'id> as Manager>::Terminal:
+        FromStr + fmt::Display + oxidd_dump::AsciiDisplay,
     O: Copy + Ord + Hash,
 {
     let parse_options = ParseOptionsBuilder::default()

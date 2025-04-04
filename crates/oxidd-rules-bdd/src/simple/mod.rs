@@ -7,7 +7,6 @@ use std::hash::Hash;
 use oxidd_core::util::{AllocResult, Borrowed};
 use oxidd_core::{DiagramRules, Edge, HasLevel, InnerNode, LevelNo, Manager, Node, ReducedOrNew};
 use oxidd_derive::Countable;
-use oxidd_dump::dddmp::AsciiDisplay;
 
 use crate::stat;
 
@@ -114,7 +113,7 @@ impl std::str::FromStr for BDDTerminal {
     }
 }
 
-impl AsciiDisplay for BDDTerminal {
+impl oxidd_dump::AsciiDisplay for BDDTerminal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         match self {
             BDDTerminal::False => f.write_str("F"),

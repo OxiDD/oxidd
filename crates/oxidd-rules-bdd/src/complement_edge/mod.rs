@@ -8,7 +8,6 @@ use std::marker::PhantomData;
 use oxidd_core::util::{AllocResult, Borrowed, EdgeDropGuard};
 use oxidd_core::{DiagramRules, Edge, HasLevel, InnerNode, LevelNo, Manager, Node, ReducedOrNew};
 use oxidd_derive::Countable;
-use oxidd_dump::dddmp::AsciiDisplay;
 
 use crate::stat;
 
@@ -249,7 +248,7 @@ impl std::str::FromStr for BCDDTerminal {
     }
 }
 
-impl AsciiDisplay for BCDDTerminal {
+impl oxidd_dump::AsciiDisplay for BCDDTerminal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         f.write_str("T")
     }

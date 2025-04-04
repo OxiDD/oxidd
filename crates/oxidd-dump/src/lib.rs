@@ -9,8 +9,16 @@
 // achieve this, we use assertions that evaluate to `true` on usual targets.
 #![allow(clippy::assertions_on_constants)]
 
+use std::fmt;
+
+/// Like [`std::fmt::Display`], but the format should use ASCII characters only
+pub trait AsciiDisplay {
+    /// Format the value with the given formatter
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error>;
+}
+
 #[cfg(feature = "dddmp")]
 pub mod dddmp;
 
-#[cfg(feature = "dot")]
+// No feature gate here to always have the traits
 pub mod dot;

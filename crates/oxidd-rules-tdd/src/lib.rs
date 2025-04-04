@@ -13,7 +13,6 @@ use std::hash::Hash;
 use oxidd_core::util::{AllocResult, Borrowed};
 use oxidd_core::{DiagramRules, Edge, InnerNode, LevelNo, Manager, Node, ReducedOrNew};
 use oxidd_derive::Countable;
-use oxidd_dump::dddmp::AsciiDisplay;
 
 mod apply_rec;
 
@@ -117,7 +116,7 @@ impl std::str::FromStr for TDDTerminal {
     }
 }
 
-impl AsciiDisplay for TDDTerminal {
+impl oxidd_dump::AsciiDisplay for TDDTerminal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         match self {
             TDDTerminal::False => f.write_str("F"),

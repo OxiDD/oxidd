@@ -14,7 +14,7 @@ repository.workspace = true
 
 
 [dependencies]
-oxidd = { workspace = true, features = ["bdd", "bcdd"] }
+oxidd = { workspace = true, features = ["bdd", "bcdd", "dddmp", "dot-export"] }
 oxidd-core.workspace = true
 oxidd-dump.workspace = true
 oxidd-reorder.workspace = true

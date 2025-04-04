@@ -5,7 +5,6 @@ use std::ops::{Add, Div, Mul, Sub};
 use std::str::FromStr;
 
 use oxidd_core::function::NumberBase;
-use oxidd_dump::dddmp::AsciiDisplay;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Int64 {
@@ -94,7 +93,7 @@ impl Display for Int64 {
     }
 }
 
-impl AsciiDisplay for Int64 {
+impl oxidd_dump::AsciiDisplay for Int64 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Int64::NaN => f.write_str("NaN"),

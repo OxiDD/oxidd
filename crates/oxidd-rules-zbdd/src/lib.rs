@@ -15,7 +15,6 @@ use oxidd_core::{
     DiagramRules, Edge, HasLevel, InnerNode, LevelNo, LevelView, Manager, ReducedOrNew,
 };
 use oxidd_derive::Countable;
-use oxidd_dump::dddmp::AsciiDisplay;
 
 // spell-checker:ignore symm
 
@@ -133,7 +132,7 @@ impl std::str::FromStr for ZBDDTerminal {
     }
 }
 
-impl AsciiDisplay for ZBDDTerminal {
+impl oxidd_dump::AsciiDisplay for ZBDDTerminal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         match self {
             ZBDDTerminal::Empty => f.write_str("E"),

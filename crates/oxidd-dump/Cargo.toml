@@ -40,7 +40,7 @@ document-features = "0.2"
 default = ["dddmp", "dot"]
 
 ## DDDMP format originally from CUDD
-dddmp = ["bitvec", "rustc-hash", "memchr", "is_sorted"]
+dddmp = ["dep:bitvec", "dep:rustc-hash", "dep:memchr", "dep:is_sorted"]
 
-## Visualization using dot
+## Visualization using Graphviz DOT
 dot = []

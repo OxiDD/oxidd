@@ -47,6 +47,8 @@ default = [
   "zbdd",
   "multi-threading",
   "apply-cache-direct-mapped",
+  "dddmp",
+  "dot-export",
 ]
 
 ## Enable the simple BDD implementation
@@ -99,14 +101,21 @@ statistics = [
   "oxidd-manager-index?/statistics",
 ]
 
+## DDDMP export
+dddmp = ["oxidd-dump/dddmp"]
+
+## Visualization using Graphviz DOT
+dot-export = ["oxidd-dump/dot"]
+
+
 [[example]]
 name = "tdd"
-required-features = ["tdd"]
+required-features = ["tdd", "dot-export"]
 
 [[example]]
 name = "mtbdd"
-required-features = ["mtbdd"]
+required-features = ["mtbdd", "dot-export"]
 
 [[example]]
 name = "zbdd"
-required-features = ["zbdd"]
+required-features = ["zbdd", "dot-export"]
