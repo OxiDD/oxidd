@@ -1,12 +1,14 @@
 use oxidd::mtbdd::terminal::Int64;
 use oxidd::mtbdd::MTBDDFunction;
 use oxidd::mtbdd::MTBDDManagerRef;
+use oxidd::util::AllocResult;
 use oxidd::ManagerRef;
 use oxidd::PseudoBooleanFunction;
 use oxidd_core::Manager;
 use oxidd_dump::dot::dump_all;
+use oxidd_dump::visualize::visualize;
 
-fn main() {
+fn main() -> AllocResult<()> {
     let manager_ref: MTBDDManagerRef<Int64> = oxidd::mtbdd::new_manager(1024, 1024, 1024, 1);
     let [x1, x2, x3, x4] = manager_ref.with_manager_exclusive(|manager| {
         [
@@ -18,16 +20,8 @@ fn main() {
     });
 
     manager_ref.with_manager_shared(|manager| {
-        let res = x1
-            .add(&x2)
-            .unwrap()
-            .mul(
-                &MTBDDFunction::constant(manager, Int64::Num(3))
-                    .unwrap()
-                    .sub(&x4)
-                    .unwrap(),
-            )
-            .unwrap();
+        let c3 = &MTBDDFunction::constant(manager, Int64::Num(3))?;
+        let res = x1.add(&x2)?.mul(&c3.sub(&x4)?)?;
 
         manager.gc();
 
@@ -39,5 +33,18 @@ fn main() {
             [(&res, "(x1 + x2) * (3 - x4)")],
         )
         .expect("dot export failed");
-    });
+
+        visualize(
+            manager,
+            "diagram",
+            &[&x1, &x2, &x3, &x4],
+            Some(&["x1", "x2", "x3", "x4"]),
+            &[&res],
+            Some(&["f"]),
+            None,
+        )
+        .expect("visualization failed");
+
+        Ok(())
+    })
 }

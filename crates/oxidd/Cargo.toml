@@ -49,6 +49,7 @@ default = [
   "apply-cache-direct-mapped",
   "dddmp",
   "dot-export",
+  "visualize",
 ]
 
 ## Enable the simple BDD implementation
@@ -107,6 +108,9 @@ dddmp = ["oxidd-dump/dddmp"]
 ## Visualization using Graphviz DOT
 dot-export = ["oxidd-dump/dot"]
 
+## Visualization using OxiDD-viz
+visualize = ["oxidd-dump/visualize"]
+
 
 [[example]]
 name = "tdd"
@@ -114,7 +118,7 @@ required-features = ["tdd", "dot-export"]
 
 [[example]]
 name = "mtbdd"
-required-features = ["mtbdd", "dot-export"]
+required-features = ["mtbdd", "dot-export", "visualize"]
 
 [[example]]
 name = "zbdd"

@@ -22,3 +22,6 @@ pub mod dddmp;
 
 // No feature gate here to always have the traits
 pub mod dot;
+
+#[cfg(feature = "visualize")]
+pub mod visualize;
