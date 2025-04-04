@@ -1,5 +1,10 @@
-mod int64;
-pub use int64::Int64;
+mod f64;
+mod i64;
+pub use f64::F64;
+pub use i64::I64;
+
+#[deprecated(note = "Renamed to I64")]
+pub type Int64 = I64;
 
 /// Implement e.g. `Add<&T> for T`, `Add<T> for &T`, and `Add<&T> for &T` given
 /// that `T: Add<T, Output = T>`

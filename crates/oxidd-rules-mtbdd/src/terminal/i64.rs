@@ -1,26 +1,25 @@
 use std::cmp::Ordering;
-use std::fmt;
-use std::fmt::Display;
+use std::fmt::{self, Display};
 use std::ops::{Add, Div, Mul, Sub};
 use std::str::FromStr;
 
 use oxidd_core::function::NumberBase;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Int64 {
+pub enum I64 {
     NaN,
     MinusInf,
     Num(i64),
     PlusInf,
 }
 
-impl From<i64> for Int64 {
+impl From<i64> for I64 {
     fn from(value: i64) -> Self {
         Self::Num(value)
     }
 }
 
-impl NumberBase for Int64 {
+impl NumberBase for I64 {
     #[inline]
     fn zero() -> Self {
         Self::Num(0)
@@ -52,9 +51,9 @@ impl NumberBase for Int64 {
     }
 }
 
-impl PartialOrd for Int64 {
+impl PartialOrd for I64 {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        use Int64::*;
+        use I64::*;
         match (self, other) {
             (Num(lhs), Num(rhs)) => Some(lhs.cmp(rhs)),
             (NaN, NaN) | (MinusInf, MinusInf) | (PlusInf, PlusInf) => Some(Ordering::Equal),
@@ -65,7 +64,7 @@ impl PartialOrd for Int64 {
     }
 }
 
-impl FromStr for Int64 {
+impl FromStr for I64 {
     type Err = std::num::ParseIntError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -82,34 +81,39 @@ impl FromStr for Int64 {
     }
 }
 
-impl Display for Int64 {
+impl Display for I64 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Int64::NaN => f.write_str("NaN"),
-            Int64::MinusInf => f.write_str("-∞"),
-            Int64::Num(n) => n.fmt(f),
-            Int64::PlusInf => f.write_str("+∞"),
+            I64::NaN => f.write_str("NaN"),
+            I64::MinusInf => f.write_str("-∞"),
+            I64::Num(n) => n.fmt(f),
+            I64::PlusInf => f.write_str("+∞"),
+        }
+    }
+}
+impl fmt::Debug for I64 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        Display::fmt(self, f)
+    }
+}
+
+impl oxidd_dump::AsciiDisplay for I64 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            I64::NaN => f.write_str("NaN"),
+            I64::MinusInf => f.write_str("-Inf"),
+            I64::Num(n) => n.fmt(f),
+            I64::PlusInf => f.write_str("+Inf"),
         }
     }
 }
 
-impl oxidd_dump::AsciiDisplay for Int64 {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Int64::NaN => f.write_str("NaN"),
-            Int64::MinusInf => f.write_str("-Inf"),
-            Int64::Num(n) => n.fmt(f),
-            Int64::PlusInf => f.write_str("+Inf"),
-        }
-    }
-}
-
-impl Add for Int64 {
-    type Output = Int64;
+impl Add for I64 {
+    type Output = I64;
 
     #[inline]
-    fn add(self, rhs: Self) -> Int64 {
-        use Int64::*;
+    fn add(self, rhs: Self) -> I64 {
+        use I64::*;
         match (self, rhs) {
             (Num(lhs), Num(rhs)) => match lhs.checked_add(rhs) {
                 Some(n) => Num(n),
@@ -128,12 +132,12 @@ impl Add for Int64 {
     }
 }
 
-impl Sub for Int64 {
-    type Output = Int64;
+impl Sub for I64 {
+    type Output = I64;
 
     #[inline]
-    fn sub(self, rhs: Self) -> Int64 {
-        use Int64::*;
+    fn sub(self, rhs: Self) -> I64 {
+        use I64::*;
         match (self, rhs) {
             (Num(lhs), Num(rhs)) => match lhs.checked_sub(rhs) {
                 Some(n) => Num(n),
@@ -152,12 +156,12 @@ impl Sub for Int64 {
     }
 }
 
-impl Mul for Int64 {
-    type Output = Int64;
+impl Mul for I64 {
+    type Output = I64;
 
     #[inline]
-    fn mul(self, rhs: Self) -> Int64 {
-        use Int64::*;
+    fn mul(self, rhs: Self) -> I64 {
+        use I64::*;
         match (self, rhs) {
             (Num(lhs), Num(rhs)) => match lhs.checked_mul(rhs) {
                 Some(n) => Num(n),
@@ -176,12 +180,12 @@ impl Mul for Int64 {
     }
 }
 
-impl Div for Int64 {
-    type Output = Int64;
+impl Div for I64 {
+    type Output = I64;
 
     #[inline]
-    fn div(self, rhs: Self) -> Int64 {
-        use Int64::*;
+    fn div(self, rhs: Self) -> I64 {
+        use I64::*;
         match (self, rhs) {
             (Num(lhs), Num(rhs)) => {
                 if rhs == 0 {
@@ -204,7 +208,7 @@ impl Div for Int64 {
     }
 }
 
-super::impl_ref_op!(Int64, Add, add);
-super::impl_ref_op!(Int64, Sub, sub);
-super::impl_ref_op!(Int64, Mul, mul);
-super::impl_ref_op!(Int64, Div, div);
+super::impl_ref_op!(I64, Add, add);
+super::impl_ref_op!(I64, Sub, sub);
+super::impl_ref_op!(I64, Mul, mul);
+super::impl_ref_op!(I64, Div, div);
