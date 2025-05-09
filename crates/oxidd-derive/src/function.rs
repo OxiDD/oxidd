@@ -199,17 +199,17 @@ pub fn derive_function(input: syn::DeriveInput) -> TokenStream {
                 &self,
                 manager: &Self::Manager<'__id>,
             ) -> &<Self::Manager<'__id> as ::oxidd_core::Manager>::Edge {
-                self.#field.as_edge(manager)
+                ::oxidd_core::function::Function::as_edge(&self.#field, manager)
             }
 
             #[inline]
             fn into_edge<'__id>(self, manager: &Self::Manager<'__id>) -> <Self::Manager<'__id> as ::oxidd_core::Manager>::Edge {
-                self.#field.into_edge(manager)
+                ::oxidd_core::function::Function::into_edge(self.#field, manager)
             }
 
             #[inline]
             fn manager_ref(&self) -> #manager_ref {
-                let inner = self.#field.manager_ref();
+                let inner = ::oxidd_core::function::Function::manager_ref(&self.#field);
                 #manager_ref_expr
             }
 
@@ -218,7 +218,7 @@ pub fn derive_function(input: syn::DeriveInput) -> TokenStream {
             where
                 __F: for<'__id> ::std::ops::FnOnce(&Self::Manager<'__id>, &<Self::Manager<'__id> as ::oxidd_core::Manager>::Edge) -> __T,
             {
-                self.#field.with_manager_shared(f)
+                <#ty as ::oxidd_core::function::Function>::with_manager_shared(&self.#field, f)
             }
 
             #[inline]
@@ -226,7 +226,7 @@ pub fn derive_function(input: syn::DeriveInput) -> TokenStream {
             where
                 __F: for<'__id> ::std::ops::FnOnce(&mut Self::Manager<'__id>, &<Self::Manager<'__id> as ::oxidd_core::Manager>::Edge) -> __T,
             {
-                self.#field.with_manager_exclusive(f)
+                <#ty as ::oxidd_core::function::Function>::with_manager_exclusive(&self.#field, f)
             }
         }
     }

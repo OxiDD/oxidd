@@ -64,28 +64,23 @@ pub fn derive_countable(input: syn::DeriveInput) -> TokenStream {
                     #[inline]
                     fn from_usize(value: usize) -> Self {
                         assert!(value <= Self::MAX_VALUE);
-                        unsafe { std::mem::transmute(value as u8) }
+                        unsafe { ::std::mem::transmute(value as u8) }
                     }
                 }
             }
         }
         syn::Data::Struct(structure) => {
+            let zero_field_msg = "`Countable` can only be derived for `struct`s with zero fields";
             let from_usize_body = match &structure.fields {
                 syn::Fields::Named(fields) => {
                     if !fields.named.is_empty() {
-                        abort!(
-                            fields.span(),
-                            "`Countable` can only be derived for `struct`s with zero fields"
-                        )
+                        abort!(fields.span(), zero_field_msg)
                     }
                     quote!(Self {})
                 }
                 syn::Fields::Unnamed(fields) => {
                     if !fields.unnamed.is_empty() {
-                        abort!(
-                            fields.span(),
-                            "`Countable` can only be derived for `struct`s with zero fields"
-                        )
+                        abort!(fields.span(), zero_field_msg)
                     }
                     quote!(Self())
                 }
