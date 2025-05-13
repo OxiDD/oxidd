@@ -137,6 +137,145 @@ impl BDDManager {
 
         Ok(())
     }
+
+    /// Dump the given functions as a dddmp file.
+    ///
+    /// The output only includes nodes that are reachable from
+    /// ``functions``.
+    ///
+    /// Locking behavior: acquires the manager's lock for shared access.
+    ///
+    /// Args:
+    ///     path (str | PathLike[str]): Path of the output file. If a file at
+    ///         ``path`` exists, it will be truncated, otherwise a new one will
+    ///         be created.
+    ///     functions (Iterable[tuple[BDDFunction, str]]): names for
+    ///         BDD functions to export
+    ///     variables (Iterable[tuple[BDDFunction, str]]): names for all
+    ///         variables
+    ///     dd_name (str): the name that is output to the `.dd` field, unless it is an empty string
+    ///     ascii (bool): indicates whether to use the ASCII or binary format
+    ///
+    /// Returns:
+    ///     None
+    #[pyo3(
+        signature = (/, path, functions, variables, dd_name= "",  ascii=true),
+        text_signature = "($self, /, path, functions, variables, dd_name='', ascii=True)"
+    )]
+    fn dump_dddmp_file<'py>(
+        &self,
+        path: PathBuf,
+        functions: &Bound<'py, PyAny>,
+        variables: &Bound<'py, PyAny>,
+        dd_name: &str,
+        ascii: bool,
+    ) -> PyResult<()> {
+        let collect = crate::util::collect_func_str_pairs::<oxidd::bdd::BDDFunction, BDDFunction>;
+        let functions = collect(Some(functions))?;
+        let variables = collect(Some(variables))?;
+        let function_names = functions
+            .iter()
+            .map(|(_v, s)| s.to_string_lossy())
+            .collect::<Vec<_>>();
+        let variable_names = variables
+            .iter()
+            .map(|(_v, s)| s.to_string_lossy())
+            .collect::<Vec<_>>();
+
+        let file = std::fs::File::create(path)?;
+
+        self.0.with_manager_shared(|manager| {
+            oxidd_dump::dddmp::export(
+                file,
+                manager,
+                ascii,
+                dd_name,
+                &variables.iter().map(|(v, _s)| v).collect::<Vec<_>>(),
+                Some(
+                    &variable_names
+                        .iter()
+                        .map(|s| s.as_ref())
+                        .collect::<Vec<_>>(),
+                ),
+                &functions.iter().map(|(v, _s)| v).collect::<Vec<_>>(),
+                Some(
+                    &function_names
+                        .iter()
+                        .map(|s| s.as_ref())
+                        .collect::<Vec<_>>(),
+                ),
+                |_| false,
+            )
+        })?;
+
+        Ok(())
+    }
+
+
+    /// Sends the given functions to the OxiDD-Viz visualization tool (https://oxidd.net/viz/).
+    ///
+    /// The output only includes nodes that are reachable from
+    /// ``functions``.
+    ///
+    /// Locking behavior: acquires the manager's lock for shared access.
+    ///
+    /// Args:
+    ///     functions (Iterable[tuple[BDDFunction, str]]): names for
+    ///         BDD functions to export
+    ///     variables (Iterable[tuple[BDDFunction, str]]): names for all
+    ///         variables
+    ///     dd_name (str): the name that is output to the `.dd` field, unless it is an empty string
+    ///     port (int): indicates the port to send the diagram to
+    ///
+    /// Returns:
+    ///     None
+    #[pyo3(
+        signature = (/, functions, variables, dd_name= "bdd",  port=None),
+        text_signature = "($self, /, functions, variables, dd_name='', port=None)"
+    )]
+    fn visualize<'py>(
+        &self,
+        functions: &Bound<'py, PyAny>,
+        variables: &Bound<'py, PyAny>,
+        dd_name: &str,
+        port: Option<u16>,
+    ) -> PyResult<()> {
+        let collect = crate::util::collect_func_str_pairs::<oxidd::bdd::BDDFunction, BDDFunction>;
+        let functions = collect(Some(functions))?;
+        let variables = collect(Some(variables))?;
+        let function_names = functions
+            .iter()
+            .map(|(_v, s)| s.to_string_lossy())
+            .collect::<Vec<_>>();
+        let variable_names = variables
+            .iter()
+            .map(|(_v, s)| s.to_string_lossy())
+            .collect::<Vec<_>>();
+
+        self.0.with_manager_shared(|manager| {
+            oxidd_dump::visualize::visualize(
+                manager,
+                dd_name,
+                &variables.iter().map(|(v, _s)| v).collect::<Vec<_>>(),
+                Some(
+                    &variable_names
+                        .iter()
+                        .map(|s| s.as_ref())
+                        .collect::<Vec<_>>(),
+                ),
+                &functions.iter().map(|(v, _s)| v).collect::<Vec<_>>(),
+                Some(
+                    &function_names
+                        .iter()
+                        .map(|s| s.as_ref())
+                        .collect::<Vec<_>>(),
+                ),
+                port,
+            )
+        })?;
+
+        Ok(())
+    }
 }
 
 /// Substitution mapping variables to replacement functions.

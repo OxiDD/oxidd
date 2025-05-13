@@ -21,7 +21,7 @@ doc = false
 
 [dependencies]
 oxidd-core = { workspace = true }
-oxidd-dump = { workspace = true, features = ["dddmp", "dot"] }
+oxidd-dump = { workspace = true, features = ["dddmp", "dot", "visualize"] }
 oxidd = { workspace = true, features = ["bdd", "bcdd", "zbdd"] }
 
 pyo3 = { version = "0.24", features = [
@@ -42,7 +42,11 @@ rustc-hash = "1.1"
 
 [build-dependencies]
 proc-macro2 = "1.0.89"
-syn = { version = "2.0.87", features = ["full", "parsing", "printing"], default-features = false }
+syn = { version = "2.0.87", features = [
+  "full",
+  "parsing",
+  "printing",
+], default-features = false }
 quote = "1.0.37"
 anyhow = "1.0"
 

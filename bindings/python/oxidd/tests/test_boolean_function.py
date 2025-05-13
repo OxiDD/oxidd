@@ -475,6 +475,24 @@ def pick_cube(mgr: oxidd.bdd.BDDManager | oxidd.bcdd.BCDDManager) -> None:
     assert mgr.false().pick_cube() is None
 
 
+def test_bdd_export() -> None:
+    mgr = oxidd.bdd.BDDManager(1024, 1024, 1)
+    x = mgr.new_var()
+    y = mgr.new_var()
+    z = mgr.new_var()
+    f = x.imp(y | z)
+    mgr.dump_dddmp_file("test.dddmmp", [(f, "f")], [(x, "x"), (y, "y"), (z, "z")])
+
+
+def test_bdd_visualize() -> None:
+    mgr = oxidd.bdd.BDDManager(1024, 1024, 1)
+    x = mgr.new_var()
+    y = mgr.new_var()
+    z = mgr.new_var()
+    f = x.imp(y | z)
+    mgr.visualize([(f, "f")], [(x, "x"), (y, "y"), (z, "z")])
+
+
 def test_bdd_pick_cube() -> None:
     pick_cube(oxidd.bdd.BDDManager(1024, 1024, 1))
 
