@@ -20,6 +20,8 @@ pub use rustc_hash::FxHasher;
 #[allow(unused)]
 macro_rules! manager_data {
     ($name:ident$(<$($gen:ident),*>)? for $dd:ident$(<$($dd_gen:ident),*>)?, operator: $op:ty, cache_max_arity: $arity:expr $(, where $($where:tt)*)?) => {
+        #[derive(::oxidd_derive::ManagerEventSubscriber)]
+        #[subscribe(manager = <$dd$(<$($dd_gen),*>)? as $crate::util::type_cons::DD>::Manager<'id>, no_trait_bounds)]
         pub struct $name<'id, $($($gen),*)?> $(where $($where)*)? {
             apply_cache: $crate::util::apply_cache::ApplyCache<
                 <$dd$(<$($dd_gen),*>)? as $crate::util::type_cons::DD>::Manager<'id>,
@@ -31,8 +33,8 @@ macro_rules! manager_data {
         impl<'id, $($($gen),*)?> $name<'id, $($($gen),*)?> $(where $($where)*)? {
             /// SAFETY: The manager data must only be used inside a manager that
             /// guarantees all node deletions to be wrapped inside a
-            /// [`oxidd_core::util::GCContainer::pre_gc()`] /
-            /// [`oxidd_core::util::GCContainer::post_gc()`]
+            /// [`oxidd_core::ManagerEventSubscriber::pre_gc()`] /
+            /// [`oxidd_core::ManagerEventSubscriber::post_gc()`]
             /// pair for the contained apply cache.
             unsafe fn new(apply_cache_capacity: usize) -> Self {
                 Self {
@@ -52,20 +54,6 @@ macro_rules! manager_data {
                 drop_edge: impl Fn(<$dd$(<$($dd_gen),*>)? as $crate::util::type_cons::DD>::Edge<'id>),
             ) {
                 self.apply_cache.drop_with(drop_edge)
-            }
-        }
-
-        impl<'id, $($($gen),*)?> ::oxidd_core::util::GCContainer<<$dd$(<$($dd_gen),*>)? as $crate::util::type_cons::DD>::Manager<'id>>
-            for $name<'id, $($($gen),*)?> $(where $($where)*)?
-        {
-            #[inline]
-            fn pre_gc(&self, manager: &<$dd$(<$($dd_gen),*>)? as $crate::util::type_cons::DD>::Manager<'id>) {
-                self.apply_cache.pre_gc(manager)
-            }
-            #[inline]
-            unsafe fn post_gc(&self, manager: &<$dd$(<$($dd_gen),*>)? as $crate::util::type_cons::DD>::Manager<'id>) {
-                // SAFETY: inherited from outer
-                unsafe { self.apply_cache.post_gc(manager) }
             }
         }
 

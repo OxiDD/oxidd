@@ -3,6 +3,8 @@
 #[allow(unused)] // unused in case no manager impl is selected
 macro_rules! manager_data {
     ($name:ident for $dd:ident, operator: $op:ty, cache_max_arity: $arity:expr) => {
+        #[derive(::oxidd_derive::ManagerEventSubscriber)]
+        #[subscribe(manager = <$dd as $crate::util::type_cons::DD>::Manager<'id>, no_trait_bounds)]
         pub struct $name<'id> {
             apply_cache: $crate::util::apply_cache::ApplyCache<
                 <$dd as $crate::util::type_cons::DD>::Manager<'id>,
@@ -42,20 +44,6 @@ macro_rules! manager_data {
             }
         }
 
-        impl<'id>
-            ::oxidd_core::util::GCContainer<<$dd as $crate::util::type_cons::DD>::Manager<'id>>
-            for $name<'id>
-        {
-            #[inline]
-            fn pre_gc(&self, manager: &<$dd as $crate::util::type_cons::DD>::Manager<'id>) {
-                self.apply_cache.pre_gc(manager)
-            }
-            #[inline]
-            unsafe fn post_gc(&self, manager: &<$dd as $crate::util::type_cons::DD>::Manager<'id>) {
-                // SAFETY: inherited from outer
-                unsafe { self.apply_cache.post_gc(manager) }
-            }
-        }
         impl<'id>
             ::oxidd_core::HasApplyCache<<$dd as $crate::util::type_cons::DD>::Manager<'id>, $op>
             for $name<'id>
@@ -126,19 +114,15 @@ pub fn new_manager(
     apply_cache_capacity: usize,
     threads: u32,
 ) -> ZBDDManagerRef {
-    let manager_ref = {
-        cfg_if::cfg_if! {
-            if #[cfg(feature = "manager-pointer")] {
-                pointer::ZBDDManagerRef::new_manager(inner_node_capacity, apply_cache_capacity, threads)
-            } else if #[cfg(feature = "manager-index")] {
-                index::ZBDDManagerRef::new_manager(inner_node_capacity, 2, apply_cache_capacity, threads)
-            } else {
-                unreachable!()
-            }
+    cfg_if::cfg_if! {
+        if #[cfg(feature = "manager-pointer")] {
+            pointer::ZBDDManagerRef::new_manager(inner_node_capacity, apply_cache_capacity, threads)
+        } else if #[cfg(feature = "manager-index")] {
+            index::ZBDDManagerRef::new_manager(inner_node_capacity, 2, apply_cache_capacity, threads)
+        } else {
+            unreachable!()
         }
-    };
-    manager_ref.with_manager_exclusive(|manager| ::oxidd_rules_zbdd::ZBDDCache::rebuild(manager));
-    manager_ref
+    }
 }
 
 /// Print statistics to stderr
@@ -246,6 +230,5 @@ mod pointer {
     impl oxidd_dump::dot::DotStyle<()> for ZBDDFunction {}
 }
 
-use oxidd_core::ManagerRef;
 pub use oxidd_rules_zbdd::make_node;
 pub use oxidd_rules_zbdd::var_boolean_function;

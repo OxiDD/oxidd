@@ -148,7 +148,7 @@ where
                 // The main reference corresponds to the old node, which is
                 // deleted below. The weak reference is the one in the unique
                 // table. Hence, we can remove the node.
-                unsafe { upper.remove(child_node) };
+                upper.remove(child_node);
             }
         }
 
@@ -168,7 +168,8 @@ where
 ///
 /// Sequential version of [`set_var_order()`].
 ///
-/// The caller must not call [`manager.reorder()`][Manager::reorder].
+/// There is no need for the caller to call
+/// [`manager.reorder()`][Manager::reorder], this is done internally.
 pub fn set_var_order_seq<'id, F: Function>(manager: &mut F::Manager<'id>, order: &[F])
 where
     <F::Manager<'id> as Manager>::InnerNode: HasLevel,
@@ -205,7 +206,8 @@ where
 ///
 /// Like [`set_var_order_seq()`] but with concurrent swap operations.
 ///
-/// The caller must not call [`manager.reorder()`][Manager::reorder].
+/// There is no need for the caller to call
+/// [`manager.reorder()`][Manager::reorder], this is done internally.
 pub fn set_var_order<'id, F: Function>(manager: &mut F::Manager<'id>, order: &[F])
 where
     F::Manager<'id>: Manager + HasWorkers,

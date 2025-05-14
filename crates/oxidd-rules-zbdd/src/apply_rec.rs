@@ -20,8 +20,8 @@ use crate::recursor::{Recursor, SequentialRecursor};
 #[cfg(feature = "statistics")]
 use super::STAT_COUNTERS;
 use super::{
-    collect_children, reduce, reduce_borrowed, singleton_level, stat, HasZBDDCache, ZBDDCache,
-    ZBDDOp, ZBDDTerminal,
+    collect_children, reduce, reduce_borrowed, singleton_level, stat, HasZBDDCache, ZBDDOp,
+    ZBDDTerminal,
 };
 
 // spell-checker:ignore fnode,gnode,hnode,flevel,glevel,hlevel,ghlevel
@@ -562,7 +562,6 @@ where
         let hi = manager.get_terminal(ZBDDTerminal::Base).unwrap();
         let lo = manager.get_terminal(ZBDDTerminal::Empty).unwrap();
         let edge = manager.add_level(|level| InnerNode::new(level, [hi, lo]))?;
-        ZBDDCache::rebuild(manager);
         Ok(Self::from_edge(manager, edge))
     }
 
@@ -663,8 +662,6 @@ where
                 [edge, edge2],
             ))?;
         }
-
-        ZBDDCache::rebuild(manager);
 
         Ok(Self::from_edge(manager, edge))
     }
@@ -1081,7 +1078,6 @@ pub mod mt {
             let hi = manager.get_terminal(ZBDDTerminal::Base).unwrap();
             let lo = manager.get_terminal(ZBDDTerminal::Empty).unwrap();
             let edge = manager.add_level(|level| InnerNode::new(level, [hi, lo]))?;
-            ZBDDCache::rebuild(manager);
             Ok(Self::from_edge(manager, edge))
         }
 
@@ -1190,8 +1186,6 @@ pub mod mt {
                     [edge, edge2],
                 ))?;
             }
-
-            ZBDDCache::rebuild(manager);
 
             Ok(Self::from_edge(manager, edge))
         }

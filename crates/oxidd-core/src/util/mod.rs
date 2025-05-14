@@ -132,42 +132,6 @@ pub trait DropWith<E: Edge>: Sized {
     }
 }
 
-/// A container that may hold "weak" references to nodes and needs to be
-/// informed about operations potentially removing nodes
-///
-/// The main motivation behind this trait is the following observation: When
-/// using reference counting to implement garbage collection of dead nodes,
-/// cloning and dropping edges when inserting entries into the apply cache may
-/// cause many CPU cache misses. To circumvent this performance issue, the apply
-/// cache may store [`Borrowed<M::Edge>`]s (e.g., using the unsafe
-/// [`Borrowed::into_inner()`]). Now the apply cache implementation has to
-/// guarantee that every edge returned by the [`get()`][crate::ApplyCache::get]
-/// method still points to a valid node. To that end, the cache may, e.g., clear
-/// itself when [`Self::pre_gc()`] is called and reject any insertion of new
-/// entries until [`Self::post_gc()`].
-pub trait GCContainer<M: Manager> {
-    /// Prepare for garbage collection
-    ///
-    /// The implementing container data structure may rely on that this method
-    /// is called before the `Manager` performs garbage collection or any
-    /// other operation that possibly removes nodes from the manager. (If
-    /// this is required for SAFETY, however, creation of a `GCContainer`
-    /// instance must be marked unsafe).
-    ///
-    /// This method may lock (parts of) `self`. Unlocking is then done in
-    /// [`Self::post_gc()`].
-    fn pre_gc(&self, manager: &M);
-
-    /// Post-process a garbage collection
-    ///
-    /// # Safety
-    ///
-    /// Each call to this method must be paired with a distinct preceding
-    /// [`Self::pre_gc()`] call. All operations potentially removing nodes must
-    /// happen between [`Self::pre_gc()`] and the call to this method.
-    unsafe fn post_gc(&self, manager: &M);
-}
-
 /// Drop guard for edges to ensure that they are not leaked
 pub struct EdgeDropGuard<'a, M: Manager> {
     manager: &'a M,

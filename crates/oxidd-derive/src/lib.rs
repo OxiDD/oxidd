@@ -4,9 +4,11 @@
 //! `oxidd_core`, not their re-exports in `oxidd`. So in case you want to use
 //! these macros as an "external" user, you may need to add `oxidd_core` to your
 //! `Cargo.toml`.
+#![warn(missing_docs)]
 
 mod countable;
 mod function;
+mod manager_event_subscriber;
 pub(crate) mod util;
 
 // The actual proc macros must reside at the root of the crate:
@@ -22,6 +24,91 @@ pub(crate) mod util;
 pub fn derive_countable(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
     let expanded = countable::derive_countable(input);
+    proc_macro::TokenStream::from(expanded)
+}
+
+/// Derive the `ManagerEventSubscriber` trait from `oxidd_core::util`
+///
+/// # Example
+///
+/// ```
+/// # use std::marker::PhantomData;
+/// # use oxidd_core::{Manager, ManagerEventSubscriber};
+/// # use oxidd_derive::ManagerEventSubscriber;
+/// # struct ApplyCache<M>(PhantomData<M>);
+/// # impl<M: Manager> ManagerEventSubscriber<M> for ApplyCache<M> {}
+/// # struct ZBDDCache<M>(PhantomData<M>);
+/// # impl<M: Manager> ManagerEventSubscriber<M> for ZBDDCache<M> {}
+/// #[derive(ManagerEventSubscriber)]
+/// #[subscribe(manager = M)]
+/// struct ManagerData<M> {
+///     apply_cache: ApplyCache<M>,
+///     zbdd_cache: ZBDDCache<M>,
+///     #[subscribe(skip)]
+///     field_to_skip: bool,
+/// }
+/// ```
+///
+/// Specifying the manager type via `#[subscribe(manager = M)]` is mandatory (it
+/// does not need to be a generic parameter, though). The generated
+/// implementation will look like this:
+///
+/// ```
+/// # use std::marker::PhantomData;
+/// # use oxidd_core::{Manager, ManagerEventSubscriber};
+/// # struct ApplyCache<M>(PhantomData<M>);
+/// # impl<M: Manager> ManagerEventSubscriber<M> for ApplyCache<M> {}
+/// # struct ZBDDCache<M>(PhantomData<M>);
+/// # impl<M: Manager> ManagerEventSubscriber<M> for ZBDDCache<M> {}
+/// # struct ManagerData<M> {
+/// #     apply_cache: ApplyCache<M>,
+/// #     zbdd_cache: ZBDDCache<M>,
+/// #     field_to_skip: bool,
+/// # }
+/// impl<M> ManagerEventSubscriber<M> for ManagerData<M>
+/// where
+///     M: Manager,
+///     ApplyCache<M>: ManagerEventSubscriber<M>,
+///     ZBDDCache<M>: ManagerEventSubscriber<M>,
+/// {
+///     fn pre_gc(&self, manager: &M) {
+///         self.apply_cache.pre_gc(manager);
+///         self.zbdd_cache.pre_gc(manager);
+///     }
+///     unsafe fn post_gc(&self, manager: &M) {
+///         // SAFETY: since the caller ensures to call this method (only!) once
+///         // after a GC, we call `post_gc` (only) once  for each substructure.
+///         unsafe {
+///             self.apply_cache.post_gc(manager);
+///             self.zbdd_cache.post_gc(manager);
+///         }
+///     }
+///     // similar implementations for `pre_reorder` and `post_reorder` ...
+///     fn pre_reorder_mut(manager: &mut M) {
+///         ApplyCache::<M>::pre_reorder_mut(manager);
+///         ZBDDCache::<M>::pre_reorder_mut(manager);
+///     }
+///     // similar implementation for `post_reorder_mut` ...
+/// }
+/// ```
+///
+/// Note that if you have two fields of the same type (and you do not use
+/// `#[subscribe(skip)]` on either of these fields), the `pre_reorder_mut` and
+/// `post_reorder_mut` implementation will call the method for that type twice
+/// (with the same `manager` argument).
+///
+/// In some cases the trait bounds `M: Manager`,
+/// `ApplyCache<M>: ManagerEventSubscriber<M>`, etc. can lead to undesired
+/// self-references and cause the [compiler error
+/// E0275](https://doc.rust-lang.org/stable/error_codes/E0275.html). To disable
+/// the generation of those trait bounds, specify `no_trait_bounds` via a
+/// struct-level `subscribe` attribute. (This will not affect trait bounds from
+/// the struct declaration itself.)
+#[proc_macro_error::proc_macro_error]
+#[proc_macro_derive(ManagerEventSubscriber, attributes(subscribe))]
+pub fn derive_manager_event_subscriber(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+    let expanded = manager_event_subscriber::derive_manager_event_subscriber(input);
     proc_macro::TokenStream::from(expanded)
 }
 

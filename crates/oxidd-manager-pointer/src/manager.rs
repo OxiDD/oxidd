@@ -33,8 +33,10 @@ use parking_lot::MutexGuard;
 use rustc_hash::FxHasher;
 
 use oxidd_core::function::EdgeOfFunc;
-use oxidd_core::util::{AbortOnDrop, AllocResult, Borrowed, DropWith, GCContainer};
-use oxidd_core::{DiagramRules, HasApplyCache, InnerNode, LevelNo, Node, Tag};
+use oxidd_core::util::{AbortOnDrop, AllocResult, Borrowed, DropWith};
+use oxidd_core::{
+    DiagramRules, HasApplyCache, InnerNode, LevelNo, ManagerEventSubscriber, Node, Tag,
+};
 
 use crate::node::NodeBase;
 use crate::terminal_manager::TerminalManager;
@@ -98,7 +100,7 @@ pub trait ManagerDataCons<
 >: Sized
 {
     type T<'id>: DropWith<Edge<'id, NC::T<'id>, ET, TAG_BITS>>
-        + GCContainer<
+        + ManagerEventSubscriber<
             Manager<
                 'id,
                 NC::T<'id>,
@@ -159,9 +161,10 @@ where
     unique_table: Vec<Mutex<LevelViewSet<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>>>,
     data: ManuallyDrop<MD>,
     store_inner: *const StoreInner<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>,
-    gc_ongoing: TryLock,
     gc_count: AtomicU64,
     reorder_count: u64,
+    gc_ongoing: TryLock,
+    reorder_gc_prepared: bool,
     phantom: PhantomData<(TM, R)>,
 }
 
@@ -274,9 +277,10 @@ where
             unique_table: Vec::new(),
             data: ManuallyDrop::new(data),
             store_inner: slot,
-            gc_ongoing: TryLock::new(),
             gc_count: AtomicU64::new(0),
             reorder_count: 0,
+            gc_ongoing: TryLock::new(),
+            reorder_gc_prepared: false,
             phantom: PhantomData,
         });
         unsafe { std::ptr::write(addr_of_mut!((*slot).manager), data) };
@@ -639,7 +643,7 @@ where
     ET: Tag,
     TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
     R: DiagramRules<Edge<'id, N, ET, TAG_BITS>, N, TM::TerminalNode>,
-    MD: DropWith<Edge<'id, N, ET, TAG_BITS>> + GCContainer<Self>,
+    MD: DropWith<Edge<'id, N, ET, TAG_BITS>> + ManagerEventSubscriber<Self>,
 {
     type Edge = Edge<'id, N, ET, TAG_BITS>;
     type EdgeTag = ET;
@@ -769,7 +773,11 @@ where
 
     fn add_level(&mut self, f: impl FnOnce(LevelNo) -> Self::InnerNode) -> AllocResult<Self::Edge> {
         let level_no = self.unique_table.len() as LevelNo;
-        assert!(level_no < LevelNo::MAX, "too many levels");
+        assert!(level_no != LevelNo::MAX, "too many levels");
+
+        self.data.pre_reorder(self);
+        MD::pre_reorder_mut(self);
+
         let node = f(level_no);
         node.assert_level_matches(level_no);
 
@@ -781,6 +789,9 @@ where
         set.insert(e1);
         self.unique_table.push(Mutex::new(set));
 
+        self.data.post_reorder(self);
+        MD::post_reorder_mut(self);
+
         Ok(e2)
     }
 
@@ -788,6 +799,7 @@ where
     fn level(&self, no: LevelNo) -> Self::LevelView<'_> {
         LevelView {
             store: self.store(),
+            allow_node_removal: self.reorder_gc_prepared,
             level: no,
             set: self.unique_table[no as usize].lock(),
         }
@@ -797,6 +809,7 @@ where
     fn levels(&self) -> Self::LevelIterator<'_> {
         LevelIter {
             store: self.store(),
+            allow_node_removal: self.reorder_gc_prepared,
             level_front: 0,
             level_back: self.unique_table.len() as LevelNo,
             it: self.unique_table.iter(),
@@ -826,7 +839,9 @@ where
         }
         self.gc_count.fetch_add(1, Relaxed);
         let guard = AbortOnDrop("Garbage collection panicked.");
-        self.data.pre_gc(self);
+        if !self.reorder_gc_prepared {
+            self.data.pre_gc(self);
+        }
 
         let mut collected = 0;
         for level in &self.unique_table {
@@ -839,19 +854,37 @@ where
         }
         collected += unsafe { &*self.terminal_manager() }.gc();
 
-        // SAFETY: We called `pre_gc()` and the garbage collection is done.
-        unsafe { self.data.post_gc(self) };
+        if !self.reorder_gc_prepared {
+            // SAFETY: We called `pre_gc`, the garbage collection is done.
+            unsafe { self.data.post_gc(self) };
+        }
         self.gc_ongoing.unlock();
         guard.defuse();
         collected
     }
 
     fn reorder<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T {
+        if self.reorder_gc_prepared {
+            // Reordering was already prepared (nested `reorder` call).
+            // Important: We must return here to not finalize the reordering
+            // before the parent `reorder` closure returns.
+            return f(self);
+        }
         let guard = AbortOnDrop("Reordering panicked.");
+
         self.data.pre_gc(self);
+        self.reorder_gc_prepared = true;
+        self.data.pre_reorder(self);
+        MD::pre_reorder_mut(self);
+
         let res = f(self);
+
+        self.data.post_reorder(self);
+        MD::post_reorder_mut(self);
+        self.reorder_gc_prepared = false;
         // SAFETY: We called `pre_gc()` and the reordering is done.
         unsafe { self.data.post_gc(self) };
+
         guard.defuse();
         // Depending on the reordering implementation, garbage collections are
         // preformed, but not necessarily through `Self::gc`. So we increment
@@ -879,7 +912,7 @@ where
     ET: Tag + Send + Sync,
     TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS> + Send + Sync,
     R: DiagramRules<Edge<'id, N, ET, TAG_BITS>, N, TM::TerminalNode>,
-    MD: DropWith<Edge<'id, N, ET, TAG_BITS>> + GCContainer<Self> + Send + Sync,
+    MD: DropWith<Edge<'id, N, ET, TAG_BITS>> + ManagerEventSubscriber<Self> + Send + Sync,
 {
     type WorkerPool = crate::workers::Workers;
 
@@ -897,6 +930,9 @@ where
     MD: DropWith<Edge<'id, N, ET, TAG_BITS>>,
 {
     store: &'a ArcSlab<N, StoreInner<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>, PAGE_SIZE>,
+    /// SAFETY invariant: If set to true, a garbage collection is prepared
+    /// (i.e., there are no "weak" edges).
+    allow_node_removal: bool,
     level_front: LevelNo,
     level_back: LevelNo,
     it: std::slice::Iter<'a, Mutex<LevelViewSet<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>>>,
@@ -920,6 +956,7 @@ where
         self.level_front += 1;
         Some(LevelView {
             store: self.store,
+            allow_node_removal: self.allow_node_removal,
             level,
             set: mutex.lock(),
         })
@@ -974,6 +1011,7 @@ where
         self.level_back -= 1;
         Some(LevelView {
             store: self.store,
+            allow_node_removal: self.allow_node_removal,
             level: self.level_back,
             set: mutex.lock(),
         })
@@ -1260,6 +1298,9 @@ where
     MD: DropWith<Edge<'id, N, ET, TAG_BITS>>,
 {
     store: &'a ArcSlab<N, StoreInner<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>, PAGE_SIZE>,
+    /// SAFETY invariant: If set to true, a garbage collection is prepared
+    /// (i.e., there are no "weak" edges).
+    allow_node_removal: bool,
     level: LevelNo,
     set: MutexGuard<'a, LevelViewSet<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>>,
 }
@@ -1273,7 +1314,7 @@ where
     TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
     R: DiagramRules<Edge<'id, N, ET, TAG_BITS>, N, TM::TerminalNode>,
     MD: DropWith<Edge<'id, N, ET, TAG_BITS>>
-        + GCContainer<Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>>,
+        + ManagerEventSubscriber<Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>>,
 {
     type Iterator<'b>
         = LevelViewIter<'b, 'id, N, ET, TAG_BITS>
@@ -1321,17 +1362,20 @@ where
         LevelViewSet::get_or_insert(&mut *self.set, node, |node| add_node(self.store, node))
     }
 
-    #[inline(always)]
-    unsafe fn gc(&mut self) {
-        // SAFETY: Called from inside the closure of `Manager::reorder()`, hence
-        // there are no "weak" edges.
-        unsafe { self.set.gc() };
+    #[inline]
+    fn gc(&mut self) {
+        if self.allow_node_removal {
+            // SAFETY: By invariant, node removal is allowed.
+            unsafe { self.set.gc() };
+        }
     }
 
     #[inline]
-    unsafe fn remove(&mut self, node: &N) -> bool {
-        // SAFETY: Called from inside the closure of `Manager::reorder()`, hence
-        // there are no "weak" edges.
+    fn remove(&mut self, node: &N) -> bool {
+        if !self.allow_node_removal {
+            return false;
+        }
+        // SAFETY: By invariant, node removal is allowed.
         match unsafe { self.set.remove(node) } {
             Some(edge) => {
                 // SAFETY: `edge` is untagged, the type parameters match
@@ -1352,10 +1396,11 @@ where
         self.set.iter()
     }
 
-    #[inline]
+    #[inline(always)]
     fn take(&mut self) -> Self::Taken {
         TakenLevelView {
             store: self.store,
+            allow_node_removal: self.allow_node_removal,
             level: self.level,
             set: std::mem::take(&mut self.set),
         }
@@ -1371,6 +1416,13 @@ where
     MD: DropWith<Edge<'id, N, ET, TAG_BITS>>,
 {
     store: &'a ArcSlab<N, StoreInner<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>, PAGE_SIZE>,
+    /// SAFETY invariant: If set to true, a garbage collection is prepared
+    /// (i.e., there are no "weak" edges).
+    ///
+    /// Note that due to lifetime restrictions there is no way to have a
+    /// `TakenLevelView { allow_node_removal: true, .. }` when the associated
+    /// `Manager` has `reorder_gc_prepared` set to `false`.
+    allow_node_removal: bool,
     level: LevelNo,
     set: LevelViewSet<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>,
 }
@@ -1384,7 +1436,7 @@ where
     TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
     R: DiagramRules<Edge<'id, N, ET, TAG_BITS>, N, TM::TerminalNode>,
     MD: DropWith<Edge<'id, N, ET, TAG_BITS>>
-        + GCContainer<Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>>,
+        + ManagerEventSubscriber<Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>>,
 {
     type Iterator<'b>
         = LevelViewIter<'b, 'id, N, ET, TAG_BITS>
@@ -1434,7 +1486,18 @@ where
     }
 
     #[inline]
-    unsafe fn remove(&mut self, node: &N) -> bool {
+    fn gc(&mut self) {
+        if self.allow_node_removal {
+            // SAFETY: By invariant, node removal is allowed.
+            unsafe { self.set.gc() };
+        }
+    }
+
+    #[inline]
+    fn remove(&mut self, node: &N) -> bool {
+        if !self.allow_node_removal {
+            return false;
+        }
         // SAFETY: Called from inside the closure of `Manager::reorder()`, hence
         // there are no "weak" edges.
         match unsafe { self.set.remove(node) } {
@@ -1445,13 +1508,6 @@ where
             }
             None => false,
         }
-    }
-
-    #[inline]
-    unsafe fn gc(&mut self) {
-        // SAFETY: Called from inside the closure of `Manager::reorder()`, hence
-        // there are no "weak" edges.
-        unsafe { self.set.gc() };
     }
 
     #[inline]
@@ -1468,6 +1524,7 @@ where
     fn take(&mut self) -> Self::Taken {
         TakenLevelView {
             store: self.store,
+            allow_node_removal: self.allow_node_removal,
             level: self.level,
             set: std::mem::take(&mut self.set),
         }
@@ -1736,7 +1793,17 @@ pub fn new_manager<
     let _ = Edge::<'static, NC::T<'static>, ET, TAG_BITS>::TAG_MASK;
     let _ = Edge::<'static, NC::T<'static>, ET, TAG_BITS>::ALL_TAG_BITS;
 
-    ManagerRef(unsafe { ArcSlab::new_with(|slot| StoreInner::init_in(slot, data, threads)) })
+    let arc = unsafe { ArcSlab::new_with(|slot| StoreInner::init_in(slot, data, threads)) };
+
+    // initialize the manager data
+    {
+        let guard = &mut arc.data().manager.exclusive();
+        let manager = &mut *guard;
+        MDC::T::<'static>::init(&manager.data, manager);
+        MDC::T::<'static>::init_mut(manager);
+    }
+
+    ManagerRef(arc)
 }
 
 // === Functions ===============================================================
@@ -1987,7 +2054,9 @@ impl<
         ET: Tag,
         TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
         R: DiagramRules<Edge<'id, N, ET, TAG_BITS>, N, TM::TerminalNode>,
-        MD: HasApplyCache<Self, O> + GCContainer<Self> + DropWith<Edge<'id, N, ET, TAG_BITS>>,
+        MD: HasApplyCache<Self, O>
+            + ManagerEventSubscriber<Self>
+            + DropWith<Edge<'id, N, ET, TAG_BITS>>,
         O: Copy,
         const PAGE_SIZE: usize,
         const TAG_BITS: u32,

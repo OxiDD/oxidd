@@ -767,12 +767,32 @@ pub unsafe trait Manager: Sized {
     /// nodes that can be removed, this node will be removed as well.
     ///
     /// Returns the number of nodes removed.
+    ///
+    /// The implementation should emit the [`ManagerEventSubscriber::pre_gc()`]
+    /// and [`ManagerEventSubscriber::post_gc()`] events unless called from the
+    /// closure passed to [`Self::reorder()`].
     fn gc(&self) -> usize;
 
     /// Prepare and postprocess a reordering operation. The reordering itself is
     /// performed in `f`.
     ///
     /// Returns the value returned by `f`.
+    ///
+    /// In case of a recursive call (i.e., the closure passed to this method
+    /// calls this method again), the implementation should just call `f` and
+    /// return.
+    ///
+    /// Otherwise, the implementation should emit
+    /// [events][ManagerEventSubscriber] in the following order:
+    ///
+    /// 1. [`pre_gc`][ManagerEventSubscriber::pre_gc()]. This enables node
+    ///    removal during the `pre_reorder` events.
+    /// 2. [`pre_reorder`][ManagerEventSubscriber::pre_reorder()] and
+    ///    [`pre_reorder_mut`][ManagerEventSubscriber::pre_reorder_mut()]
+    /// 3. Call `f`
+    /// 4. [`post_reorder`][ManagerEventSubscriber::post_reorder()] and
+    ///    [`post_reorder_mut`][ManagerEventSubscriber::post_reorder_mut()]
+    /// 5. [`post_gc`][ManagerEventSubscriber::post_gc()]
     fn reorder<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T;
 
     /// Get the count of garbage collections
@@ -786,6 +806,122 @@ pub unsafe trait Manager: Sized {
     /// This counter should monotonically increase to ensure that caches are
     /// invalidated accordingly.
     fn reorder_count(&self) -> u64;
+}
+
+/// Event subscriber for [`Manager`]-related events
+///
+/// This is intended to be implemented by data structures that can be plugged
+/// into the [`Manager`], e.g., an [`ApplyCache`] implementation.
+///
+/// # Use Cases
+///
+/// When using reference counting to implement garbage collection of dead nodes,
+/// cloning and dropping edges when inserting entries into the apply cache may
+/// cause many CPU cache misses. To circumvent this performance issue, the apply
+/// cache may store [`Borrowed<M::Edge>`]s (e.g., using the unsafe
+/// [`Borrowed::into_inner()`]). Now, the apply cache implementation has to
+/// guarantee that every edge returned by the [`get()`][ApplyCache::get]
+/// method still points to a valid node. To that end, the cache may, e.g., clear
+/// itself when [`Self::pre_gc()`] is called and reject any insertion of new
+/// entries until [`Self::post_gc()`].
+///
+/// # Safety
+///
+/// A use-case such as the one described above requires the `pre_*` methods to
+/// actually be called before any garbage collection / reordering for SAFETY.
+/// This means the struct implementing `ManagerEventSubscriber` must only be
+/// plugged into [`Manager`] implementations or other wrapper structures that
+/// uphold this contract, i.e., creation of the `ManagerEventSubscriber`
+/// implementation must be `unsafe`.
+///
+/// Additionally, we require each [`post_gc`][Self::post_gc] call to be paired
+/// with a distinct preceding [`pre_gc`][Self::pre_gc] call, see below.
+pub trait ManagerEventSubscriber<M: Manager> {
+    /// Initialization
+    ///
+    /// This method is called once at the very end of initializing a new
+    /// manager.
+    #[inline(always)]
+    #[allow(unused_variables)]
+    fn init(&self, manager: &M) {}
+
+    /// Initialization
+    ///
+    /// This is an alternative to [`Self::post_reorder()`] with a mutable
+    /// reference to the manager as an argument. Since `self` may be a
+    /// substructure of `manager`, the method cannot provide mutable references
+    /// to both `self` and `manager`.
+    #[inline(always)]
+    #[allow(unused_variables)]
+    fn init_mut(manager: &mut M) {}
+
+    /// Prepare a garbage collection
+    ///
+    /// The [`Manager`] implementation should only remove nodes (as part of a
+    /// garbage collection or reordering) after calling this method. Between a
+    /// `pre_gc` and the subsequent [`post_gc`][Self::post_gc] call, there
+    /// should not be another `pre_gc` call.
+    ///
+    /// This method may lock (parts of) `self`. Unlocking is then done in
+    /// [`Self::post_gc()`].
+    ///
+    /// Note that this method and [`Self::pre_reorder`] may both be called in
+    /// case of reordering, but can also be
+    #[inline(always)]
+    #[allow(unused_variables)]
+    fn pre_gc(&self, manager: &M) {}
+
+    /// Post-process a garbage collection
+    ///
+    /// # Safety
+    ///
+    /// Each call to this method must be paired with a distinct preceding
+    /// [`Self::pre_gc()`] call. All operations potentially removing nodes must
+    /// happen between such a pair of method calls.
+    #[inline(always)]
+    #[allow(unused_variables)]
+    unsafe fn post_gc(&self, manager: &M) {}
+
+    /// Prepare a reordering operation (including any addition of levels)
+    ///
+    /// The [`Manager`] implementation should only add or reorder levels after
+    /// calling this method and [`pre_reorder_mut`][Self::pre_reorder_mut].
+    /// Between a `pre_reorder` and the subsequent
+    /// [`post_reorder`][Self::post_reorder] call, there should not be
+    /// another `pre_reorder` call.
+    #[inline(always)]
+    #[allow(unused_variables)]
+    fn pre_reorder(&self, manager: &M) {}
+
+    /// Prepare a reordering operation (including any addition of levels)
+    ///
+    /// This is an alternative to [`Self::pre_reorder()`] with a mutable
+    /// reference to the manager as an argument. Since `self` may be a
+    /// substructure of `manager`, the method cannot provide mutable references
+    /// to both `self` and `manager`.
+    #[inline(always)]
+    #[allow(unused_variables)]
+    fn pre_reorder_mut(manager: &mut M) {}
+
+    /// Post-process a reordering operation
+    ///
+    /// Each call to this method should be paired with a distinct preceding
+    /// [`Self::pre_reorder()`] call. All operations reordering (or adding)
+    /// levels of the decision diagram should happen between such a pair of
+    /// method calls.
+    #[inline(always)]
+    #[allow(unused_variables)]
+    fn post_reorder(&self, manager: &M) {}
+
+    /// Post-process a reordering operation
+    ///
+    /// This is an alternative to [`Self::post_reorder()`] with a mutable
+    /// reference to the manager as an argument. Since `self` may be a
+    /// substructure of `manager`, the method cannot provide mutable references
+    /// to both `self` and `manager`.
+    #[inline(always)]
+    #[allow(unused_variables)]
+    fn post_reorder_mut(manager: &mut M) {}
 }
 
 /// View of a single level in the manager
@@ -861,19 +997,18 @@ pub unsafe trait LevelView<E: Edge, N: InnerNode<E>> {
 
     /// Perform garbage collection on this level
     ///
-    /// # Safety
-    ///
-    /// Must be called from inside the closure passed to [`Manager::reorder()`].
-    unsafe fn gc(&mut self);
+    /// This method may be a no-op unless a garbage collection has been
+    /// prepared. For instance, this is what [`Manager::reorder()`] does.
+    fn gc(&mut self);
 
     /// Remove `node` from (this level of) the manager
     ///
-    /// Returns whether the value was present at this level.
+    /// Returns whether the node was present at this level and has been removed.
     ///
-    /// # Safety
-    ///
-    /// Must be called from inside the closure passed to [`Manager::reorder()`].
-    unsafe fn remove(&mut self, node: &N) -> bool;
+    /// This method may be a no-op unless a garbage collection has been
+    /// prepared. For instance, this is what [`Manager::reorder()`] does. In the
+    /// no-op case, the return value is always false.
+    fn remove(&mut self, node: &N) -> bool;
 
     /// Move all nodes from this level to the other level and vice versa.
     ///

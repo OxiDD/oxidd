@@ -2,20 +2,14 @@
 
 use std::cell::UnsafeCell;
 use std::fmt;
-use std::hash::Hash;
-use std::hash::Hasher;
+use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
-use std::mem::ManuallyDrop;
-use std::mem::MaybeUninit;
+use std::mem::{ManuallyDrop, MaybeUninit};
 
-use oxidd_core::util::GCContainer;
 use parking_lot::lock_api::RawMutex;
 
-use oxidd_core::util::Borrowed;
-use oxidd_core::util::DropWith;
-use oxidd_core::ApplyCache;
-use oxidd_core::Edge;
-use oxidd_core::Manager;
+use oxidd_core::util::{Borrowed, DropWith};
+use oxidd_core::{ApplyCache, Edge, Manager, ManagerEventSubscriber};
 
 #[cfg(feature = "hugealloc")]
 type Box<T> = allocator_api2::boxed::Box<T, hugealloc::HugeAlloc>;
@@ -275,8 +269,9 @@ where
     /// # Safety
     ///
     /// The apply cache must only be used inside a manager that guarantees all
-    /// node deletions to be wrapped inside an [`GCContainer::pre_gc()`] /
-    /// [`GCContainer::post_gc()`] pair.
+    /// node deletions to be wrapped inside an
+    /// [`ManagerEventSubscriber::pre_gc()`] /
+    /// [`ManagerEventSubscriber::post_gc()`] pair.
     pub unsafe fn with_capacity(capacity: usize) -> Self {
         let () = Self::CHECK_ARITY;
         let buckets = capacity
@@ -390,7 +385,7 @@ where
     }
 }
 
-impl<M, O, H, const ARITY: usize> GCContainer<M> for DMApplyCache<M, O, H, ARITY>
+impl<M, O, H, const ARITY: usize> ManagerEventSubscriber<M> for DMApplyCache<M, O, H, ARITY>
 where
     M: Manager,
     O: Copy + Hash + Ord,

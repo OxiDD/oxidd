@@ -1,7 +1,7 @@
 use std::hash::Hash;
 
-use oxidd_core::util::{Borrowed, GCContainer};
-use oxidd_core::Manager;
+use oxidd_core::util::Borrowed;
+use oxidd_core::{Manager, ManagerEventSubscriber};
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "apply-cache-direct-mapped")] {
@@ -44,7 +44,7 @@ impl<M: Manager, O: Copy, const ARITY: usize> oxidd_core::util::DropWith<M::Edge
     }
 }
 
-impl<M: Manager, O, const ARITY: usize> GCContainer<M> for NoApplyCache<M, O, ARITY> {
+impl<M: Manager, O, const ARITY: usize> ManagerEventSubscriber<M> for NoApplyCache<M, O, ARITY> {
     fn pre_gc(&self, _manager: &M) {
         // Nothing to do
     }

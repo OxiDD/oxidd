@@ -12,7 +12,8 @@ use std::hash::Hash;
 
 use oxidd_core::util::{AllocResult, Borrowed, DropWith};
 use oxidd_core::{
-    DiagramRules, Edge, HasLevel, InnerNode, LevelNo, LevelView, Manager, ReducedOrNew,
+    DiagramRules, Edge, HasLevel, InnerNode, LevelNo, LevelView, Manager, ManagerEventSubscriber,
+    ReducedOrNew,
 };
 use oxidd_derive::Countable;
 
@@ -156,6 +157,53 @@ pub struct ZBDDCache<E> {
     tautologies: Vec<E>,
 }
 
+impl<M> ManagerEventSubscriber<M> for ZBDDCache<M::Edge>
+where
+    M: Manager<Terminal = ZBDDTerminal> + HasZBDDCache<M::Edge>,
+{
+    #[inline(always)]
+    fn init_mut(manager: &mut M) {
+        Self::post_reorder_mut(manager);
+    }
+
+    fn pre_reorder_mut(manager: &mut M) {
+        // clear the cache top down
+        let mut ts = std::mem::take(&mut manager.zbdd_cache_mut().tautologies);
+        let mut level = 0;
+        while ts.len() > 1 {
+            if !manager.try_remove_node(ts.pop().unwrap(), level) {
+                break;
+            }
+            level += 1;
+        }
+        for e in ts.into_iter().rev() {
+            manager.drop_edge(e);
+        }
+    }
+
+    fn post_reorder_mut(manager: &mut M) {
+        // Build the tautologies bottom up
+        //
+        // Storing the edge for `ZBDDTerminal::Base` as well enables us to return
+        // `&E` instead of `E` in `Self::tautology()`, so we don't need as many
+        // clone/drop operations.
+        let mut tautologies = Vec::with_capacity(1 + manager.num_levels() as usize);
+        tautologies.push(manager.get_terminal(ZBDDTerminal::Base).unwrap());
+        for mut view in manager.levels().rev() {
+            let level = view.level_no();
+            let hi = manager.clone_edge(tautologies.last().unwrap());
+            let lo = manager.clone_edge(&hi);
+            let Ok(edge) = view.get_or_insert(M::InnerNode::new(level, [hi, lo])) else {
+                eprintln!("Out of memory");
+                std::process::abort();
+            };
+            tautologies.push(edge);
+        }
+
+        manager.zbdd_cache_mut().tautologies = tautologies;
+    }
+}
+
 pub trait HasZBDDCache<E: Edge> {
     fn zbdd_cache(&self) -> &ZBDDCache<E>;
     fn zbdd_cache_mut(&mut self) -> &mut ZBDDCache<E>;
@@ -173,7 +221,7 @@ impl<E: Edge, T: AsRef<ZBDDCache<E>> + AsMut<ZBDDCache<E>>> HasZBDDCache<E> for 
 
 impl<E: Edge> DropWith<E> for ZBDDCache<E> {
     fn drop_with(self, drop_edge: impl Fn(E)) {
-        for e in self.tautologies {
+        for e in self.tautologies.into_iter().rev() {
             drop_edge(e)
         }
     }
@@ -183,53 +231,8 @@ impl<E: Edge> ZBDDCache<E> {
     /// Create a new `ZBDDCache`
     pub fn new() -> Self {
         Self {
-            tautologies: vec![],
+            tautologies: Vec::new(),
         }
-    }
-
-    /// Rebuild the `ZBDDCache` of `manager`
-    ///
-    /// The logical semantics of ZBDD nodes is dependent on the set of
-    /// variables. The [`oxidd_core::function::BooleanFunction`]
-    /// implementation for [`ZBDDFunction`] assumes that this set of variables
-    /// is the set containing all variables. So if we add a new variable/level
-    /// to the diagram, the cache needs to be rebuilt.
-    /// [`ZBDDFunction::new_var()`][oxidd_core::function::BooleanFunction::new_var()]
-    /// and
-    /// [`ZBDDFunction::new_singleton()`][`oxidd_core::function::BooleanVecSet::new_singleton()`]
-    /// call this function automatically.
-    pub fn rebuild<M: Manager<Edge = E, Terminal = ZBDDTerminal> + HasZBDDCache<E>>(
-        manager: &mut M,
-    ) {
-        // We cannot have both `&mut Self` and `&M`, because we need a `&mut M`
-        // to obtain a `&mut Self` using `HasZBDDCache::zbdd_cache_mut()`.
-
-        let mut tautologies = std::mem::take(&mut manager.zbdd_cache_mut().tautologies);
-
-        // Clear the cache
-        for e in tautologies.drain(..) {
-            manager.drop_edge(e);
-        }
-
-        // Build the tautologies bottom up
-        //
-        // Storing the edge for `ZBDDTerminal::Base` as well enables us to return
-        // `&E` instead of `E` in `Self::tautology()`, so we don't need as many
-        // clone/drop operations.
-        tautologies.reserve(1 + manager.num_levels() as usize);
-        tautologies.push(manager.get_terminal(ZBDDTerminal::Base).unwrap());
-        for mut view in manager.levels().rev() {
-            let level = view.level_no();
-            let hi = manager.clone_edge(tautologies.last().unwrap());
-            let lo = manager.clone_edge(&hi);
-            let Ok(edge) = view.get_or_insert(M::InnerNode::new(level, [hi, lo])) else {
-                eprintln!("Out of memory");
-                std::process::abort();
-            };
-            tautologies.push(edge);
-        }
-
-        manager.zbdd_cache_mut().tautologies = tautologies;
     }
 
     /// Get the tautology for the set of variables at `level` and below
@@ -238,7 +241,10 @@ impl<E: Edge> ZBDDCache<E> {
         // The vector contains one entry for each level including the terminals.
         // The terminal level comes first, the top-most level last.
         let len = self.tautologies.len() as u32;
-        debug_assert!(len > 0, "Cache is empty. Maybe you forgot to rebuild it?");
+        debug_assert!(
+            len > 0,
+            "ZBDDCache is empty. This is an OxiDD-internal error."
+        );
         let rev_idx = std::cmp::min(len - 1, level);
         &self.tautologies[(len - 1 - rev_idx) as usize]
     }

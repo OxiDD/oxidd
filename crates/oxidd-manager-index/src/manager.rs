@@ -32,8 +32,8 @@ use parking_lot::{Condvar, Mutex, MutexGuard};
 use rustc_hash::FxHasher;
 
 use oxidd_core::function::EdgeOfFunc;
-use oxidd_core::util::{AbortOnDrop, AllocResult, Borrowed, DropWith, GCContainer, OutOfMemory};
-use oxidd_core::{DiagramRules, InnerNode, LevelNo, Tag};
+use oxidd_core::util::{AbortOnDrop, AllocResult, Borrowed, DropWith, OutOfMemory};
+use oxidd_core::{DiagramRules, InnerNode, LevelNo, ManagerEventSubscriber, Tag};
 
 use crate::node::NodeBase;
 use crate::terminal_manager::TerminalManager;
@@ -86,7 +86,9 @@ pub trait ManagerDataCons<
     type T<'id>: Send
         + Sync
         + DropWith<Edge<'id, NC::T<'id>, ET>>
-        + GCContainer<Manager<'id, NC::T<'id>, ET, TMC::T<'id>, RC::T<'id>, Self::T<'id>, TERMINALS>>;
+        + ManagerEventSubscriber<
+            Manager<'id, NC::T<'id>, ET, TMC::T<'id>, RC::T<'id>, Self::T<'id>, TERMINALS>,
+        >;
 }
 
 // === Manager & Edges =========================================================
@@ -276,8 +278,9 @@ where
     /// reference, but this leads to provenance issues.
     store: *const Store<'id, N, ET, TM, R, MD, TERMINALS>,
     gc_count: AtomicU64,
-    gc_ongoing: TryLock,
     reorder_count: u64,
+    gc_ongoing: TryLock,
+    reorder_gc_prepared: bool,
 }
 
 /// Type "constructor" for the manager from `InnerNodeCons` etc.
@@ -866,9 +869,11 @@ where
     N: NodeBase + InnerNode<Edge<'id, N, ET>>,
     ET: Tag,
     TM: TerminalManager<'id, N, ET, TERMINALS>,
-    MD: DropWith<Edge<'id, N, ET>>,
+    R: oxidd_core::DiagramRules<Edge<'id, N, ET>, N, TM::TerminalNode>,
+    MD: DropWith<Edge<'id, N, ET>> + ManagerEventSubscriber<Self>,
 {
-    // Get a reference to the store
+    /// Get a reference to the store
+    #[inline]
     fn store(&self) -> &Store<'id, N, ET, TM, R, MD, TERMINALS> {
         // We can simply get the store pointer by subtracting the offset of
         // `Manager` in `Store`. The only issue is that this violates Rust's
@@ -893,6 +898,12 @@ where
         // containing `Store`.
         unsafe { &*self.store }
     }
+
+    /// Initialize the manager data
+    fn init(&mut self) {
+        self.data.init(self);
+        MD::init_mut(self);
+    }
 }
 
 unsafe impl<'id, N, ET, TM, R, MD, const TERMINALS: usize> oxidd_core::Manager
@@ -902,7 +913,7 @@ where
     ET: Tag,
     TM: TerminalManager<'id, N, ET, TERMINALS>,
     R: oxidd_core::DiagramRules<Edge<'id, N, ET>, N, TM::TerminalNode>,
-    MD: DropWith<Edge<'id, N, ET>> + GCContainer<Self>,
+    MD: DropWith<Edge<'id, N, ET>> + ManagerEventSubscriber<Self>,
 {
     type Edge = Edge<'id, N, ET>;
     type EdgeTag = ET;
@@ -1037,13 +1048,21 @@ where
 
     #[inline]
     fn add_level(&mut self, f: impl FnOnce(LevelNo) -> Self::InnerNode) -> AllocResult<Self::Edge> {
-        let store = self.store();
         let no = self.unique_table.len() as LevelNo;
-        assert!(no != LevelNo::MAX, "Too many levels");
+        assert!(no != LevelNo::MAX, "too many levels");
+
+        self.data.pre_reorder(self);
+        MD::pre_reorder_mut(self);
+
+        let store = self.store();
         let [e1, e2] = store.add_node(f(no))?;
-        let mut set: LevelViewSet<'id, N, ET, TM, R, MD, TERMINALS> = Default::default();
+        let mut set = LevelViewSet::default();
         set.insert(&store.inner_nodes, e1);
         self.unique_table.push(Mutex::new(set));
+
+        self.data.post_reorder(self);
+        MD::post_reorder_mut(self);
+
         Ok(e2)
     }
 
@@ -1051,6 +1070,7 @@ where
     fn level(&self, no: LevelNo) -> Self::LevelView<'_> {
         LevelView {
             store: self.store(),
+            allow_node_removal: self.reorder_gc_prepared,
             level: no,
             set: self.unique_table[no as usize].lock(),
         }
@@ -1060,6 +1080,7 @@ where
     fn levels(&self) -> Self::LevelIterator<'_> {
         LevelIter {
             store: self.store(),
+            allow_node_removal: self.reorder_gc_prepared,
             level_front: 0,
             level_back: self.unique_table.len() as LevelNo,
             it: self.unique_table.iter(),
@@ -1098,7 +1119,9 @@ where
                 .as_secs()
         );
 
-        self.data.pre_gc(self);
+        if !self.reorder_gc_prepared {
+            self.data.pre_gc(self);
+        }
 
         let store = self.store();
         let mut collected = 0;
@@ -1112,8 +1135,10 @@ where
         }
         collected += store.terminal_manager.gc();
 
-        // SAFETY: We called `pre_gc`, the garbage collection is done.
-        unsafe { self.data.post_gc(self) };
+        if !self.reorder_gc_prepared {
+            // SAFETY: We called `pre_gc`, the garbage collection is done.
+            unsafe { self.data.post_gc(self) };
+        }
         self.gc_ongoing.unlock();
         guard.defuse();
 
@@ -1130,11 +1155,27 @@ where
     }
 
     fn reorder<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T {
+        if self.reorder_gc_prepared {
+            // Reordering was already prepared (nested `reorder` call).
+            // Important: We must return here to not finalize the reordering
+            // before the parent `reorder` closure returns.
+            return f(self);
+        }
         let guard = AbortOnDrop("Reordering panicked.");
+
         self.data.pre_gc(self);
+        self.reorder_gc_prepared = true;
+        self.data.pre_reorder(self);
+        MD::pre_reorder_mut(self);
+
         let res = f(self);
+
+        self.data.post_reorder(self);
+        MD::post_reorder_mut(self);
+        self.reorder_gc_prepared = false;
         // SAFETY: We called `pre_gc`, the reordering is done.
         unsafe { self.data.post_gc(self) };
+
         guard.defuse();
         // Depending on the reordering implementation, garbage collections are
         // preformed, but not necessarily through `Self::gc`. So we increment
@@ -1162,7 +1203,7 @@ where
     ET: Tag + Send + Sync,
     TM: TerminalManager<'id, N, ET, TERMINALS> + Send + Sync,
     R: oxidd_core::DiagramRules<Edge<'id, N, ET>, N, TM::TerminalNode>,
-    MD: DropWith<Edge<'id, N, ET>> + GCContainer<Self> + Send + Sync,
+    MD: DropWith<Edge<'id, N, ET>> + ManagerEventSubscriber<Self> + Send + Sync,
 {
     type WorkerPool = crate::workers::Workers;
 
@@ -1446,6 +1487,9 @@ where
     MD: DropWith<Edge<'id, N, ET>>,
 {
     store: &'a Store<'id, N, ET, TM, R, MD, TERMINALS>,
+    /// SAFETY invariant: If set to true, a garbage collection is prepared
+    /// (i.e., there are no "weak" edges).
+    allow_node_removal: bool,
     level: LevelNo,
     set: MutexGuard<'a, LevelViewSet<'id, N, ET, TM, R, MD, TERMINALS>>,
 }
@@ -1510,16 +1554,19 @@ where
     }
 
     #[inline]
-    unsafe fn gc(&mut self) {
-        // SAFETY: Called from inside the closure of `Manager::reorder()`, hence
-        // there are no "weak" edges.
-        unsafe { self.set.gc(self.store) };
+    fn gc(&mut self) {
+        if self.allow_node_removal {
+            // SAFETY: By invariant, node removal is allowed.
+            unsafe { self.set.gc(self.store) };
+        }
     }
 
     #[inline]
-    unsafe fn remove(&mut self, node: &N) -> bool {
-        // SAFETY: Called from inside the closure of `Manager::reorder()`, hence
-        // there are no "weak" edges.
+    fn remove(&mut self, node: &N) -> bool {
+        if !self.allow_node_removal {
+            return false;
+        }
+        // SAFETY: By invariant, node removal is allowed.
         match unsafe { self.set.remove(&self.store.inner_nodes, node) } {
             Some(edge) => {
                 // SAFETY: `edge` is untagged and points to an inner node
@@ -1544,6 +1591,7 @@ where
     fn take(&mut self) -> Self::Taken {
         TakenLevelView {
             store: self.store,
+            allow_node_removal: self.allow_node_removal,
             level: self.level,
             set: std::mem::take(&mut self.set),
         }
@@ -1558,6 +1606,13 @@ where
     MD: DropWith<Edge<'id, N, ET>>,
 {
     store: &'a Store<'id, N, ET, TM, R, MD, TERMINALS>,
+    /// SAFETY invariant: If set to true, a garbage collection is prepared
+    /// (i.e., there are no "weak" edges).
+    ///
+    /// Note that due to lifetime restrictions there is no way to have a
+    /// `TakenLevelView { allow_node_removal: true, .. }` when the associated
+    /// `Manager` has `reorder_gc_prepared` set to `false`.
+    allow_node_removal: bool,
     level: LevelNo,
     set: LevelViewSet<'id, N, ET, TM, R, MD, TERMINALS>,
 }
@@ -1623,16 +1678,19 @@ where
     }
 
     #[inline]
-    unsafe fn gc(&mut self) {
-        // SAFETY: Called from inside the closure of `Manager::reorder()`, hence
-        // there are no "weak" edges.
-        unsafe { self.set.gc(self.store) };
+    fn gc(&mut self) {
+        if self.allow_node_removal {
+            // SAFETY: By invariant, node removal is allowed.
+            unsafe { self.set.gc(self.store) };
+        }
     }
 
     #[inline]
-    unsafe fn remove(&mut self, node: &N) -> bool {
-        // SAFETY: Called from inside the closure of `Manager::reorder()`, hence
-        // there are no "weak" edges.
+    fn remove(&mut self, node: &N) -> bool {
+        if !self.allow_node_removal {
+            return false;
+        }
+        // SAFETY: By invariant, node removal is allowed.
         match unsafe { self.set.remove(&self.store.inner_nodes, node) } {
             Some(edge) => {
                 // SAFETY: `edge` is untagged and points to an inner node
@@ -1657,6 +1715,7 @@ where
     fn take(&mut self) -> Self::Taken {
         Self {
             store: self.store,
+            allow_node_removal: self.allow_node_removal,
             level: self.level,
             set: std::mem::take(&mut self.set),
         }
@@ -1690,6 +1749,9 @@ where
     MD: DropWith<Edge<'id, N, ET>>,
 {
     store: &'a Store<'id, N, ET, TM, R, MD, TERMINALS>,
+    /// SAFETY invariant: If set to true, a garbage collection is prepared
+    /// (i.e., there are no "weak" edges).
+    allow_node_removal: bool,
     level_front: LevelNo,
     level_back: LevelNo,
     it: std::slice::Iter<'a, Mutex<LevelViewSet<'id, N, ET, TM, R, MD, TERMINALS>>>,
@@ -1712,6 +1774,7 @@ where
         self.level_front += 1;
         Some(LevelView {
             store: self.store,
+            allow_node_removal: self.allow_node_removal,
             level,
             set: mutex.lock(),
         })
@@ -1760,6 +1823,7 @@ where
         self.level_back -= 1;
         Some(LevelView {
             store: self.store,
+            allow_node_removal: self.allow_node_removal,
             level: self.level_back,
             set: mutex.lock(),
         })
@@ -2031,9 +2095,10 @@ pub fn new_manager<
             unique_table: Vec::new(),
             data: ManuallyDrop::new(data),
             store: std::ptr::null(),
-            gc_ongoing: TryLock::new(),
             gc_count: AtomicU64::new(0),
             reorder_count: 0,
+            gc_ongoing: TryLock::new(),
+            reorder_gc_prepared: false,
         }),
         terminal_manager: TMC::T::<'static>::with_capacity(terminal_node_capacity),
         gc_signal: (Mutex::new(GCSignal::RunGc), Condvar::new()),
@@ -2087,6 +2152,11 @@ pub fn new_manager<
             }
         })
         .unwrap();
+
+    // initialize the manager data
+    let local_guard = arc.prepare_local_state();
+    arc.manager.exclusive().init();
+    drop(local_guard);
 
     ManagerRef(arc)
 }
@@ -2356,7 +2426,9 @@ impl<
         ET: Tag,
         TM: TerminalManager<'id, N, ET, TERMINALS>,
         R: DiagramRules<Edge<'id, N, ET>, N, TM::TerminalNode>,
-        MD: oxidd_core::HasApplyCache<Self, O> + GCContainer<Self> + DropWith<Edge<'id, N, ET>>,
+        MD: oxidd_core::HasApplyCache<Self, O>
+            + ManagerEventSubscriber<Self>
+            + DropWith<Edge<'id, N, ET>>,
         O: Copy,
         const TERMINALS: usize,
     > oxidd_core::HasApplyCache<Self, O> for Manager<'id, N, ET, TM, R, MD, TERMINALS>

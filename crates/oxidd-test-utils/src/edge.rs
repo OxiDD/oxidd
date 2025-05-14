@@ -257,11 +257,11 @@ unsafe impl LevelView<DummyEdge, DummyNode> for DummyLevelView {
         unreachable!()
     }
 
-    unsafe fn gc(&mut self) {
+    fn gc(&mut self) {
         unreachable!()
     }
 
-    unsafe fn remove(&mut self, _node: &DummyNode) -> bool {
+    fn remove(&mut self, _node: &DummyNode) -> bool {
         unreachable!()
     }
 
