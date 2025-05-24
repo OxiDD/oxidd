@@ -23,19 +23,6 @@ pub use oxidd_core::{
 
 pub mod util;
 
-#[deprecated = "use AllocResult from the oxidd::util module"]
-#[doc(hidden)]
-pub type AllocResult<T> = util::AllocResult<T>;
-#[deprecated = "use OptBool from the oxidd::util module"]
-#[doc(hidden)]
-pub type OptBool = util::OptBool;
-#[deprecated = "use OutOfMemory from the oxidd::util module"]
-#[doc(hidden)]
-pub type OutOfMemory = util::OutOfMemory;
-#[deprecated = "use SatCountCache from the oxidd::util module"]
-#[doc(hidden)]
-pub type SatCountCache<N, S> = util::SatCountCache<N, S>;
-
 #[cfg(feature = "bcdd")]
 pub mod bcdd;
 #[cfg(feature = "bdd")]
