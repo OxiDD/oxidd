@@ -415,7 +415,7 @@ impl DumpHeader {
     /// `["z", "x", "y"]` (even if some of the variables are unused by the
     /// dumped functions).
     ///
-    /// Corresponds to the DDDMP `.nvars` field.
+    /// Corresponds to the DDDMP `.orderedvarnames` field.
     pub fn ordered_var_names(&self) -> Option<&[String]> {
         if self.orderedvarnames.is_empty() {
             None
