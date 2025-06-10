@@ -1,6 +1,13 @@
 //! Im- and export to the [DDDMP] format used by CUDD
 //!
-//! [DDDMP]: https://github.com/ivmai/cudd/tree/release/dddmp
+//! Currently, versions 2.0 and 3.0 are supported, where version 2.0 the version
+//! bundled with the CUDD 3.0 release, while version 3.0 was probably defined by
+//! the authors of tools like [BDDSampler] and [Logic2BDD] and solely adds the
+//! `.varnames` field.
+//!
+//! [DDDMP]: https://github.com/ssoelvsten/cudd/tree/main/dddmp
+//! [BDDSampler]: https://github.com/davidfa71/BDDSampler
+//! [Logic2BDD]: https://github.com/davidfa71/Extending-Logic
 
 use std::fmt;
 use std::io;
@@ -24,7 +31,7 @@ use oxidd_core::LevelNo;
 use oxidd_core::Manager;
 use oxidd_core::Node;
 
-// spell-checker:ignore varinfo,suppvar,suppvars,suppvarnames
+// spell-checker:ignore varinfo,varnames,suppvar,suppvars,suppvarnames
 // spell-checker:ignore ordervar,orderedvarnames
 // spell-checker:ignore permid,permids,auxids,rootids,rootnames
 // spell-checker:ignore nnodes,nvars,nsuppvars,nroots
@@ -65,16 +72,20 @@ enum VarInfo {
 /// Information from the header of a DDDMP file
 #[derive(Debug)]
 pub struct DumpHeader {
-    ascii: bool, // .mode A|B
+    /// Whether this is ASCII or binary mode (from `.mode A|B`)
+    ascii: bool,
     varinfo: VarInfo,
-    dd: String, // optional
+    /// Decision diagram name (optional)
+    dd: String,
     nnodes: usize,
     nvars: u32,
-    suppvarnames: Vec<String>,    // optional
-    orderedvarnames: Vec<String>, // optional
+    /// Support variable IDs (in strictly ascending order)
     ids: Vec<u32>,
+    /// Positions of support variables
     permids: Vec<u32>,
     auxids: Vec<u32>, // optional
+    /// Variable names in the original order (optional)
+    varnames: Vec<String>,
     rootids: Vec<isize>,
     rootnames: Vec<String>, // optional
 
@@ -93,17 +104,18 @@ impl DumpHeader {
             dd: String::new(),
             nnodes: 0,
             nvars: 0,
-            suppvarnames: Vec::new(),
-            orderedvarnames: Vec::new(),
             ids: Vec::new(),
             permids: Vec::new(),
             auxids: Vec::new(),
+            varnames: Vec::new(),
             rootids: Vec::new(),
             rootnames: Vec::new(),
             lines: 1,
         };
         let mut nsuppvars = 0;
         let mut nroots = 0;
+        let mut suppvarnames = Vec::new();
+        let mut orderedvarnames = Vec::new();
 
         let mut line = Vec::new();
         let mut line_no = 1usize;
@@ -126,14 +138,15 @@ impl DumpHeader {
 
             // we don't check for duplicate entries; the last one counts
             match key {
-                b".ver" => {
-                    if value != b"DDDMP-2.0" {
+                b".ver" => match value {
+                    b"DDDMP-2.0" | b"DDDMP-3.0" => {}
+                    _ => {
                         return err(format!(
                             "unsupported version '{}' (line {line_no})",
                             String::from_utf8_lossy(value)
-                        ));
+                        ))
                     }
-                }
+                },
                 b".mode" => {
                     header.ascii = match value {
                         b"A" => true,
@@ -165,11 +178,10 @@ impl DumpHeader {
                 b".nnodes" => header.nnodes = parse_single_usize(value, line_no)?,
                 b".nvars" => header.nvars = parse_single_u32(value, line_no)?,
                 b".nsuppvars" => nsuppvars = parse_single_u32(value, line_no)?,
-                b".suppvarnames" => {
-                    header.suppvarnames = parse_str_list(value, header.nvars as usize);
-                }
+                b".varnames" => header.varnames = parse_str_list(value, header.nvars as usize),
+                b".suppvarnames" => suppvarnames = parse_str_list(value, nsuppvars as usize),
                 b".orderedvarnames" => {
-                    header.orderedvarnames = parse_str_list(value, header.nvars as usize);
+                    orderedvarnames = parse_str_list(value, header.nvars as usize)
                 }
                 b".ids" => {
                     header.ids = parse_u32_list(value, nsuppvars as usize, line_no)?;
@@ -183,6 +195,7 @@ impl DumpHeader {
                 b".nroots" => nroots = parse_single_usize(value, line_no)?,
                 b".rootids" => {
                     header.rootids.clear();
+                    header.rootids.reserve(nroots);
                     parse_edge_list(value, &mut header.rootids, line_no)?;
                 }
                 b".rootnames" => header.rootnames = parse_str_list(value, nroots),
@@ -255,34 +268,89 @@ impl DumpHeader {
             permids_present.set(id as usize, true);
         }
 
-        if !header.orderedvarnames.is_empty()
-            && header.orderedvarnames.len() != header.nvars as usize
-        {
+        if !orderedvarnames.is_empty() && orderedvarnames.len() != header.nvars as usize {
             return err(format!(
                 "number of variables in .orderedvarnames entry ({}) does not match .nvars ({})",
-                header.orderedvarnames.len(),
+                orderedvarnames.len(),
                 header.nvars
             ));
         }
-        if !header.suppvarnames.is_empty() {
-            if header.suppvarnames.len() != nsuppvars as usize {
-                return err(format!(
+        if !suppvarnames.is_empty() && suppvarnames.len() != nsuppvars as usize {
+            return err(format!(
                 "number of variables in .suppvarnames entry ({}) does not match .nsuppvars ({nsuppvars})",
-                header.suppvarnames.len(),
+                suppvarnames.len(),
             ));
+        }
+
+        'var_names: {
+            if header.varnames.is_empty() {
+                if orderedvarnames.is_empty() {
+                    if suppvarnames.is_empty() {
+                        break 'var_names;
+                    }
+                    debug_assert!(!suppvarnames.is_empty());
+                    header.varnames = vec![String::new(); header.nvars as usize];
+                    for (name, &target) in suppvarnames.into_iter().zip(&header.ids) {
+                        header.varnames[target as usize] = name;
+                    }
+                    break 'var_names;
+                }
+
+                // Note that `.ids` and `.permids` only define the positions of
+                // support variables. For all other variables, we use the
+                // relative ordering from `.orderedvarnames`.
+                header.varnames = vec![String::new(); header.nvars as usize];
+                for (&id, &permid) in header.ids.iter().zip(&header.permids) {
+                    header.varnames[id as usize] =
+                        std::mem::take(&mut orderedvarnames[permid as usize]);
+                }
+
+                let mut non_suppvarnames = orderedvarnames.into_iter().filter(|s| !s.is_empty());
+                for name in &mut header.varnames {
+                    if name.is_empty() {
+                        *name = non_suppvarnames.next().unwrap();
+                    }
+                }
+            } else {
+                if header.varnames.len() != header.nvars as usize {
+                    return err(format!(
+                        "number of variables in .varnames entry ({}) does not match .nvars ({})",
+                        header.varnames.len(),
+                        header.nvars
+                    ));
+                }
+
+                if !orderedvarnames.is_empty() {
+                    // Check that the names for the support agree in `.varnames`
+                    // and `.orderedvarnames`. For all remaining variables, we
+                    // could only perform a matching provided that the names are
+                    // actually unique. However, since the variables are unused,
+                    // a mismatch would not lead to wrong semantics of the
+                    // imported decision diagram functions.
+                    for (&id, &permid) in header.ids.iter().zip(&header.permids) {
+                        let name = header.varnames[id as usize].as_str();
+                        let order_name = orderedvarnames[permid as usize].as_str();
+                        if name != order_name {
+                            return err(format!(
+                                ".varnames and .orderedvarnames do not match \
+                            (variable {id} has name '{name}', but the entry at \
+                            position {permid} of .orderedvarnames is \
+                            '{order_name}'"
+                            ));
+                        }
+                    }
+                }
             }
 
-            if !header.orderedvarnames.is_empty() {
-                for (i, suppvar) in header.suppvarnames.iter().enumerate() {
-                    let permid = header.permids[i];
-                    let ordervar = &header.orderedvarnames[permid as usize];
-                    if suppvar != ordervar {
-                        return err(format!(
-                            ".suppvarnames and .orderedvarnames do not match \
-                        (entry {i} of .suppvarnames is '{suppvar}' \
-                        but the permuted ID is {permid} with name '{ordervar}')",
-                        ));
-                    }
+            // no special check whether suppvarnames is empty needed here
+            for (i, (name, &id)) in suppvarnames.into_iter().zip(&header.ids).enumerate() {
+                let expected = header.varnames[id as usize].as_str();
+                if name != expected {
+                    return err(format!(
+                        ".suppvarnames and .varnames/.orderedvarnames do not \
+                        match (entry {i} of .suppvarnames is '{name}' \
+                        but the variable ID is {id} with name '{expected}')"
+                    ));
                 }
             }
         }
@@ -386,41 +454,21 @@ impl DumpHeader {
         &self.auxids
     }
 
-    /// Names of variables in the true support of the decision diagram. If
-    /// present, the returned slice contains [`DumpHeader::num_support_vars()`]
+    /// Names of all variables in the decision diagram. If
+    /// present, the returned slice contains [`DumpHeader::num_vars()`]
     /// many elements. The order is the "original" variable order.
     ///
-    /// Example: Consider a decision diagram that was created with the variables
-    /// `x`, `y` and `z`, in this order (`x` is the top-most variable). Suppose
-    /// that only `y` and `z` are used by the dumped functions. Then this
-    /// function returns `["y", "z"]` regardless of any subsequent reordering.
-    ///
-    /// Corresponds to the DDDMP `.suppvarnames` field.
-    pub fn support_var_names(&self) -> Option<&[String]> {
-        if self.suppvarnames.is_empty() {
+    /// Corresponds to the DDDMP `.varnames` field, but `.orderedvarnames` and
+    /// `.suppvarnames` are also considered if one of the fields is missing. All
+    /// variable names are non-empty unless only `.suppvarnames` is given in the
+    /// input (in which case only the names of support variables are non-empty).
+    /// The return value is only `None` if neither of `.varnames`,
+    /// `.orderedvarnames` and `.suppvarnames` is present in the input.
+    pub fn var_names(&self) -> Option<&[String]> {
+        if self.varnames.is_empty() {
             None
         } else {
-            Some(&self.suppvarnames[..])
-        }
-    }
-
-    /// Names of all variables in the exported decision diagram. If present, the
-    /// returned slice contains [`DumpHeader::num_vars()`] many elements. The
-    /// order is the "current" variable order, i.e. the first name corresponds
-    /// to the top-most variable in the dumped decision diagram.
-    ///
-    /// Example: Consider a decision diagram that was created with the variables
-    /// `x`, `y` and `z` (`x` is the top-most variable). The variables were
-    /// re-ordered to `z`, `x`, `y`. In this case, the function returns
-    /// `["z", "x", "y"]` (even if some of the variables are unused by the
-    /// dumped functions).
-    ///
-    /// Corresponds to the DDDMP `.orderedvarnames` field.
-    pub fn ordered_var_names(&self) -> Option<&[String]> {
-        if self.orderedvarnames.is_empty() {
-            None
-        } else {
-            Some(&self.orderedvarnames[..])
+            Some(&self.varnames[..])
         }
     }
 
