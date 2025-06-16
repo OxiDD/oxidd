@@ -460,6 +460,7 @@ pub trait BooleanFunction: Function {
         manager: &Self::Manager<'id>,
         edge: EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        let edge = EdgeDropGuard::new(manager, edge);
         Self::not_edge(manager, &edge)
     }
 
