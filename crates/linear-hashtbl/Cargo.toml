@@ -13,7 +13,7 @@ repository.workspace = true
 
 
 [dependencies]
-allocator-api2 = { version = "0.2", default-features = false, features = [
+allocator-api2 = { version = "0.3", default-features = false, features = [
   "alloc",
 ], optional = true }
 
@@ -21,6 +21,9 @@ allocator-api2 = { version = "0.2", default-features = false, features = [
 [features]
 default = []
 
+# Allocator API support via allocator-api2. Has precedence over the `nightly`
+# feature
 allocator-api2 = ["dep:allocator-api2"]
 
-nightly = ["allocator-api2?/nightly"]
+# Unstable allocator API support
+nightly = []

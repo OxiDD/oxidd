@@ -5,10 +5,12 @@ use core::marker::PhantomData;
 use core::mem::ManuallyDrop;
 use core::mem::MaybeUninit;
 
+#[cfg(all(feature = "nightly", not(feature = "allocator-api2")))]
+use alloc::{alloc::Allocator, alloc::Global, boxed::Box, vec::Vec};
 #[cfg(feature = "allocator-api2")]
 use allocator_api2::{alloc::Allocator, alloc::Global, boxed::Box, vec::Vec};
 
-#[cfg(not(feature = "allocator-api2"))]
+#[cfg(not(any(feature = "allocator-api2", feature = "nightly")))]
 use {
     crate::__alloc::{Allocator, Global},
     alloc::{boxed::Box, vec::Vec},
@@ -18,9 +20,9 @@ use {
 
 /// Raw hash table with a (partially) unsafe API
 pub struct RawTable<T, S: Status = usize, A: Allocator + Clone = Global> {
-    #[cfg(feature = "allocator-api2")]
+    #[cfg(any(feature = "allocator-api2", feature = "nightly"))]
     data: Box<[Slot<T, S>], A>,
-    #[cfg(not(feature = "allocator-api2"))]
+    #[cfg(not(any(feature = "allocator-api2", feature = "nightly")))]
     data: Box<[Slot<T, S>]>,
 
     /// The number of items in the table
@@ -60,7 +62,9 @@ pub struct IterMut<'a, T, S: Status = usize> {
 pub struct IntoIter<T, S: Status = usize, A: Allocator = Global> {
     #[cfg(feature = "allocator-api2")]
     iter: allocator_api2::vec::IntoIter<Slot<T, S>, A>,
-    #[cfg(not(feature = "allocator-api2"))]
+    #[cfg(all(not(feature = "allocator-api2"), feature = "nightly"))]
+    iter: alloc::vec::IntoIter<Slot<T, S>, A>,
+    #[cfg(not(any(feature = "allocator-api2", feature = "nightly")))]
     iter: alloc::vec::IntoIter<Slot<T, S>>,
     len: usize,
     phantom: PhantomData<A>,
@@ -234,7 +238,7 @@ impl<T, S: Status> RawTable<T, S> {
     }
 }
 
-#[cfg(feature = "allocator-api2")]
+#[cfg(any(feature = "allocator-api2", feature = "nightly"))]
 impl<T, S: Status, A: Clone + Allocator> RawTable<T, S, A> {
     /// Create a new `HashTable` with zero capacity
     #[inline]
@@ -328,9 +332,9 @@ impl<T, S: Status, A: Clone + Allocator> RawTable<T, S, A> {
     fn reserve_rehash(&mut self, additional: usize) {
         let new_cap = Self::next_capacity(self.len + additional);
 
-        #[cfg(feature = "allocator-api2")]
+        #[cfg(any(feature = "allocator-api2", feature = "nightly"))]
         let mut new_data = Vec::with_capacity_in(new_cap, Box::allocator(&self.data).clone());
-        #[cfg(not(feature = "allocator-api2"))]
+        #[cfg(not(any(feature = "allocator-api2", feature = "nightly")))]
         let mut new_data = Vec::with_capacity(new_cap);
 
         new_data.resize_with(new_cap, || Slot::FREE);
@@ -416,9 +420,9 @@ impl<T, S: Status, A: Clone + Allocator> RawTable<T, S, A> {
     pub fn reset_no_drop(&mut self) {
         self.len = 0;
 
-        #[cfg(feature = "allocator-api2")]
+        #[cfg(any(feature = "allocator-api2", feature = "nightly"))]
         let empty = Vec::new_in(Box::allocator(&self.data).clone());
-        #[cfg(not(feature = "allocator-api2"))]
+        #[cfg(not(any(feature = "allocator-api2", feature = "nightly")))]
         let empty = Vec::new();
         self.data = empty.into_boxed_slice();
     }
@@ -743,9 +747,9 @@ impl<T: Clone, S: Status, A: Clone + Allocator> Clone for RawTable<T, S, A> {
 impl<T, S: Status, A: Clone + Default + Allocator> Default for RawTable<T, S, A> {
     fn default() -> Self {
         RawTable {
-            #[cfg(feature = "allocator-api2")]
+            #[cfg(any(feature = "allocator-api2", feature = "nightly"))]
             data: Vec::new_in(A::default()).into_boxed_slice(),
-            #[cfg(not(feature = "allocator-api2"))]
+            #[cfg(not(any(feature = "allocator-api2", feature = "nightly")))]
             data: Vec::new().into_boxed_slice(),
             len: 0,
             free: 0,

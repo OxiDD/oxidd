@@ -10,7 +10,7 @@ homepage.workspace = true
 repository.workspace = true
 
 [dependencies]
-allocator-api2 = { version = "0.2", default-features = false }
+allocator-api2 = { version = "0.3", default-features = false }
 
 sptr = "0.3"
 
