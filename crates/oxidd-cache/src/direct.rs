@@ -451,7 +451,7 @@ where
             // SAFETY: The entry is locked and occupied.
             let operator = unsafe { (*self.0.operator.get()).assume_init() };
             // SAFETY: The entry is locked.
-            let operands = unsafe { &(*self.0.operands.get())[..edge_operands] };
+            let operands = unsafe { &(&*self.0.operands.get())[..edge_operands] };
             // SAFETY: The first `arity` (> 0) operands are initialized.
             write!(f, "{{{{ {operator:?}({:?}", unsafe {
                 operands[0].assume_edge_ref()
