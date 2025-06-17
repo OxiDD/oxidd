@@ -7,7 +7,9 @@ if(DOXYGEN)
 
     # TAGFILE for linking to cppreference.com (see https://stackoverflow.com/a/44743279)
     FetchContent_Declare(cppreference_tags
-        URL https://upload.cppreference.com/mwiki/images/f/f8/cppreference-doxygen-web.tag.xml
+        # The following URL is (currently) not working, so we (temporarily) use our mirror below
+        #URL https://upload.cppreference.com/mwiki/images/f/f8/cppreference-doxygen-web.tag.xml
+        URL https://oxidd.net/api/cpp/cppreference-doxygen-web.tag.xml
         #DOWNLOAD_DIR ${CMAKE_CURRENT_BINARY_DIR}
         DOWNLOAD_NO_EXTRACT ON)
 
