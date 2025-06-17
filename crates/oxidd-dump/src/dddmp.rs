@@ -708,7 +708,7 @@ where
                     "function name must be ASCII text without control characters and spaces",
                 ));
             }
-            write!(file, " {}", name)?;
+            write!(file, " {name}")?;
         }
         writeln!(file)?;
     }
