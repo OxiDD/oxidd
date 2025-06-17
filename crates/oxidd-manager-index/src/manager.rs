@@ -583,6 +583,7 @@ where
     /// SAFETY: `id` must be the ID of a free slot and the current thread must
     /// have exclusive access to it.
     #[inline(always)]
+    #[allow(clippy::mut_from_ref)]
     unsafe fn use_free_slot(&self, id: u32) -> (u32, &mut Slot<N>) {
         debug_assert!(id as usize >= TERMINALS);
         let index = id as usize - TERMINALS;
@@ -602,6 +603,7 @@ where
     /// Unless out of memory, this method returns the ID of a free or
     /// uninitialized slot as well as a reference pointing to that slot.
     #[cold]
+    #[allow(clippy::mut_from_ref)]
     fn get_slot_from_shared(&self, delta: i32) -> AllocResult<(u32, &mut Slot<N>)> {
         LOCAL_STORE_STATE.with(|local| {
             let mut shared = self.state.lock();
