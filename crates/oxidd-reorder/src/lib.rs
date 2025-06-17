@@ -93,12 +93,16 @@ where
             .iter()
             .map(|c| {
                 let node = manager.get_node(c).unwrap_inner();
-                if node.level() == lower_no {
+                // A child of a node at the old upper level can only reference
+                // a node at the old lower, i.e., the new upper level, or any
+                // level below `lower_no`.
+                if node.level() == upper_no {
                     // We have exclusive access to the node
                     let children: SmallVec<[_; 2]> = M::Rules::cofactors(c.tag(), node).collect();
                     debug_assert_eq!(children.len(), M::InnerNode::ARITY);
                     children
                 } else {
+                    debug_assert!(node.level() > lower_no);
                     // The child is below the lower level, so we always have
                     // this child
                     (0..M::InnerNode::ARITY).map(|_| c.borrowed()).collect()
