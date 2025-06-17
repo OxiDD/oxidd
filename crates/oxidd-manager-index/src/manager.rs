@@ -26,6 +26,7 @@ use std::sync::Arc;
 
 use bitvec::vec::BitVec;
 use crossbeam_utils::CachePadded;
+use derive_where::derive_where;
 use linear_hashtbl::raw::RawTable;
 use parking_lot::{Condvar, Mutex, MutexGuard};
 use rustc_hash::FxHasher;
@@ -252,10 +253,11 @@ struct SlotSlice<'id, N, const TERMINALS: usize> {
 /// Internally, this is represented as a `u32` index.
 #[repr(transparent)]
 #[must_use]
+#[derive_where(PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Edge<'id, N, ET>(
     /// `node_index | edge_tag << (u32::BITS - Self::TAG_BITS)`
     u32,
-    PhantomData<(Invariant<'id>, N, ET)>,
+    #[derive_where(skip)] PhantomData<(Invariant<'id>, N, ET)>,
 );
 
 #[repr(C)]
@@ -360,36 +362,6 @@ impl<N: NodeBase, ET: Tag> Edge<'_, N, ET> {
     #[inline(always)]
     pub unsafe fn from_terminal_id(id: u32) -> Self {
         Self(id, PhantomData)
-    }
-}
-
-impl<N, ET> PartialEq for Edge<'_, N, ET> {
-    #[inline(always)]
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-
-impl<N, ET> Eq for Edge<'_, N, ET> {}
-
-impl<N, ET> PartialOrd for Edge<'_, N, ET> {
-    #[inline(always)]
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.0.cmp(&other.0))
-    }
-}
-
-impl<N, ET> Ord for Edge<'_, N, ET> {
-    #[inline(always)]
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.0.cmp(&other.0)
-    }
-}
-
-impl<N, ET> Hash for Edge<'_, N, ET> {
-    #[inline(always)]
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.hash(state);
     }
 }
 
@@ -1737,6 +1709,7 @@ where
 // === ManagerRef ==============================================================
 
 #[repr(transparent)]
+#[derive_where(Clone)]
 pub struct ManagerRef<
     NC: InnerNodeCons<ET>,
     ET: Tag,
@@ -1812,21 +1785,6 @@ impl<
     pub unsafe fn from_raw(raw: *const std::ffi::c_void) -> Self {
         // SAFETY: Invariants are upheld by the caller.
         Self(unsafe { Arc::from_raw(raw.cast()) })
-    }
-}
-
-impl<
-        NC: InnerNodeCons<ET>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, TERMINALS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
-        const TERMINALS: usize,
-    > Clone for ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS>
-{
-    #[inline]
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
     }
 }
 
@@ -2093,6 +2051,7 @@ impl<
 // === Function ================================================================
 
 #[repr(C)]
+#[derive_where(PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Function<
     NC: InnerNodeCons<ET>,
     ET: Tag,
@@ -2180,76 +2139,6 @@ impl<
             store: self.store.clone(),
             edge: ManuallyDrop::new(self.store.0.clone_edge(&self.edge)),
         }
-    }
-}
-
-impl<
-        NC: InnerNodeCons<ET>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, TERMINALS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
-        const TERMINALS: usize,
-    > PartialEq for Function<NC, ET, TMC, RC, MDC, TERMINALS>
-{
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        self.store == other.store && self.edge == other.edge
-    }
-}
-impl<
-        NC: InnerNodeCons<ET>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, TERMINALS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
-        const TERMINALS: usize,
-    > Eq for Function<NC, ET, TMC, RC, MDC, TERMINALS>
-{
-}
-impl<
-        NC: InnerNodeCons<ET>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, TERMINALS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
-        const TERMINALS: usize,
-    > PartialOrd for Function<NC, ET, TMC, RC, MDC, TERMINALS>
-{
-    #[inline]
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-impl<
-        NC: InnerNodeCons<ET>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, TERMINALS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
-        const TERMINALS: usize,
-    > Ord for Function<NC, ET, TMC, RC, MDC, TERMINALS>
-{
-    #[inline]
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.store
-            .cmp(&other.store)
-            .then(self.edge.cmp(&other.edge))
-    }
-}
-impl<
-        NC: InnerNodeCons<ET>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, TERMINALS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
-        const TERMINALS: usize,
-    > Hash for Function<NC, ET, TMC, RC, MDC, TERMINALS>
-{
-    #[inline]
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.store.hash(state);
-        self.edge.hash(state);
     }
 }
 
@@ -2349,19 +2238,11 @@ unsafe impl<
 ///
 /// Since nodes are stored in an array, we can use a single bit vector. This
 /// reduces space consumption dramatically and increases the performance.
-#[derive(Default, Clone)]
+#[derive(Default, Clone, PartialEq, Eq)]
 pub struct NodeSet {
     len: usize,
     data: BitVec,
 }
-
-impl PartialEq for NodeSet {
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        self.len == other.len && self.data == other.data
-    }
-}
-impl Eq for NodeSet {}
 
 impl<'id, N: NodeBase, ET: Tag> oxidd_core::util::NodeSet<Edge<'id, N, ET>> for NodeSet {
     #[inline(always)]

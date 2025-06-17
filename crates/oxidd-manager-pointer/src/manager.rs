@@ -14,9 +14,8 @@
 //! | `RC`         | Diagram Rules Type Constructor    |
 //! | `OP`         | Operation                         |
 
-use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::hash::{BuildHasherDefault, Hash, Hasher};
+use std::hash::{BuildHasherDefault, Hasher};
 use std::iter::FusedIterator;
 use std::marker::PhantomData;
 use std::mem::{align_of, ManuallyDrop};
@@ -26,6 +25,7 @@ use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use arcslab::{ArcSlab, ArcSlabRef, AtomicRefCounted, ExtHandle, IntHandle};
 use bitvec::bitvec;
 use bitvec::vec::BitVec;
+use derive_where::derive_where;
 use linear_hashtbl::raw::RawTable;
 use parking_lot::Mutex;
 use parking_lot::MutexGuard;
@@ -127,6 +127,7 @@ where
 
 #[repr(transparent)]
 #[must_use]
+#[derive_where(PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Edge<'id, N, ET, const TAG_BITS: u32>(
     /// Points to an `InnerNode` (if `ptr & (1 << TAG_BITS) == 0`) or a terminal
     /// node (`ptr & (1 << TAG_BITS) == 1`)
@@ -134,7 +135,7 @@ pub struct Edge<'id, N, ET, const TAG_BITS: u32>(
     /// SAFETY invariant: The pointer (as integer) is `>= 1 << (TAG_BITS + 1)`
     /// (i.e. the pointer with all tags removed is still non-null)
     NonNull<()>,
-    PhantomData<(Invariant<'id>, N, ET)>,
+    #[derive_where(skip)] PhantomData<(Invariant<'id>, N, ET)>,
 );
 
 unsafe impl<N: Send + Sync, ET: Send + Sync, const TAG_BITS: u32> Send
@@ -233,6 +234,7 @@ where
 }
 
 #[repr(transparent)]
+#[derive_where(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ManagerRef<
     NC: InnerNodeCons<ET, TAG_BITS>,
     ET: Tag,
@@ -871,32 +873,6 @@ where
     }
 }
 
-impl<N, ET, const TAG_BITS: u32> PartialEq for Edge<'_, N, ET, TAG_BITS> {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-
-impl<N, ET, const TAG_BITS: u32> Eq for Edge<'_, N, ET, TAG_BITS> {}
-
-impl<N, ET, const TAG_BITS: u32> PartialOrd for Edge<'_, N, ET, TAG_BITS> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.0.cmp(&other.0))
-    }
-}
-
-impl<N, ET, const TAG_BITS: u32> Ord for Edge<'_, N, ET, TAG_BITS> {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.0.cmp(&other.0)
-    }
-}
-
-impl<N, ET, const TAG_BITS: u32> Hash for Edge<'_, N, ET, TAG_BITS> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.hash(state);
-    }
-}
-
 impl<N: NodeBase, ET: Tag, const TAG_BITS: u32> oxidd_core::Edge for Edge<'_, N, ET, TAG_BITS> {
     type Tag = ET;
 
@@ -1445,6 +1421,7 @@ impl<'a, 'id, N, ET, const TAG_BITS: u32> FusedIterator for LevelViewIter<'a, 'i
 ///
 /// Since nodes are stored on large pages, we can use one bit vector per page.
 /// This reduces space consumption dramatically and increases the performance.
+#[derive(Clone, PartialEq, Eq, Default)]
 pub struct NodeSet<const PAGE_SIZE: usize, const TAG_BITS: u32> {
     len: usize,
     data: HashMap<usize, BitVec, BuildHasherDefault<FxHasher>>,
@@ -1461,32 +1438,6 @@ impl<const PAGE_SIZE: usize, const TAG_BITS: u32> NodeSet<PAGE_SIZE, TAG_BITS> {
         (page, offset)
     }
 }
-
-impl<const PAGE_SIZE: usize, const TAG_BITS: u32> Default for NodeSet<PAGE_SIZE, TAG_BITS> {
-    fn default() -> Self {
-        Self {
-            len: 0,
-            data: Default::default(),
-        }
-    }
-}
-
-impl<const PAGE_SIZE: usize, const TAG_BITS: u32> Clone for NodeSet<PAGE_SIZE, TAG_BITS> {
-    fn clone(&self) -> Self {
-        Self {
-            len: self.len,
-            data: self.data.clone(),
-        }
-    }
-}
-
-impl<const PAGE_SIZE: usize, const TAG_BITS: u32> PartialEq for NodeSet<PAGE_SIZE, TAG_BITS> {
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        self.len == other.len && self.data == other.data
-    }
-}
-impl<const PAGE_SIZE: usize, const TAG_BITS: u32> Eq for NodeSet<PAGE_SIZE, TAG_BITS> {}
 
 impl<'id, InnerNode, ET, const PAGE_SIZE: usize, const TAG_BITS: u32>
     oxidd_core::util::NodeSet<Edge<'id, InnerNode, ET, TAG_BITS>> for NodeSet<PAGE_SIZE, TAG_BITS>
@@ -1638,96 +1589,6 @@ impl<
 
 impl<
         NC: InnerNodeCons<ET, TAG_BITS>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
-        const PAGE_SIZE: usize,
-        const TAG_BITS: u32,
-    > Clone for ManagerRef<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
-{
-    #[inline]
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
-    }
-}
-
-impl<
-        NC: InnerNodeCons<ET, TAG_BITS>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
-        const PAGE_SIZE: usize,
-        const TAG_BITS: u32,
-    > PartialEq for ManagerRef<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
-{
-    #[inline(always)]
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-impl<
-        NC: InnerNodeCons<ET, TAG_BITS>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
-        const PAGE_SIZE: usize,
-        const TAG_BITS: u32,
-    > Eq for ManagerRef<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
-{
-}
-
-impl<
-        NC: InnerNodeCons<ET, TAG_BITS>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
-        const PAGE_SIZE: usize,
-        const TAG_BITS: u32,
-    > Hash for ManagerRef<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
-{
-    #[inline]
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.hash(state);
-    }
-}
-
-impl<
-        NC: InnerNodeCons<ET, TAG_BITS>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
-        const PAGE_SIZE: usize,
-        const TAG_BITS: u32,
-    > PartialOrd for ManagerRef<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
-{
-    #[inline]
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.0.cmp(&other.0))
-    }
-}
-impl<
-        NC: InnerNodeCons<ET, TAG_BITS>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
-        const PAGE_SIZE: usize,
-        const TAG_BITS: u32,
-    > Ord for ManagerRef<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
-{
-    #[inline]
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.0.cmp(&other.0)
-    }
-}
-
-impl<
-        NC: InnerNodeCons<ET, TAG_BITS>,
         ET: Tag + Sync + Send,
         TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
         RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
@@ -1771,6 +1632,7 @@ pub fn new_manager<
 // === Functions ===============================================================
 
 #[repr(transparent)]
+#[derive_where(PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Function<
     NC: InnerNodeCons<ET, TAG_BITS>,
     ET: Tag,
@@ -1932,78 +1794,6 @@ impl<
         // We own a reference count, `store` is valid, and we do not use the
         // `store` pointer afterwards.
         unsafe { ArcSlab::release(store) };
-    }
-}
-
-impl<
-        NC: InnerNodeCons<ET, TAG_BITS>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
-        const PAGE_SIZE: usize,
-        const TAG_BITS: u32,
-    > PartialEq for Function<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
-{
-    #[inline(always)]
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-impl<
-        NC: InnerNodeCons<ET, TAG_BITS>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
-        const PAGE_SIZE: usize,
-        const TAG_BITS: u32,
-    > Eq for Function<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
-{
-}
-impl<
-        NC: InnerNodeCons<ET, TAG_BITS>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
-        const PAGE_SIZE: usize,
-        const TAG_BITS: u32,
-    > PartialOrd for Function<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
-{
-    #[inline]
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.0.cmp(&other.0))
-    }
-}
-impl<
-        NC: InnerNodeCons<ET, TAG_BITS>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
-        const PAGE_SIZE: usize,
-        const TAG_BITS: u32,
-    > Ord for Function<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
-{
-    #[inline]
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.0.cmp(&other.0)
-    }
-}
-impl<
-        NC: InnerNodeCons<ET, TAG_BITS>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
-        const PAGE_SIZE: usize,
-        const TAG_BITS: u32,
-    > Hash for Function<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
-{
-    #[inline]
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.hash(state);
     }
 }
 

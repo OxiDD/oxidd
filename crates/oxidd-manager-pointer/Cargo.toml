@@ -39,6 +39,9 @@ bitvec = "1"
 # thread pool
 rayon = "1.10"
 
+# standard derive macros but with custom bounds on generics
+derive-where = "1.5"
+
 
 [features]
 default = []
