@@ -32,6 +32,7 @@ pub(crate) unsafe fn new_apply_cache<M: Manager, O: Copy + Ord + Hash, const ARI
     }
 }
 
+#[allow(unused)]
 pub struct NoApplyCache<M, O, const ARITY: usize>(pub std::marker::PhantomData<(M, O)>);
 
 impl<M: Manager, O: Copy, const ARITY: usize> oxidd_core::util::DropWith<M::Edge>
