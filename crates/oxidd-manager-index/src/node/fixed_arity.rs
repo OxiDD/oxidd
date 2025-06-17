@@ -157,7 +157,7 @@ impl<'id, ET: Tag, const ARITY: usize> InnerNode<manager::Edge<'id, Self, ET>>
     }
 
     #[inline(always)]
-    fn child(&self, n: usize) -> Borrowed<manager::Edge<'id, Self, ET>> {
+    fn child(&self, n: usize) -> Borrowed<'_, manager::Edge<'id, Self, ET>> {
         // SAFETY: we have shared access to the node
         let children = unsafe { &*self.children.get() };
         children[n].borrowed()

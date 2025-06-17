@@ -147,7 +147,7 @@ impl<T, const METADATA_BITS: u32> Vec2d<T, METADATA_BITS> {
 
     /// Iterate over the inner vector
     #[inline(always)]
-    pub fn iter(&self) -> Vec2dIter<T, METADATA_BITS> {
+    pub fn iter(&self) -> Vec2dIter<'_, T, METADATA_BITS> {
         Vec2dIter {
             index: &self.index,
             end_index: self.data.len(),

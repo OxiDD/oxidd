@@ -141,7 +141,7 @@ pub trait DiagramRules<E: Edge, N: InnerNode<E>, T> {
     ///
     /// This is equivalent to `Self::cofactors(tag, node).nth(n).unwrap()`.
     #[inline]
-    fn cofactor(tag: E::Tag, node: &N, n: usize) -> Borrowed<E> {
+    fn cofactor(tag: E::Tag, node: &N, n: usize) -> Borrowed<'_, E> {
         Self::cofactors(tag, node).nth(n).expect("out of range")
     }
 }
@@ -239,7 +239,7 @@ pub trait InnerNode<E: Edge>: Sized + Eq + Hash + DropWith<E> {
     fn children(&self) -> Self::ChildrenIter<'_>;
 
     /// Get the `n`-th child of this node
-    fn child(&self, n: usize) -> Borrowed<E>;
+    fn child(&self, n: usize) -> Borrowed<'_, E>;
 
     /// Set the `n`-th child of this node
     ///
@@ -363,12 +363,12 @@ pub trait Edge: Sized + Ord + Hash {
     type Tag: Tag;
 
     /// Turn a reference into a borrowed handle
-    fn borrowed(&self) -> Borrowed<Self>;
+    fn borrowed(&self) -> Borrowed<'_, Self>;
     /// Get a version of this [`Edge`] with the given tag
     ///
     /// Refer to [`Borrowed::edge_with_tag()`] for cases in which this method
     /// cannot be used due to lifetime restrictions.
-    fn with_tag(&self, tag: Self::Tag) -> Borrowed<Self>;
+    fn with_tag(&self, tag: Self::Tag) -> Borrowed<'_, Self>;
     /// Get a version of this [`Edge`] with the given tag
     fn with_tag_owned(self, tag: Self::Tag) -> Self;
 
@@ -662,7 +662,7 @@ pub unsafe trait Manager: Sized {
 
     /// Get a reference to the node to which `edge` points
     #[must_use]
-    fn get_node(&self, edge: &Self::Edge) -> Node<Self>;
+    fn get_node(&self, edge: &Self::Edge) -> Node<'_, Self>;
 
     /// Clone `edge`
     #[must_use]

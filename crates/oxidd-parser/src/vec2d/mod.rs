@@ -105,7 +105,7 @@ impl<T> Vec2d<T> {
 
     /// Iterate over the inner vector
     #[inline(always)]
-    pub fn iter(&self) -> Vec2dIter<T> {
+    pub fn iter(&self) -> Vec2dIter<'_, T> {
         Vec2dIter(self.0.iter())
     }
 

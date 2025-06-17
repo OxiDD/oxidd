@@ -107,13 +107,13 @@ impl<M: Manager, O: Copy + Eq, const ARITY: usize> Entry<M, O, ARITY> {
     };
 
     #[inline]
-    fn lock(&self) -> EntryGuard<M, O, ARITY> {
+    fn lock(&self) -> EntryGuard<'_, M, O, ARITY> {
         self.mutex.lock();
         EntryGuard(self)
     }
 
     #[inline]
-    fn try_lock(&self) -> Option<EntryGuard<M, O, ARITY>> {
+    fn try_lock(&self) -> Option<EntryGuard<'_, M, O, ARITY>> {
         if self.mutex.try_lock() {
             Some(EntryGuard(self))
         } else {

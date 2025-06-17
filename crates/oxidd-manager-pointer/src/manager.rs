@@ -617,7 +617,7 @@ where
         Self: 'a;
 
     #[inline]
-    fn get_node(&self, edge: &Self::Edge) -> Node<Self> {
+    fn get_node(&self, edge: &Self::Edge) -> Node<'_, Self> {
         if edge.is_inner() {
             let ptr: NonNull<Self::InnerNode> = edge.all_untagged_ptr().cast();
             // SAFETY: dereferencing untagged edges pointing to inner nodes is safe
@@ -1101,7 +1101,7 @@ where
 
     /// Iterator that consumes all [`Edge`]s in the set
     #[inline]
-    fn drain(&mut self) -> linear_hashtbl::raw::Drain<Edge<'id, N, ET, TAG_BITS>> {
+    fn drain(&mut self) -> linear_hashtbl::raw::Drain<'_, Edge<'id, N, ET, TAG_BITS>> {
         self.0.drain()
     }
 }

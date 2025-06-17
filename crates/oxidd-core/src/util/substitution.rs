@@ -52,7 +52,7 @@ pub trait Substitution {
     /// required to preserve that the substitution is a mapping from variables
     /// to replacement functions.
     #[inline]
-    fn map<V, R, F>(&self, f: F) -> MapSubst<Self, F>
+    fn map<V, R, F>(&self, f: F) -> MapSubst<'_, Self, F>
     where
         F: Fn((Self::Var, Self::Replacement)) -> (V, R),
     {

@@ -43,7 +43,7 @@ impl Progress {
         self.operations_done.fetch_add(1, Relaxed);
     }
 
-    pub fn pause_progress_report(&self) -> PauseProgressHandle {
+    pub fn pause_progress_report(&self) -> PauseProgressHandle<'_> {
         PauseProgressHandle(self.print_lock.lock())
     }
 }

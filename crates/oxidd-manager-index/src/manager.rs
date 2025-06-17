@@ -369,12 +369,12 @@ impl<N: NodeBase, ET: Tag> oxidd_core::Edge for Edge<'_, N, ET> {
     type Tag = ET;
 
     #[inline]
-    fn borrowed(&self) -> Borrowed<Self> {
+    fn borrowed(&self) -> Borrowed<'_, Self> {
         Borrowed::new(Self(self.0, PhantomData))
     }
 
     #[inline]
-    fn with_tag(&self, tag: Self::Tag) -> Borrowed<Self> {
+    fn with_tag(&self, tag: Self::Tag) -> Borrowed<'_, Self> {
         Borrowed::new(Self(
             (self.0 & !Self::TAG_MASK) | ((tag.as_usize() as u32) << Self::TAG_SHIFT),
             PhantomData,
@@ -931,7 +931,7 @@ where
         Self: 'a;
 
     #[inline]
-    fn get_node(&self, edge: &Self::Edge) -> oxidd_core::Node<Self> {
+    fn get_node(&self, edge: &Self::Edge) -> oxidd_core::Node<'_, Self> {
         let store = self.store();
         let id = edge.node_id();
         if id >= TERMINALS {
@@ -1311,7 +1311,7 @@ where
 
     /// Iterator that consumes all [`Edge`]s in the set
     #[inline]
-    fn drain(&mut self) -> linear_hashtbl::raw::Drain<Edge<'id, N, ET>, u32> {
+    fn drain(&mut self) -> linear_hashtbl::raw::Drain<'_, Edge<'id, N, ET>, u32> {
         self.0.drain()
     }
 }

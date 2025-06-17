@@ -137,7 +137,7 @@ unsafe impl Manager for DummyManager {
     where
         Self: 'a;
 
-    fn get_node(&self, _edge: &Self::Edge) -> Node<Self> {
+    fn get_node(&self, _edge: &Self::Edge) -> Node<'_, Self> {
         Node::Inner(&DummyNode)
     }
 
@@ -301,7 +301,7 @@ impl InnerNode<DummyEdge> for DummyNode {
         std::iter::empty()
     }
 
-    fn child(&self, _n: usize) -> Borrowed<DummyEdge> {
+    fn child(&self, _n: usize) -> Borrowed<'_, DummyEdge> {
         unimplemented!()
     }
 

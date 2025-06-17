@@ -64,7 +64,7 @@ fn not_owned<E: Edge<Tag = EdgeTag>>(e: E) -> E {
 
 #[inline]
 #[must_use]
-fn not<E: Edge<Tag = EdgeTag>>(e: &E) -> Borrowed<E> {
+fn not<E: Edge<Tag = EdgeTag>>(e: &E) -> Borrowed<'_, E> {
     let tag = e.tag();
     e.with_tag(!tag)
 }
@@ -121,7 +121,7 @@ impl<E: Edge<Tag = EdgeTag>, N: InnerNode<E>> DiagramRules<E, N, BCDDTerminal> f
     }
 
     #[inline]
-    fn cofactor(tag: E::Tag, node: &N, n: usize) -> Borrowed<E> {
+    fn cofactor(tag: E::Tag, node: &N, n: usize) -> Borrowed<'_, E> {
         let e = node.child(n);
         if tag == EdgeTag::None {
             e
@@ -190,7 +190,7 @@ fn is_false<M: Manager<EdgeTag = EdgeTag>>(manager: &M, edge: &M::Edge) -> bool 
 fn collect_cofactors<E: Edge<Tag = EdgeTag>, N: InnerNode<E>>(
     tag: EdgeTag,
     node: &N,
-) -> (Borrowed<E>, Borrowed<E>) {
+) -> (Borrowed<'_, E>, Borrowed<'_, E>) {
     debug_assert_eq!(N::ARITY, 2);
     let mut it = BCDDRules::cofactors(tag, node);
     let ft = it.next().unwrap();

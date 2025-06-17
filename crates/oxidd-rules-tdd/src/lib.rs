@@ -160,7 +160,9 @@ pub enum TDDOp {
 /// Collect the two children of a ternary node
 #[inline]
 #[must_use]
-fn collect_children<E: Edge, N: InnerNode<E>>(node: &N) -> (Borrowed<E>, Borrowed<E>, Borrowed<E>) {
+fn collect_children<E: Edge, N: InnerNode<E>>(
+    node: &N,
+) -> (Borrowed<'_, E>, Borrowed<'_, E>, Borrowed<'_, E>) {
     debug_assert_eq!(N::ARITY, 3);
     let mut it = node.children();
     let t = it.next().unwrap();

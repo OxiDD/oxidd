@@ -660,7 +660,7 @@ impl Circuit {
     ///
     /// See also: [`Self::gate_for_no()`]
     #[inline]
-    pub fn gate(&self, literal: Literal) -> Option<Gate> {
+    pub fn gate(&self, literal: Literal) -> Option<Gate<'_>> {
         self.gate_for_no(literal.get_gate_no()?)
     }
 
@@ -670,7 +670,7 @@ impl Circuit {
     /// this circuit.
     ///
     /// See also: [`Self::gate()`]
-    pub fn gate_for_no(&self, gate_no: Var) -> Option<Gate> {
+    pub fn gate_for_no(&self, gate_no: Var) -> Option<Gate<'_>> {
         if let Some((kind, inputs)) = self.gates.get(gate_no) {
             Some(Gate {
                 kind: kind.into(),
@@ -739,7 +739,7 @@ impl Circuit {
     ///
     /// Returns [`None`] iff `literal` refers to a constant, a circuit input, or
     /// a gate that is not present in this circuit.
-    pub fn first_gate(&self) -> Option<Gate> {
+    pub fn first_gate(&self) -> Option<Gate<'_>> {
         let (kind, inputs) = self.gates.first()?;
         Some(Gate {
             kind: kind.into(),
@@ -751,7 +751,7 @@ impl Circuit {
     ///
     /// Returns [`None`] iff `literal` refers to a constant, a circuit input, or
     /// a gate that is not present in this circuit.
-    pub fn last_gate(&self) -> Option<Gate> {
+    pub fn last_gate(&self) -> Option<Gate<'_>> {
         let (kind, inputs) = self.gates.last()?;
         Some(Gate {
             kind: kind.into(),
@@ -798,7 +798,7 @@ impl Circuit {
     ///
     /// The iteration order is from first to last in the gate sequence.
     #[inline(always)]
-    pub fn iter_gates(&self) -> CircuitGateIter {
+    pub fn iter_gates(&self) -> CircuitGateIter<'_> {
         CircuitGateIter(self.gates.iter())
     }
 

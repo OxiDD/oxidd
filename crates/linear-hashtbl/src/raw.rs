@@ -631,7 +631,7 @@ impl<T, S: Status, A: Clone + Allocator> RawTable<T, S, A> {
 
     /// Get an immutable iterator over the entries of the table
     #[inline]
-    pub fn iter(&self) -> Iter<T, S> {
+    pub fn iter(&self) -> Iter<'_, T, S> {
         Iter {
             iter: self.data.iter(),
             len: self.len,
@@ -640,7 +640,7 @@ impl<T, S: Status, A: Clone + Allocator> RawTable<T, S, A> {
 
     /// Get a mutable iterator over the entries of the table
     #[inline]
-    pub fn iter_mut(&mut self) -> IterMut<T, S> {
+    pub fn iter_mut(&mut self) -> IterMut<'_, T, S> {
         IterMut {
             iter: self.data.iter_mut(),
             len: self.len,
@@ -657,7 +657,7 @@ impl<T, S: Status, A: Clone + Allocator> RawTable<T, S, A> {
     /// bad idea. It is not `unsafe` but it causes correctness issues since
     /// there exist non-empty slots while the length is already set to `0`.
     #[inline]
-    pub fn drain(&mut self) -> Drain<T, S> {
+    pub fn drain(&mut self) -> Drain<'_, T, S> {
         let len = self.len;
         self.len = 0;
         self.free = self.data.len();
