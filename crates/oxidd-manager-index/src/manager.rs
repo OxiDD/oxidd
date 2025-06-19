@@ -743,7 +743,7 @@ where
             debug_assert!(_old_rc > 1);
         } else {
             std::mem::forget(edge);
-            // SAFETY: `id` is a valid terminal ID
+            // SAFETY: `id` is a valid terminal ID and `edge` is forgotten
             unsafe { self.terminal_manager.release(id) };
         }
     }
@@ -948,6 +948,68 @@ where
     #[inline]
     fn drop_edge(&self, edge: Self::Edge) {
         self.store().drop_edge(edge)
+    }
+
+    #[track_caller]
+    fn try_remove_node(&self, edge: Edge<'id, N, ET>, level: LevelNo) -> bool {
+        let id = edge.node_id();
+        let store = self.store();
+        if id < TERMINALS {
+            std::mem::forget(edge);
+            // SAFETY: `id` is a valid terminal ID and `edge` is forgotten
+            unsafe { store.terminal_manager.release(id) };
+            debug_assert_eq!(level, LevelNo::MAX, "`level` does not match");
+            return false;
+        }
+
+        // inner node
+        let node = store.inner_nodes.inner_node(&edge);
+        std::mem::forget(edge);
+        // SAFETY: `edge` is forgotten
+        let old_rc = unsafe { node.release() };
+
+        debug_assert_ne!(level, LevelNo::MAX, "`level` does not match");
+        debug_assert!(
+            (level as usize) < self.unique_table.len(),
+            "`level` out of range"
+        );
+        debug_assert!(node.check_level(|l| l == level), "`level` does not match");
+        debug_assert!(old_rc > 1);
+
+        if old_rc != 2 || !self.reorder_gc_prepared {
+            return false;
+        }
+
+        let Some(set) = self.unique_table.get(level as usize) else {
+            return false;
+        };
+        let mut set = set.lock();
+
+        // Read the reference count again: Another thread may have created an
+        // edge between our `node.release()` call and `set.lock()`.
+        let rc = node.load_rc(Acquire);
+        debug_assert_ne!(rc, 0);
+        if rc != 1 {
+            return false;
+        }
+
+        // SAFETY: we checked that `reorder_gc_prepared` is true above
+        let Some(edge) = (unsafe { set.remove(&store.inner_nodes, node) }) else {
+            return false;
+        };
+
+        // SAFETY (next 2): `edge` is untagged and points to an inner node
+        let slot_ptr = unsafe { store.inner_nodes.slot_pointer_unchecked(&edge) };
+        let id = unsafe { edge.node_id_unchecked() };
+        std::mem::forget(edge);
+
+        // SAFETY: Since `rc` is 1, this is the last reference. We use `Acquire`
+        // order above and `Release` order when decrementing reference counters,
+        // so we have exclusive node access now. The slot contains a node. `id`
+        // is the ID of the slot.
+        unsafe { store.free_slot(&mut *slot_ptr, id) };
+
+        true
     }
 
     #[inline]

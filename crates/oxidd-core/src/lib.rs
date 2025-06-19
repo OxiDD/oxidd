@@ -670,6 +670,25 @@ pub unsafe trait Manager: Sized {
 
     /// Drop `edge`
     fn drop_edge(&self, edge: Self::Edge);
+    /// Drop `edge` and try to remove the node it points to
+    ///
+    /// `level` is the node's level. This is required because nodes do not
+    /// necessarily store their level, but the lookup in a unique table split by
+    /// levels needs the level.
+    ///
+    /// Returns whether the node has been removed. There are multiple reasons
+    /// why removing the node can fail. Obviously, it could still be referenced
+    /// by other edges. It might also be that removing nodes is currently not
+    /// possible, e.g., because the manager is not prepared for it. Also, if
+    /// `level` does not match the node's actual level, the node referenced by
+    /// `edge` may not be removed. In this case, the method might even remove
+    /// another node with the same children which is only referenced from the
+    /// unique table.
+    ///
+    /// Passing the wrong `level` is considered to be a programming mistake. To
+    /// aid debugging, the implementation is allowed (but not required) to panic
+    /// if it can diagnose such a mistake.
+    fn try_remove_node(&self, edge: Self::Edge, level: LevelNo) -> bool;
 
     /// Get the count of inner nodes
     #[must_use]

@@ -8,10 +8,11 @@ pub mod fixed_arity;
 /// # Safety
 ///
 /// - The reference counter must be initialized to 2.
-/// - [`Self::retain()`] must increment the counter by 1
-/// - [`Self::release()`] must decrement the counter by 1 with (at least)
+/// - [`Self::retain()`] increments the counter by 1
+/// - [`Self::release()`] decrements the counter by 1 with (at least)
 ///   [`Release`][std::sync::atomic::Ordering::Release] order.
-/// - [`Self::load_rc()`] use the specified load order.
+/// - [`Self::load_rc()`] loads the reference count with the specified load
+///   order.
 /// - An implementation must not modify the counter unless instructed externally
 ///   via the `retain()` or `release()` methods.
 pub unsafe trait NodeBase: Eq + std::hash::Hash {

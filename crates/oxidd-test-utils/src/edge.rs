@@ -148,9 +148,17 @@ unsafe impl Manager for DummyManager {
     fn drop_edge(&self, edge: Self::Edge) {
         // Move the inner arc out. We need to use `std::ptr::read` since
         // `DummyEdge` implements `Drop` (to print an error).
-        let inner = unsafe { std::ptr::read(&edge.0) };
+        let arc = unsafe { std::ptr::read(&edge.0) };
         std::mem::forget(edge);
-        drop(inner);
+        drop(arc);
+    }
+
+    fn try_remove_node(&self, edge: Self::Edge, _level: LevelNo) -> bool {
+        // Move the inner arc out. We need to use `std::ptr::read` since
+        // `DummyEdge` implements `Drop` (to print an error).
+        let arc = unsafe { std::ptr::read(&edge.0) };
+        std::mem::forget(edge);
+        Arc::into_inner(arc).is_some()
     }
 
     fn num_inner_nodes(&self) -> usize {

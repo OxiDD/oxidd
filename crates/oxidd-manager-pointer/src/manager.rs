@@ -20,7 +20,8 @@ use std::iter::FusedIterator;
 use std::marker::PhantomData;
 use std::mem::{align_of, ManuallyDrop};
 use std::ptr::{addr_of, addr_of_mut, NonNull};
-use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering::{Acquire, Relaxed};
 
 use arcslab::{ArcSlab, ArcSlabRef, AtomicRefCounted, ExtHandle, IntHandle};
 use bitvec::bitvec;
@@ -482,6 +483,8 @@ impl<'id, N: NodeBase, ET: Tag, const TAG_BITS: u32> Edge<'id, N, ET, TAG_BITS> 
         debug_assert!(self.is_inner());
         let ptr: NonNull<N> = self.all_untagged_ptr().cast();
         std::mem::forget(self);
+        // SAFETY: `self` points to an inner node and by the type invariant, we
+        // have shared access. Also, `self` forgotten now.
         let _old_rc = unsafe { ptr.as_ref().release() };
         debug_assert!(_old_rc > 1);
     }
@@ -491,7 +494,8 @@ impl<'id, N: NodeBase, ET: Tag, const TAG_BITS: u32> Edge<'id, N, ET, TAG_BITS> 
     /// Dropping an edge from the unique table corresponds to dropping the last
     /// reference.
     ///
-    /// SAFETY:
+    /// # Safety
+    ///
     /// - `self` must be untagged and point to an inner node
     /// - `TM`, `R`, `MD` and `PAGE_SIZE` must be the types/values this edge has
     ///   been created with
@@ -511,6 +515,10 @@ impl<'id, N: NodeBase, ET: Tag, const TAG_BITS: u32> Edge<'id, N, ET, TAG_BITS> 
             debug_assert_eq!(self.addr() & Self::ALL_TAG_MASK, 0);
             let ptr: NonNull<N> = self.0.cast();
             std::mem::forget(self);
+            // SAFETY: By the type invariant, `ptr` was created from an
+            // `IntHandle`, the caller ensures that the type/const arguments
+            // of `IntHandle` match. Due to lifetime restrictions the `ArcSlab`
+            // outlives the `IntHandle` we create.
             unsafe { IntHandle::from_raw(ptr) }
         };
         IntHandle::drop_with(handle, |node| {
@@ -522,6 +530,49 @@ impl<'id, N: NodeBase, ET: Tag, const TAG_BITS: u32> Edge<'id, N, ET, TAG_BITS> 
                     TM::drop_edge(edge);
                 }
             })
+        })
+    }
+
+    /// Forcibly drop the last edge, i.e., one that comes from the unique table
+    ///
+    /// # Safety
+    ///
+    /// - `self` must be untagged and point to an inner node
+    /// - `self` must be the last reference to the node. Beware of relaxed
+    ///   memory (e.g., use [`Acquire`] ordering to check that `this` is the
+    ///   last reference).
+    /// - `TM`, `R`, `MD` and `PAGE_SIZE` must be the types/values this edge has
+    ///   been created with
+    #[inline]
+    unsafe fn force_drop<TM, R, MD, const PAGE_SIZE: usize>(self)
+    where
+        N: InnerNode<Self>,
+        TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
+        MD: DropWith<Edge<'id, N, ET, TAG_BITS>>,
+    {
+        let handle: IntHandle<
+            'id,
+            N,
+            Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>,
+            PAGE_SIZE,
+        > = {
+            debug_assert_eq!(self.addr() & Self::ALL_TAG_MASK, 0);
+            let ptr: NonNull<N> = self.0.cast();
+            std::mem::forget(self);
+            // SAFETY: By the type invariant, `ptr` was created from an
+            // `IntHandle`, the caller ensures that the type/const arguments
+            // of `IntHandle` match. Due to lifetime restrictions the `ArcSlab`
+            // outlives the `IntHandle` we create.
+            unsafe { IntHandle::from_raw(ptr) }
+        };
+        // SAFETY: `handle` is the last reference
+        unsafe { IntHandle::force_into_inner(handle) }.drop_with(|edge| {
+            if edge.is_inner() {
+                // SAFETY: `edge` points to an inner node
+                unsafe { edge.drop_inner() };
+            } else {
+                TM::drop_edge(edge);
+            }
         })
     }
 
@@ -648,6 +699,62 @@ where
         } else {
             TM::drop_edge(edge);
         }
+    }
+
+    #[track_caller]
+    fn try_remove_node(&self, edge: Self::Edge, level: LevelNo) -> bool {
+        if !edge.is_inner() {
+            TM::drop_edge(edge);
+            debug_assert_eq!(level, LevelNo::MAX, "`level` does not match");
+            return false;
+        }
+
+        let node_ptr: NonNull<Self::InnerNode> = edge.all_untagged_ptr().cast();
+        std::mem::forget(edge);
+        // SAFETY: `node_ptr` points to an inner node and by the type invariant
+        // of `Edge`, we have shared access.
+        let node = unsafe { node_ptr.as_ref() };
+        // SAFETY: `edge` is forgotten
+        let old_rc = unsafe { node.release() };
+
+        debug_assert_ne!(level, LevelNo::MAX, "`level` does not match");
+        debug_assert!(
+            (level as usize) < self.unique_table.len(),
+            "`level` out of range"
+        );
+        debug_assert!(node.check_level(|l| l == level), "`level` does not match");
+        debug_assert!(old_rc > 1);
+
+        if old_rc != 2 || !self.reorder_gc_prepared {
+            return false;
+        }
+
+        let Some(set) = self.unique_table.get(level as usize) else {
+            return false;
+        };
+        let mut set = set.lock();
+
+        // Read the reference count again: Another thread may have created an
+        // edge between our `node.release()` call and `set.lock()`.
+        let rc = node.load_rc(Acquire);
+        debug_assert_ne!(rc, 0);
+        if rc != 1 {
+            return false;
+        }
+
+        // SAFETY: we checked that `reorder_gc_prepared` is true above
+        let Some(edge) = (unsafe { set.remove(node) }) else {
+            return false;
+        };
+
+        // SAFETY: Since `rc` is 1, this is the last reference. We use `Acquire`
+        // order above and `Release` order when decrementing reference counters,
+        // so we have exclusive node access now. Additionally, `edge` is
+        // untagged and points to an inner node. The type/const arguments match
+        // the ones from the manager.
+        unsafe { edge.force_drop::<TM, R, MD, PAGE_SIZE>() };
+
+        true
     }
 
     #[inline]
@@ -1068,12 +1175,15 @@ where
             |edge| {
                 // SAFETY: All edges in unique tables are untagged and point to
                 // inner nodes.
-                unsafe { edge.inner_node_unchecked() }.ref_count() != 0
+                unsafe { edge.inner_node_unchecked() }.load_rc(Acquire) != 1
             },
             |edge| {
-                // SAFETY: All edges in unique tables are untagged and point to
-                // inner nodes.
-                unsafe { edge.drop_from_unique_table::<TM, R, MD, PAGE_SIZE>() };
+                // SAFETY: Since `rc` is 1, this is the last reference. We use
+                // `Acquire` order above and `Release` order when decrementing
+                // reference counters, so we have exclusive node access now.
+                // Additionally, `edge` is untagged and points to an inner node.
+                // The type/const arguments match the ones from the manager.
+                unsafe { edge.force_drop::<TM, R, MD, PAGE_SIZE>() };
             },
         );
     }

@@ -2,6 +2,7 @@ use std::cell::UnsafeCell;
 use std::hash::Hash;
 use std::hash::Hasher;
 use std::mem::MaybeUninit;
+use std::sync::atomic;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::{Relaxed, Release};
 
@@ -79,13 +80,19 @@ impl<ET: Tag, const TAG_BITS: u32, const ARITY: usize> Hash
     }
 }
 
-// SAFETY: The reference counter is initialized to 2.
+// SAFETY: The reference counter is initialized to 2, `load_rc` uses the given
+// ordering.
 unsafe impl<ET: Tag, const TAG_BITS: u32, const ARITY: usize> NodeBase
     for NodeWithLevel<'_, ET, TAG_BITS, ARITY>
 {
     #[inline(always)]
     fn needs_drop() -> bool {
         false
+    }
+
+    #[inline(always)]
+    fn load_rc(&self, order: atomic::Ordering) -> usize {
+        self.rc.load(order)
     }
 }
 

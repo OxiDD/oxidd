@@ -723,6 +723,31 @@ impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> IntHandle<'_, I, D, PAGE_SI
         unsafe { Slot::release_move::<D, PAGE_SIZE>(slot) }
     }
 
+    /// Move the referenced item out without checking whether `this` is the last
+    /// reference
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `this` is the last reference. Beware of
+    /// relaxed memory (e.g., use [`Acquire`] ordering to check that `this` is
+    /// the last reference).
+    #[inline]
+    pub unsafe fn force_into_inner(this: Self) -> I {
+        let mut slot = this.0;
+        std::mem::forget(this);
+
+        // SAFETY: We have (exclusive) access to the non-empty slot
+        debug_assert_eq!(unsafe { &slot.as_ref().item }.current(), 1);
+
+        // SAFETY: We have exclusive access to the slot, we don't use the item
+        // again
+        let res = unsafe { ManuallyDrop::take(&mut slot.as_mut().item) };
+        // SAFETY: The slot is empty
+        unsafe { Page::<I, D, PAGE_SIZE>::free_slot(slot) };
+
+        res
+    }
+
     /// Drop this handle with a "custom drop implementation" `f` for the item
     #[inline]
     pub fn drop_with(this: Self, f: impl FnOnce(I)) {
