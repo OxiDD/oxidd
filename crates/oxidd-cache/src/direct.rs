@@ -278,7 +278,7 @@ where
     /// node deletions to be wrapped inside an [`GCContainer::pre_gc()`] /
     /// [`GCContainer::post_gc()`] pair.
     pub unsafe fn with_capacity(capacity: usize) -> Self {
-        let _ = Self::CHECK_ARITY;
+        let () = Self::CHECK_ARITY;
         let buckets = capacity
             .checked_next_power_of_two()
             .expect("capacity is too large");

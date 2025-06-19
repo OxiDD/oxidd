@@ -104,7 +104,7 @@ where
         'id: 'a;
 
     fn with_capacity(capacity: u32) -> Self {
-        let _ = Self::CHECK_TERMINALS;
+        let () = Self::CHECK_TERMINALS;
         let capacity = std::cmp::min(TERMINALS, capacity as usize);
 
         let mut store_vec = Vec::new();

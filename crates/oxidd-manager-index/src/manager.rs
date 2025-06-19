@@ -492,10 +492,6 @@ where
     MD: DropWith<Edge<'id, N, ET>>,
 {
     const CHECK_TERMINALS: () = {
-        assert!(
-            usize::BITS >= u32::BITS,
-            "This manager implementation assumes usize::BITS >= u32::BITS"
-        );
         assert!(TERMINALS >= 1, "TERMINALS must be >= 1");
         assert!(
             TERMINALS <= u32::MAX as usize,
@@ -1930,8 +1926,8 @@ pub fn new_manager<
     threads: u32,
     data: MDC::T<'static>,
 ) -> ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS> {
-    // Evaluate a few constants for assertions
-    let _ = Store::<
+    // Evaluate constant for assertions
+    let () = Store::<
         'static,
         NC::T<'static>,
         ET,

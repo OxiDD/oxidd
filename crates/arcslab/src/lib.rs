@@ -4,9 +4,6 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 #![warn(missing_docs)]
-// We use const assertions for checking configurations and need to make sure
-// that they are evaluated
-#![allow(clippy::let_unit_value)]
 
 use std::alloc;
 use std::marker::{PhantomData, PhantomPinned};
@@ -210,7 +207,7 @@ impl<I, D, const PAGE_SIZE: usize> ArcSlab<I, D, PAGE_SIZE> {
     /// tagged as the root of the allocation.
     pub unsafe fn new_with(init_data: impl FnOnce(*mut D)) -> ArcSlabRef<I, D, PAGE_SIZE> {
         // Ensure that our assertion is evaluated
-        let _ = Self::ASSERT_PAGE_SIZE_POWER_OF_TWO;
+        let () = Self::ASSERT_PAGE_SIZE_POWER_OF_TWO;
 
         // Use a `Box` here such that we do not have to implement the allocation
         // ourselves. Inspired by the `Arc` implementation in the Rustonomicon.

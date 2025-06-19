@@ -44,7 +44,7 @@ where
         'id: 'a;
 
     fn with_capacity(_capacity: u32) -> Self {
-        let _ = Self::CHECK_TERMINALS;
+        let () = Self::CHECK_TERMINALS;
         Self(PhantomData)
     }
 
@@ -70,7 +70,7 @@ where
 
     #[inline]
     fn get_edge(&self, terminal: Terminal) -> AllocResult<Edge<'id, InnerNode, EdgeTag>> {
-        let _ = Self::CHECK_TERMINALS;
+        let () = Self::CHECK_TERMINALS;
         // SAFETY: `terminal.as_usize() <= Terminal::MAX_VALUE` is guaranteed
         // and we checked `TERMINALS > Terminal::MAX_VALUE`. There are no
         // reference counters to update.

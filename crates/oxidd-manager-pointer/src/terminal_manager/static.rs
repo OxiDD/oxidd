@@ -88,7 +88,7 @@ where
 
     #[inline(always)]
     unsafe fn new_in(_slot: *mut Self) {
-        let _ = Self::ASSERT_SUFFICIENT_ALIGN;
+        let () = Self::ASSERT_SUFFICIENT_ALIGN;
     }
 
     #[inline]
