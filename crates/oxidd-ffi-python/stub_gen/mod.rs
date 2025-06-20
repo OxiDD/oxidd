@@ -575,7 +575,13 @@ impl StubGen {
         }
     }
 
-    /// Process a Rust `struct`/`enum`
+    /// Process a Rust `struct`/`enum`, potentially annotated by `#[pyclass]`
+    ///
+    /// If a new Python class was successfully registered, then the return value
+    /// is `Ok(id)`, where `id` denotes the class ID.
+    ///
+    /// `Err(..)` is used for actual processing errors (parsing etc.). If there
+    /// is no `#[pyclass]` attribute, then the return value is `Ok(usize::MAX)`.
     fn process_class(
         &mut self,
         ident: &syn::Ident,
@@ -847,6 +853,85 @@ impl StubGen {
         Ok(())
     }
 
+    /// Process the fields of a Rust `struct` annotated with `#[pyclass]`
+    fn process_class_fields(&mut self, class_id: usize, fields: &syn::Fields) -> Result<()> {
+        let class = &mut self.items[class_id];
+        let class_name = &class.name;
+        let ItemKind::Class {
+            items: class_items, ..
+        } = &mut class.kind
+        else {
+            panic!("class_id must refer to a class");
+        };
+
+        for field in fields {
+            // attributes may look like: #[pyo3(get, set, name = "custom_name")]
+            let mut get = false;
+            let mut set = false;
+            let mut name = String::new();
+            for attr in &field.attrs {
+                let Some(syn::PathSegment { ident, .. }) = attr.meta.path().segments.last() else {
+                    continue;
+                };
+
+                if ident == "pyo3" {
+                    let syn::Meta::List(syn::MetaList { tokens, .. }) = &attr.meta else {
+                        continue;
+                    };
+                    util::parse::recognize_key_val(tokens.clone(), attr, |ident, tokens| {
+                        if ident == "get" {
+                            get = true;
+                        } else if ident == "set" {
+                            set = true;
+                        } else if ident == "name" {
+                            util::parse::expect_punct_opt('=', tokens.next(), attr)?;
+                            name = util::parse::expect_string_opt(tokens.next(), attr)?;
+                        } else {
+                            return Ok(false);
+                        }
+                        Ok(true)
+                    })?;
+                }
+            }
+
+            if !get && !set {
+                continue;
+            }
+            if name.is_empty() {
+                let Some(ident) = &field.ident else {
+                    bail!("Missing field name for getter/setter in '{class_name}'");
+                };
+                name = identifier_to_string(ident);
+            }
+            if set && !get {
+                bail!("Setter-only fields are not supported ('{class_name}.{name}')");
+            }
+
+            let doc = get_doc(&field.attrs);
+            let ty = self.type_env.attr_type_from_doc(&doc, &name)?;
+            // TODO: should we check correspondence with the Rust type?
+
+            debug_assert!(get);
+            class_items.push(Item {
+                name,
+                doc,
+                kind: if set {
+                    ItemKind::Attribute { ty }
+                } else {
+                    ItemKind::Function {
+                        kind: FunctionKind::Getter,
+                        params: vec![Parameter::name_only("self"), Parameter::name_only("/")],
+                        return_type: ty,
+                    }
+                },
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Process a `#[pymethods]` `impl` block for the Python class with the
+    /// given `class_id`
     fn process_class_items(&mut self, class_id: usize, items: &[syn::ImplItem]) -> Result<()> {
         let class = &mut self.items[class_id];
         let class_name = &class.name;
@@ -954,8 +1039,8 @@ impl StubGen {
     }
 
     fn process_items(&mut self, items: &[syn::Item]) -> Result<()> {
-        // Process all sorts of classes (without their methods) first to register their
-        // names
+        // Process all sorts of classes (without their methods) first to
+        // register their names
         for item in items {
             match item {
                 syn::Item::Mod(item_mod) => {
@@ -964,9 +1049,10 @@ impl StubGen {
                     }
                 }
                 syn::Item::Struct(item_struct) => {
-                    self.process_class(&item_struct.ident, &item_struct.attrs)?;
-                    // TODO: handle fields `#[pyo3(get, set, name =
-                    // "custom_name")]`
+                    let id = self.process_class(&item_struct.ident, &item_struct.attrs)?;
+                    if id != usize::MAX {
+                        self.process_class_fields(id, &item_struct.fields)?;
+                    }
                 }
                 syn::Item::Enum(item_enum) => {
                     self.process_class(&item_enum.ident, &item_enum.attrs)?;
