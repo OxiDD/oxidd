@@ -549,7 +549,7 @@ impl BDDFunction {
     fn exists(&self, py: Python, vars: &Self) -> PyResult<Self> {
         py.allow_threads(move || self.0.exists(&vars.0)).try_into()
     }
-    /// Deprecated alias for ``exists()``.
+    /// Deprecated alias for :meth:`exists`.
     ///
     /// Locking behavior: acquires the manager's lock for shared access.
     ///
@@ -562,6 +562,9 @@ impl BDDFunction {
     ///
     /// Raises:
     ///     DDMemoryError: If the operation runs out of memory
+    ///
+    /// .. deprecated:: 0.10
+    ///    Use :meth:`exists` instead
     fn exist(&self, py: Python, vars: &Self) -> PyResult<Self> {
         self.exists(py, vars)
     }
@@ -589,7 +592,7 @@ impl BDDFunction {
         py.allow_threads(move || self.0.unique(&vars.0)).try_into()
     }
 
-    /// Combined application of ``op`` and :meth:`forall()`.
+    /// Combined application of ``op`` and :meth:`forall`.
     ///
     /// Locking behavior: acquires the manager's lock for shared access.
     ///
@@ -618,7 +621,7 @@ impl BDDFunction {
         py.allow_threads(move || self.0.apply_forall(op, &rhs.0, &vars.0))
             .try_into()
     }
-    /// Combined application of ``op`` and :meth:`exists()`.
+    /// Combined application of ``op`` and :meth:`exists`.
     ///
     /// Locking behavior: acquires the manager's lock for shared access.
     ///
@@ -636,6 +639,9 @@ impl BDDFunction {
     ///
     /// Raises:
     ///     DDMemoryError: If the operation runs out of memory
+    ///
+    /// .. deprecated:: 0.10
+    ///    Use :meth:`apply_exists` instead
     fn apply_exists(
         &self,
         py: Python,
@@ -674,7 +680,7 @@ impl BDDFunction {
     ) -> PyResult<Self> {
         self.apply_exists(py, op, rhs, vars)
     }
-    /// Combined application of ``op`` and :meth:`unique()`.
+    /// Combined application of ``op`` and :meth:`unique`.
     ///
     /// Locking behavior: acquires the manager's lock for shared access.
     ///

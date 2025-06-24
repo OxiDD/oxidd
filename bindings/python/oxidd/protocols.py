@@ -17,7 +17,7 @@ from collections.abc import Iterable
 from os import PathLike
 from typing import Generic, Protocol, TypeVar
 
-from typing_extensions import Self
+from typing_extensions import Self, deprecated
 
 from .util import BooleanOperator
 
@@ -515,8 +515,13 @@ class BooleanFunctionQuant(BooleanFunction, Protocol):
         raise NotImplementedError
 
     @abstractmethod
+    @deprecated("Use exists instead")
     def exist(self, /, vars: Self) -> Self:
-        """Deprecated alias for meth:`exists()`."""
+        """Deprecated alias for :meth:`exists`.
+
+        .. deprecated:: 0.10
+           Use :meth:`exists` instead
+        """
         raise NotImplementedError
 
     @abstractmethod
@@ -543,7 +548,7 @@ class BooleanFunctionQuant(BooleanFunction, Protocol):
 
     @abstractmethod
     def apply_forall(self, /, op: BooleanOperator, rhs: Self, vars: Self) -> Self:
-        """Combined application of ``op`` and :meth:`forall()`.
+        """Combined application of ``op`` and :meth:`forall`.
 
         Locking behavior: acquires the manager's lock for shared access.
 
@@ -564,7 +569,7 @@ class BooleanFunctionQuant(BooleanFunction, Protocol):
 
     @abstractmethod
     def apply_exists(self, /, op: BooleanOperator, rhs: Self, vars: Self) -> Self:
-        """Combined application of ``op`` and :meth:`exists()`.
+        """Combined application of ``op`` and :meth:`exists`.
 
         Locking behavior: acquires the manager's lock for shared access.
 
@@ -584,13 +589,18 @@ class BooleanFunctionQuant(BooleanFunction, Protocol):
         raise NotImplementedError
 
     @abstractmethod
+    @deprecated("Use apply_exists instead")
     def apply_exist(self, /, op: BooleanOperator, rhs: Self, vars: Self) -> Self:
-        """Deprecated alias for meth:`apply_exists()`."""
+        """Deprecated alias for :meth:`apply_exists`.
+
+        .. deprecated:: 0.10
+           Use :meth:`apply_exists` instead
+        """
         raise NotImplementedError
 
     @abstractmethod
     def apply_unique(self, /, op: BooleanOperator, rhs: Self, vars: Self) -> Self:
-        """Combined application of ``op`` and :meth:`unique()`.
+        """Combined application of ``op`` and :meth:`unique`.
 
         Locking behavior: acquires the manager's lock for shared access.
 

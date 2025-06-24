@@ -551,7 +551,7 @@ impl BCDDFunction {
     fn exists(&self, py: Python, vars: &Self) -> PyResult<Self> {
         py.allow_threads(move || self.0.exists(&vars.0)).try_into()
     }
-    /// Deprecated alias for :meth:`exists()`.
+    /// Deprecated alias for :meth:`exists`.
     ///
     /// Locking behavior: acquires the manager's lock for shared access.
     ///
@@ -564,6 +564,9 @@ impl BCDDFunction {
     ///
     /// Raises:
     ///     DDMemoryError: If the operation runs out of memory
+    ///
+    /// .. deprecated:: 0.10
+    ///    Use :meth:`exists` instead
     fn exist(&self, py: Python, vars: &Self) -> PyResult<Self> {
         self.exists(py, vars)
     }
@@ -591,7 +594,7 @@ impl BCDDFunction {
         py.allow_threads(move || self.0.unique(&vars.0)).try_into()
     }
 
-    /// Combined application of ``op`` and :meth:`forall()`.
+    /// Combined application of ``op`` and :meth:`forall`.
     ///
     /// Locking behavior: acquires the manager's lock for shared access.
     ///
@@ -620,7 +623,7 @@ impl BCDDFunction {
         py.allow_threads(move || self.0.apply_forall(op, &rhs.0, &vars.0))
             .try_into()
     }
-    /// Combined application of ``op`` and :meth:`exists()`.
+    /// Combined application of ``op`` and :meth:`exists`.
     ///
     /// Locking behavior: acquires the manager's lock for shared access.
     ///
@@ -649,7 +652,7 @@ impl BCDDFunction {
         py.allow_threads(move || self.0.apply_exists(op, &rhs.0, &vars.0))
             .try_into()
     }
-    /// Deprecated alias for :meth:`apply_exists()`.
+    /// Deprecated alias for :meth:`apply_exists`.
     ///
     /// Locking behavior: acquires the manager's lock for shared access.
     ///
@@ -667,6 +670,9 @@ impl BCDDFunction {
     ///
     /// Raises:
     ///     DDMemoryError: If the operation runs out of memory
+    ///
+    /// .. deprecated:: 0.10
+    ///    Use :meth:`apply_exists` instead
     fn apply_exist(
         &self,
         py: Python,
@@ -676,7 +682,7 @@ impl BCDDFunction {
     ) -> PyResult<Self> {
         self.apply_exists(py, op, rhs, vars)
     }
-    /// Combined application of ``op`` and :meth:`unique()`.
+    /// Combined application of ``op`` and :meth:`unique`.
     ///
     /// Locking behavior: acquires the manager's lock for shared access.
     ///
