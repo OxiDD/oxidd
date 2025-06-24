@@ -3,6 +3,7 @@ use std::rc::Rc;
 
 // spell-checker:ignore punct
 
+/// Like [`Rc`], but implementing [`Ord`] based on the pointer values
 pub struct OrdRc<T>(Rc<T>);
 
 impl<T> OrdRc<T> {

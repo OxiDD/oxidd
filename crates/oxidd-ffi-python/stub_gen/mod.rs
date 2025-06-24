@@ -252,7 +252,7 @@ impl fmt::Display for Parameter {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 enum Type {
     Any,
     Union(Vec<Self>),
