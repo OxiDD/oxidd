@@ -31,7 +31,7 @@ from collections.abc import Iterable
 from os import PathLike
 from typing import final
 
-from typing_extensions import Never, Self
+from typing_extensions import Never, Self, deprecated
 "
         .as_bytes(),
     )?;

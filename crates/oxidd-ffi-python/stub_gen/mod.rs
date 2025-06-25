@@ -1148,6 +1148,98 @@ impl StubGen {
         writeln!(writer, "{indent}\"\"\"")
     }
 
+    fn write_decorators_from_doc<W: io::Write>(
+        writer: &mut W,
+        doc: &str,
+        indent: Indent,
+    ) -> io::Result<()> {
+        /// Escapes `"` and replaces, e.g., <code>:meth:\`exists\`</code> by
+        /// `exists`
+        #[derive(Clone, Copy)]
+        struct Escaped<'a>(&'a str);
+
+        impl fmt::Display for Escaped<'_> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                let mut s = self.0;
+                'outer: while let Some((s0, s1)) = s.split_once([':', '"']) {
+                    f.write_str(s0)?;
+                    let delim = s.as_bytes()[s0.len()];
+                    if delim == b'"' {
+                        f.write_str("\"")?;
+                        s = s1;
+                        continue;
+                    }
+
+                    let mut pos = usize::MAX;
+                    for (i, c) in s1.bytes().enumerate() {
+                        if c == b':' {
+                            pos = i + 1;
+                            break;
+                        }
+                        if !c.is_ascii_alphanumeric() {
+                            break;
+                        }
+                    }
+                    let bytes = s1.as_bytes();
+                    let Some(b'`') = bytes.get(pos) else {
+                        f.write_char(':')?;
+                        s = s1;
+                        continue;
+                    };
+
+                    let (s0, s1) = s1.split_at(pos + 1);
+                    for (i, c) in s1.bytes().enumerate() {
+                        match c {
+                            b'`' => {
+                                let (s0, s1) = s1.split_at(i);
+                                f.write_str(s0)?;
+                                s = s1.split_at(1).1;
+                                continue 'outer;
+                            }
+                            b'"' => break,
+                            _ => {}
+                        }
+                    }
+                    write!(f, ":{s0}:`")?;
+                    s = s1;
+                }
+                f.write_str(s)
+            }
+        }
+
+        let mut lines = doc.lines().peekable();
+        while let Some(line) = lines.next() {
+            if line.starts_with(".. deprecated::") {
+                write!(writer, "{indent}@deprecated(")?;
+                let mut multiline = false;
+                let ml_indent = Indent(indent.0 + 1);
+                let mut doc_line = "";
+                while let Some(&line) = lines.peek() {
+                    let Some(line) = line.strip_prefix("   ") else {
+                        break;
+                    };
+                    let line = line.trim();
+                    if !doc_line.is_empty() && !line.is_empty() {
+                        writeln!(writer)?;
+                        write!(writer, "{ml_indent}\"{} \"", Escaped(doc_line))?;
+                        multiline = true;
+                    }
+                    doc_line = line;
+                    lines.next();
+                }
+                if multiline {
+                    debug_assert!(!doc_line.is_empty());
+                    writeln!(writer)?;
+                    writeln!(writer, "{ml_indent}\"{}\"", Escaped(doc_line))?;
+                    writeln!(writer, "{indent})")?;
+                } else {
+                    writeln!(writer, "\"{}\")", Escaped(doc_line))?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn write_items<W: io::Write>(
         w: &mut W,
         items: &[Item],
@@ -1181,6 +1273,7 @@ impl StubGen {
                         FunctionKind::Staticmethod => writeln!(w, "{indent}@staticmethod")?,
                         _ => {}
                     }
+                    Self::write_decorators_from_doc(w, &item.doc, indent)?;
                     write!(w, "{indent}def {name}(")?;
                     if let [param, params @ ..] = &params[..] {
                         write!(w, "{param}")?;
@@ -1211,6 +1304,7 @@ impl StubGen {
                     if !*subclassable {
                         writeln!(w, "{indent}@final")?;
                     }
+                    Self::write_decorators_from_doc(w, &item.doc, indent)?;
                     write!(w, "{indent}class {name}")?;
                     if let [base, bases @ ..] = &bases[..] {
                         write!(w, "({base}")?;
