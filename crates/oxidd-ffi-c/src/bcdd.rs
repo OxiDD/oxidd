@@ -637,8 +637,10 @@ pub unsafe extern "C" fn oxidd_bcdd_forall(f: bcdd_t, var: bcdd_t) -> bcdd_t {
 pub unsafe extern "C" fn oxidd_bcdd_exists(f: bcdd_t, var: bcdd_t) -> bcdd_t {
     op2(f, var, BCDDFunction::exists)
 }
-/// Deprecated alias for `oxidd_bcdd_exists()`
-#[deprecated]
+/// Deprecated alias for oxidd_bcdd_exists()
+///
+/// @deprecated  Use oxidd_bcdd_exists() instead
+#[deprecated(since = "0.10.0", note = "use oxidd_bcdd_exists instead")]
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_bcdd_exist(f: bcdd_t, var: bcdd_t) -> bcdd_t {
     oxidd_bcdd_exists(f, var)
@@ -706,8 +708,10 @@ pub unsafe extern "C" fn oxidd_bcdd_apply_exists(
         .and_then(|f| f.apply_exists(op, &*rhs.get()?, &*vars.get()?))
         .into()
 }
-/// Deprecated alias for `oxidd_bcdd_apply_exists()`
-#[deprecated]
+/// Deprecated alias for oxidd_bcdd_apply_exists()
+///
+/// @deprecated  Use oxidd_bcdd_apply_exists() instead
+#[deprecated(since = "0.10.0", note = "use oxidd_bcdd_apply_exists instead")]
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_bcdd_apply_exist(
     op: BooleanOperator,

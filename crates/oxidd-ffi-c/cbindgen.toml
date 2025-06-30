@@ -1,4 +1,5 @@
-# spell-checker:ignore autogen,myvariant,Zunpretty
+# spell-checker:ignore autogen,elif,STDC,GNUC,declspec,nodiscard,myvariant
+# spell-checker:ignore Zunpretty
 
 # The language to output bindings in
 #
@@ -96,7 +97,31 @@ no_includes = true
 cpp_compat = true
 
 # A list of lines to add verbatim after the includes block
-after_includes = ""
+after_includes = """
+/** @cond */
+#if defined(__cplusplus) || (__STDC_VERSION__ >= 202311L)
+  #define _OXIDD_ATTR(...) [[__VA_ARGS__]]
+#elif defined(__GNUC__)
+  #define _OXIDD_ATTR(...) __attribute__((__VA_ARGS__))
+#elif defined(_MSC_VER)
+  #define _OXIDD_ATTR(...) __declspec(__VA_ARGS__)
+#else
+  #define _OXIDD_ATTR(...)
+#endif
+
+#if defined(__cplusplus) || (__STDC_VERSION__ >= 202311L)
+  #define _OXIDD_NODISCARD [[nodiscard]]
+#else
+  #define _OXIDD_NODISCARD
+#endif
+
+#ifdef __GNUC__
+#define _OXIDD_NONNULL __attribute__((nonnull))
+#else
+#define _OXIDD_NONNULL
+#endif
+/** @endcond */
+"""
 
 
 # Code Style Options
@@ -241,7 +266,7 @@ remove_underscores = false
 #
 # default: `#[repr(packed)]` types will be treated as opaque, since it would
 # be unsafe for C callers to use a incorrectly laid-out union.
-packed = "PACKED"
+#packed = "PACKED"
 
 # A string that should come before the name of any type which has been marked
 # as `#[repr(align(n))]`. This string must be a function-like macro which takes
@@ -252,7 +277,7 @@ packed = "PACKED"
 #
 # default: `#[repr(align(n))]` types will be treated as opaque, since it
 # could be unsafe for C callers to use a incorrectly-aligned union.
-aligned_n = "ALIGNED"
+#aligned_n = "ALIGNED"
 
 
 [fn]
@@ -272,7 +297,7 @@ aligned_n = "ALIGNED"
 # * "auto": only use vertical if horizontal would exceed line_length
 #
 # default: "auto"
-args = "horizontal"
+args = "auto"
 
 # An optional string that should prefix function declarations which have been
 # marked as `#[must_use]`. For instance, "__attribute__((warn_unused_result))"
@@ -280,14 +305,31 @@ args = "horizontal"
 # would involve emitting the name of a macro which you define in a
 # platform-specific way. e.g. "MUST_USE_FUNC"
 # default: nothing is emitted for must_use functions
-must_use = "MUST_USE_FUNC"
+must_use = "_OXIDD_NODISCARD"
+
+# An optional string that should prefix function declarations which have been
+# marked as `#[deprecated]` without note. For instance, "__attribute__((deprecated))"
+# would be a reasonable value if targeting gcc/clang. A more portable solution
+# would involve emitting the name of a macro which you define in a
+# platform-specific way. e.g. "DEPRECATED_FUNC"
+# default: nothing is emitted for deprecated functions
+deprecated = "_OXIDD_ATTR(deprecated)"
+
+# An optional string that should prefix function declarations which have been
+# marked as `#[deprecated(note = "reason")]`. `{}` will be replaced with the
+# double-quoted string. For instance, "__attribute__((deprecated({})))"
+# would be a reasonable value if targeting gcc/clang. A more portable solution
+# would involve emitting the name of a macro which you define in a
+# platform-specific way. e.g. "DEPRECATED_FUNC_WITH_NOTE(note)"
+# default: nothing is emitted for deprecated functions
+deprecated_with_note = "_OXIDD_ATTR(deprecated({}))"
 
 # An optional string that will be used in the attribute position for functions
 # that don't return (that return `!` in Rust).
 #
 # For instance, `__attribute__((noreturn))` would be a reasonable value if
 # targeting gcc/clang.
-no_return = "NO_RETURN"
+no_return = "_OXIDD_ATTR(noreturn)"
 
 # An optional string that, if present, will be used to generate Swift function
 # and method signatures for generated functions, for example "CF_SWIFT_NAME".
@@ -352,7 +394,24 @@ rename_fields = "None"
 # platform-specific way. e.g. "MUST_USE_STRUCT"
 #
 # default: nothing is emitted for must_use structs
-must_use = "MUST_USE_STRUCT"
+must_use = "_OXIDD_NODISCARD"
+
+# An optional string that should come before the name of any struct which has been
+# marked as `#[deprecated]` without note. For instance, "__attribute__((deprecated))"
+# would be a reasonable value if targeting gcc/clang. A more portable solution
+# would involve emitting the name of a macro which you define in a
+# platform-specific way. e.g. "DEPRECATED_STRUCT"
+# default: nothing is emitted for deprecated structs
+deprecated = "_OXIDD_ATTR(deprecated)"
+
+# An optional string that should come before the name of any struct which has been
+# marked as `#[deprecated(note = "reason")]`. `{}` will be replaced with the
+# double-quoted string. For instance, "__attribute__((deprecated({})))"
+# would be a reasonable value if targeting gcc/clang. A more portable solution
+# would involve emitting the name of a macro which you define in a
+# platform-specific way. e.g. "DEPRECATED_STRUCT_WITH_NOTE(note)"
+# default: nothing is emitted for deprecated structs
+deprecated_with_note = "_OXIDD_ATTR(deprecated({}))"
 
 # Whether a Rust type with associated consts should emit those consts inside the
 # type's body. Otherwise they will be emitted trailing and with the type's name
@@ -462,7 +521,41 @@ cast_assert_name = "MOZ_RELEASE_ASSERT"
 # with fields, as it will be emitted as a struct. `[struct]must_use` will apply there.
 #
 # default: nothing is emitted for must_use enums
-must_use = "MUST_USE_ENUM"
+must_use = "_OXIDD_NODISCARD"
+
+# An optional string that should come before the name of any enum which has been
+# marked as `#[deprecated]` without note. For instance, "__attribute__((deprecated))"
+# would be a reasonable value if targeting gcc/clang. A more portable solution
+# would involve emitting the name of a macro which you define in a
+# platform-specific way. e.g. "DEPRECATED_ENUM"
+# default: nothing is emitted for deprecated enums
+deprecated = "_OXIDD_ATTR(deprecated)"
+
+# An optional string that should come before the name of any enum which has been
+# marked as `#[deprecated(note = "reason")]`. `{}` will be replaced with the
+# double-quoted string. For instance, "__attribute__((deprecated({})))"
+# would be a reasonable value if targeting gcc/clang. A more portable solution
+# would involve emitting the name of a macro which you define in a
+# platform-specific way. e.g. "DEPRECATED_ENUM_WITH_NOTE(note)"
+# default: nothing is emitted for deprecated enums
+deprecated_with_note = "_OXIDD_ATTR(deprecated({}))"
+
+# An optional string that should come after the name of any enum variant which has been
+# marked as `#[deprecated]` without note. For instance, "__attribute__((deprecated))"
+# would be a reasonable value if targeting gcc/clang. A more portable solution would
+# involve emitting the name of a macro which you define in a platform-specific
+# way. e.g. "DEPRECATED_ENUM_VARIANT"
+# default: nothing is emitted for deprecated enum variants
+deprecated_variant = "_OXIDD_ATTR(deprecated)"
+
+# An optional string that should come after the name of any enum variant which has been
+# marked as `#[deprecated(note = "reason")]`. `{}` will be replaced with the
+# double-quoted string. For instance, "__attribute__((deprecated({})))" would be a
+# reasonable value if targeting gcc/clang. A more portable solution would involve
+# emitting the name of a macro which you define in a platform-specific
+# way. e.g. "DEPRECATED_ENUM_WITH_NOTE(note)"
+# default: nothing is emitted for deprecated enum variants
+deprecated_variant_with_note = "_OXIDD_ATTR(deprecated({}))"
 
 # Whether enums with fields should generate destructors. This exists so that generic
 # enums can be properly instantiated with payloads that are C++ types with
@@ -590,4 +683,4 @@ default_features = true
 # An optional string to decorate all pointers that are
 # required to be non null. Nullability is inferred from the Rust type: `&T`,
 # `&mut T` and `NonNull<T>` all require a valid pointer value.
-non_null_attribute = "_Nonnull"
+non_null_attribute = "_OXIDD_NONNULL"
