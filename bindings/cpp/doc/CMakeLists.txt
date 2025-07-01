@@ -15,7 +15,7 @@ if(DOXYGEN)
 
     FetchContent_Declare(doxygen_awesome_css
         GIT_REPOSITORY https://github.com/jothepro/doxygen-awesome-css.git
-        GIT_TAG v2.3.3)
+        GIT_TAG v2.3.4)
 
     FetchContent_MakeAvailable(cppreference_tags doxygen_awesome_css)
 
