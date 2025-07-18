@@ -4,6 +4,7 @@ Checks: 'bugprone-*,-bugprone-easily-swappable-parameters,cppcoreguidelines-*,mo
 FormatStyle: file
 CheckOptions:
   readability-identifier-naming.PrivateMemberPrefix: '_'
+  readability-identifier-naming.PrivateMethodPrefix: '_'
   readability-identifier-naming.ClassCase: 'lower_case'
   readability-identifier-naming.ConceptCase: 'lower_case'
   readability-identifier-naming.ConstantCase: 'lower_case'
@@ -14,9 +15,10 @@ CheckOptions:
   readability-identifier-naming.NamespaceCase: 'lower_case'
   readability-identifier-naming.ParameterCase: 'lower_case'
   readability-identifier-naming.TypeAliasCase: 'lower_case'
-  readability-identifier-naming.TypeTemplateParameterCase: 'UPPER_CASE'
+  readability-identifier-naming.TypeTemplateParameterCase: 'CamelCase'
   readability-identifier-naming.UnionCase: 'lower_case'
-  readability-identifier-naming.ValueTemplateParameterCase: 'UPPER_CASE'
+  readability-identifier-naming.ValueTemplateParameterCase: 'CamelCase'
   readability-identifier-naming.VariableCase: 'lower_case'
   readability-identifier-naming.VirtualMethodCase: 'lower_case'
+  misc-non-private-member-variables-in-classes.IgnoreClassesWithAllMemberVariablesBeingPublic: true
 ...

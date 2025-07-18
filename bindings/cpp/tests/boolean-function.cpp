@@ -1,12 +1,17 @@
+#include "oxidd/util.hpp"
 #undef NDEBUG // enable runtime assertions regardless of the build type
 
 #include <array>
 #include <bit>
 #include <cassert>
+#include <concepts>
+#include <cstddef>
 #include <cstdint>
 #include <iterator>
 #include <limits>
 #include <ranges>
+#include <sstream>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -14,13 +19,11 @@
 #include <oxidd/bcdd.hpp>
 #include <oxidd/bdd.hpp>
 #include <oxidd/concepts.hpp>
-#include <oxidd/util.hpp>
 #include <oxidd/zbdd.hpp>
 
 using namespace oxidd;
 using namespace oxidd::concepts;
 using oxidd::util::boolean_operator;
-using oxidd::util::slice;
 
 // spell-checker:ignore nvars
 
@@ -126,7 +129,7 @@ using my_enumerate::enumerate;
 /// `crates/oxidd/tests/boolean_function.rs`
 template <boolean_function_manager M> class test_all_boolean_functions {
   M _mgr;
-  slice<typename M::function> _vars, _var_handles;
+  var_no_t _nvars;
   /// Stores all possible Boolean functions over `vars.size()` variables
   std::vector<typename M::function> _boolean_functions;
   /// Map from Boolean functions as decision diagrams to their explicit (truth
@@ -142,26 +145,24 @@ public:
   /// given variable set. `vars` are the Boolean functions representing the
   /// variables identified by `var_handles`. For BDDs, the two coincide, but
   /// not for ZBDDs.
-  test_all_boolean_functions(M mgr, slice<typename M::function> vars,
-                             slice<typename M::function> var_handles)
-      : _mgr(std::move(mgr)), _vars(vars), _var_handles(var_handles) {
-    assert(vars.size() == var_handles.size());
+  test_all_boolean_functions(M mgr)
+      : _mgr(std::move(mgr)), _nvars(_mgr.num_vars()) {
+    const var_no_t nvars = _nvars;
     assert(std::bit_width(
-               (unsigned)std::numeric_limits<explicit_b_func>::digits) >=
-               vars.size() &&
+               (var_no_t)std::numeric_limits<explicit_b_func>::digits) >=
+               nvars &&
            "too many variables");
     // actually, only 2 are possible in a feasible amount of time (with
     // substitution)
 
-    const unsigned nvars = vars.size();
     const unsigned num_assignments = 1 << nvars;
     const explicit_b_func num_functions = 1 << num_assignments;
     _boolean_functions.reserve(num_functions);
     _dd_to_boolean_func.reserve(num_functions);
 
-    std::vector<std::pair<typename M::function, bool>> args;
+    std::vector<std::pair<var_no_t, bool>> args;
     args.reserve(nvars);
-    for (const typename M::function &var : var_handles)
+    for (var_no_t var = 0; var < nvars; ++var)
       args.emplace_back(var, false);
 
     for (explicit_b_func explicit_f = 0; explicit_f < num_functions;
@@ -175,7 +176,7 @@ public:
         typename M::function cube = _mgr.t();
 
         for (unsigned var = 0; var < nvars; ++var) {
-          typename M::function v = _vars[var];
+          typename M::function v = _mgr.var(var);
           if ((assignment & (1 << var)) == 0)
             v = ~v;
           cube &= v;
@@ -190,7 +191,7 @@ public:
       for (unsigned assignment = 0; assignment < num_assignments;
            ++assignment) {
         const bool expected = (explicit_f & (1 << assignment)) != 0;
-        for (unsigned var = 0; var < nvars; ++var)
+        for (var_no_t var = 0; var < nvars; ++var)
           args[var].second = (assignment & (1 << var)) != 0;
         const bool actual = f.eval(args);
         assert(actual == expected);
@@ -205,7 +206,7 @@ public:
     }
 
     _var_functions.reserve(nvars);
-    for (unsigned i = 0; i < nvars; ++i) {
+    for (var_no_t i = 0; i < nvars; ++i) {
       explicit_b_func f = 0;
       for (unsigned assignment = 0; assignment < num_assignments; ++assignment)
         f |= explicit_b_func{(assignment >> i) & 1} << assignment;
@@ -214,11 +215,12 @@ public:
   }
 
 private:
-  typename M::function make_cube(unsigned positive, unsigned negative) const {
+  [[nodiscard]] explicit_b_func _make_cube(unsigned positive,
+                                           unsigned negative) const {
     assert((positive & negative) == 0);
 
-    typename M::function cube = _boolean_functions.back(); // ⊤
-    for (const auto &[i, var] : enumerate(_vars)) {
+    explicit_b_func cube = (1 << (1 << _nvars)) - 1; // ⊤
+    for (const auto [i, var] : enumerate(_var_functions)) {
       if (((positive >> i) & 1) != 0) {
         cube &= var;
       } else if (((negative >> i) & 1) != 0) {
@@ -226,15 +228,13 @@ private:
       }
     }
 
-    assert(!cube.is_invalid());
     return cube;
   }
 
 public:
   /// Test basic operations on all Boolean functions
   void basic() const {
-    const unsigned nvars = _vars.size();
-    const unsigned num_assignments = 1 << nvars;
+    const unsigned num_assignments = 1 << _nvars;
     const explicit_b_func num_functions = 1 << num_assignments;
     const explicit_b_func func_mask = num_functions - 1;
 
@@ -243,12 +243,9 @@ public:
     assert(_mgr.t() == _boolean_functions.back());
 
     // vars
-    for (const auto &[i, var] : enumerate(_vars)) {
-      explicit_b_func expected = 0;
-      for (unsigned assignment = 0; assignment < num_assignments; ++assignment)
-        expected |= ((assignment >> i) & 1) << assignment;
-      const explicit_b_func actual = _dd_to_boolean_func.at(var);
-      assert(actual == expected);
+    for (const auto &[i, expected] : enumerate(_var_functions)) {
+      assert(_dd_to_boolean_func.at(_mgr.var(i)) == expected);
+      assert(_dd_to_boolean_func.at(_mgr.not_var(i)) == (expected ^ func_mask));
     }
 
     // arity >= 1
@@ -266,16 +263,33 @@ public:
           const explicit_b_func expected = f_explicit & g_explicit;
           const explicit_b_func actual = _dd_to_boolean_func.at(f & g);
           assert(actual == expected);
+          typename M::function tmp = f;
+          tmp &= g;
+          assert(_dd_to_boolean_func.at(tmp) == actual);
         }
         /* or */ {
           const explicit_b_func expected = f_explicit | g_explicit;
           const explicit_b_func actual = _dd_to_boolean_func.at(f | g);
           assert(actual == expected);
+          typename M::function tmp = f;
+          tmp |= g;
+          assert(_dd_to_boolean_func.at(tmp) == actual);
         }
         /* xor */ {
           const explicit_b_func expected = f_explicit ^ g_explicit;
           const explicit_b_func actual = _dd_to_boolean_func.at(f ^ g);
           assert(actual == expected);
+          typename M::function tmp = f;
+          tmp ^= g;
+          assert(_dd_to_boolean_func.at(tmp) == actual);
+        }
+        /* set difference (strict implication with operands swapped) */ {
+          const explicit_b_func expected = f_explicit & ~g_explicit;
+          const explicit_b_func actual = _dd_to_boolean_func.at(f - g);
+          assert(actual == expected);
+          typename M::function tmp = f;
+          tmp -= g;
+          assert(_dd_to_boolean_func.at(tmp) == actual);
         }
         /* equiv */ {
           const explicit_b_func expected =
@@ -331,11 +345,11 @@ public:
           assert(actual == 0);
           assert(cube.size() == 0);
         } else {
-          assert(cube.size() == nvars);
+          assert(cube.size() == _nvars);
           assert((actual & ~f_explicit) == 0);
 
           explicit_b_func cube_func = func_mask;
-          for (unsigned var = 0; var < nvars; ++var) {
+          for (var_no_t var = 0; var < _nvars; ++var) {
             switch (cube[var]) {
             case util::opt_bool::NONE:
               break;
@@ -356,8 +370,8 @@ public:
             if ((pos & neg) != 0)
               continue;
 
-            const explicit_b_func actual =
-                _dd_to_boolean_func.at(f.pick_cube_dd_set(make_cube(pos, neg)));
+            const explicit_b_func actual = _dd_to_boolean_func.at(
+                f.pick_cube_dd_set(_boolean_functions[_make_cube(pos, neg)]));
 
             if (f_explicit == 0) {
               assert(actual == 0);
@@ -394,22 +408,21 @@ public:
   }
 
 private:
-  void subst_rec(std::vector<std::optional<explicit_b_func>> &replacements,
-                 uint32_t current_var) const
+  void _subst_rec(std::vector<std::optional<explicit_b_func>> &replacements,
+                  uint32_t current_var) const
     requires(function_subst<typename M::function>)
   {
-    assert(replacements.size() == _vars.size());
-    if (current_var < _vars.size()) {
+    assert(replacements.size() == _nvars);
+    if (current_var < _nvars) {
       replacements[current_var] = {};
-      subst_rec(replacements, current_var + 1);
+      _subst_rec(replacements, current_var + 1);
       for (const explicit_b_func f :
            std::views::iota(0U, _boolean_functions.size())) {
         replacements[current_var] = {f};
-        subst_rec(replacements, current_var + 1);
+        _subst_rec(replacements, current_var + 1);
       }
     } else {
-      const unsigned nvars = _vars.size();
-      const unsigned num_assignments = 1 << nvars;
+      const unsigned num_assignments = 1 << _nvars;
 
       const typename M::function::substitution subst(
           enumerate(replacements) | std::views::filter([](const auto p) {
@@ -417,7 +430,7 @@ private:
           }) |
           std::views::transform([this](const auto p) {
             const auto [i, repl] = p;
-            return std::make_pair(_var_handles[i], _boolean_functions[*repl]);
+            return std::make_pair(i, _boolean_functions[*repl]);
           }));
 
       for (const auto [f_explicit, f] : enumerate(_boolean_functions)) {
@@ -453,16 +466,15 @@ public:
   void subst() const
     requires(function_subst<typename M::function>)
   {
-    std::vector<std::optional<explicit_b_func>> replacements(_vars.size());
-    subst_rec(replacements, 0);
+    std::vector<std::optional<explicit_b_func>> replacements(_nvars);
+    _subst_rec(replacements, 0);
   }
 
   /// Test quantification operations on all Boolean functions
   void quant() const
     requires(boolean_function_quant<typename M::function>)
   {
-    const unsigned nvars = _vars.size();
-    const unsigned num_assignments = 1 << nvars;
+    const unsigned num_assignments = 1 << _nvars;
     const explicit_b_func num_functions = 1 << num_assignments;
     const explicit_b_func func_mask = num_functions - 1;
 
@@ -471,12 +483,13 @@ public:
     // quantification
     std::vector<explicit_b_func> assignment_to_mask(num_assignments);
     for (unsigned var_set = 0; var_set < num_assignments; ++var_set) {
-      typename M::function dd_var_set = _mgr.t();
-      for (const auto &[i, var] : enumerate(_vars)) {
+      explicit_b_func explicit_var_set = func_mask;
+      for (const auto &[i, var] : enumerate(_var_functions)) {
         if ((var_set & (1 << i)) != 0)
-          dd_var_set &= var;
+          explicit_var_set &= var;
       }
-      assert(!dd_var_set.is_invalid());
+      const typename M::function dd_var_set =
+          _boolean_functions[explicit_var_set];
 
       // precompute `assignment_to_mask`
       for (const auto &[assignment, mask] : enumerate(assignment_to_mask)) {
@@ -568,83 +581,229 @@ public:
   }
 };
 
-template <boolean_function F>
-void test_cofactors(const F &ff, const F &tt, slice<F> vars) {
-  const auto [ff_t, ff_e] = ff.cofactors();
-  assert(ff_t.is_invalid() && ff_e.is_invalid());
-  assert(ff.cofactor_true().is_invalid());
-  assert(ff.cofactor_false().is_invalid());
+template <boolean_function_manager M> void test_cofactors(const M &mgr) {
+  constexpr bool zbdd = std::is_base_of_v<zbdd_manager, M>;
 
-  const auto [tt_t, tt_e] = tt.cofactors();
-  assert(tt_t.is_invalid() && tt_e.is_invalid());
-  assert(tt.cofactor_true().is_invalid());
-  assert(tt.cofactor_false().is_invalid());
+  typename M::function t0, t1;
+  if constexpr (zbdd) {
+    t0 = mgr.empty();
+    assert(t0 == mgr.f());
+    t1 = mgr.base();
+  } else {
+    t0 = mgr.f();
+    t1 = mgr.t();
+  }
 
-  for (const F &v : vars) {
+  const auto [t0_t, t0_e] = t0.cofactors();
+  assert(t0_t.is_invalid() && t0_e.is_invalid());
+  assert(t0.cofactor_true().is_invalid());
+  assert(t0.cofactor_false().is_invalid());
+
+  const auto [t1_t, t1_e] = t1.cofactors();
+  assert(t1_t.is_invalid() && t1_e.is_invalid());
+  assert(t1.cofactor_true().is_invalid());
+  assert(t1.cofactor_false().is_invalid());
+
+  const var_no_t num_vars = mgr.num_vars();
+  for (var_no_t i = 0; i < num_vars; ++i) {
+    typename M::function v;
+    if constexpr (zbdd) {
+      v = mgr.singleton(i);
+    } else {
+      v = mgr.var(i);
+    }
+
     const auto [v_t, v_e] = v.cofactors();
     assert(v_t == v.cofactor_true());
     assert(v_e == v.cofactor_false());
-    assert(v_t == tt);
-    assert(v_e == ff);
+    assert(v_t == t1);
+    assert(v_e == t0);
   }
 }
 
-void bdd_all_boolean_functions_2vars_t1() {
-  // NOLINTNEXTLINE(*-magic-numbers)
-  bdd_manager mgr(65536, 1024, 1);
-  mgr.run_in_worker_pool<void>([&mgr]() {
-    const std::array vars{mgr.new_var(), mgr.new_var()};
-    const test_all_boolean_functions test(mgr, vars, vars);
-    test.basic();
-    test.subst();
-    test.quant();
+/// Sentinel for var_name_iter
+struct var_name_iter_sentinel {
+  unsigned end = std::numeric_limits<unsigned>::max();
+};
 
-    test_cofactors<bdd_function>(mgr.f(), mgr.t(), vars);
-  });
+/// An input iterator yielding string views like `x_42`. This is a minimal
+/// std::input_iterator for testing purposes.
+class var_name_iter {
+  friend struct var_name_iter_sentinel;
+
+public:
+  using difference_type = std::ptrdiff_t;
+  using value_type = std::string_view;
+
+private:
+  std::ostringstream _current = std::ostringstream("x_");
+  unsigned _i = 0;
+
+  void _update_string() {
+    _current.seekp(2);
+    _current << _i;
+  }
+
+public:
+  var_name_iter() { _update_string(); };
+  var_name_iter(unsigned start) : _i(start) { _update_string(); };
+
+  std::string_view operator*() const { return _current.view(); }
+
+  var_name_iter &operator++() {
+    ++_i;
+    _update_string();
+    return *this;
+  }
+  void operator++(int) {
+    ++_i;
+    _update_string();
+  }
+
+  bool operator==(const var_name_iter_sentinel &s) const { return _i == s.end; }
+};
+
+static_assert(std::input_iterator<var_name_iter>);
+static_assert(std::sentinel_for<var_name_iter_sentinel, var_name_iter>);
+static_assert(!std::forward_iterator<var_name_iter>);
+
+/// Test addition of vars
+///
+/// Assumes that two variables called "a" and "b" (in this order) are present so
+/// far and that there has not been any reordering operation so far.
+template <manager M> void test_add_vars(M &mgr) {
+  // The unchecked-optional-access lint is a bit too strict in that it forbids
+  // `.value()` as well (which throws an exception and is thus safe).
+  // NOLINTBEGIN(*-magic-numbers,*-unchecked-optional-access)
+  assert(mgr.num_vars() == 2);
+  assert(mgr.num_named_vars() == 2);
+  assert(mgr.var_name(0) == "a");
+  assert(mgr.var_name(1) == "b");
+
+  const std::ranges::iota_view added = mgr.add_vars(3);
+  assert(mgr.num_vars() == 5);
+  assert(mgr.num_named_vars() == 2);
+  assert(*added.begin() == 2);
+  assert(*added.end() == 5);
+  for (unsigned i = 2; i < 5; ++i) {
+    assert(mgr.var_name(i).empty());
+  }
+
+  util::duplicate_var_name_result result =
+      mgr.add_named_vars(var_name_iter(5), var_name_iter_sentinel{7});
+  assert(result.name.empty());
+  assert(!result.is_error());
+  assert(*result.added_vars.begin() == 5);
+  assert(*result.added_vars.end() == 7);
+
+  assert(mgr.num_vars() == 7);
+  assert(mgr.num_named_vars() == 4);
+  assert(mgr.var_name(5) == "x_5");
+  assert(mgr.var_name(6) == "x_6");
+
+  assert(mgr.name_to_var("a").value() == 0);
+  assert(mgr.name_to_var("b").value() == 1);
+  assert(mgr.name_to_var("x_5").value() == 5);
+  assert(mgr.name_to_var("x_6").value() == 6);
+  assert(!mgr.name_to_var("x4"));
+  assert(!mgr.name_to_var(""));
+
+  mgr.set_var_name(4, "x_4");
+  assert(mgr.num_vars() == 7);
+  assert(mgr.num_named_vars() == 5);
+  assert(mgr.var_name(4) == "x_4");
+  assert(mgr.name_to_var("x_4").value() == 4);
+
+  // no reordering was enabled so far
+  for (unsigned i = 0; i < 7; ++i) {
+    assert(mgr.var_to_level(i) == i);
+    assert(mgr.level_to_var(i) == i);
+  }
+
+  // check that duplicates are handled as intended
+  const std::array<std::string, 3> names{"c", "b", "x"};
+  result = mgr.add_named_vars(names);
+  assert(mgr.num_vars() == 8);
+  assert(mgr.num_named_vars() == 6);
+  assert(result.is_error());
+  assert(result.name == "b");
+  assert(result.present_var == 1);
+  assert(*result.added_vars.begin() == 7);
+  assert(*result.added_vars.end() == 8);
+  assert(mgr.name_to_var("c").value() == 7);
+  assert(mgr.name_to_var("b").value() == 1);
+  assert(!mgr.name_to_var("x"));
+  // NOLINTEND(*-magic-numbers,*-unchecked-optional-access)
 }
 
-void bcdd_all_boolean_functions_2vars_t1() {
-  // NOLINTNEXTLINE(*-magic-numbers)
-  bcdd_manager mgr(65536, 1024, 1);
-  mgr.run_in_worker_pool<void>([&mgr]() {
-    const std::array vars{mgr.new_var(), mgr.new_var()};
-    const test_all_boolean_functions test(mgr, vars, vars);
+template <boolean_function_manager M>
+void test_all_boolean_functions_2vars_t1() {
+  static_assert(manager<M>);
+  static_assert(std::regular<M>);
+  static_assert(std::same_as<typename M::function::manager, M>);
+
+  static_assert(boolean_function<typename M::function>);
+  static_assert(std::regular<typename M::function>);
+  static_assert(std::totally_ordered<typename M::function>);
+
+  constexpr std::size_t inner_node_capacity = 65536;
+  constexpr std::size_t apply_cache_capacity = 1024;
+  constexpr uint32_t threads = 1;
+  M mgr(inner_node_capacity, apply_cache_capacity, threads);
+
+  assert(!mgr.is_invalid());
+
+  assert(mgr.run_in_worker_pool([]() { return 42; }) == 42);
+  assert(mgr.run_in_worker_pool([&mgr]() { return mgr; }) == mgr);
+  assert(mgr.run_in_worker_pool([&mgr]() { return &mgr; }) == &mgr);
+
+  assert(mgr.run_in_worker_pool([]() noexcept { return 42; }) == 42);
+  assert(mgr.run_in_worker_pool([&mgr]() noexcept { return mgr; }) == mgr);
+  assert(mgr.run_in_worker_pool([&mgr]() noexcept { return &mgr; }) == &mgr);
+
+#ifdef __cpp_exceptions
+  {
+    constexpr int expected = 1337;
+    int got = 0;
+    try {
+      mgr.run_in_worker_pool([]() { throw int(expected); });
+    } catch (int i) {
+      got = i;
+    }
+    assert(got == expected);
+  }
+#endif // __cpp_exceptions
+
+  mgr.run_in_worker_pool([&mgr]() {
+    const util::duplicate_var_name_result res =
+        mgr.add_named_vars(std::array{"a", "b"});
+    assert(!res.is_error());
+    assert(*res.added_vars.begin() == 0);
+    assert(*res.added_vars.end() == 2);
+    assert(res.name.empty());
+
+    const test_all_boolean_functions test(mgr);
     test.basic();
-    test.subst();
-    test.quant();
+    if constexpr (function_subst<typename M::function>)
+      test.subst();
+    if constexpr (boolean_function_quant<typename M::function>)
+      test.quant();
 
-    test_cofactors<bcdd_function>(mgr.f(), mgr.t(), vars);
+    test_cofactors(mgr);
   });
-}
 
-void zbdd_all_boolean_functions_2vars_t1() {
-  // NOLINTNEXTLINE(*-magic-numbers)
-  zbdd_manager mgr(65536, 1024, 1);
-  mgr.run_in_worker_pool<void>([&mgr]() {
-    const std::array singletons{mgr.new_singleton(), mgr.new_singleton()};
-    const std::array vars{singletons[0].var_boolean_function(),
-                          singletons[1].var_boolean_function()};
-    const test_all_boolean_functions test(mgr, vars, singletons);
-    test.basic();
-
-    // The test function only operates on structural properties, so we can reuse
-    // it here with `mgr.base()` and the singleton sets.
-    test_cofactors<zbdd_function>(mgr.empty(), mgr.base(), singletons);
-  });
+  test_add_vars(mgr);
 }
 
 } // namespace
 
-int main() {
-  static_assert(boolean_function_manager<bdd_manager>);
-  static_assert(boolean_function_manager<bcdd_manager>);
-  static_assert(boolean_function_manager<zbdd_manager>);
-
+int main() { // NOLINT(*-exception-escape)
   static_assert(boolean_function_quant<bdd_function>);
   static_assert(boolean_function_quant<bcdd_function>);
-  static_assert(boolean_function<zbdd_function>);
+  static_assert(function_subst<bdd_function>);
+  static_assert(function_subst<bcdd_function>);
 
-  bdd_all_boolean_functions_2vars_t1();
-  bcdd_all_boolean_functions_2vars_t1();
-  zbdd_all_boolean_functions_2vars_t1();
+  test_all_boolean_functions_2vars_t1<bdd_manager>();
+  test_all_boolean_functions_2vars_t1<bcdd_manager>();
+  test_all_boolean_functions_2vars_t1<zbdd_manager>();
 }

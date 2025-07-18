@@ -18,6 +18,8 @@ endif()
 set(OXIDD_CARGO_PROFILE "release" CACHE STRING "Sets the build profile used for Rust dependencies (`dev`, `release`, or `release-with-debug`)")
 set_property(CACHE OXIDD_CARGO_PROFILE PROPERTY STRINGS "dev" "release" "release-with-debug")
 
+option(OXIDD_ENABLE_CXX "Enable C++ bindings" ON)
+
 # Mark some cmake variables as advanced since they don't have to be exposed to the user.
 mark_as_advanced(FORCE
     CORROSION_BUILD_TESTS
@@ -27,6 +29,11 @@ mark_as_advanced(FORCE
     CORROSION_RESPECT_OUTPUT_DIRECTORY
     CORROSION_VERBOSE_OUTPUT
     Rust_RESOLVE_RUSTUP_TOOLCHAINS)
+
+# Generate config.h
+configure_file(
+    ${PROJECT_SOURCE_DIR}/bindings/cpp/config.h.in
+    ${PROJECT_BINARY_DIR}/include/oxidd/config.h)
 
 
 # --- Build Dependencies -------------------------------------------------------
@@ -70,6 +77,7 @@ corrosion_import_crate(
     MANIFEST_PATH Cargo.toml
     PROFILE ${OXIDD_CARGO_PROFILE}
     CRATES oxidd-ffi-c
+    FEATURES $<$<BOOL:${OXIDD_ENABLE_CXX}>:cpp>
     CRATE_TYPES cdylib staticlib)
 add_dependencies(oxidd_ffi_c oxidd-capi-header)
 target_include_directories(oxidd_ffi_c INTERFACE
