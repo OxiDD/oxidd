@@ -38,6 +38,9 @@ cfg-if = "1.0"
 # document feature flags
 document-features = "0.2"
 
+# standard derive macros but with custom bounds on generics
+derive-where = "1.5"
+
 
 [features]
 default = [

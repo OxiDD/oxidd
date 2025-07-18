@@ -1061,7 +1061,10 @@ mod test {
         }
         assert_eq!(table.len(), 7);
 
-        table.retain(|&mut x| x % 2 == 0, |x| assert!(x % 2 == 1));
+        table.retain(
+            |&mut x| x.is_multiple_of(2),
+            |x| assert!(!x.is_multiple_of(2)),
+        );
         assert_eq!(table.len(), 3);
 
         let iter = table.drain();

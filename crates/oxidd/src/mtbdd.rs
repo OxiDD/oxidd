@@ -78,18 +78,8 @@ mod index {
         Clone, PartialEq, Eq, Hash, oxidd_derive::Function, oxidd_derive::PseudoBooleanFunction,
     )]
     #[use_manager_ref(MTBDDManagerRef<T>, MTBDDManagerRef::<T>(inner))]
+    #[derive_where::derive_where(PartialOrd, Ord; T: NumberBase + Send + Sync)]
     pub struct MTBDDFunction<T: 'static + NumberBase + Send + Sync>(FunctionInner<T>);
-
-    impl<T: NumberBase + Send + Sync> PartialOrd for MTBDDFunction<T> {
-        fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-            Some(self.0.cmp(&other.0))
-        }
-    }
-    impl<T: NumberBase + Send + Sync> Ord for MTBDDFunction<T> {
-        fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-            self.0.cmp(&other.0)
-        }
-    }
 
     crate::util::derive_raw_function_index_based!(for: MTBDDFunction<T>, inner: FunctionInner<T>, where T: NumberBase + Send + Sync);
 

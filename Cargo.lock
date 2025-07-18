@@ -565,6 +565,7 @@ name = "oxidd"
 version = "0.10.0"
 dependencies = [
  "cfg-if",
+ "derive-where",
  "document-features",
  "oxidd-cache",
  "oxidd-core",
