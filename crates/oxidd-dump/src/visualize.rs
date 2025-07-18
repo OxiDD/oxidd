@@ -7,9 +7,9 @@ use std::net::TcpListener;
 
 use oxidd_core::{function::Function, HasLevel, Manager};
 
-/// Serve provided decision diagram for visualization
+/// Serve the provided decision diagram for visualization
 ///
-/// `dd_name` is the name that is sent to the visualization tool
+/// `dd_name` is the name that is sent to the visualization tool.
 ///
 /// `vars` are edges representing *all* variables in the decision diagram. The
 /// order does not matter. `var_names` are the names of these variables
@@ -20,12 +20,10 @@ use oxidd_core::{function::Function, HasLevel, Manager};
 /// `function_names` are the corresponding names (optional). If given, there
 /// must be `functions.len()` names in the same order as in `function_names`.
 ///
-/// `port` is the port to provide the data on, which defaults to 4000
+/// `port` is the port to provide the data on, which defaults to 4000.
 pub fn visualize<'id, F: Function>(
     manager: &F::Manager<'id>,
     dd_name: &str,
-    vars: &[&F],
-    var_names: Option<&[&str]>,
     functions: &[&F],
     function_names: Option<&[&str]>,
     port: Option<u16>,
@@ -39,19 +37,17 @@ where
             dd_name,
             manager,
             functions,
-            vars,
             function_names,
-            var_names,
         }],
         port,
     )
 }
 
-/// Serve provided decision diagram for visualization
+/// Serve the provided decision diagrams for visualization
 ///
-/// `inputs` is the vector of visualizations to send all at once
+/// `inputs` is the vector of visualizations to send all at once.
 ///
-/// `port` is the port to provide the data on, which defaults to 4000
+/// `port` is the port to provide the data on, which defaults to 4000.
 pub fn visualize_all<'a, 'id, F: Function + 'a>(
     inputs: impl IntoIterator<Item = VisualizationInput<'a, 'id, F>>,
     port: Option<u16>,
@@ -70,8 +66,6 @@ where
         function_names,
         functions,
         manager,
-        var_names,
-        vars,
     } in inputs
     {
         write!(body_buffer, "{{\"type\":\"{}\",\"name\":\"", F::REPR_ID)?;
@@ -82,8 +76,6 @@ where
             manager,
             true,
             dd_name,
-            vars,
-            var_names,
             functions,
             function_names,
             |_| false,
@@ -134,10 +126,6 @@ pub struct VisualizationInput<'a, 'id, F: Function> {
     pub manager: &'a F::Manager<'id>,
     /// The name of the diagram
     pub dd_name: &'a str,
-    /// The variables of the diagram
-    pub vars: &'a [&'a F],
-    /// The variable names
-    pub var_names: Option<&'a [&'a str]>,
     /// The functions to visualize
     pub functions: &'a [&'a F],
     /// The names of the functions to visualize

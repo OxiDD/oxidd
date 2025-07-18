@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from typing import Any, Generic, Protocol, TypeVar
 
 import oxidd
@@ -46,17 +45,22 @@ class AllBooleanFunctions(Generic[BF]):
     """
 
     _mgr: BooleanFunctionManager[BF]
-    _vars: Sequence[BF]
-    _var_handles: Sequence[BF]
-    #: stores all possible Boolean functions with `len(vars)` variables
+    _nvars: int
+
     _boolean_functions: list[BF]
+    """Stores all possible Boolean functions with `self._nvars` variables."""
+
     _dd_to_boolean_func: dict[BF, int]
+
+    _var_functions: list[int]
+    """Map from variables (``0..self._nvars`) to Boolean functions
+
+    Example for three variables: `[0b01010101, 0b00110011, 0b00001111]`
+    """
 
     def __init__(
         self,
         manager: BooleanFunctionManager[BF],
-        vars: Sequence[BF],
-        var_handles: Sequence[BF],
     ):
         """Initialize the test.
 
@@ -65,16 +69,13 @@ class AllBooleanFunctions(Generic[BF]):
         ``vars`` are the Boolean functions representing the variables identified
         by ``var_handles``. For B(C)DDs, the two coincide, but not for ZBDDs.
         """
-        assert len(vars) == len(var_handles)
-
         self._mgr = manager
-        self._vars = vars
-        self._var_handles = var_handles
+        self._nvars = manager.num_vars()
 
         self._boolean_functions = []
         self._dd_to_boolean_func = {}
 
-        nvars = len(vars)
+        nvars = self._nvars
         num_assignments = 1 << nvars
         num_functions = 1 << num_assignments
 
@@ -87,21 +88,18 @@ class AllBooleanFunctions(Generic[BF]):
                 cube = self._mgr.true()
 
                 for var in range(nvars):
-                    v = self._vars[var]
-                    if assignment & (1 << var) == 0:
-                        v = ~v
-                    cube &= v
+                    cube &= (
+                        self._mgr.var(var)
+                        if assignment & (1 << var) != 0
+                        else self._mgr.not_var(var)
+                    )
 
                 f |= cube
 
             # check that evaluating the function yields the desired values
             for assignment in range(num_assignments):
                 expected = explicit_f & (1 << assignment) != 0
-                args = [
-                    (vh, (assignment & (1 << var)) != 0)
-                    for var, vh in enumerate(var_handles)
-                ]
-                actual = f.eval(args)
+                actual = f.eval((v, (assignment & (1 << v)) != 0) for v in range(nvars))
                 assert actual == expected
                 expected_count = bit_count(explicit_f)
                 assert f.sat_count(nvars) == expected_count
@@ -119,11 +117,11 @@ class AllBooleanFunctions(Generic[BF]):
 
         self._var_functions = [var_explicit_func(i) for i in range(nvars)]
 
-    def make_cube(self, positive: int, negative: int) -> BF:
+    def make_cube(self, positive: int, negative: int) -> int:
         assert positive & negative == 0
 
-        cube = self._boolean_functions[-1]  # ⊤
-        for i, var in enumerate(self._vars):
+        cube = (1 << (1 << self._nvars)) - 1  # ⊤
+        for i, var in enumerate(self._var_functions):
             if (positive >> i) & 1 != 0:
                 cube &= var
             elif (negative >> i) & 1 != 0:
@@ -133,7 +131,7 @@ class AllBooleanFunctions(Generic[BF]):
 
     def basic(self) -> None:
         """Test basic operations on all Boolean function."""
-        nvars = len(self._vars)
+        nvars = self._nvars
         num_assignments = 1 << nvars
         num_functions = 1 << num_assignments
         func_mask = num_functions - 1
@@ -143,12 +141,11 @@ class AllBooleanFunctions(Generic[BF]):
         assert self._mgr.true() == self._boolean_functions[-1]
 
         # vars
-        for vi, var in enumerate(self._vars):
-            expected = 0
-            for assignment in range(num_assignments):
-                expected |= ((assignment >> vi) & 1) << assignment
-            actual = self._dd_to_boolean_func[var]
-            assert actual == expected
+        for vi, expected in enumerate(self._var_functions):
+            assert self._dd_to_boolean_func[self._mgr.var(vi)] == expected
+            assert (
+                self._dd_to_boolean_func[self._mgr.not_var(vi)] == expected ^ func_mask
+            )
 
         # arity >= 1
         for f_explicit, f in enumerate(self._boolean_functions):
@@ -240,7 +237,9 @@ class AllBooleanFunctions(Generic[BF]):
                         continue
 
                     actual = self._dd_to_boolean_func[
-                        f.pick_cube_dd_set(self.make_cube(pos, neg))
+                        f.pick_cube_dd_set(
+                            self._boolean_functions[self.make_cube(pos, neg)]
+                        )
                     ]
                     for vi, var_func in enumerate(self._var_functions):
                         if (actual & var_func) >> (1 << vi) == actual & ~var_func:
@@ -266,20 +265,23 @@ class AllBooleanFunctions(Generic[BF]):
 
 class AllBooleanFunctionsQuantSubst(AllBooleanFunctions[BFQS]):
     def _subst_rec(self, replacements: list[int | None], current_var: int) -> None:
-        assert len(replacements) == len(self._vars)
-        if current_var < len(self._vars):
+        nvars = self._nvars
+        assert len(replacements) == nvars
+        if current_var < nvars:
             replacements[current_var] = None
             self._subst_rec(replacements, current_var + 1)
             for f_explicit in range(len(self._boolean_functions)):
                 replacements[current_var] = f_explicit
                 self._subst_rec(replacements, current_var + 1)
         else:
-            nvars = len(self._vars)
             num_assignments = 1 << nvars
 
-            subst = self._vars[0].make_substitution(
+            # note: make_substitution is a classmethod, so we could pick any
+            # DD function instead of ``self._boolean_functions[0]`` (or better:
+            # the class, if we had it at hand)
+            subst = self._boolean_functions[0].make_substitution(
                 (
-                    (self._var_handles[i], self._boolean_functions[repl])
+                    (i, self._boolean_functions[repl])
                     for i, repl in enumerate(replacements)
                     if repl is not None
                 )
@@ -307,11 +309,11 @@ class AllBooleanFunctionsQuantSubst(AllBooleanFunctions[BFQS]):
 
     def subst(self) -> None:
         """Test all possible substitutions."""
-        self._subst_rec([None] * len(self._vars), 0)
+        self._subst_rec([None] * self._nvars, 0)
 
     def quant(self) -> None:
         """Test quantification operations on all Boolean function."""
-        nvars = len(self._vars)
+        nvars = self._nvars
         num_assignments = 1 << nvars
         num_functions = 1 << num_assignments
         func_mask = num_functions - 1
@@ -329,11 +331,13 @@ class AllBooleanFunctionsQuantSubst(AllBooleanFunctions[BFQS]):
 
         # quantification
         for var_set in range(num_assignments):
-            dd_var_set = self._mgr.true()
+            explicit_var_set = func_mask
 
-            for i in range(nvars):
+            for i, v in enumerate(self._var_functions):
                 if (var_set & (1 << i)) != 0:
-                    dd_var_set &= self._vars[i]
+                    explicit_var_set &= v
+
+            dd_var_set = self._boolean_functions[explicit_var_set]
 
             # precompute `assignment_to_mask`
             assignment_to_mask_pc = [
@@ -400,8 +404,9 @@ class AllBooleanFunctionsQuantSubst(AllBooleanFunctions[BFQS]):
 
 def test_bdd_all_boolean_functions_2vars_t1() -> None:
     mgr = oxidd.bdd.BDDManager(1024, 1024, 1)
-    vars = [mgr.new_var() for _ in range(2)]
-    test = AllBooleanFunctionsQuantSubst(mgr, vars, vars)
+    vars = mgr.add_named_vars(("x", "y"))
+    assert vars == range(2)
+    test = AllBooleanFunctionsQuantSubst(mgr)
     test.basic()
     test.subst()
     test.quant()
@@ -409,8 +414,9 @@ def test_bdd_all_boolean_functions_2vars_t1() -> None:
 
 def test_bcdd_all_boolean_functions_2vars_t1() -> None:
     mgr = oxidd.bcdd.BCDDManager(1024, 1024, 1)
-    vars = [mgr.new_var() for _ in range(2)]
-    test = AllBooleanFunctionsQuantSubst(mgr, vars, vars)
+    vars = mgr.add_named_vars(("x", "y"))
+    assert vars == range(2)
+    test = AllBooleanFunctionsQuantSubst(mgr)
     test.basic()
     test.subst()
     test.quant()
@@ -418,9 +424,9 @@ def test_bcdd_all_boolean_functions_2vars_t1() -> None:
 
 def test_zbdd_all_boolean_functions_2vars_t1() -> None:
     mgr = oxidd.zbdd.ZBDDManager(1024, 1024, 1)
-    singletons = [mgr.new_singleton() for _ in range(2)]
-    vars = [s.var_boolean_function() for s in singletons]
-    test = AllBooleanFunctions(mgr, vars, singletons)
+    vars = mgr.add_named_vars(("x", "y"))
+    assert vars == range(2)
+    test = AllBooleanFunctions(mgr)
     test.basic()
 
 
@@ -430,12 +436,17 @@ def pick_cube(mgr: oxidd.bdd.BDDManager | oxidd.bcdd.BCDDManager) -> None:
     Only works for B(C)DDs.
     """
     tt = mgr.true()
-    assert tt.level() is None
+    assert tt.node_level() is None
+    assert tt.node_var() is None
 
-    x = mgr.new_var()
-    y = mgr.new_var()
-    assert x.level() is not None
-    assert y.level() is not None
+    mgr.add_named_vars(("x", "y"))
+
+    x = mgr.var(0)
+    y = mgr.var(1)
+    assert x.node_level() is not None
+    assert y.node_level() is not None
+    assert x.node_var() is not None
+    assert y.node_var() is not None
 
     c = tt.pick_cube()
     assert c is not None

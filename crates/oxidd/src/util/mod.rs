@@ -3,16 +3,12 @@
 pub(crate) mod apply_cache;
 pub(crate) mod type_cons;
 
-pub use oxidd_core::util::num;
-pub use oxidd_core::util::AllocResult;
-pub use oxidd_core::util::Borrowed;
-pub use oxidd_core::util::IsFloatingPoint;
-pub use oxidd_core::util::OptBool;
-pub use oxidd_core::util::OutOfMemory;
-pub use oxidd_core::util::Rng;
-pub use oxidd_core::util::SatCountCache;
-pub use oxidd_core::util::SatCountNumber;
 pub use rustc_hash::FxHasher;
+
+pub use oxidd_core::error::OutOfMemory;
+pub use oxidd_core::util::{
+    num, AllocResult, Borrowed, IsFloatingPoint, OptBool, Rng, SatCountCache, SatCountNumber,
+};
 
 // We have a few `allow(unused)` attributes here to not spam the user with
 // warnings in case no manager implementation is selected.

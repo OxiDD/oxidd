@@ -12,13 +12,15 @@ std::compile_error!(
     "Either feature `manager-index` or `manager-pointer` must be enabled for this crate"
 );
 
+pub use oxidd_core::error;
 pub use oxidd_core::function::{
     BooleanFunction, BooleanFunctionQuant, BooleanOperator, BooleanVecSet, Function, FunctionSubst,
     NumberBase, PseudoBooleanFunction, TVLFunction,
 };
 pub use oxidd_core::util::{Subst, Substitution};
 pub use oxidd_core::{
-    Edge, HasWorkers, InnerNode, LevelNo, Manager, ManagerRef, NodeID, WorkerPool,
+    Edge, HasLevel, HasWorkers, InnerNode, LevelNo, Manager, ManagerRef, Node, NodeID, VarNo,
+    WorkerPool,
 };
 
 pub mod util;

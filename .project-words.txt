@@ -91,6 +91,7 @@ libc
 liboxidd
 linenos
 madvise
+malloc
 manylinux
 Maturin
 mdbook
@@ -112,6 +113,7 @@ nonnull
 nonoverlapping
 noreturn
 OxiDD
+peekable
 pointee
 postprocess
 precompute

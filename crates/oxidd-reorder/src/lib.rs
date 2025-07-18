@@ -6,21 +6,12 @@
 use is_sorted::IsSorted;
 use smallvec::SmallVec;
 
-use oxidd_core::function::Function;
-use oxidd_core::util::AbortOnDrop;
-use oxidd_core::util::Borrowed;
-use oxidd_core::util::DropWith;
-use oxidd_core::util::OutOfMemory;
-use oxidd_core::DiagramRules;
-use oxidd_core::Edge;
-use oxidd_core::HasLevel;
-use oxidd_core::HasWorkers;
-use oxidd_core::InnerNode;
-use oxidd_core::LevelNo;
-use oxidd_core::LevelView;
-use oxidd_core::Manager;
-use oxidd_core::ReducedOrNew;
-use oxidd_core::WorkerPool;
+use oxidd_core::error::OutOfMemory;
+use oxidd_core::util::{AbortOnDrop, Borrowed, DropWith};
+use oxidd_core::{
+    DiagramRules, Edge, HasLevel, HasWorkers, InnerNode, LevelNo, LevelView, Manager, ReducedOrNew,
+    VarNo, WorkerPool,
+};
 
 mod segtree;
 use segtree::MinSegTree;
@@ -32,7 +23,7 @@ use segtree::MinSegTree;
 /// Must be called from inside the closure of
 /// [`manager.reorder()`][Manager::reorder]. `manager` must be derived from a
 /// `&mut M` reference. This function may modify nodes at the level of
-/// `upper_no` and `upper_no + 1` (i.e. the level below). There must not be any
+/// `upper_no` and `upper_no + 1` (i.e., the level below). There must not be any
 /// concurrent modification of any nodes at these levels.
 pub unsafe fn level_down<M: Manager>(manager: &M, upper_no: LevelNo)
 where
@@ -163,16 +154,21 @@ where
     abort_on_panic.defuse();
 }
 
-/// Reorder the variables such that the edges in `order` are sorted by their
-/// levels.
+/// Reorder the variables according to `order`
 ///
 /// Sequential version of [`set_var_order()`].
 ///
+/// If a variable `x` occurs before variable `y` in `order`, then `x` will be
+/// above `y` in the decision diagram when this function returns. Variables not
+/// mentioned in `order` will be placed in a position such that the least number
+/// of level swaps need to be performed. Panics if a variable occurs twice in
+/// `order`.
+///
 /// There is no need for the caller to call
 /// [`manager.reorder()`][Manager::reorder], this is done internally.
-pub fn set_var_order_seq<'id, F: Function>(manager: &mut F::Manager<'id>, order: &[F])
+pub fn set_var_order_seq<M: Manager>(manager: &mut M, order: &[VarNo])
 where
-    <F::Manager<'id> as Manager>::InnerNode: HasLevel,
+    M::InnerNode: HasLevel,
 {
     if order.len() <= 1 {
         return; // nothing to do
@@ -180,12 +176,7 @@ where
 
     let mut target_order = sort_order(
         manager.num_levels(),
-        order.iter().map(|f| {
-            manager
-                .get_node(f.as_edge(manager))
-                .expect_inner("order must not contain (const) terminals")
-                .level()
-        }),
+        order.iter().map(|&v| manager.var_to_level(v)),
     );
 
     manager.reorder(|manager| {
@@ -195,41 +186,37 @@ where
         });
     });
 
-    debug_assert!(IsSorted::is_sorted(&mut order.iter().map(|f| {
-        let edge = f.as_edge(manager);
-        manager.get_node(edge).unwrap_inner().level()
-    })));
+    debug_assert!(IsSorted::is_sorted(
+        &mut order.iter().map(|&v| manager.var_to_level(v))
+    ));
 }
 
-/// Reorder the variables such that the edges in `order` are sorted by their
-/// levels.
+/// Reorder the variables according to `order`
 ///
 /// Like [`set_var_order_seq()`] but with concurrent swap operations.
 ///
+/// If a variable `x` occurs before variable `y` in `order`, then `x` will be
+/// above `y` in the decision diagram when this function returns. Variables not
+/// mentioned in `order` will be placed in a position such that the least number
+/// of level swaps need to be performed. Panics if a variable occurs twice in
+/// `order`.
+///
 /// There is no need for the caller to call
 /// [`manager.reorder()`][Manager::reorder], this is done internally.
-pub fn set_var_order<'id, F: Function>(manager: &mut F::Manager<'id>, order: &[F])
+pub fn set_var_order<M>(manager: &mut M, order: &[VarNo])
 where
-    F::Manager<'id>: Manager + HasWorkers,
-    <F::Manager<'id> as Manager>::InnerNode: HasLevel,
+    M: Manager + HasWorkers,
+    M::InnerNode: HasLevel,
 {
     if order.len() <= 1 {
         return; // nothing to do
     }
 
     let num_levels = manager.num_levels();
-    let mut target_order = sort_order(
-        num_levels,
-        order.iter().map(|f| {
-            manager
-                .get_node(f.as_edge(manager))
-                .expect_inner("order must not contain (const) terminals")
-                .level()
-        }),
-    );
+    let mut target_order = sort_order(num_levels, order.iter().map(|&v| manager.var_to_level(v)));
 
     manager.reorder(|manager| {
-        if num_levels <= 8 {
+        if num_levels <= 16 {
             bubble_sort(&mut target_order, |upper_no| unsafe {
                 level_down(manager, upper_no)
             });
@@ -240,27 +227,27 @@ where
         }
     });
 
-    debug_assert!(IsSorted::is_sorted(&mut order.iter().map(|f| {
-        let edge = f.as_edge(manager);
-        manager.get_node(edge).unwrap_inner().level()
-    })));
+    debug_assert!(IsSorted::is_sorted(
+        &mut order.iter().map(|&v| manager.var_to_level(v))
+    ));
 }
 
 /// Transform the `input_order` into a target order suitable for sorting, that
-/// is: if the value at index `i` is greater than the value at index `i + 1`,
+/// is: If the value at index `i` is greater than the value at index `i + 1`,
 /// then level `i` and `i + 1` need to be swapped.
 ///
 /// `input_order` conceptually describes how the variables should be ordered in
-/// the end, i.e. the variables corresponding to the given levels should be
+/// the end, i.e., the variables corresponding to the given levels should be
 /// reordered such that the level numbers would be increasing in that order.
-fn sort_order(num_levels: u32, input_order: impl IntoIterator<Item = LevelNo>) -> Vec<LevelNo> {
-    let mut target_order = vec![LevelNo::MAX; num_levels as usize];
+#[track_caller]
+fn sort_order(num_levels: u32, input_order: impl IntoIterator<Item = LevelNo>) -> Vec<u32> {
+    let mut target_order = vec![u32::MAX; num_levels as usize];
     let mut input_order_len = 0;
     for level in input_order {
         assert_eq!(
             target_order[level as usize],
             u32::MAX,
-            "`order` contains level {level} twice but it must be a permutation of the present levels"
+            "`order` contains level {level} twice"
         );
         target_order[level as usize] = input_order_len;
         input_order_len += 1;
@@ -283,14 +270,14 @@ fn sort_order(num_levels: u32, input_order: impl IntoIterator<Item = LevelNo>) -
         }
     }
 
-    debug_assert!(!target_order.contains(&LevelNo::MAX));
+    debug_assert!(!target_order.contains(&u32::MAX));
 
     target_order
 }
 
 /// Sorts the given sequence by swapping adjacent levels only. For every swap
 /// operation, `swap` is called with the smaller index.
-fn bubble_sort(seq: &mut [LevelNo], mut swap: impl FnMut(LevelNo)) {
+fn bubble_sort(seq: &mut [u32], mut swap: impl FnMut(LevelNo)) {
     let mut n = seq.len();
     while n > 1 {
         let mut new_n = 0;
@@ -312,7 +299,7 @@ fn bubble_sort(seq: &mut [LevelNo], mut swap: impl FnMut(LevelNo)) {
 /// implementation ensures that if there is a swap operation for indices `i` and
 /// `i + 1`, there is no other swap operation with `i` and `i + 1` at the same
 /// time.
-fn concurrent_bubble_sort<M, F>(manager: &M, seq: Vec<LevelNo>, swap: F)
+fn concurrent_bubble_sort<M, F>(manager: &M, seq: Vec<u32>, swap: F)
 where
     M: HasWorkers,
     F: Fn(LevelNo) + Sync,

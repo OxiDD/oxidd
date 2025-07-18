@@ -1,5 +1,5 @@
 use oxidd_core::util::{AllocResult, Borrowed, EdgeDropGuard};
-use oxidd_core::{LevelNo, Manager};
+use oxidd_core::{LevelNo, Manager, VarNo};
 
 type BinaryOp<M, R> = fn(
     &M,
@@ -16,13 +16,8 @@ type TernaryOp<M, R> = fn(
     Borrowed<<M as Manager>::Edge>,
 ) -> AllocResult<<M as Manager>::Edge>;
 
-type SubsetOp<M, R> = fn(
-    &M,
-    R,
-    Borrowed<<M as Manager>::Edge>,
-    Borrowed<<M as Manager>::Edge>,
-    LevelNo,
-) -> AllocResult<<M as Manager>::Edge>;
+type SubsetOp<M, R> =
+    fn(&M, R, Borrowed<<M as Manager>::Edge>, VarNo, LevelNo) -> AllocResult<<M as Manager>::Edge>;
 
 pub trait Recursor<M: Manager>: Copy {
     fn binary<'a>(
@@ -56,8 +51,8 @@ pub trait Recursor<M: Manager>: Copy {
         self,
         op: SubsetOp<M, Self>,
         manager: &'a M,
-        a: (Borrowed<M::Edge>, Borrowed<M::Edge>, LevelNo),
-        b: (Borrowed<M::Edge>, Borrowed<M::Edge>, LevelNo),
+        a: (Borrowed<M::Edge>, VarNo, LevelNo),
+        b: (Borrowed<M::Edge>, VarNo, LevelNo),
     ) -> AllocResult<(EdgeDropGuard<'a, M>, EdgeDropGuard<'a, M>)>;
 
     /// Returns true if the algorithm should switch to a sequential recursor
@@ -119,8 +114,8 @@ impl<M: Manager> Recursor<M> for SequentialRecursor {
         self,
         op: SubsetOp<M, Self>,
         manager: &'a M,
-        a: (Borrowed<M::Edge>, Borrowed<M::Edge>, LevelNo),
-        b: (Borrowed<M::Edge>, Borrowed<M::Edge>, LevelNo),
+        a: (Borrowed<M::Edge>, VarNo, LevelNo),
+        b: (Borrowed<M::Edge>, VarNo, LevelNo),
     ) -> AllocResult<(EdgeDropGuard<'a, M>, EdgeDropGuard<'a, M>)> {
         let ra = EdgeDropGuard::new(manager, op(manager, self, a.0, a.1, a.2)?);
         let rb = EdgeDropGuard::new(manager, op(manager, self, b.0, b.1, b.2)?);
@@ -225,8 +220,8 @@ pub mod mt {
             mut self,
             op: SubsetOp<M, Self>,
             manager: &'a M,
-            a: (Borrowed<M::Edge>, Borrowed<M::Edge>, LevelNo),
-            b: (Borrowed<M::Edge>, Borrowed<M::Edge>, LevelNo),
+            a: (Borrowed<M::Edge>, VarNo, LevelNo),
+            b: (Borrowed<M::Edge>, VarNo, LevelNo),
         ) -> AllocResult<(EdgeDropGuard<'a, M>, EdgeDropGuard<'a, M>)> {
             self.remaining_depth -= 1;
             let (ra, rb) = manager.workers().join(

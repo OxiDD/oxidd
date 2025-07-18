@@ -13,6 +13,7 @@ use oxidd_core::{
         SatCountNumber,
     },
     ApplyCache, Edge, HasApplyCache, HasLevel, InnerNode, LevelNo, Manager, Node, NodeID, Tag,
+    VarNo,
 };
 use oxidd_derive::Function;
 use oxidd_dump::dot::DotStyle;
@@ -264,7 +265,7 @@ where
 /// edges.
 fn substitute_prepare<'a, M>(
     manager: &'a M,
-    pairs: impl Iterator<Item = (Borrowed<'a, M::Edge>, Borrowed<'a, M::Edge>)>,
+    pairs: impl Iterator<Item = (VarNo, Borrowed<'a, M::Edge>)>,
 ) -> AllocResult<EdgeVecDropGuard<'a, M>>
 where
     M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag>,
@@ -273,15 +274,14 @@ where
 {
     let mut subst = Vec::with_capacity(manager.num_levels() as usize);
     for (v, r) in pairs {
-        let level = super::var_level(manager, v) as usize;
+        let level = manager.var_to_level(v) as usize;
         if level >= subst.len() {
             subst.resize_with(level + 1, || None);
         }
         debug_assert!(
             subst[level].is_none(),
-            "Variable at level {level} occurs twice in the substitution, but a \
-            substitution should be a mapping from variables to replacement \
-            functions"
+            "Variable {v} occurs twice in the substitution, but a substitution \
+            should be a mapping from variables to replacement functions"
         );
         subst[level] = Some(r);
     }
@@ -994,7 +994,6 @@ where
         manager: &'a Self::Manager<'id>,
         edge: &'a EdgeOfFunc<'id, Self>,
         substitution: impl oxidd_core::util::Substitution<
-            Var = Borrowed<'a, EdgeOfFunc<'id, Self>>,
             Replacement = Borrowed<'a, EdgeOfFunc<'id, Self>>,
         >,
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
@@ -1010,12 +1009,17 @@ where
         Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag> + HasBCDDOpApplyCache<F::Manager<'id>>,
     for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
 {
-    #[inline]
-    fn new_var<'id>(manager: &mut Self::Manager<'id>) -> AllocResult<Self> {
+    fn var_edge<'id>(
+        manager: &Self::Manager<'id>,
+        var: VarNo,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         let t = get_terminal(manager, true);
         let e = get_terminal(manager, false);
-        let edge = manager.add_level(|level| InnerNode::new(level, [t, e]))?;
-        Ok(Self::from_edge(manager, edge))
+        let level = manager.var_to_level(var);
+        oxidd_core::LevelView::get_or_insert(
+            &mut manager.level(level),
+            InnerNode::new(level, [t, e]),
+        )
     }
 
     #[inline]
@@ -1244,15 +1248,11 @@ where
     }
 
     #[inline]
-    fn pick_cube_edge<'id, 'a, I>(
-        manager: &'a Self::Manager<'id>,
-        edge: &'a EdgeOfFunc<'id, Self>,
-        order: impl IntoIterator<IntoIter = I>,
+    fn pick_cube_edge<'id>(
+        manager: &Self::Manager<'id>,
+        edge: &EdgeOfFunc<'id, Self>,
         choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>, LevelNo) -> bool,
-    ) -> Option<Vec<OptBool>>
-    where
-        I: ExactSizeIterator<Item = &'a EdgeOfFunc<'id, Self>>,
-    {
+    ) -> Option<Vec<OptBool>> {
         #[inline] // this function is tail-recursive
         fn inner<M: Manager<EdgeTag = EdgeTag>>(
             manager: &M,
@@ -1275,15 +1275,9 @@ where
             } else {
                 choice(manager, &edge, level)
             };
-            cube[level as usize] = OptBool::from(c);
+            cube[manager.level_to_var(level) as usize] = OptBool::from(c);
             inner(manager, if c { t } else { e }, cube, choice);
         }
-
-        let order = order.into_iter();
-        debug_assert!(
-            order.len() == 0 || order.len() == manager.num_levels() as usize,
-            "order must be empty or contain all variables"
-        );
 
         if manager.get_node(edge).is_any_terminal() {
             return match edge.tag() {
@@ -1294,14 +1288,7 @@ where
 
         let mut cube = vec![OptBool::None; manager.num_levels() as usize];
         inner(manager, edge.borrowed(), &mut cube, choice);
-
-        Some(if order.len() == 0 {
-            cube
-        } else {
-            order
-                .map(|e| cube[manager.get_node(e).unwrap_inner().level() as usize])
-                .collect()
-        })
+        Some(cube)
     }
 
     #[inline]
@@ -1387,18 +1374,15 @@ where
     }
 
     #[inline]
-    fn eval_edge<'id, 'a>(
-        manager: &'a Self::Manager<'id>,
-        edge: &'a EdgeOfFunc<'id, Self>,
-        args: impl IntoIterator<Item = (Borrowed<'a, EdgeOfFunc<'id, Self>>, bool)>,
+    fn eval_edge<'id>(
+        manager: &Self::Manager<'id>,
+        edge: &EdgeOfFunc<'id, Self>,
+        args: impl IntoIterator<Item = (VarNo, bool)>,
     ) -> bool {
         let mut values = BitVec::new();
         values.resize(manager.num_levels() as usize, false);
-        for (edge, val) in args {
-            let node = manager
-                .get_node(&edge)
-                .expect_inner("edges in `args` must refer to inner nodes");
-            values.set(node.level() as usize, val);
+        for (var, val) in args {
+            values.set(manager.var_to_level(var) as usize, val);
         }
 
         #[inline] // this function is tail-recursive
@@ -1559,7 +1543,6 @@ pub mod mt {
             manager: &'a Self::Manager<'id>,
             edge: &'a EdgeOfFunc<'id, Self>,
             substitution: impl oxidd_core::util::Substitution<
-                Var = Borrowed<'a, EdgeOfFunc<'id, Self>>,
                 Replacement = Borrowed<'a, EdgeOfFunc<'id, Self>>,
             >,
         ) -> AllocResult<EdgeOfFunc<'id, Self>> {
@@ -1579,12 +1562,12 @@ pub mod mt {
         for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
         for<'id> <F::Manager<'id> as Manager>::Edge: Send + Sync,
     {
-        #[inline]
-        fn new_var<'id>(manager: &mut Self::Manager<'id>) -> AllocResult<Self> {
-            let t = get_terminal(manager, true);
-            let e = get_terminal(manager, false);
-            let edge = manager.add_level(|level| InnerNode::new(level, [t, e]))?;
-            Ok(Self::from_edge(manager, edge))
+        #[inline(always)]
+        fn var_edge<'id>(
+            manager: &Self::Manager<'id>,
+            var: VarNo,
+        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            BCDDFunction::<F>::var_edge(manager, var)
         }
 
         #[inline]
@@ -1714,16 +1697,12 @@ pub mod mt {
         }
 
         #[inline]
-        fn pick_cube_edge<'id, 'a, I>(
-            manager: &'a Self::Manager<'id>,
-            edge: &'a EdgeOfFunc<'id, Self>,
-            order: impl IntoIterator<IntoIter = I>,
+        fn pick_cube_edge<'id>(
+            manager: &Self::Manager<'id>,
+            edge: &EdgeOfFunc<'id, Self>,
             choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>, LevelNo) -> bool,
-        ) -> Option<Vec<OptBool>>
-        where
-            I: ExactSizeIterator<Item = &'a EdgeOfFunc<'id, Self>>,
-        {
-            BCDDFunction::<F>::pick_cube_edge(manager, edge, order, choice)
+        ) -> Option<Vec<OptBool>> {
+            BCDDFunction::<F>::pick_cube_edge(manager, edge, choice)
         }
         #[inline]
         fn pick_cube_dd_edge<'id>(
@@ -1743,10 +1722,10 @@ pub mod mt {
         }
 
         #[inline]
-        fn eval_edge<'id, 'a>(
-            manager: &'a Self::Manager<'id>,
-            edge: &'a EdgeOfFunc<'id, Self>,
-            args: impl IntoIterator<Item = (Borrowed<'a, EdgeOfFunc<'id, Self>>, bool)>,
+        fn eval_edge<'id>(
+            manager: &Self::Manager<'id>,
+            edge: &EdgeOfFunc<'id, Self>,
+            args: impl IntoIterator<Item = (VarNo, bool)>,
         ) -> bool {
             BCDDFunction::<F>::eval_edge(manager, edge, args)
         }

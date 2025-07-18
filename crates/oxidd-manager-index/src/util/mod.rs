@@ -2,6 +2,8 @@ use std::marker::PhantomData;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 
+mod var_level_map;
+pub use var_level_map::VarLevelMap;
 pub mod rwlock;
 
 /// Invariant lifetime

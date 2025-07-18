@@ -23,6 +23,7 @@ __all__ = [
     \"ZBDDFunction\",
     \"ZBDDManager\",
     \"DDMemoryError\",
+    \"DuplicateVarName\",
     \"BooleanOperator\",
 ]
 
@@ -38,7 +39,7 @@ from typing_extensions import Never, Self, deprecated
 
     let mut env = stub_gen::TypeEnv::new();
     {
-        let types = [
+        let types = &[
             "None",
             "bool",
             "int",
@@ -46,6 +47,7 @@ from typing_extensions import Never, Self, deprecated
             "str",
             "tuple",
             "list",
+            "range",
             "Never",
             "Self",
             "PathLike",

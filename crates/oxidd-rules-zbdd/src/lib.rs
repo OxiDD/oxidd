@@ -336,41 +336,33 @@ where
 /// Get the Boolean function v for the singleton set {v} (given by `singleton`)
 ///
 /// Panics if `singleton` is not a singleton set
+#[deprecated = "use `BooleanFunction::var` instead"]
 pub fn var_boolean_function<M>(manager: &M, singleton: &M::Edge) -> AllocResult<M::Edge>
 where
     M: Manager<Terminal = ZBDDTerminal> + HasZBDDCache<M::Edge>,
     M::InnerNode: HasLevel,
 {
     let level = singleton_level(manager, singleton);
-    let lo = manager.get_terminal(ZBDDTerminal::Empty)?;
     let hi = manager.clone_edge(manager.zbdd_cache().tautology(level + 1));
-    let edge = manager
-        .level(level)
-        .get_or_insert(M::InnerNode::new(level, [hi, lo]))?;
+    let lo = manager.get_terminal(ZBDDTerminal::Empty).unwrap();
+    let mut edge = oxidd_core::LevelView::get_or_insert(
+        &mut manager.level(level),
+        InnerNode::new(level, [hi, lo]),
+    )?;
 
-    #[inline] // function is tail-recursive
-    fn complete_chain<M>(manager: &M, level: LevelNo, edge: M::Edge) -> AllocResult<M::Edge>
-    where
-        M: Manager,
-        M::InnerNode: HasLevel,
-    {
-        let hi = edge;
-        let lo = manager.clone_edge(&hi);
-        let edge = manager
-            .level(level)
-            .get_or_insert(M::InnerNode::new(level, [hi, lo]))?;
-        if level == 0 {
-            Ok(edge)
-        } else {
-            complete_chain(manager, level - 1, edge)
-        }
+    // Build the chain bottom up. We need to skip the newly created level.
+    let levels = manager.levels().rev();
+    // skip -> for level 0, we are already done
+    for mut view in levels.skip((manager.num_levels() - level) as usize) {
+        // only use `oxidd_core::LevelView` here to mitigate confusion of Rust Analyzer
+        use oxidd_core::LevelView;
+
+        let level = view.level_no();
+        let edge2 = manager.clone_edge(&edge);
+        edge = view.get_or_insert(InnerNode::new(level, [edge, edge2]))?;
     }
 
-    if level == 0 {
-        Ok(edge)
-    } else {
-        complete_chain(manager, level - 1, edge)
-    }
+    Ok(edge)
 }
 
 // --- Function Interface ------------------------------------------------------

@@ -1,5 +1,5 @@
 """Primitives and utilities."""
 
-__all__ = ["BooleanOperator", "DDMemoryError"]
+__all__ = ["BooleanOperator", "DDMemoryError", "DuplicateVarName"]
 
-from ._oxidd import BooleanOperator, DDMemoryError
+from ._oxidd import BooleanOperator, DDMemoryError, DuplicateVarName

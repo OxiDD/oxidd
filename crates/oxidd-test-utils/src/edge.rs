@@ -6,12 +6,14 @@
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
+use std::ops::Range;
 use std::sync::Arc;
 
+use oxidd_core::error::DuplicateVarName;
 use oxidd_core::util::{AllocResult, Borrowed, DropWith};
 use oxidd_core::{
     DiagramRules, Edge, HasWorkers, InnerNode, LevelNo, LevelView, Manager, Node, NodeID,
-    ReducedOrNew,
+    ReducedOrNew, VarNo,
 };
 
 /// Simple dummy edge implementation based on [`Arc`]
@@ -122,11 +124,11 @@ unsafe impl Manager for DummyManager {
     type InnerNode = DummyNode;
     type Terminal = ();
     type TerminalRef<'a> = &'a ();
+    type Rules = DummyRules;
     type TerminalIterator<'a>
         = std::iter::Empty<DummyEdge>
     where
         Self: 'a;
-    type Rules = DummyRules;
     type NodeSet = HashSet<NodeID>;
     type LevelView<'a>
         = DummyLevelView
@@ -169,11 +171,43 @@ unsafe impl Manager for DummyManager {
         0
     }
 
-    fn add_level(
-        &mut self,
-        _f: impl FnOnce(LevelNo) -> Self::InnerNode,
-    ) -> AllocResult<Self::Edge> {
+    fn num_named_vars(&self) -> VarNo {
+        0
+    }
+
+    fn add_vars(&mut self, _additional: VarNo) -> Range<VarNo> {
         unimplemented!()
+    }
+
+    fn add_named_vars<S: Into<String>>(
+        &mut self,
+        _names: impl IntoIterator<Item = S>,
+    ) -> Result<Range<VarNo>, DuplicateVarName> {
+        unimplemented!()
+    }
+
+    fn var_name(&self, _var: VarNo) -> &str {
+        panic!("out of range")
+    }
+
+    fn set_var_name(
+        &mut self,
+        _var: VarNo,
+        _name: impl Into<String>,
+    ) -> Result<(), DuplicateVarName> {
+        panic!("out of range")
+    }
+
+    fn name_to_var(&self, _name: impl AsRef<str>) -> Option<VarNo> {
+        None
+    }
+
+    fn var_to_level(&self, _var: VarNo) -> LevelNo {
+        panic!("out of range")
+    }
+
+    fn level_to_var(&self, _level: LevelNo) -> VarNo {
+        panic!("out of range")
     }
 
     fn level(&self, _no: LevelNo) -> Self::LevelView<'_> {

@@ -5,13 +5,13 @@ use std::path::PathBuf;
 
 use num_bigint::BigUint;
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyList, PyNone, PyTuple, PyType};
+use pyo3::types::{PyBool, PyList, PyNone, PyRange, PyString, PyTuple, PyType};
 use rustc_hash::FxHasher;
 
 use oxidd::util::{num::F64, AllocResult, OptBool};
 use oxidd::{
-    BooleanFunction, BooleanFunctionQuant, Function, FunctionSubst, LevelNo, Manager, ManagerRef,
-    Subst,
+    BooleanFunction, BooleanFunctionQuant, Function, FunctionSubst, HasLevel, LevelNo, Manager,
+    ManagerRef, Subst, VarNo,
 };
 
 use crate::util::DDMemoryError;
@@ -44,19 +44,253 @@ impl BDDManager {
         ))
     }
 
-    /// Get a fresh variable, adding a new level to a decision diagram.
+    /// Get the count of inner nodes.
     ///
-    /// Acquires the manager's lock for exclusive access.
+    /// Locking behavior: acquires the manager's lock for shared access.
+    ///
+    /// Returns:
+    ///     int: The number of inner nodes stored in this manager
+    fn num_inner_nodes(&self) -> usize {
+        self.0
+            .with_manager_shared(|manager| manager.num_inner_nodes())
+    }
+
+    /// Get an approximate count of inner nodes.
+    ///
+    /// For concurrent implementations, it may be much less costly to determine
+    /// an approximation of the inner node count than an accurate count
+    /// (:meth:`num_inner_nodes`).
+    ///
+    /// Locking behavior: acquires the manager's lock for shared access.
+    ///
+    /// Returns:
+    ///     int: An approximate count of inner nodes stored in this manager
+    fn approx_num_inner_nodes(&self) -> usize {
+        self.0
+            .with_manager_shared(|manager| manager.approx_num_inner_nodes())
+    }
+
+    /// Get the number of variables in this manager.
+    ///
+    /// Locking behavior: acquires the manager's lock for shared access.
+    ///
+    /// Returns:
+    ///     int: The number of variables
+    fn num_vars(&self) -> VarNo {
+        self.0.with_manager_shared(|manager| manager.num_vars())
+    }
+
+    /// Get the number of named variables in this manager.
+    ///
+    /// Locking behavior: acquires the manager's lock for shared access.
+    ///
+    /// Returns:
+    ///     int: The number of named variables
+    fn num_named_vars(&self) -> VarNo {
+        self.0
+            .with_manager_shared(|manager| manager.num_named_vars())
+    }
+
+    /// Add ``additional`` unnamed variables to the decision diagram.
+    ///
+    /// The new variables are added at the bottom of the variable order. More
+    /// precisely, the level number equals the variable number for each new
+    /// variable.
+    ///
+    /// Note that some algorithms may assume that the domain of a function
+    /// represented by a decision diagram is just the set of all variables. In
+    /// this regard, adding variables can change the semantics of decision
+    /// diagram nodes.
+    ///
+    /// Locking behavior: acquires the manager's lock for exclusive access.
+    ///
+    /// Args:
+    ///     additional (int): Count of variables to add
+    ///
+    /// Returns:
+    ///     range: The new variable numbers
+    fn add_vars<'py>(&self, py: Python<'py>, additional: VarNo) -> PyResult<Bound<'py, PyRange>> {
+        let vars = self.0.with_manager_exclusive(|manager| {
+            manager.num_vars().checked_add(additional)?;
+            Some(manager.add_vars(additional))
+        });
+        if let Some(vars) = vars {
+            Ok(PyRange::new(py, vars.start as _, vars.end as _)?)
+        } else {
+            Err(pyo3::exceptions::PyOverflowError::new_err(
+                "too many variables",
+            ))
+        }
+    }
+
+    /// Add named variables to the decision diagram.
+    ///
+    /// This is a shorthand for :meth:`add_vars` and respective
+    /// :meth:`set_var_name` calls. More details can be found there.
+    ///
+    /// Locking behavior: acquires the manager's lock for exclusive access.
+    ///
+    /// Args:
+    ///     names (Iterable[str]): Names of the new variables
+    ///
+    /// Returns:
+    ///     range: The new variable numbers
+    ///
+    /// Raises:
+    ///     ValueError: If a variable name occurs twice in ``names``. The
+    ///         exception's argument is a :class:`DuplicateVarName`.
+    fn add_named_vars<'py>(
+        &self,
+        py: Python<'py>,
+        names: &Bound<'py, PyAny>,
+    ) -> PyResult<Bound<'py, PyRange>> {
+        crate::util::add_named_vars(&self.0, py, names)
+    }
+
+    /// Get ``var``'s name.
+    ///
+    /// Locking behavior: acquires the manager's lock for shared access.
+    ///
+    /// Args:
+    ///     var (int): The variable number
+    ///
+    /// Returns:
+    ///     str: The name, or an empty string for unnamed variables
+    ///
+    /// Raises:
+    ///     IndexError: If ``var >= self.num_vars()``
+    fn var_name<'py>(&self, py: Python<'py>, var: VarNo) -> PyResult<Bound<'py, PyString>> {
+        self.0.with_manager_shared(|manager| {
+            crate::util::var_no_bounds_check(manager, var)?;
+            Ok(PyString::new(py, manager.var_name(var)))
+        })
+    }
+
+    /// Label ``var`` as ``name``.
+    ///
+    /// An empty name means that the variable will become unnamed, and cannot be
+    /// retrieved via :meth:`name_to_var` anymore.
+    ///
+    /// Locking behavior: acquires the manager's lock for exclusive access.
+    ///
+    /// Args:
+    ///     var (int): The variable number
+    ///     name (str): The new variable name
+    ///
+    /// Returns:
+    ///     None
+    ///
+    /// Raises:
+    ///     ValueError: If ``name`` is not unique (and not ``""``). The
+    ///         exception's argument is a :class:`DuplicateVarName`.
+    ///     IndexError: If ``var >= self.num_vars()``
+    fn set_var_name(&self, var: VarNo, name: &str) -> PyResult<()> {
+        self.0.with_manager_exclusive(|manager| {
+            crate::util::var_no_bounds_check(manager, var)?;
+            if let Err(err) = manager.set_var_name(var, name) {
+                let err: crate::util::DuplicateVarName = err.into();
+                Err(pyo3::exceptions::PyValueError::new_err(err))
+            } else {
+                Ok(())
+            }
+        })
+    }
+
+    /// Get the variable number for the given variable name, if present.
+    ///
+    /// Note that you cannot retrieve unnamed variables.
+    /// ``manager.name_to_var("")`` always returns ``None``.
+    ///
+    /// Locking behavior: acquires the manager's lock for exclusive access.
+    ///
+    /// Args:
+    ///     name (str): The variable name
+    ///
+    /// Returns:
+    ///     int | None: The variable number if found, or ``None``
+    fn name_to_var(&self, name: &str) -> Option<VarNo> {
+        self.0
+            .with_manager_shared(|manager| manager.name_to_var(name))
+    }
+
+    /// Get the level for the given variable.
+    ///
+    /// Locking behavior: acquires the manager's lock for shared access.
+    ///
+    /// Args:
+    ///     var (int): The variable number
+    ///
+    /// Returns:
+    ///     int: The level number
+    ///
+    /// Raises:
+    ///     IndexError: If ``var >= self.num_vars()``
+    fn var_to_level(&self, var: VarNo) -> PyResult<LevelNo> {
+        self.0.with_manager_shared(|manager| {
+            crate::util::var_no_bounds_check(manager, var)?;
+            Ok(manager.var_to_level(var))
+        })
+    }
+
+    /// Get the variable for the given level.
+    ///
+    /// Locking behavior: acquires the manager's lock for shared access.
+    ///
+    /// Args:
+    ///     level (int): The level number
+    ///
+    /// Returns:
+    ///     int: The variable number
+    ///
+    /// Raises:
+    ///     IndexError: If ``var >= self.num_vars()``
+    fn level_to_var(&self, level: LevelNo) -> PyResult<LevelNo> {
+        self.0.with_manager_shared(|manager| {
+            crate::util::level_no_bounds_check(manager, level)?;
+            Ok(manager.level_to_var(level))
+        })
+    }
+
+    /// Get the Boolean function that is true if and only if `var` is true.
+    ///
+    /// Acquires the manager's lock for shared access.
+    ///
+    /// Args:
+    ///     var (int): The variable number.
     ///
     /// Returns:
     ///     BDDFunction: A Boolean function that is true if and only if the
-    ///         variable is true
+    ///     variable is true
+    ///
     /// Raises:
     ///     DDMemoryError: If the operation runs out of memory
-    fn new_var(&self) -> PyResult<BDDFunction> {
-        self.0
-            .with_manager_exclusive(|manager| oxidd::bdd::BDDFunction::new_var(manager))
-            .try_into()
+    ///     IndexError: If ``var >= self.num_vars()``
+    fn var(&self, var: VarNo) -> PyResult<BDDFunction> {
+        self.0.with_manager_shared(|manager| {
+            crate::util::var_no_bounds_check(manager, var)?;
+            oxidd::bdd::BDDFunction::var(manager, var).try_into()
+        })
+    }
+
+    /// Get the Boolean function that is true if and only if `var` is false.
+    ///
+    /// Acquires the manager's lock for shared access.
+    ///
+    /// Args:
+    ///     var (int): The variable number.
+    ///
+    /// Returns:
+    ///     BDDFunction: A Boolean function that is true if and only if the
+    ///     variable is false
+    ///
+    /// Raises:
+    ///     DDMemoryError: If the operation runs out of memory
+    ///     IndexError: If ``var >= self.num_vars()``
+    fn not_var(&self, var: VarNo) -> PyResult<BDDFunction> {
+        self.0.with_manager_shared(|manager| {
+            crate::util::var_no_bounds_check(manager, var)?;
+            oxidd::bdd::BDDFunction::not_var(manager, var).try_into()
+        })
     }
 
     /// Get the constant true Boolean function ``⊤``.
@@ -81,17 +315,6 @@ impl BDDManager {
             .with_manager_shared(|manager| BDDFunction(oxidd::bdd::BDDFunction::f(manager)))
     }
 
-    /// Get the number of inner nodes.
-    ///
-    /// Locking behavior: acquires the manager's lock for shared access.
-    ///
-    /// Returns:
-    ///     int: The number of inner nodes stored in this manager
-    fn num_inner_nodes(&self) -> usize {
-        self.0
-            .with_manager_shared(|manager| manager.num_inner_nodes())
-    }
-
     /// Dump the entire decision diagram in this manager as Graphviz DOT code.
     ///
     /// The output may also include nodes that are not reachable from
@@ -105,24 +328,20 @@ impl BDDManager {
     ///         be created.
     ///     functions (Iterable[tuple[BDDFunction, str]]): Optional names for
     ///         BDD functions
-    ///     variables (Iterable[tuple[BDDFunction, str]]): Optional names for
-    ///         variables
     ///
     /// Returns:
     ///     None
     #[pyo3(
-        signature = (/, path, functions=None, variables=None),
-        text_signature = "($self, /, path, functions=[], variables=[])"
+        signature = (/, path, functions=None),
+        text_signature = "($self, /, path, functions=[])"
     )]
     fn dump_all_dot_file<'py>(
         &self,
         path: PathBuf,
         functions: Option<&Bound<'py, PyAny>>,
-        variables: Option<&Bound<'py, PyAny>>,
     ) -> PyResult<()> {
         let collect = crate::util::collect_func_str_pairs::<oxidd::bdd::BDDFunction, BDDFunction>;
         let functions = collect(functions)?;
-        let variables = collect(variables)?;
 
         let file = std::fs::File::create(path)?;
 
@@ -130,7 +349,6 @@ impl BDDManager {
             oxidd_dump::dot::dump_all(
                 file,
                 manager,
-                variables.iter().map(|(v, s)| (v, s.to_string_lossy())),
                 functions.iter().map(|(f, s)| (f, s.to_string_lossy())),
             )
         })?;
@@ -143,16 +361,16 @@ impl BDDManager {
 ///
 /// Implements: :class:`~oxidd.protocols.FunctionSubst`
 #[pyclass(frozen, module = "oxidd.bdd")]
-pub struct BDDSubstitution(Subst<oxidd::bdd::BDDFunction, Vec<oxidd::bdd::BDDFunction>>);
+pub struct BDDSubstitution(Subst<oxidd::bdd::BDDFunction>);
 
 #[pymethods]
 impl BDDSubstitution {
     /// Create a new substitution object for BDDs.
     ///
-    /// See :meth:`BDDFunction.make_substitution()` fore more details.
+    /// See :meth:`BDDFunction.make_substitution` for more details.
     ///
     /// Args:
-    ///     pairs (Iterable[tuple[BDDFunction, BDDFunction]]):
+    ///     pairs (Iterable[tuple[int, BDDFunction]]):
     ///         ``(variable, replacement)`` pairs, where all variables are
     ///         distinct. The order of the pairs is irrelevant.
     ///
@@ -167,7 +385,7 @@ impl BDDSubstitution {
             let pair: Bound<PyTuple> = pair?.downcast_into()?;
             let v = pair.get_borrowed_item(0)?;
             let r = pair.get_borrowed_item(1)?;
-            vars.push(v.downcast::<BDDFunction>()?.get().0.clone());
+            vars.push(v.extract()?);
             replacements.push(r.downcast::<BDDFunction>()?.get().0.clone());
         }
 
@@ -235,7 +453,7 @@ impl BDDFunction {
     ///
     /// Returns:
     ///     tuple[Self, Self] | None: The cofactors ``(f_true, f_false)``, or
-    ///         ``None`` if ``self`` references a terminal node.
+    ///     ``None`` if ``self`` references a terminal node.
     ///
     /// See Also:
     ///     :meth:`cofactor_true`, :meth:`cofactor_false` if you only need one
@@ -259,7 +477,7 @@ impl BDDFunction {
     ///
     /// Returns:
     ///     Self | None: The cofactor ``f_true``, or ``None`` if ``self``
-    ///         references a terminal node.
+    ///     references a terminal node.
     ///
     /// See Also:
     ///     :meth:`cofactors`, also for a more detailed description
@@ -274,7 +492,7 @@ impl BDDFunction {
     ///
     /// Returns:
     ///     Self | None: The cofactor ``f_false``, or ``None`` if ``self``
-    ///         references a terminal node.
+    ///     references a terminal node.
     ///
     /// See Also:
     ///     :meth:`cofactors`, also for a more detailed description
@@ -290,14 +508,38 @@ impl BDDFunction {
     ///
     /// Returns:
     ///     int | None: The level, or ``None`` if the node is a terminal
+    fn node_level(&self) -> Option<LevelNo> {
+        self.0
+            .with_manager_shared(|manager, edge| match manager.get_node(edge) {
+                oxidd::Node::Inner(n) => Some(n.level()),
+                oxidd::Node::Terminal(_) => None,
+            })
+    }
+    /// Deprecated alias for :meth:`node_level`.
+    ///
+    /// Returns:
+    ///     int | None: The level, or ``None`` if the node is a terminal
+    ///
+    /// .. deprecated:: 0.11
+    ///    Use :meth:`node_level` instead
     fn level(&self) -> Option<LevelNo> {
-        match self
-            .0
-            .with_manager_shared(|manager, edge| manager.get_node(edge).level())
-        {
-            LevelNo::MAX => None,
-            l => Some(l),
-        }
+        self.node_level()
+    }
+    /// Get the variable number for the underlying node.
+    ///
+    /// Locking behavior: acquires the manager's lock for shared access.
+    ///
+    /// Time complexity: O(1)
+    ///
+    /// Returns:
+    ///     int | None: The variable number, or ``None`` if the node is a
+    ///     terminal
+    fn node_var(&self) -> Option<VarNo> {
+        self.0
+            .with_manager_shared(|manager, edge| match manager.get_node(edge) {
+                oxidd::Node::Inner(n) => Some(manager.level_to_var(n.level())),
+                oxidd::Node::Terminal(_) => None,
+            })
     }
 
     /// Compute the negation ``¬self``.
@@ -475,12 +717,12 @@ impl BDDFunction {
     /// the returned substitution object.
     ///
     /// Args:
-    ///     pairs (Iterable[tuple[Self, Self]]): ``(variable, replacement)``
+    ///     pairs (Iterable[tuple[int, Self]]): ``(variable, replacement)``
     ///         pairs, where all variables are distinct. The order of the pairs
     ///         is irrelevant.
     ///
     /// Returns:
-    ///     Self: The substitution to be used with :meth:`substitute()`
+    ///     BDDSubstitution: The substitution to be used with :meth:`substitute`
     #[classmethod]
     #[pyo3(signature = (pairs, /))]
     fn make_substitution(_cls: &Bound<PyType>, pairs: &Bound<PyAny>) -> PyResult<BDDSubstitution> {
@@ -496,7 +738,7 @@ impl BDDFunction {
     ///
     /// Args:
     ///     substitution (BDDSubstitution): A substitution object created using
-    ///         :meth:`make_substitution()`. All contained DD functions must
+    ///         :meth:`make_substitution`. All contained DD functions must
     ///         belong to the same manager as ``self``.
     ///
     /// Returns:
@@ -639,9 +881,6 @@ impl BDDFunction {
     ///
     /// Raises:
     ///     DDMemoryError: If the operation runs out of memory
-    ///
-    /// .. deprecated:: 0.10
-    ///    Use :meth:`apply_exists` instead
     fn apply_exists(
         &self,
         py: Python,
@@ -671,6 +910,9 @@ impl BDDFunction {
     ///
     /// Raises:
     ///     DDMemoryError: If the operation runs out of memory
+    ///
+    /// .. deprecated:: 0.10
+    ///    Use :meth:`apply_exists` instead
     fn apply_exist(
         &self,
         py: Python,
@@ -729,7 +971,7 @@ impl BDDFunction {
     ///
     /// Returns:
     ///     bool: Whether the Boolean function has at least one satisfying
-    ///         assignment
+    ///     assignment
     fn satisfiable(&self) -> bool {
         self.0.satisfiable()
     }
@@ -787,7 +1029,7 @@ impl BDDFunction {
     ///     value means that the i-th variable is false, true, or "don't care,"
     ///     respectively, or ``None`` if ``self`` is unsatisfiable
     fn pick_cube<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        match py.allow_threads(move || self.0.pick_cube([], move |_, _, _| false)) {
+        match py.allow_threads(move || self.0.pick_cube(move |_, _, _| false)) {
             Some(r) => {
                 let iter = r.into_iter().map(|v| match v {
                     OptBool::None => PyNone::get(py).to_owned().into_any(),
@@ -840,26 +1082,20 @@ impl BDDFunction {
     /// Locking behavior: acquires the manager's lock for shared access.
     ///
     /// Args:
-    ///     args (Iterable[tuple[Self, bool]]): ``(variable, value)`` pairs.
-    ///         Missing variables are assumed to be false. However, note that
-    ///         the arguments may also determine the domain, e.g., in case of
-    ///         ZBDDs. If variables are given multiple times, the last value
-    ///         counts. Besides that, the order is irrelevant.
-    ///         All variable handles must belong to the same manager as ``self``
-    ///         and must reference inner nodes.
+    ///     args (Iterable[tuple[int, bool]]): ``(variable, value)`` pairs that
+    ///         determine the valuation for all variables in the function's
+    ///         domain. The order is irrelevant (except that if the valuation
+    ///         for a variable is given multiple times, the last value counts).
+    ///         Should there be a decision node for a variable not part of the
+    ///         domain, then ``False`` is used as the decision value.
     ///
     /// Returns:
     ///     bool: The result of applying the function ``self`` to ``args``
+    ///
+    /// Raises:
+    ///     IndexError: If any variable number in ``args`` is greater or equal
+    ///         to ``self.manager.num_vars()``
     fn eval(&self, args: &Bound<PyAny>) -> PyResult<bool> {
-        let mut fs = Vec::with_capacity(args.len().unwrap_or(0));
-        for pair in args.try_iter()? {
-            let pair: Bound<PyTuple> = pair?.downcast_into()?;
-            let f = pair.get_borrowed_item(0)?;
-            let f = f.downcast::<Self>()?.get().0.clone();
-            let b = pair.get_borrowed_item(1)?.is_truthy()?;
-            fs.push((f, b));
-        }
-
-        Ok(self.0.eval(fs.iter().map(|(f, b)| (f, *b))))
+        crate::util::eval(&self.0, args)
     }
 }

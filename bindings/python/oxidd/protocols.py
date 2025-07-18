@@ -81,7 +81,7 @@ class FunctionSubst(Function, Generic[S], Protocol):
 
     @classmethod
     @abstractmethod
-    def make_substitution(cls, pairs: Iterable[tuple[Self, Self]], /) -> S:
+    def make_substitution(cls, pairs: Iterable[tuple[int, Self]], /) -> S:
         """Create a new substitution object from pairs ``(var, replacement)``.
 
         The intent behind substitution objects is to optimize the case where the
@@ -92,13 +92,10 @@ class FunctionSubst(Function, Generic[S], Protocol):
 
         Args:
             pairs: ``(variable, replacement)`` pairs, where all variables are
-                distinct. Furthermore, variables must be handles for the
-                respective decision diagram levels, i.e., the Boolean function
-                representing the variable for B(C)DDs, and a singleton set for
-                ZBDDs. The order of the pairs is irrelevant.
+                distinct. The order of the pairs is irrelevant.
 
         Returns:
-            The substitution to be used with :meth:`substitute()`
+            The substitution to be used with :meth:`substitute`
         """
         raise NotImplementedError
 
@@ -113,7 +110,7 @@ class FunctionSubst(Function, Generic[S], Protocol):
 
         Args:
             substitution: A substitution object created using
-                :meth:`make_substitution()`. All contained DD functions must
+                :meth:`make_substitution`. All contained DD functions must
                 belong to the same manager as ``self``.
         """
         raise NotImplementedError
@@ -123,7 +120,7 @@ class HasLevel(Function, Protocol):
     """Function whose decision diagram node is associated with a level."""
 
     @abstractmethod
-    def level(self, /) -> int | None:
+    def node_level(self, /) -> int | None:
         """Get the level of the underlying node.
 
         Locking behavior: acquires the manager's lock for shared access.
@@ -132,6 +129,29 @@ class HasLevel(Function, Protocol):
 
         Returns:
             The level number or ``None`` for terminals
+        """
+        raise NotImplementedError
+
+    @deprecated("Use node_level instead")
+    @abstractmethod
+    def level(self, /) -> int | None:
+        """Deprecated alias for :meth:`node_level`.
+
+        .. deprecated:: 0.11
+           Use :meth:`node_level` instead.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def node_var(self, /) -> int | None:
+        """Get the variable number of the underlying node.
+
+        Locking behavior: acquires the manager's lock for shared access.
+
+        Time complexity: O(1)
+
+        Returns:
+            The variable number or ``None`` for terminals
         """
         raise NotImplementedError
 
@@ -448,25 +468,34 @@ class BooleanFunction(Function, Protocol):
         raise NotImplementedError
 
     @abstractmethod
-    def eval(self, /, args: Iterable[tuple[Self, bool]]) -> bool:
+    def eval(self, /, args: Iterable[tuple[int, bool]]) -> bool:
         """Evaluate this Boolean function with arguments ``args``.
+
+        Note that the domain of the Boolean function represented by ``self`` is
+        implicit and may comprise a strict subset of the variables in the
+        manager only. This method assumes that the function's domain
+        corresponds the set of variables in ``args``. Remember that there are
+        kinds of decision diagrams (e.g., ZBDDs) where the domain plays a
+        crucial role for the interpretation of decision diagram nodes as a
+        Boolean function. On the other hand, extending the domain of, e.g.,
+        ordinary BDDs does not affect the evaluation result.
 
         Locking behavior: acquires the manager's lock for shared access.
 
         Args:
-            args: ``(variable, value)`` pairs where variables must be handles
-                for the respective decision diagram levels, i.e., the Boolean
-                function representing the variable for B(C)DDs, and a singleton
-                set for ZBDDs.
-                Missing variables are assumed to be false. However, note that
-                the arguments may also determine the domain, e.g., in case of
-                ZBDDs. If variables are given multiple times, the last value
-                counts. Besides that, the order is irrelevant.
-                All variable handles must belong to the same manager as ``self``
-                and must reference inner nodes.
+            args: ``(variable, value)`` pairs that determine the valuation for
+                all variables in the function's domain. The order is irrelevant
+                (except that if the valuation for a variable is given multiple
+                times, the last value counts).
+                Should there be a decision node for a variable not part of the
+                domain, then ``false`` is used as the decision value.
 
         Returns:
             The result of applying the function ``self`` to ``args``
+
+        Raises:
+            IndexError: If any variable number in ``args`` is greater or equal
+                to ``self.manager.num_vars()``
         """
         raise NotImplementedError
 
@@ -636,9 +665,181 @@ class Manager(Generic[F], Protocol):
 
     @abstractmethod
     def num_inner_nodes(self, /) -> int:
-        """Get the number of inner nodes.
+        """Get the count of inner nodes.
 
         Locking behavior: acquires the manager's lock for shared access.
+
+        Returns:
+            int: The number of inner nodes stored in this manager
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def approx_num_inner_nodes(self, /) -> int:
+        """Get an approximate count of inner nodes.
+
+        For concurrent implementations, it may be much less costly to determine
+        an approximation of the inner node count than an accurate count
+        (:meth:`num_inner_nodes`).
+
+        Locking behavior: acquires the manager's lock for shared access.
+
+        Returns:
+            int: An approximate count of inner nodes stored in this manager
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def num_vars(self, /) -> int:
+        """Get the number of variables in this manager.
+
+        Acquires the manager's lock for shared access.
+
+        Returns:
+            int: The number of variables
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def num_named_vars(self, /) -> int:
+        """Get the number of named variables in this manager.
+
+        Locking behavior: acquires the manager's lock for shared access.
+
+        Returns:
+            int: The number of named variables
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def add_vars(self, /, additional: int) -> range:
+        """Add ``additional`` unnamed variables to the decision diagram.
+
+        The new variables are added at the bottom of the variable order. More
+        precisely, the level number equals the variable number for each new
+        variable.
+
+        Note that some algorithms may assume that the domain of a function
+        represented by a decision diagram is just the set of all variables. In
+        this regard, adding variables can change the semantics of decision
+        diagram nodes.
+
+        Locking behavior: acquires the manager's lock for exclusive access.
+
+        Args:
+            additional: Count of variables to add
+
+        Returns:
+            range: The new variable numbers
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def add_named_vars(self, /, names: Iterable[str]) -> range:
+        """Add named variables to the decision diagram.
+
+        This is a shorthand for :meth:`add_vars` and respective
+        :meth:`set_var_name` calls. More details can be found there.
+
+        Locking behavior: acquires the manager's lock for exclusive access.
+
+        Args:
+            names: Names of the new variables
+
+        Returns:
+            range: The new variable numbers
+
+        Raises:
+            ValueError: If a variable name occurs twice in ``names``. The
+                exception's argument is a :class:`DuplicateVarName`.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def var_name(self, /, var: int) -> str:
+        """Get ``var``'s name.
+
+        Locking behavior: acquires the manager's lock for shared access.
+
+        Args:
+            var: The variable number
+
+        Returns:
+            str: The name, or an empty string for unnamed variables
+
+        Raises:
+            IndexError: If ``var >= self.num_vars()``
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def set_var_name(self, /, var: int, name: str) -> None:
+        """Label ``var`` as ``name``.
+
+        An empty name means that the variable will become unnamed, and cannot be
+        retrieved via :meth:`name_to_var` anymore.
+
+        Locking behavior: acquires the manager's lock for exclusive access.
+
+        Args:
+            var: The variable number
+            name: The new variable name
+
+        Raises:
+            ValueError: If ``name`` is not unique (and not ``""``). The
+                exception's argument is a :class:`DuplicateVarName`.
+            IndexError: If ``var >= self.num_vars()``
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def name_to_var(self, /, name: str) -> int | None:
+        """Get the variable number for the given variable name, if present.
+
+        Note that you cannot retrieve unnamed variables.
+        ``manager.name_to_var("")`` always returns ``None``.
+
+        Locking behavior: acquires the manager's lock for exclusive access.
+
+        Args:
+            name: The variable name
+
+        Returns:
+            The variable number if found, or ``None``
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def var_to_level(self, /, var: int) -> int:
+        """Get the level for the given variable.
+
+        Locking behavior: acquires the manager's lock for shared access.
+
+        Args:
+            var: The variable number
+
+        Returns:
+            The level number
+
+        Raises:
+            IndexError: If ``var >= self.num_vars()``
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def level_to_var(self, /, level: int) -> int:
+        """Get the variable for the given level.
+
+        Locking behavior: acquires the manager's lock for shared access.
+
+        Args:
+            level: The level number
+
+        Returns:
+            The variable number
+
+        Raises:
+            IndexError: If ``var >= self.num_vars()``
         """
         raise NotImplementedError
 
@@ -648,7 +849,6 @@ class Manager(Generic[F], Protocol):
         /,
         path: str | PathLike[str],
         functions: Iterable[tuple[F, str]] = [],
-        variables: Iterable[tuple[F, str]] = [],
     ) -> None:
         """Dump the entire decision diagram in this manager as Graphviz DOT code.
 
@@ -661,10 +861,6 @@ class Manager(Generic[F], Protocol):
             path: Path of the output file. If a file at ``path`` exists, it will
                 be truncated, otherwise a new one will be created.
             functions: Optional names for DD functions
-            variables: Optional names for variables. The variables must be
-                handles for the respective decision diagram levels, i.e., the
-                Boolean function representing the variable for B(C)DDs, and a
-                singleton set for ZBDDs.
         """
         raise NotImplementedError
 
@@ -676,13 +872,38 @@ class BooleanFunctionManager(Manager[BF], Protocol):
     """Manager whose nodes represent Boolean functions."""
 
     @abstractmethod
-    def new_var(self, /) -> BF:
-        """Get a fresh variable, adding a new level to a decision diagram.
+    def var(self, /, var: int) -> BF:
+        """Get the Boolean function that is true if and only if `var` is true.
 
         Acquires the manager's lock for exclusive access.
 
+        Args:
+            var: The variable number.
+
         Returns:
             A Boolean function that is true if and only if the variable is true
+
+        Raises:
+            DDMemoryError: If the operation runs out of memory
+            IndexError: If ``var >= self.num_vars()``
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def not_var(self, /, var: int) -> BF:
+        """Get the Boolean function that is true if and only if `var` is false.
+
+        Acquires the manager's lock for exclusive access.
+
+        Args:
+            var: The variable number.
+
+        Returns:
+            A Boolean function that is true if and only if the variable is false
+
+        Raises:
+            DDMemoryError: If the operation runs out of memory
+            IndexError: If ``var >= self.num_vars()``
         """
         raise NotImplementedError
 

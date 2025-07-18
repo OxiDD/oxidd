@@ -13,36 +13,23 @@ use oxidd_core::Manager;
 /// Dump the entire decision diagram represented by `manager` as Graphviz DOT
 /// code to `file`
 ///
-/// `variables` contains pairs of edges representing the variable and names
-/// (`VD`, implementing [`std::fmt::Display`]). `functions` contains pairs of
-/// edges representing the function and names (`FD`, implementing
-/// [`std::fmt::Display`]). In both cases, the order of elements does not
-/// matter.
-pub fn dump_all<'a, 'id, F, VD, FD>(
+/// To label functions in the decision diagram, you can pass pairs of function
+/// and name (type `D`, implementing [`std::fmt::Display`]).
+pub fn dump_all<'a, 'id, F, D>(
     mut file: impl io::Write,
     manager: &F::Manager<'id>,
-    variables: impl IntoIterator<Item = (&'a F, VD)>,
-    functions: impl IntoIterator<Item = (&'a F, FD)>,
+    functions: impl IntoIterator<Item = (&'a F, D)>,
 ) -> io::Result<()>
 where
-    F: 'a + Function + super::DotStyle<<<F::Manager<'id> as Manager>::Edge as Edge>::Tag>,
+    F: 'a + Function + super::DotStyle<<F::Manager<'id> as Manager>::EdgeTag>,
     <F::Manager<'id> as Manager>::InnerNode: HasLevel,
-    <<F::Manager<'id> as Manager>::Edge as Edge>::Tag: fmt::Debug,
+    <F::Manager<'id> as Manager>::EdgeTag: fmt::Debug,
     <F::Manager<'id> as Manager>::Terminal: fmt::Display,
-    VD: fmt::Display + Clone,
-    FD: fmt::Display,
+    D: fmt::Display,
 {
     writeln!(file, "digraph DD {{")?;
 
     let mut last_level = LevelNo::MAX;
-    let mut levels = vec![None; manager.num_levels() as usize];
-
-    for (f, label) in variables {
-        let node = manager
-            .get_node(f.as_edge(manager))
-            .expect_inner("variables must not be const terminals");
-        levels[node.level() as usize] = Some(label);
-    }
 
     let mut edges = Vec::new();
 
@@ -67,16 +54,17 @@ where
                     writeln!(file, "  }};")?;
                 }
 
-                if let Some(level_name) = &levels[level as usize] {
+                let level_name = manager.var_name(manager.level_to_var(level));
+                if level_name.is_empty() {
+                    writeln!(
+                        file,
+                        "  {{ rank = same; l{level:x} [label=\"{level}\", color=\"#AAAAAA\", shape=none, tooltip=\"level {level}\"];"
+                    )?;
+                } else {
                     // TODO: escaping for level_name
                     writeln!(
                         file,
                         "  {{ rank = same; l{level:x} [label=\"{level_name}\", shape=none, tooltip=\"level {level}\"];"
-                    )?;
-                } else {
-                    writeln!(
-                        file,
-                        "  {{ rank = same; l{level:x} [label=\"{level}\", color=\"#AAAAAA\", shape=none, tooltip=\"level {level}\"];"
                     )?;
                 }
                 last_level = level;
@@ -106,11 +94,12 @@ where
     }
     writeln!(file, "  }};")?;
 
-    if !levels.is_empty() {
+    let num_levels = manager.num_levels();
+    if num_levels != 0 {
         // If `levels` is empty, there is no point in writing the order (even
         // if there are terminals).
         write!(file, "  ")?;
-        for level in 0..levels.len() {
+        for level in 0..num_levels {
             write!(file, "l{level:x} -> ")?;
         }
         // spell-checker:ignore invis

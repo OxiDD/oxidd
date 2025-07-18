@@ -2,6 +2,8 @@ use std::marker::PhantomData;
 use std::sync::atomic;
 use std::sync::atomic::AtomicU64;
 
+use crate::VarNo;
+
 /// Generate a new, globally unique substitution ID
 pub fn new_substitution_id() -> u32 {
     static ID: AtomicU64 = AtomicU64::new(0);
@@ -28,8 +30,6 @@ pub fn new_substitution_id() -> u32 {
 ///
 /// To create a substitution, you'll probably want to use [`Subst::new()`].
 pub trait Substitution {
-    /// Variable type
-    type Var;
     /// Replacement type
     type Replacement;
 
@@ -42,7 +42,7 @@ pub trait Substitution {
     fn id(&self) -> u32;
 
     /// Iterate over pairs of variable and replacement
-    fn pairs(&self) -> impl ExactSizeIterator<Item = (Self::Var, Self::Replacement)>;
+    fn pairs(&self) -> impl ExactSizeIterator<Item = (VarNo, Self::Replacement)>;
 
     /// Map the substitution, e.g., to use different variable and replacement
     /// types
@@ -54,14 +54,13 @@ pub trait Substitution {
     #[inline]
     fn map<V, R, F>(&self, f: F) -> MapSubst<'_, Self, F>
     where
-        F: Fn((Self::Var, Self::Replacement)) -> (V, R),
+        F: Fn((VarNo, Self::Replacement)) -> (V, R),
     {
         MapSubst { inner: self, f }
     }
 }
 
 impl<T: Substitution> Substitution for &T {
-    type Var = T::Var;
     type Replacement = T::Replacement;
 
     #[inline]
@@ -69,7 +68,7 @@ impl<T: Substitution> Substitution for &T {
         (*self).id()
     }
     #[inline]
-    fn pairs(&self) -> impl ExactSizeIterator<Item = (Self::Var, Self::Replacement)> {
+    fn pairs(&self) -> impl ExactSizeIterator<Item = (VarNo, Self::Replacement)> {
         (*self).pairs()
     }
 }
@@ -77,17 +76,17 @@ impl<T: Substitution> Substitution for &T {
 /// Substitution mapping variables to replacement functions, created from slices
 /// of functions
 ///
-/// `S` is the storage type, and can, e.g., be `Vec<F>` or `&[F]`.
+/// `VS` and `RS` are the storage types, and can, e.g., be [`Vec`]s or slices.
 #[derive(Debug)]
-pub struct Subst<F, S = Vec<F>> {
+pub struct Subst<F, VS = Vec<VarNo>, RS = Vec<F>> {
     id: u32,
-    vars: S,
-    replacements: S,
+    vars: VS,
+    replacements: RS,
     phantom: PhantomData<fn(&F)>,
 }
 
-impl<F, S: Copy> Copy for Subst<F, S> {}
-impl<F, S: Clone> Clone for Subst<F, S> {
+impl<F, VS: Copy, RS: Copy> Copy for Subst<F, VS, RS> {}
+impl<F, VS: Clone, RS: Clone> Clone for Subst<F, VS, RS> {
     fn clone(&self) -> Self {
         Self {
             id: self.id,
@@ -98,8 +97,7 @@ impl<F, S: Clone> Clone for Subst<F, S> {
     }
 }
 
-impl<'a, F, S: AsRef<[F]>> Substitution for &'a Subst<F, S> {
-    type Var = &'a F;
+impl<'a, F, VS: AsRef<[VarNo]>, RS: AsRef<[F]>> Substitution for &'a Subst<F, VS, RS> {
     type Replacement = &'a F;
 
     #[inline]
@@ -108,12 +106,16 @@ impl<'a, F, S: AsRef<[F]>> Substitution for &'a Subst<F, S> {
     }
 
     #[inline]
-    fn pairs(&self) -> impl ExactSizeIterator<Item = (Self::Var, Self::Replacement)> {
-        self.vars.as_ref().iter().zip(self.replacements.as_ref())
+    fn pairs(&self) -> impl ExactSizeIterator<Item = (VarNo, Self::Replacement)> {
+        self.vars
+            .as_ref()
+            .iter()
+            .copied()
+            .zip(self.replacements.as_ref())
     }
 }
 
-impl<F, S: AsRef<[F]>> Subst<F, S> {
+impl<F, VS: AsRef<[VarNo]>, RS: AsRef<[F]>> Subst<F, VS, RS> {
     /// Create a new substitution to replace the i-th variable of `vars` by the
     /// i-th function in replacement
     ///
@@ -123,7 +125,7 @@ impl<F, S: AsRef<[F]>> Subst<F, S> {
     ///
     /// Panics if `vars` and `replacements` have different length
     #[track_caller]
-    pub fn new(vars: S, replacements: S) -> Self {
+    pub fn new(vars: VS, replacements: RS) -> Self {
         assert_eq!(
             vars.as_ref().len(),
             replacements.as_ref().len(),
@@ -147,10 +149,9 @@ pub struct MapSubst<'a, S: ?Sized, F> {
     f: F,
 }
 
-impl<V, R, S: Substitution + ?Sized, F: Fn((S::Var, S::Replacement)) -> (V, R)> Substitution
+impl<R, S: Substitution + ?Sized, F: Fn((VarNo, S::Replacement)) -> (VarNo, R)> Substitution
     for MapSubst<'_, S, F>
 {
-    type Var = V;
     type Replacement = R;
 
     #[inline]
@@ -159,7 +160,7 @@ impl<V, R, S: Substitution + ?Sized, F: Fn((S::Var, S::Replacement)) -> (V, R)> 
     }
 
     #[inline]
-    fn pairs(&self) -> impl ExactSizeIterator<Item = (Self::Var, Self::Replacement)> {
+    fn pairs(&self) -> impl ExactSizeIterator<Item = (VarNo, Self::Replacement)> {
         self.inner.pairs().map(&self.f)
     }
 }

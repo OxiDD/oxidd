@@ -29,9 +29,18 @@ oxidd = { workspace = true, features = ["bdd", "bcdd", "zbdd"] }
 # https://github.com/rust-lang/rustc-hash/issues/45
 rustc-hash = "1.1"
 
+# `malloc`
+libc = "0.2.174"
+
+[build-dependencies]
+cc = { version = "1.2.27", optional = true }
+
 
 [features]
 default = ["manager-index", "multi-threading", "apply-cache-direct-mapped"]
+
+## Enable interoperability features required for the C++ bindings
+cpp = ["dep:cc"]
 
 ## Use multi-threaded implementations of the apply algorithm
 multi-threading = ["oxidd/multi-threading"]

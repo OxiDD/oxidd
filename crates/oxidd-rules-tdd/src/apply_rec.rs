@@ -4,14 +4,7 @@ use std::borrow::Borrow;
 
 use oxidd_core::function::{EdgeOfFunc, Function, TVLFunction};
 use oxidd_core::util::{AllocResult, Borrowed, EdgeDropGuard};
-use oxidd_core::ApplyCache;
-use oxidd_core::Edge;
-use oxidd_core::HasApplyCache;
-use oxidd_core::HasLevel;
-use oxidd_core::InnerNode;
-use oxidd_core::Manager;
-use oxidd_core::Node;
-use oxidd_core::Tag;
+use oxidd_core::{ApplyCache, Edge, HasApplyCache, HasLevel, InnerNode, Manager, Node, Tag, VarNo};
 use oxidd_derive::Function;
 use oxidd_dump::dot::DotStyle;
 
@@ -278,12 +271,18 @@ where
     for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
 {
     #[inline]
-    fn new_var<'id>(manager: &mut Self::Manager<'id>) -> AllocResult<Self> {
+    fn var_edge<'id>(
+        manager: &Self::Manager<'id>,
+        var: VarNo,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        let level = manager.var_to_level(var);
         let f0 = manager.get_terminal(TDDTerminal::True).unwrap();
         let f1 = manager.get_terminal(TDDTerminal::Unknown).unwrap();
         let f2 = manager.get_terminal(TDDTerminal::False).unwrap();
-        let edge = manager.add_level(|level| InnerNode::new(level, [f0, f1, f2]))?;
-        Ok(Self::from_edge(manager, edge))
+        oxidd_core::LevelView::get_or_insert(
+            &mut manager.level(level),
+            InnerNode::new(level, [f0, f1, f2]),
+        )
     }
 
     #[inline]

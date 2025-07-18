@@ -235,10 +235,11 @@ pub fn derive_function(input: syn::DeriveInput) -> TokenStream {
 #[derive(Clone, Copy, Debug)]
 enum Method {
     Terminal(&'static str),
-    NewVar(&'static str),
+    Var(&'static str),
     Unary(&'static str),
     UnaryOwned(&'static str),
     Binary(&'static str),
+    BinaryVar(&'static str),
     Ternary(&'static str),
 }
 
@@ -272,15 +273,20 @@ impl Method {
                 }
             }
 
-            Method::NewVar(n) => {
+            Method::Var(n) => {
                 let method = syn::Ident::new(n, Span::call_site());
-                let func =
-                    struct_field.gen_from_inner(quote!(<#inner as #trait_path>::#method(manager)?));
+                let method_edge = syn::Ident::new(&format!("{n}_edge"), Span::call_site());
+                let func = struct_field
+                    .gen_from_inner(quote!(<#inner as #trait_path>::#method(manager, var)?));
 
                 quote! {
                     #[inline]
-                    fn #method<'__id>(manager: &mut #manager_ty) -> ::oxidd_core::util::AllocResult<Self> {
+                    fn #method<'__id>(manager: &#manager_ty, var: ::oxidd_core::VarNo) -> ::oxidd_core::util::AllocResult<Self> {
                         ::std::result::Result::Ok(#func)
+                    }
+                    #[inline]
+                    fn #method_edge<'__id>(manager: &#manager_ty, var: ::oxidd_core::VarNo) -> ::oxidd_core::util::AllocResult<#edge_ty> {
+                        <#inner as #trait_path>::#method_edge(manager, var)
                     }
                 }
             }
@@ -333,6 +339,24 @@ impl Method {
                     #[inline]
                     fn #method_edge<'__id>(manager: &#manager_ty, lhs: &#edge_ty, rhs: &#edge_ty) -> ::oxidd_core::util::AllocResult<#edge_ty> {
                         <#inner as #trait_path>::#method_edge(manager, lhs, rhs)
+                    }
+                }
+            }
+
+            Method::BinaryVar(n) => {
+                let method = syn::Ident::new(n, Span::call_site());
+                let method_edge = syn::Ident::new(&format!("{n}_edge"), Span::call_site());
+                let func =
+                    struct_field.gen_from_inner(quote!(#trait_path::#method(&self.#field, var)?));
+
+                quote! {
+                    #[inline]
+                    fn #method(&self, var: ::oxidd_core::VarNo) -> ::oxidd_core::util::AllocResult<Self> {
+                        ::std::result::Result::Ok(#func)
+                    }
+                    #[inline]
+                    fn #method_edge<'__id>(manager: &#manager_ty, f: &#edge_ty, var: ::oxidd_core::VarNo) -> ::oxidd_core::util::AllocResult<#edge_ty> {
+                        <#inner as #trait_path>::#method_edge(manager, f, var)
                     }
                 }
             }
@@ -422,13 +446,13 @@ pub fn derive_function_subst(input: syn::DeriveInput) -> TokenStream {
             #[inline]
             fn substitute<'__a>(
                 &'__a self,
-                substitution: impl ::oxidd_core::util::Substitution<Var = &'__a Self, Replacement = &'__a Self>,
+                substitution: impl ::oxidd_core::util::Substitution<Replacement = &'__a Self>,
             ) -> ::oxidd_core::util::AllocResult<Self> {
                 let res = <#inner as #trait_path>::substitute(
                     &self.#field,
                     ::oxidd_core::util::Substitution::map(
                         &substitution,
-                        |(v, r)| (&v.#field, &r.#field),
+                        |(v, r)| (v, &r.#field),
                     ),
                 )?;
                 ::std::result::Result::Ok(#from_res)
@@ -439,7 +463,6 @@ pub fn derive_function_subst(input: syn::DeriveInput) -> TokenStream {
                 manager: &'__a #manager_ty,
                 edge: &'__a #edge_ty,
                 substitution: impl ::oxidd_core::util::Substitution<
-                    Var = ::oxidd_core::util::Borrowed<'__a, #edge_ty>,
                     Replacement = ::oxidd_core::util::Borrowed<'__a, #edge_ty>,
                 >,
             ) -> ::oxidd_core::util::AllocResult<#edge_ty> {
@@ -457,7 +480,8 @@ pub fn derive_boolean_function(input: syn::DeriveInput) -> TokenStream {
         &[
             Terminal("f"),
             Terminal("t"),
-            NewVar("new_var"),
+            Var("var"),
+            Var("not_var"),
             Unary("not"),
             UnaryOwned("not"),
             Binary("and"),
@@ -560,25 +584,21 @@ pub fn derive_boolean_function(input: syn::DeriveInput) -> TokenStream {
                 }
 
                 #[inline]
-                fn pick_cube<'__a, __I: ::std::iter::ExactSizeIterator<Item = &'__a Self>>(
-                    &'__a self,
-                    order: impl ::std::iter::IntoIterator<IntoIter = __I>,
+                fn pick_cube(
+                    &self,
                     choice: impl for<'__id> ::std::ops::FnMut(&#manager_ty, &#edge_ty, ::oxidd_core::LevelNo) -> bool,
                 ) -> ::std::option::Option<::std::vec::Vec<::oxidd_core::util::OptBool>> {
-                    <#inner as #trait_path>::pick_cube(&self.#field, order.into_iter().map(|f| &f.#field), choice)
+                    <#inner as #trait_path>::pick_cube(&self.#field, choice)
                 }
 
                 #[inline]
-                fn pick_cube_edge<'__id, '__a, __I>(
-                    manager: &'__a #manager_ty,
-                    edge: &'__a #edge_ty,
-                    order: impl ::std::iter::IntoIterator<IntoIter = __I>,
+                fn pick_cube_edge<'__id>(
+                    manager: &#manager_ty,
+                    edge: &#edge_ty,
                     choice: impl ::std::ops::FnMut(&#manager_ty, &#edge_ty, ::oxidd_core::LevelNo) -> bool,
                 ) -> ::std::option::Option<::std::vec::Vec<::oxidd_core::util::OptBool>>
-                where
-                    __I: ::std::iter::ExactSizeIterator<Item = &'__a #edge_ty>,
                 {
-                    <#inner as #trait_path>::pick_cube_edge(manager, edge, order, choice)
+                    <#inner as #trait_path>::pick_cube_edge(manager, edge, choice)
                 }
 
                 #[inline]
@@ -600,43 +620,38 @@ pub fn derive_boolean_function(input: syn::DeriveInput) -> TokenStream {
                 }
 
                 #[inline]
-                fn pick_cube_uniform<'__a, I: ::std::iter::ExactSizeIterator<Item = &'__a Self>, S: ::std::hash::BuildHasher>(
-                    &'__a self,
-                    order: impl ::std::iter::IntoIterator<IntoIter = I>,
-                    cache: &mut ::oxidd_core::util::SatCountCache<::oxidd_core::util::num::F64, S>,
+                fn pick_cube_uniform<__S: ::std::hash::BuildHasher>(
+                    &self,
+                    cache: &mut ::oxidd_core::util::SatCountCache<::oxidd_core::util::num::F64, __S>,
                     rng: &mut ::oxidd_core::util::Rng,
                 ) -> ::std::option::Option<::std::vec::Vec<::oxidd_core::util::OptBool>> {
-                    <#inner as #trait_path>::pick_cube_uniform(&self.#field, order.into_iter().map(|f| &f.#field), cache, rng)
+                    <#inner as #trait_path>::pick_cube_uniform(&self.#field, cache, rng)
                 }
 
                 #[inline]
-                fn pick_cube_uniform_edge<'__id, '__a, I, S>(
-                    manager: &'__a #manager_ty,
-                    edge: &'__a #edge_ty,
-                    order: impl ::std::iter::IntoIterator<IntoIter = I>,
-                    cache: &mut ::oxidd_core::util::SatCountCache<::oxidd_core::util::num::F64, S>,
+                fn pick_cube_uniform_edge<'__id, __S: ::std::hash::BuildHasher>(
+                    manager: &#manager_ty,
+                    edge: &#edge_ty,
+                    cache: &mut ::oxidd_core::util::SatCountCache<::oxidd_core::util::num::F64, __S>,
                     rng: &mut ::oxidd_core::util::Rng,
                 ) -> ::std::option::Option<::std::vec::Vec<::oxidd_core::util::OptBool>>
-                where
-                    I: ::std::iter::ExactSizeIterator<Item = &'__a #edge_ty>,
-                    S: ::std::hash::BuildHasher
                 {
-                    <#inner as #trait_path>::pick_cube_uniform_edge(manager, edge, order, cache, rng)
+                    <#inner as #trait_path>::pick_cube_uniform_edge(manager, edge, cache, rng)
                 }
 
                 #[inline]
-                fn eval<'__a>(
-                    &'__a self,
-                    args: impl ::std::iter::IntoIterator<Item = (&'__a Self, bool)>,
+                fn eval(
+                    &self,
+                    args: impl ::std::iter::IntoIterator<Item = (::oxidd_core::VarNo, bool)>,
                 ) -> bool {
-                    <#inner as #trait_path>::eval(&self.#field, args.into_iter().map(|(f, b)| (&f.#field, b)))
+                    <#inner as #trait_path>::eval(&self.#field, args)
                 }
 
                 #[inline]
-                fn eval_edge<'__id, '__a>(
-                    manager: &'__a #manager_ty,
-                    edge: &'__a #edge_ty,
-                    args: impl ::std::iter::IntoIterator<Item = (::oxidd_core::util::Borrowed<'__a, #edge_ty>, bool)>,
+                fn eval_edge<'__id>(
+                    manager: &#manager_ty,
+                    edge: &#edge_ty,
+                    args: impl ::std::iter::IntoIterator<Item = (::oxidd_core::VarNo, bool)>,
                 ) -> bool {
                     <#inner as #trait_path>::eval_edge(manager, edge, args)
                 }
@@ -712,12 +727,12 @@ pub fn derive_boolean_vec_set(input: syn::DeriveInput) -> TokenStream {
         input,
         "BooleanVecSet",
         &[
-            NewVar("new_singleton"),
+            Var("singleton"),
             Terminal("empty"),
             Terminal("base"),
-            Binary("subset0"),
-            Binary("subset1"),
-            Binary("change"),
+            BinaryVar("subset0"),
+            BinaryVar("subset1"),
+            BinaryVar("change"),
             Binary("union"),
             Binary("intsec"),
             Binary("diff"),
@@ -732,7 +747,7 @@ pub fn derive_pseudo_boolean_function(input: syn::DeriveInput) -> TokenStream {
         input,
         "PseudoBooleanFunction",
         &[
-            NewVar("new_var"),
+            Var("var"),
             Binary("add"),
             Binary("sub"),
             Binary("mul"),
@@ -777,7 +792,7 @@ pub fn derive_tvl_function(input: syn::DeriveInput) -> TokenStream {
             Terminal("f"),
             Terminal("t"),
             Terminal("u"),
-            NewVar("new_var"),
+            Var("var"),
             Unary("not"),
             UnaryOwned("not"),
             Binary("and"),

@@ -44,6 +44,8 @@ mod _oxidd {
     // util
     #[pymodule_export]
     use crate::util::DDMemoryError;
+    #[pymodule_export]
+    use crate::util::DuplicateVarName;
 
     #[pymodule_init]
     fn init(m: &Bound<PyModule>) -> PyResult<()> {

@@ -1,7 +1,9 @@
 use std::{collections::VecDeque, path::PathBuf};
 
-use oxidd::{util::AllocResult, BooleanFunction, HasWorkers, Manager, ManagerRef, WorkerPool};
-use oxidd_core::HasLevel;
+use oxidd::{
+    util::AllocResult, BooleanFunction, HasLevel, HasWorkers, Manager, ManagerRef, VarNo,
+    WorkerPool,
+};
 use oxidd_parser::{Circuit, GateKind, Literal, Var, Vec2d};
 use parking_lot::Mutex;
 
@@ -88,7 +90,6 @@ pub(crate) fn construct_bool_circuit<B>(
     mref: &B::ManagerRef,
     circuit: Circuit, // could take it by reference, but this way we can drop it
     cli: &Cli,
-    vars: &[B],
     roots: &[Literal],
     root_results: &mut [Option<B>],
     profiler_csv_out: Option<&PathBuf>,
@@ -103,15 +104,12 @@ pub(crate) fn construct_bool_circuit<B>(
     let (users, mut slots, inner_ops) = mref.with_manager_shared(|manager| {
         manager.workers().set_split_depth(Some(0));
 
+        let mut literal_cache = LiteralCache::<B>::new(manager);
+
         let mut all_done = true;
         for (i, &root) in roots.iter().enumerate() {
-            root_results[i] = Some(if let Some(input) = root.get_input() {
-                let v: &B = &vars[input];
-                if root.is_positive() {
-                    v.clone()
-                } else {
-                    handle_oom!(v.not())
-                }
+            root_results[i] = Some(if root.is_input() {
+                literal_cache.get(manager, root).clone()
             } else if root == Literal::TRUE {
                 B::t(manager)
             } else if root == Literal::FALSE {
@@ -125,7 +123,14 @@ pub(crate) fn construct_bool_circuit<B>(
         let res = if all_done {
             (Vec2d::new(), Vec::new(), 0)
         } else {
-            prepare(manager, circuit, vars, roots, root_results, scheme)
+            prepare(
+                manager,
+                circuit,
+                &mut literal_cache,
+                roots,
+                root_results,
+                scheme,
+            )
         };
         manager.workers().set_split_depth(cli.operation_split_depth);
         res
@@ -169,6 +174,26 @@ pub(crate) fn construct_bool_circuit<B>(
         "DD building done within {}",
         HDuration(ctx.profiler.elapsed_time())
     );
+}
+
+struct LiteralCache<B>(Vec<(Option<B>, Option<B>)>);
+
+impl<B: BooleanFunction> LiteralCache<B> {
+    fn new(manager: &B::Manager<'_>) -> Self {
+        Self(vec![(None, None); manager.num_vars() as usize])
+    }
+
+    fn get(&mut self, manager: &B::Manager<'_>, literal: Literal) -> &B {
+        let var = literal.get_input().unwrap();
+        let slot = &mut self.0[var];
+        if literal.is_positive() {
+            slot.0
+                .get_or_insert_with(|| handle_oom!(B::var(manager, var as VarNo)))
+        } else {
+            slot.1
+                .get_or_insert_with(|| handle_oom!(B::not_var(manager, var as VarNo)))
+        }
+    }
 }
 
 /// Divide `x` into two halves
@@ -421,7 +446,7 @@ fn compute_users(
 fn prepare<B>(
     manager: &B::Manager<'_>,
     circuit: Circuit,
-    vars: &[B],
+    literal_cache: &mut LiteralCache<B>,
     roots: &[Literal],
     root_results: &mut [Option<B>],
     scheme: GateBuildScheme,
@@ -450,11 +475,6 @@ where
         }
     }
 
-    let levels = Vec::from_iter(
-        vars.iter()
-            .map(|f| manager.get_node(f.as_edge(manager)).unwrap_inner().level()),
-    );
-
     let mut target = 0;
     let mut inner_ops = 0; // for progress reporting only
     for (gate_no, gate) in circuit.iter_gates().enumerate() {
@@ -467,17 +487,17 @@ where
         let circuit_input_count = input_buf.len();
 
         if !input_buf.is_empty() {
-            input_buf.sort_unstable_by_key(|l| l.get_input().map(|i| levels[i]));
-            let l = input_buf.pop().unwrap();
-            let v = &vars[l.get_input().unwrap()]; // no constants due to simplification
-            let mut acc = if l.is_positive() {
-                v.clone()
-            } else {
-                handle_oom!(v.not())
-            };
+            input_buf
+                .sort_unstable_by_key(|l| l.get_input().map(|v| manager.var_to_level(v as VarNo)));
+            // input_buf has no constants due to simplification
+            let mut acc = literal_cache.get(manager, input_buf.pop().unwrap()).clone();
             while let Some(l) = input_buf.pop() {
-                let v = &vars[l.get_input().unwrap()];
-                acc = handle_oom!(choose_operator(gate.kind, false, l.is_negative())(&acc, v));
+                let f = literal_cache.get(manager, l);
+                acc = handle_oom!(match gate.kind {
+                    GateKind::And => acc.and(f),
+                    GateKind::Or => acc.or(f),
+                    GateKind::Xor => acc.xor(f),
+                });
             }
 
             if circuit_input_count == gate.inputs.len() {

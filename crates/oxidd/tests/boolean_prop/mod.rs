@@ -5,6 +5,7 @@ use oxidd::util::AllocResult;
 use oxidd::BooleanFunction;
 use oxidd::BooleanFunctionQuant;
 use oxidd::ManagerRef;
+use oxidd::VarNo;
 
 // spell-checker:ignore nvars
 
@@ -253,9 +254,7 @@ impl Prop {
         &self,
         manager: &B::ManagerRef,
         vars: &[B],
-        var_handles: &[B],
     ) -> Result<(), Error<&Self>> {
-        assert!(vars.len() == var_handles.len());
         assert!(
             vars.len() < 31,
             "Too many variables for exhaustive checking"
@@ -265,8 +264,7 @@ impl Prop {
         let mut diffs = Vec::new();
         for args in 0..end {
             let expected = self.eval(args);
-            let actual =
-                f.eval((0..var_handles.len()).map(|i| (&var_handles[i], args & (1 << i) != 0)));
+            let actual = f.eval((0..vars.len() as VarNo).map(|i| (i, args & (1 << i) != 0)));
             if expected != actual {
                 diffs.push(Diff {
                     expected,
@@ -290,9 +288,7 @@ impl Prop {
         &self,
         manager: &B::ManagerRef,
         vars: &[B],
-        var_handles: &[B],
     ) -> Result<(), Error<&Self>> {
-        assert!(vars.len() == var_handles.len());
         assert!(
             vars.len() < 31,
             "Too many variables for exhaustive checking"
@@ -302,8 +298,7 @@ impl Prop {
         let mut diffs = Vec::new();
         for args in 0..end {
             let expected = self.eval(args);
-            let actual =
-                f.eval((0..var_handles.len()).map(|i| (&var_handles[i], args & (1 << i) != 0)));
+            let actual = f.eval((0..vars.len() as VarNo).map(|i| (i, args & (1 << i) != 0)));
             if expected != actual {
                 diffs.push(Diff {
                     expected,

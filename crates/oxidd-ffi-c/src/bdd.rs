@@ -1,4 +1,4 @@
-use std::ffi::{c_char, CStr};
+use std::ffi::c_char;
 use std::hash::BuildHasherDefault;
 use std::mem::ManuallyDrop;
 
@@ -6,26 +6,28 @@ use rustc_hash::FxHasher;
 
 use oxidd::bdd::{BDDFunction, BDDManagerRef};
 use oxidd::util::num::F64;
-use oxidd::util::{AllocResult, Borrowed, OutOfMemory};
+use oxidd::util::{AllocResult, OutOfMemory};
 use oxidd::{
-    BooleanFunction, BooleanFunctionQuant, Edge, Function, FunctionSubst, Manager, ManagerRef,
+    BooleanFunction, BooleanFunctionQuant, Function, FunctionSubst, HasLevel, Manager, ManagerRef,
     RawFunction, RawManagerRef,
 };
 
 // We need to use the following items from `oxidd_core` since cbindgen only
 // parses `oxidd_ffi_c` and `oxidd_core`:
 use oxidd_core::function::BooleanOperator;
-use oxidd_core::LevelNo;
+use oxidd_core::{LevelNo, VarNo};
 
-use crate::util::{assignment_t, c_char_to_str, FUNC_UNWRAP_MSG};
+use crate::util::{
+    assignment_t, op1, op2, op3, var_no_bool_pair_t, CFunction, CManagerRef, FUNC_UNWRAP_MSG,
+};
 
 /// Reference to a manager of a simple binary decision diagram (BDD)
 ///
 /// An instance of this type contributes to the manager's reference counter.
-/// Unless explicitly stated otherwise, functions taking oxidd_bdd_manager_t
+/// Unless explicitly stated otherwise, functions taking `oxidd_bdd_manager_t`
 /// instances as arguments do not take ownership of them (i.e., do not decrement
-/// the reference counter). Returned oxidd_bdd_manager_t instances must
-/// typically be deallocated using oxidd_bdd_manager_unref() to avoid memory
+/// the reference counter). Returned `oxidd_bdd_manager_t` instances must
+/// typically be deallocated using `oxidd_bdd_manager_unref()` to avoid memory
 /// leaks.
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -34,7 +36,9 @@ pub struct bdd_manager_t {
     _p: *const std::ffi::c_void,
 }
 
-impl bdd_manager_t {
+impl CManagerRef for bdd_manager_t {
+    type ManagerRef = BDDManagerRef;
+
     #[inline]
     unsafe fn get(self) -> ManuallyDrop<BDDManagerRef> {
         assert!(!self._p.is_null(), "the given manager is invalid");
@@ -46,16 +50,16 @@ impl bdd_manager_t {
 ///
 /// This is essentially an optional reference to a BDD node. In case an
 /// operation runs out of memory, it returns an invalid BDD function. Unless
-/// explicitly specified otherwise, an oxidd_bdd_t parameter may be invalid to
+/// explicitly specified otherwise, an `oxidd_bdd_t` parameter may be invalid to
 /// permit "chaining" operations without explicit checks in between. In this
 /// case, the returned BDD function is also invalid.
 ///
 /// An instance of this type contributes to both the reference count of the
 /// referenced node and the manager that stores this node. Unless explicitly
-/// stated otherwise, functions taking oxidd_bdd_t instances as arguments do not
-/// take ownership of them (i.e., do not decrement the reference counters).
-/// Returned oxidd_bdd_t instances must typically be deallocated using
-/// oxidd_bdd_unref() to avoid memory leaks.
+/// stated otherwise, functions taking `oxidd_bdd_t` instances as arguments do
+/// not take ownership of them (i.e., do not decrement the reference counters).
+/// Returned `oxidd_bdd_t` instances must typically be deallocated using
+/// `oxidd_bdd_unref()` to avoid memory leaks.
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct bdd_t {
@@ -66,7 +70,10 @@ pub struct bdd_t {
 }
 
 /// cbindgen:ignore
-impl bdd_t {
+impl CFunction for bdd_t {
+    type CManagerRef = bdd_manager_t;
+    type Function = BDDFunction;
+
     const INVALID: Self = Self {
         _p: std::ptr::null(),
         _i: 0,
@@ -123,32 +130,6 @@ pub struct bdd_pair_t {
     second: bdd_t,
 }
 
-#[inline]
-unsafe fn op1(f: bdd_t, op: impl FnOnce(&BDDFunction) -> AllocResult<BDDFunction>) -> bdd_t {
-    f.get().and_then(|f| op(&f)).into()
-}
-
-#[inline]
-unsafe fn op2(
-    lhs: bdd_t,
-    rhs: bdd_t,
-    op: impl FnOnce(&BDDFunction, &BDDFunction) -> AllocResult<BDDFunction>,
-) -> bdd_t {
-    lhs.get().and_then(|lhs| op(&lhs, &*rhs.get()?)).into()
-}
-
-#[inline]
-unsafe fn op3(
-    f1: bdd_t,
-    f2: bdd_t,
-    f3: bdd_t,
-    op: impl FnOnce(&BDDFunction, &BDDFunction, &BDDFunction) -> AllocResult<BDDFunction>,
-) -> bdd_t {
-    f1.get()
-        .and_then(|f1| op(&f1, &*f2.get()?, &*f3.get()?))
-        .into()
-}
-
 /// Create a new manager for a simple binary decision diagram (BDD)
 ///
 /// @param  inner_node_capacity   Maximum number of inner nodes. `0` means no
@@ -194,6 +175,29 @@ pub unsafe extern "C" fn oxidd_bdd_manager_unref(manager: bdd_manager_t) {
     }
 }
 
+/// Increment the reference counter of the node referenced by `f` as well as the
+/// manager storing the node
+///
+/// No-op if `f` is invalid.
+///
+/// @returns  `f`
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_ref(f: bdd_t) -> bdd_t {
+    std::mem::forget(f.get().clone());
+    f
+}
+
+/// Decrement the reference counter of the node referenced by `f` as well as the
+/// manager storing the node
+///
+/// No-op if `f` is invalid.
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_unref(f: bdd_t) {
+    if !f._p.is_null() {
+        drop(BDDFunction::from_raw(f._p, f._i));
+    }
+}
+
 /// Execute `callback(data)` in the worker thread pool of `manager`
 ///
 /// Recursive calls in the multithreaded apply algorithms are always executed
@@ -214,29 +218,6 @@ pub unsafe extern "C" fn oxidd_bdd_manager_run_in_worker_pool(
     crate::util::run_in_worker_pool(&*manager.get(), callback, data)
 }
 
-/// Increment the reference counter of the node referenced by `f` as well as
-/// the manager storing the node
-///
-/// No-op if `f` is invalid.
-///
-/// @returns  `f`
-#[no_mangle]
-pub unsafe extern "C" fn oxidd_bdd_ref(f: bdd_t) -> bdd_t {
-    std::mem::forget(f.get().clone());
-    f
-}
-
-/// Decrement the reference counter of the node referenced by `f` as well as
-/// the manager storing the node
-///
-/// No-op if `f` is invalid.
-#[no_mangle]
-pub unsafe extern "C" fn oxidd_bdd_unref(f: bdd_t) {
-    if !f._p.is_null() {
-        drop(BDDFunction::from_raw(f._p, f._i));
-    }
-}
-
 /// Get the manager that stores `f`
 ///
 /// @param  f  A *valid* BDD function
@@ -249,29 +230,375 @@ pub unsafe extern "C" fn oxidd_bdd_containing_manager(f: bdd_t) -> bdd_manager_t
     }
 }
 
-/// Get the number of inner nodes currently stored in `manager`
+/// Get the count of inner nodes stored in `manager`
 ///
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The number of inner nodes
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bdd_num_inner_nodes(manager: bdd_manager_t) -> usize {
+pub unsafe extern "C" fn oxidd_bdd_manager_num_inner_nodes(manager: bdd_manager_t) -> usize {
     manager
         .get()
         .with_manager_shared(|manager| manager.num_inner_nodes())
 }
+/// Deprecated alias for `oxidd_bdd_manager_num_inner_nodes()`
+///
+/// @deprecated  Use `oxidd_bdd_manager_num_inner_nodes()` instead
+#[deprecated(
+    since = "0.11.0",
+    note = "use oxidd_bdd_manager_num_inner_nodes instead"
+)]
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_num_inner_nodes(manager: bdd_manager_t) -> usize {
+    oxidd_bdd_manager_num_inner_nodes(manager)
+}
 
-/// Get a fresh variable, i.e., a function that is true if and only if the
-/// variable is true. This adds a new level to a decision diagram.
+/// Get an approximate count of inner nodes stored in `manager`
+///
+/// For concurrent implementations, it may be much less costly to determine an
+/// approximation of the inner node count that an accurate count
+/// (`oxidd_bdd_manager_num_inner_nodes()`).
+///
+/// Locking behavior: acquires the manager's lock for shared access.
+///
+/// @returns  An approximate count of inner nodes
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_manager_approx_num_inner_nodes(manager: bdd_manager_t) -> usize {
+    manager
+        .get()
+        .with_manager_shared(|manager| manager.approx_num_inner_nodes())
+}
+
+/// Get the number of variables stored in `manager`
+///
+/// Locking behavior: acquires the manager's lock for shared access.
+///
+/// @returns  The number of variables
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_manager_num_vars(manager: bdd_manager_t) -> VarNo {
+    manager
+        .get()
+        .with_manager_shared(|manager| manager.num_vars())
+}
+
+/// Get the number of named variables stored in `manager`
+///
+/// Locking behavior: acquires the manager's lock for shared access.
+///
+/// @returns  The number of named variables
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_manager_num_named_vars(manager: bdd_manager_t) -> VarNo {
+    manager
+        .get()
+        .with_manager_shared(|manager| manager.num_named_vars())
+}
+
+/// Add `additional` unnamed variables to the decision diagram in `manager`
+///
+/// The new variables are added at the bottom of the variable order. More
+/// precisely, the level number equals the variable number for each new
+/// variable.
+///
+/// Note that some algorithms may assume that the domain of a function
+/// represented by a decision diagram is just the set of all variables. In this
+/// regard, adding variables can change the semantics of decision diagram nodes.
 ///
 /// Locking behavior: acquires the manager's lock for exclusive access.
 ///
-/// @returns  The BDD function representing the variable.
+/// @param  manager     The manager
+/// @param  additional  Count of variables to add. Adding this to the current
+///                     number of variables (`oxidd_bdd_num_vars()`) must not
+///                     overflow.
+///
+/// @returns  The range of new variable numbers
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bdd_new_var(manager: bdd_manager_t) -> bdd_t {
+pub unsafe extern "C" fn oxidd_bdd_manager_add_vars(
+    manager: bdd_manager_t,
+    additional: VarNo,
+) -> crate::util::var_no_range_t {
     manager
         .get()
-        .with_manager_exclusive(|manager| BDDFunction::new_var(manager).into())
+        .with_manager_exclusive(|manager| manager.add_vars(additional))
+        .into()
+}
+
+/// Add named variables to the decision diagram in `manager`
+///
+/// This is a shorthand for `oxidd_bdd_add_vars()` and respective
+/// `oxidd_bdd_set_var_name()` calls. More details can be found there.
+///
+/// Locking behavior: acquires the manager's lock for exclusive access.
+///
+/// @param  manager  The manager
+/// @param  names    Pointer to an array of (at least) `count` variable names.
+///                  Each name must be a null-terminated UTF-8 string or `NULL`.
+///                  Both an empty string and `NULL` mean that the variable is
+///                  unnamed. Passing `NULL` as an argument is also allowed, in
+///                  which case this function is equivalent to
+///                  `oxidd_bdd_manager_add_vars()`.
+/// @param  count    Count of variables to add. Adding this to the current
+///                  number of variables (`oxidd_bdd_num_vars()`) must not
+///                  overflow.
+///
+/// @returns  Result indicating whether renaming was successful or which name is
+///           already in use. The `name` field is either `NULL` or one of the
+///           pointers of the `names` argument (i.e., it must not be deallocated
+///           separately).
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_manager_add_named_vars(
+    manager: bdd_manager_t,
+    names: *const *const c_char,
+    count: VarNo,
+) -> crate::util::duplicate_var_name_result_t {
+    manager.add_named_vars(names, count)
+}
+/// Add named variables to the decision diagram in `manager`
+///
+/// This is a more flexible alternative to `oxidd_bdd_manager_add_named_vars()`
+/// allowing a custom iterator.
+///
+/// Locking behavior: acquires the manager's lock for exclusive access.
+///
+/// @param  manager  The manager
+/// @param  iter     Iterator yielding strings. An empty string means that the
+///                  variable is unnamed.
+///                  The iterator must not yield so many strings that the
+///                  variable count (`oxidd_bdd_num_vars()`) overflows.
+///
+/// @returns  Result indicating whether renaming was successful or which name is
+///           already in use. The `name` field is either `NULL` or one of the
+///           pointers of the `names` argument (i.e., it must not be deallocated
+///           separately).
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_manager_add_named_vars_iter(
+    manager: bdd_manager_t,
+    iter: crate::util::str_iter_t,
+) -> crate::util::duplicate_var_name_result_t {
+    manager
+        .get()
+        .with_manager_exclusive(|manager| manager.add_named_vars(iter).into())
+}
+
+/// Get `var`'s name
+///
+/// Locking behavior: acquires the manager's lock for shared access.
+///
+/// @param  manager  The manager
+/// @param  var      The variable number. Must be less than the variable count
+///                  (`oxidd_bdd_manager_num_vars()`).
+///
+/// @returns  The name, or `NULL` for unnamed variables. The caller receives
+///           ownership of the allocation and should eventually deallocate the
+///           memory using `free()` (from libc).
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_manager_var_name(
+    manager: bdd_manager_t,
+    var: VarNo,
+) -> *const c_char {
+    manager
+        .get()
+        .with_manager_shared(|manager| crate::util::to_c_str(manager.var_name(var)))
+}
+#[cfg(feature = "cpp")]
+/// Get `var`'s name
+///
+/// Locking behavior: acquires the manager's lock for shared access.
+///
+/// @param  manager  The manager
+/// @param  var      The variable number. Must be less than the variable count
+///                  (`oxidd_bdd_manager_num_vars()`).
+/// @param  string   Pointer to a C++ `std::string`. The name will be assigned
+///                  to this string. For unnamed variables, the string will be
+///                  empty.
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_manager_var_name_cpp(
+    manager: bdd_manager_t,
+    var: VarNo,
+    string: *mut std::ffi::c_void,
+) {
+    manager.get().with_manager_shared(|manager| {
+        let name = manager.var_name(var);
+        crate::util::cpp_std_string_assign(string, name.as_ptr(), name.len());
+    })
+}
+
+/// Label `var` as `name`
+///
+/// An empty name means that the variable will become unnamed, and cannot be
+/// retrieved via `oxidd_bdd_manager_name_to_var()` anymore.
+///
+/// Note that variable names are required to be unique. If labelling `var` as
+/// `name` would violate uniqueness, then `var`'s name is left unchanged.
+///
+/// Locking behavior: acquires the manager's lock for exclusive access.
+///
+/// @param  manager  The manager
+/// @param  var      The variable number. Must be less than the variable count
+///                  (`oxidd_bdd_manager_num_vars()`).
+/// @param  name     A null-terminated UTF-8 string to be used as the variable
+///                  name.
+///                  May also be `NULL` to represent an empty string.
+///
+/// @returns  `(oxidd_var_no_t) -1` on success, otherwise the variable which
+///           already uses `name`
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_manager_set_var_name(
+    manager: bdd_manager_t,
+    var: VarNo,
+    name: *const c_char,
+) -> VarNo {
+    manager.set_var_name(var, &crate::util::c_char_to_str(name))
+}
+/// Label `var` as `name`
+///
+/// An empty name means that the variable will become unnamed, and cannot be
+/// retrieved via `oxidd_bdd_manager_name_to_var()` anymore.
+///
+/// Note that variable names are required to be unique. If labelling `var` as
+/// `name` would violate uniqueness, then `var`'s name is left unchanged.
+///
+/// Locking behavior: acquires the manager's lock for exclusive access.
+///
+/// @param  manager  The manager
+/// @param  var      The variable number. Must be less than the variable count
+///                  (`oxidd_bdd_manager_num_vars()`).
+/// @param  name     A UTF-8 string to be used as the variable name.
+///                  May also be `NULL` to represent an empty string.
+/// @param  len      Byte length of `name`
+///
+/// @returns  `(oxidd_var_no_t) -1` on success, otherwise the variable which
+///           already uses `name`
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_manager_set_var_name_with_len(
+    manager: bdd_manager_t,
+    var: VarNo,
+    name: *const c_char,
+    len: usize,
+) -> VarNo {
+    manager.set_var_name(var, &crate::util::c_char_array_to_str(name, len))
+}
+
+/// Get the variable number for the given variable name, if present
+///
+/// Note that you cannot retrieve unnamed variables. Calling this function with
+/// an empty name will always result in `(oxidd_var_no_t) -1`.
+///
+/// Locking behavior: acquires the manager's lock for shared access.
+///
+/// @param  manager  The manager
+/// @param  name     Null-terminated UTF-8 string to look up.
+///                  May also be `NULL` to represent an empty string.
+///
+/// @returns  The variable number if found, otherwise `(oxidd_var_no_t) -1`
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_manager_name_to_var(
+    manager: bdd_manager_t,
+    name: *const c_char,
+) -> VarNo {
+    let name = crate::util::c_char_to_str(name);
+    if name.is_empty() {
+        return VarNo::MAX;
+    }
+    manager
+        .get()
+        .with_manager_shared(|manager| manager.name_to_var(name).unwrap_or(VarNo::MAX))
+}
+/// Get the variable number for the given variable name, if present
+///
+/// Note that you cannot retrieve unnamed variables. Calling this function with
+/// an empty name will always result in `(oxidd_var_no_t) -1`.
+///
+/// Locking behavior: acquires the manager's lock for shared access.
+///
+/// @param  manager  The manager
+/// @param  name     UTF-8 string to look up.
+///                  May also be `NULL` to represent an empty string.
+/// @param  len      Byte length of `name`
+///
+/// @returns  The variable number if found, otherwise `(oxidd_var_no_t) -1`
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_manager_name_to_var_with_len(
+    manager: bdd_manager_t,
+    name: *const c_char,
+    len: usize,
+) -> VarNo {
+    let name = crate::util::c_char_array_to_str(name, len);
+    if name.is_empty() {
+        return VarNo::MAX;
+    }
+    manager
+        .get()
+        .with_manager_shared(|manager| manager.name_to_var(name).unwrap_or(VarNo::MAX))
+}
+
+/// Get the level for the given variable
+///
+/// Locking behavior: acquires the manager's lock for shared access.
+///
+/// @param  manager  The manager
+/// @param  var      The variable number. Must be less than the variable count
+///                  (`oxidd_bdd_manager_num_vars()`).
+///
+/// @returns  The corresponding level number
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_manager_var_to_level(
+    manager: bdd_manager_t,
+    var: VarNo,
+) -> LevelNo {
+    manager
+        .get()
+        .with_manager_shared(|manager| manager.var_to_level(var))
+}
+
+/// Get the variable for the given level
+///
+/// Locking behavior: acquires the manager's lock for shared access.
+///
+/// @param  manager  The manager
+/// @param  level    The level number. Must be less than the level/variable
+///                  count (`oxidd_bdd_manager_num_vars()`).
+///
+/// @returns  The corresponding variable number
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_manager_level_to_var(
+    manager: bdd_manager_t,
+    level: LevelNo,
+) -> VarNo {
+    manager
+        .get()
+        .with_manager_shared(|manager| manager.level_to_var(level))
+}
+
+/// Get the Boolean function that is true if and only if `var` is true
+///
+/// Locking behavior: acquires the manager's lock for shared access.
+///
+/// @param  manager  The manager
+/// @param  var      The variable number. Must be less than the variable count
+///                  (`oxidd_bdd_manager_num_vars()`).
+///
+/// @returns  The BDD function representing the variable.
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_var(manager: bdd_manager_t, var: VarNo) -> bdd_t {
+    manager
+        .get()
+        .with_manager_shared(|manager| BDDFunction::var(manager, var).into())
+}
+
+/// Get the Boolean function that is true if and only if `var` is false
+///
+/// Locking behavior: acquires the manager's lock for shared access.
+///
+/// @param  manager  The manager
+/// @param  var      The variable number. Must be less than the variable count
+///                  (`oxidd_bdd_manager_num_vars()`).
+///
+/// @returns  The BDD function representing the negated variable.
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_not_var(manager: bdd_manager_t, var: VarNo) -> bdd_t {
+    manager
+        .get()
+        .with_manager_shared(|manager| BDDFunction::not_var(manager, var).into())
 }
 
 /// Get the constant false BDD function `⊥`
@@ -305,12 +632,13 @@ pub unsafe extern "C" fn oxidd_bdd_true(manager: bdd_manager_t) -> bdd_t {
 /// f<sub>false</sub>(x₁, …, xₙ) = f(⊥, x₁, …, xₙ).
 ///
 /// Structurally, the cofactors are the children. If you only need one of the
-/// cofactors, then use oxidd_bdd_cofactor_true() or oxidd_bdd_cofactor_false().
-/// These functions are slightly more efficient then.
+/// cofactors, then use `oxidd_bdd_cofactor_true()` or
+/// `oxidd_bdd_cofactor_false()`. These functions are slightly more efficient
+/// then.
 ///
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
-/// Runtime complexity: O(1)
+/// Time complexity: O(1)
 ///
 /// @returns  The pair `f_true` and `f_false` if `f` is valid and references an
 ///           inner node, otherwise a pair of invalid functions.
@@ -332,13 +660,13 @@ pub unsafe extern "C" fn oxidd_bdd_cofactors(f: bdd_t) -> bdd_pair_t {
 
 /// Get the cofactor `f_true` of `f`
 ///
-/// This function is slightly more efficient than oxidd_bdd_cofactors() in case
-/// `f_false` is not needed. For a more detailed description, see
-/// oxidd_bdd_cofactors().
+/// This function is slightly more efficient than `oxidd_bdd_cofactors()` in
+/// case `f_false` is not needed. For a more detailed description, see
+/// `oxidd_bdd_cofactors()`.
 ///
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
-/// Runtime complexity: O(1)
+/// Time complexity: O(1)
 ///
 /// @returns  `f_true` if `f` is valid and references an inner node, otherwise
 ///           an invalid function.
@@ -353,13 +681,13 @@ pub unsafe extern "C" fn oxidd_bdd_cofactor_true(f: bdd_t) -> bdd_t {
 
 /// Get the cofactor `f_false` of `f`
 ///
-/// This function is slightly more efficient than oxidd_bdd_cofactors() in case
-/// `f_true` is not needed. For a more detailed description, see
-/// oxidd_bdd_cofactors().
+/// This function is slightly more efficient than `oxidd_bdd_cofactors()` in
+/// case `f_true` is not needed. For a more detailed description, see
+/// `oxidd_bdd_cofactors()`.
 ///
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
-/// Runtime complexity: O(1)
+/// Time complexity: O(1)
 ///
 /// @returns  `f_false` if `f` is valid and references an inner node, otherwise
 ///           an invalid function.
@@ -372,20 +700,47 @@ pub unsafe extern "C" fn oxidd_bdd_cofactor_false(f: bdd_t) -> bdd_t {
     }
 }
 
-/// Get the level of `f`'s underlying node (maximum value of `oxidd_level_no_t`
-/// for terminals and invalid functions)
+/// Get the level of `f`'s underlying node
 ///
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
-/// Runtime complexity: O(1)
+/// Time complexity: O(1)
 ///
-/// @returns  The level of the underlying node.
+/// @returns  The level of the underlying inner node, or `(oxidd_level_no_t) -1`
+///           for terminals and invalid functions.
 #[no_mangle]
-pub unsafe extern "C" fn oxidd_bdd_level(f: bdd_t) -> LevelNo {
+pub unsafe extern "C" fn oxidd_bdd_node_level(f: bdd_t) -> LevelNo {
     if let Ok(f) = f.get() {
         f.with_manager_shared(|manager, edge| manager.get_node(edge).level())
     } else {
         LevelNo::MAX
+    }
+}
+/// Deprecated alias for `oxidd_bdd_node_level()`
+///
+/// @deprecated  Use `oxidd_bdd_node_level()` instead
+#[deprecated(since = "0.11.0", note = "use oxidd_bdd_node_level instead")]
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_level(f: bdd_t) -> LevelNo {
+    oxidd_bdd_node_level(f)
+}
+/// Get the variable number for `f`'s underlying node
+///
+/// Locking behavior: acquires the manager's lock for shared access.
+///
+/// Time complexity: O(1)
+///
+/// @returns  The variable number of the underlying inner node, or
+///           `(oxidd_var_no_t) -1` for terminals and invalid functions.
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_node_var(f: bdd_t) -> VarNo {
+    if let Ok(f) = f.get() {
+        f.with_manager_shared(|manager, edge| match manager.get_node(edge) {
+            oxidd::Node::Inner(n) => manager.level_to_var(n.level()),
+            oxidd::Node::Terminal(_) => VarNo::MAX,
+        })
+    } else {
+        VarNo::MAX
     }
 }
 
@@ -479,7 +834,8 @@ pub unsafe extern "C" fn oxidd_bdd_imp_strict(lhs: bdd_t, rhs: bdd_t) -> bdd_t {
     op2(lhs, rhs, BDDFunction::imp_strict)
 }
 
-/// Compute the BDD for the conditional `cond ? then_case : else_case`
+/// Compute the BDD for the conditional “if `cond` then `then_case` else
+/// `else_case`”
 ///
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
@@ -494,8 +850,8 @@ pub unsafe extern "C" fn oxidd_bdd_ite(cond: bdd_t, then_case: bdd_t, else_case:
 /// The substitution is performed in a parallel fashion, e.g.:
 /// `(¬x ∧ ¬y)[x ↦ ¬x ∧ ¬y, y ↦ ⊥] = ¬(¬x ∧ ¬y) ∧ ¬⊥ = x ∨ y`
 ///
-/// To create the substitution, use oxidd_bdd_substitution_new() and
-/// oxidd_bdd_substitution_add_pair().
+/// To create the substitution, use `oxidd_bdd_substitution_new()` and
+/// `oxidd_bdd_substitution_add_pair()`.
 ///
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
@@ -514,7 +870,8 @@ pub unsafe extern "C" fn oxidd_bdd_substitute(
 
             f.substitute(crate::util::Subst {
                 id: subst.id,
-                pairs: &subst.pairs,
+                vars: &subst.vars,
+                replacements: &subst.replacements,
             })
         })
         .into()
@@ -528,23 +885,25 @@ pub unsafe extern "C" fn oxidd_bdd_substitute(
 /// identifier for the substitution.
 pub struct bdd_substitution_t {
     id: u32,
-    pairs: Vec<(BDDFunction, BDDFunction)>,
+    vars: Vec<VarNo>,
+    replacements: Vec<BDDFunction>,
 }
 
 /// Create a new substitution, capable of holding at least `capacity` pairs
 /// without reallocating
 ///
-/// Before applying the substitution via oxidd_bdd_substitute(), add all the
-/// pairs via oxidd_bdd_substitution_add_pair(). Do not add more pairs after the
-/// first oxidd_bdd_substitute() call with this substitution as it may lead to
-/// incorrect results.
+/// Before applying the substitution via `oxidd_bdd_substitute()`, add all the
+/// pairs via `oxidd_bdd_substitution_add_pair()`. Do not add more pairs after
+/// the first `oxidd_bdd_substitute()` call with this substitution as it may
+/// lead to incorrect results.
 ///
-/// @returns  The substitution, to be freed via oxidd_bdd_substitution_free()
+/// @returns  The substitution, to be freed via `oxidd_bdd_substitution_free()`
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_bdd_substitution_new(capacity: usize) -> *mut bdd_substitution_t {
     Box::into_raw(Box::new(bdd_substitution_t {
         id: oxidd_core::util::new_substitution_id(),
-        pairs: Vec::with_capacity(capacity),
+        vars: Vec::with_capacity(capacity),
+        replacements: Vec::with_capacity(capacity),
     }))
 }
 
@@ -553,7 +912,7 @@ pub unsafe extern "C" fn oxidd_bdd_substitution_new(capacity: usize) -> *mut bdd
 ///
 /// `var` and `replacement` must be valid BDD functions. This function
 /// increments the reference counters of both `var` and `replacement` (and they
-/// are decremented by oxidd_bdd_substitution_free()). The order in which the
+/// are decremented by `oxidd_bdd_substitution_free()`). The order in which the
 /// pairs are added is irrelevant.
 ///
 /// Note that adding a new pair after applying the substitution may lead to
@@ -561,17 +920,17 @@ pub unsafe extern "C" fn oxidd_bdd_substitution_new(capacity: usize) -> *mut bdd
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_bdd_substitution_add_pair(
     substitution: *mut bdd_substitution_t,
-    var: bdd_t,
+    var: VarNo,
     replacement: bdd_t,
 ) {
     assert!(!substitution.is_null(), "substitution must not be NULL");
-    let v = var.get().expect("the variable function is invalid");
     let r = replacement
         .get()
         .expect("the replacement function is invalid");
 
     let subst = &mut *substitution;
-    subst.pairs.push(((*v).clone(), (*r).clone()))
+    subst.vars.push(var);
+    subst.replacements.push((*r).clone());
 }
 
 /// Free the given substitution
@@ -630,9 +989,9 @@ pub unsafe extern "C" fn oxidd_bdd_forall(f: bdd_t, vars: bdd_t) -> bdd_t {
 pub unsafe extern "C" fn oxidd_bdd_exists(f: bdd_t, vars: bdd_t) -> bdd_t {
     op2(f, vars, BDDFunction::exists)
 }
-/// Deprecated alias for oxidd_bdd_exists()
+/// Deprecated alias for `oxidd_bdd_exists()`
 ///
-/// @deprecated  Use oxidd_bdd_exists() instead
+/// @deprecated  Use `oxidd_bdd_exists()` instead
 #[deprecated(since = "0.10.0", note = "use oxidd_bdd_exists instead")]
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_bdd_exist(f: bdd_t, var: bdd_t) -> bdd_t {
@@ -701,9 +1060,9 @@ pub unsafe extern "C" fn oxidd_bdd_apply_exists(
         .and_then(|f| f.apply_exists(op, &*rhs.get()?, &*vars.get()?))
         .into()
 }
-/// Deprecated alias for oxidd_bdd_apply_exists()
+/// Deprecated alias for `oxidd_bdd_apply_exists()`
 ///
-/// @deprecated  Use oxidd_bdd_apply_exists() instead
+/// @deprecated  Use `oxidd_bdd_apply_exists()` instead
 #[deprecated(since = "0.10.0", note = "use oxidd_bdd_apply_exists instead")]
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_bdd_apply_exist(
@@ -794,14 +1153,15 @@ pub unsafe extern "C" fn oxidd_bdd_sat_count_double(f: bdd_t, vars: LevelNo) -> 
 ///
 /// @param  f  A *valid* BDD function
 ///
-/// @returns  A satisfying assignment if there exists one. If `f` is
+/// @returns  A satisfying assignment if there exists one. The i-th element
+///           represents the value for the i-th variable. If `f` is
 ///           unsatisfiable, the data pointer is `NULL` and len is 0. In any
 ///           case, the assignment can be deallocated using
-///           oxidd_assignment_free().
+///           `oxidd_assignment_free()`.
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_bdd_pick_cube(f: bdd_t) -> assignment_t {
     let f = f.get().expect(FUNC_UNWRAP_MSG);
-    let res = f.pick_cube([], |_, _, _| false);
+    let res = f.pick_cube(|_, _, _| false);
     match res {
         Some(mut v) => {
             v.shrink_to_fit();
@@ -847,58 +1207,35 @@ pub unsafe extern "C" fn oxidd_bdd_pick_cube_dd_set(f: bdd_t, literal_set: bdd_t
     op2(f, literal_set, BDDFunction::pick_cube_dd_set)
 }
 
-/// Pair of a BDD function and a Boolean
-#[repr(C)]
-pub struct bdd_bool_pair_t {
-    /// The function
-    func: bdd_t,
-    /// The Boolean value
-    val: bool,
-}
-
 /// Evaluate the Boolean function `f` with arguments `args`
 ///
-/// `args` determines the valuation for all variables. Missing values are
-/// assumed to be false. The order is irrelevant. All elements must point to
-/// inner nodes.
+/// `args` determines the valuation for all variables in the function's domain.
+/// The order is irrelevant (except that if the valuation for a variable is
+/// given multiple times, the last value counts). Should there be a decision
+/// node for a variable not part of the domain, then `false` is used as the
+/// decision value.
 ///
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @param  f         A *valid* BDD function
-/// @param  args      Array of pairs `(variable, value)`, where `variable` is
-///                   valid
+/// @param  args      Array of pairs `(variable, value)`, where each variable
+///                   number must be less than the number of variables in the
+///                   manager
 /// @param  num_args  Length of `args`
 ///
 /// @returns  `f` evaluated with `args`
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_bdd_eval(
     f: bdd_t,
-    args: *const bdd_bool_pair_t,
+    args: *const var_no_bool_pair_t,
     num_args: usize,
 ) -> bool {
     let args = std::slice::from_raw_parts(args, num_args);
 
-    /// `Borrowed<T>` is represented like `T` and the compiler still checks that
-    /// `T: 'b`
-    #[inline(always)]
-    unsafe fn extend_lifetime<'b, T>(x: Borrowed<'_, T>) -> Borrowed<'b, T> {
-        std::mem::transmute(x)
-    }
-
     f.get()
         .expect(FUNC_UNWRAP_MSG)
         .with_manager_shared(|manager, edge| {
-            BDDFunction::eval_edge(
-                manager,
-                edge,
-                args.iter().map(|p| {
-                    let v = p.func.get().expect(FUNC_UNWRAP_MSG);
-                    let borrowed = v.as_edge(manager).borrowed();
-                    // SAFETY: We can extend the lifetime since the node is also referenced via
-                    // `args` which outlives even the `with_manager_shared` closure
-                    (extend_lifetime(borrowed), p.val)
-                }),
-            )
+            BDDFunction::eval_edge(manager, edge, args.iter().map(|p| (p.var, p.val)))
         })
 }
 
@@ -908,16 +1245,28 @@ pub unsafe extern "C" fn oxidd_bdd_eval(
 /// If a file at `path` exists, it will be truncated, otherwise a new one will
 /// be created.
 ///
-/// This function optionally allows to name BDD functions and variables. If
-/// `functions` and `function_names` are non-null and `num_function_names` is
-/// non-zero, then `functions` and `function_names` are assumed to point to an
-/// array of length (at least) `num_function_names`. In this case, the i-th
-/// function is labeled with the i-th function name. This similarly applies to
-/// `vars`, `var_names`, and `num_vars`.
+/// This function optionally allows to name BDD functions. If `functions` and
+/// `function_names` are non-null and `num_function_names` is non-zero, then
+/// `functions` and `function_names` are assumed to point to an array of length
+/// (at least) `num_function_names`. In this case, the i-th function is labeled
+/// with the i-th function name.
 ///
 /// The output may also include nodes that are not reachable from `functions`.
 ///
 /// Locking behavior: acquires the manager's lock for shared access.
+///
+/// @param  manager             The manager
+/// @param  path                Path at which the DOT file should be written
+/// @param  functions           Array of `num_function_names` BDD functions in
+///                             `manager` to be labeled.
+///                             May be `NULL`, in which case there will be no
+///                             labels.
+/// @param  function_names      Array of `num_function_names` null-terminated
+///                             UTF-8 strings, each labelling the respective
+///                             BDD function.
+///                             May be `NULL`, in which case there will be no
+///                             labels.
+/// @param  num_function_names  Count of functions to be labeled
 ///
 /// @returns  `true` on success
 #[no_mangle]
@@ -927,59 +1276,8 @@ pub unsafe extern "C" fn oxidd_bdd_manager_dump_all_dot_file(
     functions: *const bdd_t,
     function_names: *const *const c_char,
     num_function_names: usize,
-    vars: *const bdd_t,
-    var_names: *const *const c_char,
-    num_vars: usize,
 ) -> bool {
-    let Ok(path) = CStr::from_ptr(path).to_str() else {
-        return false;
-    };
-    let Ok(file) = std::fs::File::create(path) else {
-        return false;
-    };
-
-    manager.get().with_manager_shared(|manager| {
-        // collect the functions and their corresponding names
-        let (functions, function_names) =
-            if !functions.is_null() && !function_names.is_null() && num_function_names != 0 {
-                (
-                    std::slice::from_raw_parts(functions, num_function_names)
-                        .iter()
-                        .map(|g| g.get().expect("Invalid function BDD"))
-                        .collect(),
-                    std::slice::from_raw_parts(function_names, num_function_names),
-                )
-            } else {
-                (Vec::new(), [].as_slice())
-            };
-
-        // collect the variables and their corresponding names
-        let (vars, var_names) = if !vars.is_null() && !var_names.is_null() && num_vars != 0 {
-            (
-                std::slice::from_raw_parts(vars, num_vars)
-                    .iter()
-                    .map(|g| g.get().expect("Invalid variable BDD"))
-                    .collect(),
-                std::slice::from_raw_parts(var_names, num_vars),
-            )
-        } else {
-            (Vec::new(), [].as_slice())
-        };
-
-        oxidd_dump::dot::dump_all(
-            file,
-            manager,
-            vars.iter().zip(var_names).map(|(var, &name)| {
-                let f: &BDDFunction = var;
-                (f, c_char_to_str(name))
-            }),
-            functions.iter().zip(function_names).map(|(f, &name)| {
-                let f: &BDDFunction = f;
-                (f, c_char_to_str(name))
-            }),
-        )
-        .is_ok()
-    })
+    crate::util::dump_all_dot_file(manager, path, functions, function_names, num_function_names)
 }
 
 /// Print statistics to stderr

@@ -61,7 +61,7 @@ using_namespaces = []
 
 # A list of sys headers to #include (with angle brackets)
 # default: []
-sys_includes = ["stdlib.h", "stdint.h", "stdbool.h"]
+sys_includes = ["stdlib.h", "stdint.h", "stdbool.h", "oxidd/config.h"]
 
 # A list of headers to #include (with quotes)
 # default: []
@@ -191,8 +191,8 @@ usize_is_size_t = true
 # becomes
 # `#if defined(DEFINE_FREEBSD) ... #endif`
 [defines]
+"feature = cpp" = "OXIDD_ENABLE_CXX"
 #"target_os = freebsd" = "DEFINE_FREEBSD"
-#"feature = serde" = "DEFINE_SERDE"
 
 
 [export]
@@ -243,11 +243,12 @@ item_types = []
 # "MyType => capi_my_cool_type"
 #
 # default: false
-renaming_overrides_prefixing = false
+renaming_overrides_prefixing = true
 
 [export.rename]
-"BooleanOperator" = "boolean_operator"
-"LevelNo" = "level_no_t"
+"BooleanOperator" = "oxidd_boolean_operator"
+"LevelNo" = "oxidd_level_no_t"
+"VarNo" = "oxidd_var_no_t"
 
 # Configuration for name mangling
 [export.mangle]

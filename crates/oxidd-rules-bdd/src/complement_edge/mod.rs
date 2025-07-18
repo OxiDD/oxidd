@@ -433,33 +433,6 @@ pub fn print_stats() {
 
 // --- Utility Functions -------------------------------------------------------
 
-#[inline]
-fn is_var<M>(manager: &M, node: &M::InnerNode) -> bool
-where
-    M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag>,
-{
-    let t = node.child(0);
-    let e = node.child(1);
-    t.tag() == EdgeTag::None
-        && e.tag() == EdgeTag::Complemented
-        && manager.get_node(&t).is_any_terminal()
-        && manager.get_node(&e).is_any_terminal()
-}
-
-#[inline]
-#[track_caller]
-fn var_level<M>(manager: &M, e: Borrowed<M::Edge>) -> LevelNo
-where
-    M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag>,
-    M::InnerNode: HasLevel,
-{
-    let node = manager
-        .get_node(&e)
-        .expect_inner("Expected a variable but got a terminal node");
-    debug_assert!(is_var(manager, node));
-    node.level()
-}
-
 /// Add a literal for the variable at `level` to the cube `sub`. The literal
 /// has positive polarity iff `positive` is true. `level` must be above (less
 /// than) the level of the node referenced by `sub`.

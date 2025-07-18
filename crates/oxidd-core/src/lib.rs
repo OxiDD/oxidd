@@ -22,14 +22,14 @@
 
 use std::borrow::Borrow;
 use std::hash::Hash;
+use std::ops::Range;
 
-use util::AllocResult;
-use util::Borrowed;
-use util::DropWith;
-use util::NodeSet;
-
+pub mod error;
 pub mod function;
 pub mod util;
+
+use error::DuplicateVarName;
+use util::{AllocResult, Borrowed, DropWith, NodeSet};
 
 /// Manager reference
 ///
@@ -281,6 +281,12 @@ pub type LevelNo = u32;
 
 /// Atomic version of [`LevelNo`]
 pub type AtomicLevelNo = std::sync::atomic::AtomicU32;
+
+/// Variable number type
+pub type VarNo = LevelNo;
+
+/// Atomic version of [`VarNo`]
+pub type AtomicVarNo = AtomicLevelNo;
 
 /// Trait for nodes that have a level
 ///
@@ -610,14 +616,6 @@ impl<'a, M: Manager> Node<'a, M> {
 /// Every level view is associated with a manager and a level number.
 /// [`Manager::level()`] must always return the level view associated to this
 /// manager with the given level number.
-///
-/// If [`Manager::InnerNode`] implements [`HasLevel`], then the implementation
-/// must ensure that [`HasLevel::level()`] returns level number L for all nodes
-/// at the level view for L. Specifically this means that
-/// [`Manager::add_level()`] must check the newly created node. The invariant
-/// may only be broken by unsafe code (e.g. via [`HasLevel::set_level()`] and
-/// [`LevelView::swap()`]) and must be re-established when leaving the unsafe
-/// scope (be aware of panics!).
 pub unsafe trait Manager: Sized {
     /// Type of edge
     type Edge: Edge<Tag = Self::EdgeTag>;
@@ -704,20 +702,107 @@ pub unsafe trait Manager: Sized {
         self.num_inner_nodes()
     }
 
+    /// Get the number of variables
+    ///
+    /// Same as [`Self::num_levels()`]
+    #[must_use]
+    #[inline(always)]
+    fn num_vars(&self) -> VarNo {
+        self.num_levels()
+    }
+
     /// Get the number of levels
+    ///
+    /// Same as [`Self::num_vars()`]
     #[must_use]
     fn num_levels(&self) -> LevelNo;
 
-    /// Add a level with the given node to the unique table.
-    ///
-    /// To avoid unnecessary (un-)locking, this function takes a closure `f`
-    /// that creates a first node for the new level.
-    ///
-    /// Returns an edge for the newly created node.
-    ///
-    /// Panics if the new node's level does not match the provided level.
+    /// Get the number of named variables
     #[must_use]
-    fn add_level(&mut self, f: impl FnOnce(LevelNo) -> Self::InnerNode) -> AllocResult<Self::Edge>;
+    fn num_named_vars(&self) -> VarNo;
+
+    /// Add `additional` unnamed variables to the decision diagram
+    ///
+    /// The new variables are added at the bottom of the variable order. More
+    /// precisely, the level number equals the variable number for each new
+    /// variable.
+    ///
+    /// Note that some algorithms may assume that the domain of a function
+    /// represented by a decision diagram is just the set of all variables. In
+    /// this regard, adding variables can change the semantics of decision
+    /// diagram nodes.
+    ///
+    /// Returns the range of new variable numbers.
+    ///
+    /// Panics if [`self.num_vars()`][Self::num_vars()] plus `additional` is
+    /// greater than to [`VarNo::MAX`].
+    fn add_vars(&mut self, additional: VarNo) -> Range<VarNo>;
+
+    /// Add named variables to the decision diagram
+    ///
+    /// This is a shorthand for [`Self::add_vars()`] and respective
+    /// [`Self::set_var_name()`] calls. More details can be found there.
+    ///
+    /// Returns the range of new variable numbers on success. In case a name
+    /// is not unique (and not `""`), only the first variables with unique names
+    /// are added, and a [`DuplicateVarName`] error provides more details.
+    ///
+    /// Panics if there would be more than [`VarNo::MAX`] variables after adding
+    /// the ones from `names`.
+    fn add_named_vars<S: Into<String>>(
+        &mut self,
+        names: impl IntoIterator<Item = S>,
+    ) -> Result<Range<VarNo>, DuplicateVarName>;
+
+    /// Add named variables to the decision diagram
+    ///
+    /// This is a possibly specialized version of [`Self::add_named_vars()`].
+    ///
+    /// Panics if there would be more than [`VarNo::MAX`] variables after adding
+    /// the ones from `names`.
+    fn add_named_vars_from_map(
+        &mut self,
+        map: crate::util::VarNameMap,
+    ) -> Result<Range<VarNo>, DuplicateVarName> {
+        self.add_named_vars(map.into_names_iter())
+    }
+
+    /// Get `var`'s name
+    ///
+    /// For unnamed variables, this will return the empty string.
+    ///
+    /// Panics if `var` is greater or equal to the number of variables in this
+    /// manager.
+    fn var_name(&self, var: VarNo) -> &str;
+
+    /// Label `var` as `name`
+    ///
+    /// An empty name means that the variable will become unnamed, and cannot be
+    /// retrieved via [`Self::name_to_var()`] anymore.
+    ///
+    /// Returns a [`DuplicateVarName`] error if `name` is not unique (and not
+    /// `""`).
+    ///
+    /// Panics if `var` is greater or equal to the number of variables in this
+    /// manager.
+    fn set_var_name(&mut self, var: VarNo, name: impl Into<String>)
+        -> Result<(), DuplicateVarName>;
+
+    /// Get the variable number for the given variable name, if present
+    ///
+    /// Note that you cannot retrieve unnamed variables.
+    /// `manager.name_to_var("")` always returns `None`.
+    fn name_to_var(&self, name: impl AsRef<str>) -> Option<VarNo>;
+
+    /// Get the level for the given variable
+    ///
+    /// Panics if `level >= self.num_vars()`.
+    fn var_to_level(&self, var: VarNo) -> LevelNo;
+
+    /// Get the variable for the given level
+    ///
+    /// Panics if `level >= self.num_levels()`.
+    fn level_to_var(&self, level: LevelNo) -> VarNo;
 
     /// Get the level given by `no`
     ///

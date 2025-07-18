@@ -3,6 +3,8 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 
 pub mod rwlock;
+mod var_level_map;
+pub use var_level_map::VarLevelMap;
 
 /// Invariant lifetime
 pub type Invariant<'id> = PhantomData<fn(&'id ()) -> &'id ()>;

@@ -231,4 +231,5 @@ mod pointer {
 }
 
 pub use oxidd_rules_zbdd::make_node;
+#[allow(deprecated)]
 pub use oxidd_rules_zbdd::var_boolean_function;

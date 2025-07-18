@@ -1,6 +1,5 @@
 use std::cell::UnsafeCell;
-use std::hash::Hash;
-use std::hash::Hasher;
+use std::hash::{Hash, Hasher};
 use std::iter::FusedIterator;
 use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
@@ -9,17 +8,14 @@ use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 
 use crossbeam_utils::CachePadded;
 use linear_hashtbl::raw::RawTable;
-use oxidd_core::util::OutOfMemory;
-use parking_lot::Mutex;
-use parking_lot::MutexGuard;
+use parking_lot::{Mutex, MutexGuard};
 use rustc_hash::FxHasher;
 
+use oxidd_core::error::OutOfMemory;
 use oxidd_core::util::AllocResult;
 use oxidd_core::Tag;
 
-use crate::manager::Edge;
-use crate::manager::InnerNodeCons;
-use crate::manager::TerminalManagerCons;
+use crate::manager::{Edge, InnerNodeCons, TerminalManagerCons};
 use crate::node::NodeBase;
 
 use super::TerminalManager;

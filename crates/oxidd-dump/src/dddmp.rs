@@ -16,20 +16,10 @@ use std::str::FromStr;
 use bitvec::prelude::*;
 use is_sorted::IsSorted;
 
+use oxidd_core::error::OutOfMemory;
 use oxidd_core::function::Function;
-use oxidd_core::util::AllocResult;
-use oxidd_core::util::Borrowed;
-use oxidd_core::util::EdgeDropGuard;
-use oxidd_core::util::EdgeHashMap;
-use oxidd_core::util::EdgeVecDropGuard;
-use oxidd_core::util::OutOfMemory;
-use oxidd_core::DiagramRules;
-use oxidd_core::Edge;
-use oxidd_core::HasLevel;
-use oxidd_core::InnerNode;
-use oxidd_core::LevelNo;
-use oxidd_core::Manager;
-use oxidd_core::Node;
+use oxidd_core::util::{AllocResult, Borrowed, EdgeDropGuard, EdgeHashMap, EdgeVecDropGuard};
+use oxidd_core::{DiagramRules, Edge, HasLevel, InnerNode, LevelNo, Manager, Node, VarNo};
 
 // spell-checker:ignore varinfo,varnames,suppvar,suppvars,suppvarnames
 // spell-checker:ignore ordervar,orderedvarnames
@@ -515,12 +505,7 @@ impl<T: crate::AsciiDisplay> fmt::Display for Ascii<&T> {
 /// `ascii` indicates whether to use the ASCII or binary format.
 ///
 /// `dd_name` is the name that is output to the `.dd` field, unless it is an
-/// empty string.
-///
-/// `vars` are edges representing *all* variables in the decision diagram. The
-/// order does not matter. `var_names` are the names of these variables
-/// (optional). If given, there must be `vars.len()` names in the same order as
-/// in `vars`.
+/// empty string. It must be ASCII text without control characters.
 ///
 /// `functions` are edges pointing to the root nodes of functions.
 /// `function_names` are the corresponding names (optional). If given, there
@@ -528,14 +513,15 @@ impl<T: crate::AsciiDisplay> fmt::Display for Ascii<&T> {
 ///
 /// `is_complemented` is a function that returns whether an edge is
 /// complemented.
-#[allow(clippy::too_many_arguments)] // FIXME: use a builder pattern
+///
+/// Variable names will only be exported if all variables have a name (see
+/// [`Manager::var_name()`]). Like , `dd_name` variable names must be ASCII text
+/// without control characters.
 pub fn export<'id, F: Function>(
     mut file: impl io::Write,
     manager: &F::Manager<'id>,
     ascii: bool,
     dd_name: &str,
-    vars: &[&F],
-    var_names: Option<&[&str]>,
     functions: &[&F],
     function_names: Option<&[&str]>,
     is_complemented: impl Fn(&<F::Manager<'id> as Manager>::Edge) -> bool,
@@ -544,7 +530,6 @@ where
     <F::Manager<'id> as Manager>::InnerNode: HasLevel,
     <F::Manager<'id> as Manager>::Terminal: crate::AsciiDisplay,
 {
-    assert!(var_names.is_none() || var_names.unwrap().len() == vars.len());
     assert!(function_names.is_none() || function_names.unwrap().len() == functions.len());
     assert!(
         ascii || <F::Manager<'id> as Manager>::InnerNode::ARITY == 2,
@@ -569,10 +554,9 @@ where
     }
 
     let nvars = manager.num_levels();
-    assert!(nvars as usize == vars.len());
 
     // Map from the current level number to its internal var index (almost the
-    // same numbering, but vars not in the support removed, i.e. range
+    // same numbering, but vars not in the support removed, i.e., range
     // `0..nsuppvars`), and the nodes (as edges) contained at this level
     // together with their indexes.
     let mut node_map: Vec<(LevelNo, EdgeHashMap<F::Manager<'id>, usize, FxBuildHasher>)> =
@@ -620,7 +604,7 @@ where
         *idx = nnodes;
     }
     let nsuppvars = node_map.iter().filter(|(_, m)| !m.is_empty()).count() as u32;
-    let mut suppvars: BitVec = bitvec![0; nvars as usize];
+    let mut supp_levels: BitVec = bitvec![0; nvars as usize];
     let mut suppvar_idx = nsuppvars;
     // rev() -> assign node IDs bottom-up
     for (i, (var_idx, level)) in node_map.iter_mut().enumerate().rev() {
@@ -629,7 +613,7 @@ where
         }
         suppvar_idx -= 1;
         *var_idx = suppvar_idx;
-        suppvars.set(i, true);
+        supp_levels.set(i, true);
         for (_, idx) in level.iter_mut() {
             nnodes += 1; // pre increment -> numbers in range 1..=#nodes
             *idx = nnodes;
@@ -639,57 +623,44 @@ where
     writeln!(file, ".nvars {nvars}")?;
     writeln!(file, ".nsuppvars {nsuppvars}")?;
 
-    if let Some(var_names) = var_names {
-        let mut ordered_var_names = Vec::new();
-        ordered_var_names.resize(var_names.len(), "");
-
+    if manager.num_named_vars() == manager.num_vars() {
         write!(file, ".suppvarnames")?;
-        for (&f, &name) in vars.iter().zip(var_names) {
+        for var in 0..nvars {
+            let name = manager.var_name(var);
             let invalid =
                 |c: char| !c.is_ascii() || c.is_ascii_control() || c.is_ascii_whitespace();
-            if name.is_empty() || name.chars().any(invalid) {
+            if name.chars().any(invalid) {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
                     "variable name must be ASCII text without control characters and spaces",
                 ));
             }
-            let node = manager
-                .get_node(f.as_edge(manager))
-                .expect_inner("variables must not be terminals");
-            let level = node.level() as usize;
-            assert!(
-                ordered_var_names[level].is_empty(),
-                "variables must not be given multiple times"
-            );
-            ordered_var_names[level] = name;
-            if suppvars[level] {
+            if supp_levels[manager.var_to_level(var) as usize] {
                 write!(file, " {name}")?;
             }
         }
         writeln!(file)?;
 
         write!(file, ".orderedvarnames")?;
-        for name in ordered_var_names {
+        for level in 0..nvars {
+            let name = manager.var_name(manager.level_to_var(level));
             write!(file, " {name}")?;
         }
         writeln!(file)?;
     }
 
     write!(file, ".ids")?;
-    for (id, &f) in vars.iter().enumerate() {
-        let node = manager
-            .get_node(f.as_edge(manager))
-            .expect_inner("variables must not be terminals");
-        if suppvars[node.level() as usize] {
+    for id in 0..nvars {
+        if supp_levels[manager.var_to_level(id) as usize] {
             write!(file, " {id}")?;
         }
     }
     writeln!(file)?;
 
     write!(file, ".permids")?;
-    for &f in vars {
-        let level = manager.get_node(f.as_edge(manager)).unwrap_inner().level();
-        if suppvars[level as usize] {
+    for var in 0..nvars {
+        let level = manager.var_to_level(var);
+        if supp_levels[level as usize] {
             write!(file, " {level}")?;
         }
     }
@@ -924,9 +895,9 @@ fn decode_7bit(mut input: impl io::BufRead) -> io::Result<usize> {
 /// Important: there must not be any read/seek/... operations on `input` after
 /// reading `header` using [`DumpHeader::load()`].
 ///
-/// `support_vars` contains edges representing the variables in the true support
-/// of the decision diagram in `input`. The variables must be ordered by their
-/// current level (lower level numbers first).
+/// `support_vars` contains variables in the true support of the decision
+/// diagram in `input`. The variables must be ordered by their current level
+/// (lower level numbers first).
 ///
 /// `complement` is a function that returns the complemented edge for a given
 /// edge.
@@ -934,7 +905,7 @@ pub fn import<'id, F: Function>(
     mut input: impl io::BufRead,
     header: &DumpHeader,
     manager: &F::Manager<'id>,
-    support_vars: &[F],
+    support_vars: impl IntoIterator<Item = VarNo>,
     complement: impl Fn(
         &F::Manager<'id>,
         <F::Manager<'id> as Manager>::Edge,
@@ -944,20 +915,13 @@ where
     <F::Manager<'id> as Manager>::InnerNode: HasLevel,
     <F::Manager<'id> as Manager>::Terminal: FromStr,
 {
-    assert_eq!(support_vars.len(), header.ids.len());
-    let suppvar_level_map: Vec<LevelNo> = support_vars
-        .iter()
-        .map(|f| {
-            let nw = manager
-                .get_node(f.as_edge(manager))
-                .expect_inner("variables must not be terminals");
-            nw.level()
-        })
-        .collect();
-    assert!(IsSorted::is_sorted_by(
-        &mut suppvar_level_map.iter(),
-        cmp_strict
-    ));
+    let suppvar_level_map =
+        Vec::from_iter(support_vars.into_iter().map(|v| manager.var_to_level(v)));
+    assert_eq!(suppvar_level_map.len(), header.ids.len());
+    assert!(
+        IsSorted::is_sorted_by(&mut suppvar_level_map.iter(), cmp_strict),
+        "`support_vars` must be sorted by the variables' current level",
+    );
 
     let nodes = if header.ascii {
         import_ascii::<F::Manager<'id>>(
@@ -1286,7 +1250,9 @@ const fn trim(s: &[u8]) -> &[u8] {
     trim_end(trim_start(s))
 }
 
-/// Parse a list of strings
+/// Parse a list of space- or tab-separated  strings
+///
+/// All strings in the returned vector are guaranteed to be non-empty.
 fn parse_str_list(input: &[u8], capacity: usize) -> Vec<String> {
     let mut res = Vec::with_capacity(capacity);
     let mut start = 0;

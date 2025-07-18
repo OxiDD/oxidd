@@ -472,6 +472,8 @@ impl VarSet {
 
     /// Get the linear variable order, if present
     ///
+    /// The order is given as a mapping from positions to variables.
+    ///
     /// If [`self.order_tree()`][Self::order_tree] is not `None`, then it is the
     /// flattened tree.
     #[inline]
@@ -489,6 +491,12 @@ impl VarSet {
     #[inline]
     pub fn order_tree(&self) -> Option<&Tree<Var>> {
         self.order_tree.as_ref()
+    }
+
+    /// Returns `true` if any variable has a name
+    #[inline]
+    pub fn has_names(&self) -> bool {
+        !self.names.is_empty()
     }
 
     /// Get the name for variable `var`

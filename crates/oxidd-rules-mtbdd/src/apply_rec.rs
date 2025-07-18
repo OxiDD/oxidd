@@ -2,7 +2,7 @@
 
 use oxidd_core::function::{EdgeOfFunc, Function, NumberBase, PseudoBooleanFunction};
 use oxidd_core::util::{AllocResult, Borrowed, EdgeDropGuard};
-use oxidd_core::{ApplyCache, Edge, HasApplyCache, HasLevel, InnerNode, Manager, Tag};
+use oxidd_core::{ApplyCache, Edge, HasApplyCache, HasLevel, InnerNode, Manager, Tag, VarNo};
 use oxidd_derive::Function;
 use oxidd_dump::dot::DotStyle;
 
@@ -115,12 +115,17 @@ where
     }
 
     #[inline]
-    fn new_var<'id>(manager: &mut Self::Manager<'id>) -> AllocResult<Self> {
+    fn var_edge<'id>(
+        manager: &Self::Manager<'id>,
+        var: VarNo,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        let level = manager.var_to_level(var);
         let t = EdgeDropGuard::new(manager, manager.get_terminal(T::one())?);
         let e = EdgeDropGuard::new(manager, manager.get_terminal(T::zero())?);
-        let children = [t.into_edge(), e.into_edge()];
-        let edge = manager.add_level(|level| InnerNode::new(level, children))?;
-        Ok(Self::from_edge(manager, edge))
+        oxidd_core::LevelView::get_or_insert(
+            &mut manager.level(level),
+            InnerNode::new(level, [t.into_edge(), e.into_edge()]),
+        )
     }
 
     #[inline]

@@ -10,7 +10,7 @@ use crate::util::{
     AllocResult, Borrowed, EdgeDropGuard, NodeSet, OptBool, SatCountCache, SatCountNumber,
     Substitution,
 };
-use crate::{DiagramRules, Edge, InnerNode, LevelNo, Manager, ManagerRef, Node};
+use crate::{DiagramRules, Edge, InnerNode, LevelNo, Manager, ManagerRef, Node, VarNo};
 
 /// Shorthand to get the [`Edge`] type associated with a [`Function`]
 pub type EdgeOfFunc<'id, F> = <<F as Function>::Manager<'id> as Manager>::Edge;
@@ -18,6 +18,8 @@ pub type EdgeOfFunc<'id, F> = <<F as Function>::Manager<'id> as Manager>::Edge;
 pub type ETagOfFunc<'id, F> = <<F as Function>::Manager<'id> as Manager>::EdgeTag;
 /// Shorthand to get the [`InnerNode`] type associated with a [`Function`]
 pub type INodeOfFunc<'id, F> = <<F as Function>::Manager<'id> as Manager>::InnerNode;
+/// Shorthand to get the `Terminal` type associated with a [`Function`]
+pub type TermOfFunc<'id, F> = <<F as Function>::Manager<'id> as Manager>::Terminal;
 
 /// Function in a decision diagram
 ///
@@ -129,9 +131,10 @@ pub unsafe trait Function: Clone + Ord + Hash {
     /// /// Adds a binary node on a new level with children `f` and `g`
     /// fn foo<F: Function>(f: &F, g: &F) -> AllocResult<F> {
     ///     f.with_manager_exclusive(|manager, f_edge| {
+    ///         let level = manager.add_vars(1).start;
     ///         let fe = manager.clone_edge(f_edge);
     ///         let ge = manager.clone_edge(g.as_edge(manager));
-    ///         let he = manager.add_level(|level| InnerNode::new(level, [fe, ge]))?;
+    ///         let he = manager.level(level).get_or_insert(InnerNode::new(level, [fe, ge]))?;
     ///         Ok(F::from_edge(manager, he))
     ///     })
     /// }
@@ -175,7 +178,7 @@ pub trait FunctionSubst: Function {
     /// same manager.
     fn substitute<'a>(
         &'a self,
-        substitution: impl Substitution<Var = &'a Self, Replacement = &'a Self>,
+        substitution: impl Substitution<Replacement = &'a Self>,
     ) -> AllocResult<Self> {
         if substitution.pairs().len() == 0 {
             return Ok(self.clone());
@@ -186,9 +189,7 @@ pub trait FunctionSubst: Function {
                 Self::substitute_edge(
                     manager,
                     edge,
-                    substitution.map(|(v, r)| {
-                        (v.as_edge(manager).borrowed(), r.as_edge(manager).borrowed())
-                    }),
+                    substitution.map(|(v, r)| (v, r.as_edge(manager).borrowed())),
                 )?,
             ))
         })
@@ -199,10 +200,7 @@ pub trait FunctionSubst: Function {
     fn substitute_edge<'id, 'a>(
         manager: &'a Self::Manager<'id>,
         edge: &'a EdgeOfFunc<'id, Self>,
-        substitution: impl Substitution<
-            Var = Borrowed<'a, EdgeOfFunc<'id, Self>>,
-            Replacement = Borrowed<'a, EdgeOfFunc<'id, Self>>,
-        >,
+        substitution: impl Substitution<Replacement = Borrowed<'a, EdgeOfFunc<'id, Self>>>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 }
 
@@ -221,9 +219,21 @@ pub trait BooleanFunction: Function {
         Self::from_edge(manager, Self::t_edge(manager))
     }
 
-    /// Get a fresh variable, i.e., a function that is true if and only if the
-    /// variable is true. This adds a new level to a decision diagram.
-    fn new_var<'id>(manager: &mut Self::Manager<'id>) -> AllocResult<Self>;
+    /// Get the Boolean function that is true if and only if `var` is true
+    ///
+    /// Panics if `var` is greater or equal to the number of variables in
+    /// `manager`.
+    fn var<'id>(manager: &Self::Manager<'id>, var: VarNo) -> AllocResult<Self> {
+        Ok(Self::from_edge(manager, Self::var_edge(manager, var)?))
+    }
+
+    /// Get the Boolean function that is true if and only if `var` is false
+    ///
+    /// Panics if `var` is greater or equal to the number of variables in
+    /// `manager`.
+    fn not_var<'id>(manager: &Self::Manager<'id>, var: VarNo) -> AllocResult<Self> {
+        Ok(Self::from_edge(manager, Self::not_var_edge(manager, var)?))
+    }
 
     /// Get the cofactors `(f_true, f_false)` of `self`
     ///
@@ -401,6 +411,28 @@ pub trait BooleanFunction: Function {
     fn f_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self>;
     /// Get the always true function `⊤` as edge
     fn t_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self>;
+
+    /// Get the Boolean function (as edge) that is true if and only if `var` is
+    /// true
+    ///
+    /// Panics if `var` is greater or equal to the number of variables in
+    /// `manager`.
+    fn var_edge<'id>(
+        manager: &Self::Manager<'id>,
+        var: VarNo,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
+
+    /// Get the Boolean function (as edge) that is true if and only if `var` is
+    /// false
+    ///
+    /// Panics if `var` is greater or equal to the number of variables in
+    /// `manager`.
+    fn not_var_edge<'id>(
+        manager: &Self::Manager<'id>,
+        var: VarNo,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        Self::not_edge_owned(manager, Self::var_edge(manager, var)?)
+    }
 
     /// Get the cofactors `(f_true, f_false)` of `f`, edge version
     ///
@@ -614,13 +646,9 @@ pub trait BooleanFunction: Function {
     /// not necessarily a canonical minterm). For most (if not all) kinds of
     /// decision diagrams, cubes have at most one node per level.
     ///
-    /// `order` is a list of variables. If it is non-empty, it must contain as
-    /// many variables as there are levels.
-    ///
     /// Returns `None` if the function is false. Otherwise, this method returns
-    /// a vector where the i-th entry indicates if the i-th variable of `order`
-    /// (or the variable currently at the i-th level in case `order` is empty)
-    /// is true, false, or "don't care".
+    /// a vector where the i-th entry indicates whether the i-th variable is
+    /// true, false, or "don't care."
     ///
     /// Whenever a value for a variable needs to be chosen (i.e., it cannot be
     /// left as a don't care), `choice` is called to determine the valuation for
@@ -632,19 +660,11 @@ pub trait BooleanFunction: Function {
     /// provide more information, e.g., the [`NodeID`][Edge::node_id()].)
     ///
     /// Locking behavior: acquires the manager's lock for shared access.
-    fn pick_cube<'a, I: ExactSizeIterator<Item = &'a Self>>(
-        &'a self,
-        order: impl IntoIterator<IntoIter = I>,
+    fn pick_cube(
+        &self,
         choice: impl for<'id> FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>, LevelNo) -> bool,
     ) -> Option<Vec<OptBool>> {
-        self.with_manager_shared(|manager, edge| {
-            Self::pick_cube_edge(
-                manager,
-                edge,
-                order.into_iter().map(|f| f.as_edge(manager)),
-                choice,
-            )
-        })
+        self.with_manager_shared(|manager, edge| Self::pick_cube_edge(manager, edge, choice))
     }
 
     /// Pick a symbolic cube of this function, i.e., as decision diagram
@@ -704,14 +724,11 @@ pub trait BooleanFunction: Function {
     }
 
     /// `Edge` version of [`Self::pick_cube()`]
-    fn pick_cube_edge<'id, 'a, I>(
-        manager: &'a Self::Manager<'id>,
-        edge: &'a EdgeOfFunc<'id, Self>,
-        order: impl IntoIterator<IntoIter = I>,
+    fn pick_cube_edge<'id>(
+        manager: &Self::Manager<'id>,
+        edge: &EdgeOfFunc<'id, Self>,
         choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>, LevelNo) -> bool,
-    ) -> Option<Vec<OptBool>>
-    where
-        I: ExactSizeIterator<Item = &'a EdgeOfFunc<'id, Self>>;
+    ) -> Option<Vec<OptBool>>;
 
     /// `Edge` version of [`Self::pick_cube_dd()`]
     fn pick_cube_dd_edge<'id>(
@@ -730,50 +747,34 @@ pub trait BooleanFunction: Function {
     /// Pick a random cube of this function, where each cube has the same
     /// probability of being chosen
     ///
-    /// `order` is a list of variables. If it is non-empty, it must contain as
-    /// many variables as there are levels.
-    ///
     /// Returns `None` if the function is false. Otherwise, this method returns
-    /// a vector where the i-th entry indicates if the i-th variable of `order`
-    /// (or the variable currently at the i-th level in case `order` is empty)
-    /// is true, false, or "don't care". To obtain a total valuation from this
+    /// a vector where the i-th entry indicates whether the i-th variable is
+    /// true, false, or "don't care." To obtain a total valuation from this
     /// partial valuation, it suffices to pick true or false with probability ½.
     /// (Note that this function returns a partial valuation with n "don't
     /// cares" with a probability that is 2<sup>n</sup> as high as the
     /// probability of any total valuation.)
     ///
     /// Locking behavior: acquires the manager's lock for shared access.
-    fn pick_cube_uniform<'a, I: ExactSizeIterator<Item = &'a Self>, S: BuildHasher>(
-        &'a self,
-        order: impl IntoIterator<IntoIter = I>,
+    fn pick_cube_uniform<S: BuildHasher>(
+        &self,
         cache: &mut SatCountCache<F64, S>,
         rng: &mut crate::util::Rng,
     ) -> Option<Vec<OptBool>> {
         self.with_manager_shared(|manager, edge| {
-            Self::pick_cube_uniform_edge(
-                manager,
-                edge,
-                order.into_iter().map(|f| f.as_edge(manager)),
-                cache,
-                rng,
-            )
+            Self::pick_cube_uniform_edge(manager, edge, cache, rng)
         })
     }
 
     /// `Edge` version of [`Self::pick_cube_uniform()`]
-    fn pick_cube_uniform_edge<'id, 'a, I, S>(
-        manager: &'a Self::Manager<'id>,
-        edge: &'a EdgeOfFunc<'id, Self>,
-        order: impl IntoIterator<IntoIter = I>,
+    fn pick_cube_uniform_edge<'id, S: BuildHasher>(
+        manager: &Self::Manager<'id>,
+        edge: &EdgeOfFunc<'id, Self>,
         cache: &mut SatCountCache<F64, S>,
         rng: &mut crate::util::Rng,
-    ) -> Option<Vec<OptBool>>
-    where
-        I: ExactSizeIterator<Item = &'a EdgeOfFunc<'id, Self>>,
-        S: BuildHasher,
-    {
+    ) -> Option<Vec<OptBool>> {
         let vars = manager.num_levels();
-        Self::pick_cube_edge(manager, edge, order, |manager, edge, _| {
+        Self::pick_cube_edge(manager, edge, |manager, edge, _| {
             let tag = edge.tag();
             // `edge` is guaranteed to point to an inner node
             let node = manager.get_node(edge).unwrap_inner();
@@ -787,34 +788,34 @@ pub trait BooleanFunction: Function {
     /// Evaluate this Boolean function
     ///
     /// `args` consists of pairs `(variable, value)` and determines the
-    /// valuation for all variables. Missing values are assumed to be false.
-    /// However, note that the arguments may also determine the domain,
-    /// e.g., in case of ZBDDs. If values are specified multiple times, the
-    /// last one counts.
+    /// valuation for all variables in the function's domain. The order is
+    /// irrelevant (except that if the valuation for a variable is given
+    /// multiple times, the last value counts).
     ///
-    /// Note that all variables in `args` must be handles for the respective
-    /// decision diagram levels, i.e., the Boolean function representing the
-    /// variable in case of B(C)DDs, and a singleton set for ZBDDs.
+    /// Note that the domain of the Boolean function represented by `self` is
+    /// implicit and may comprise a strict subset of the variables in the
+    /// manager only. This method assumes that the function's domain
+    /// corresponds the set of variables in `args`. Remember that there are
+    /// kinds of decision diagrams (e.g., ZBDDs) where the domain plays a
+    /// crucial role for the interpretation of decision diagram nodes as a
+    /// Boolean function. On the other hand, extending the domain of, e.g.,
+    /// ordinary BDDs does not affect the evaluation result.
+    ///
+    /// Should there be a decision node for a variable not part of the domain,
+    /// then `false` is used as the decision value.
     ///
     /// Locking behavior: acquires the manager's lock for shared access.
     ///
-    /// Panics if any function in `args` refers to a terminal node.
-    fn eval<'a>(&'a self, args: impl IntoIterator<Item = (&'a Self, bool)>) -> bool {
-        self.with_manager_shared(|manager, edge| {
-            Self::eval_edge(
-                manager,
-                edge,
-                args.into_iter()
-                    .map(|(f, b)| (f.as_edge(manager).borrowed(), b)),
-            )
-        })
+    /// Panics if any variable number in `args` is larger that the
+    fn eval(&self, args: impl IntoIterator<Item = (VarNo, bool)>) -> bool {
+        self.with_manager_shared(|manager, edge| Self::eval_edge(manager, edge, args))
     }
 
     /// `Edge` version of [`Self::eval()`]
-    fn eval_edge<'id, 'a>(
-        manager: &'a Self::Manager<'id>,
-        edge: &'a EdgeOfFunc<'id, Self>,
-        args: impl IntoIterator<Item = (Borrowed<'a, EdgeOfFunc<'id, Self>>, bool)>,
+    fn eval_edge<'id>(
+        manager: &Self::Manager<'id>,
+        edge: &EdgeOfFunc<'id, Self>,
+        args: impl IntoIterator<Item = (VarNo, bool)>,
     ) -> bool;
 }
 
@@ -1202,15 +1203,15 @@ pub trait BooleanFunctionQuant: BooleanFunction {
 ///
 /// A Boolean function f: 𝔹ⁿ → 𝔹 may also be regarded as a set S ∈ 𝒫(𝔹ⁿ), where
 /// S = {v ∈ 𝔹ⁿ | f(v) = 1}. f is also called the characteristic function of S.
-/// We can even view a Boolean vector as a subset of some "Universe" U, so we
+/// We can even view a Boolean vector as a subset of some "universe" U, so we
 /// also have S ∈ 𝒫(𝒫(U)). For example, let U = {a, b, c}. The function a is
 /// the set of all sets containing a, {a, ab, abc, ac} (for the sake of
 /// readability, we write ab for the set {a, b}). Conversely, the set {a} is the
 /// function a ∧ ¬b ∧ ¬c.
 ///
-/// Counting the number of elements in a `BoolVecSet` is equivalent to counting
-/// the number of satisfying assignments of its characteristic function. Hence,
-/// you may use [`BooleanFunction::sat_count()`] for this task.
+/// Counting the number of elements in a `BooleanVecSet` is equivalent to
+/// counting the number of satisfying assignments of its characteristic
+/// function. Hence, you may use [`BooleanFunction::sat_count()`] for this task.
 ///
 /// The functions of this trait can be implemented efficiently for ZBDDs.
 ///
@@ -1218,11 +1219,16 @@ pub trait BooleanFunctionQuant: BooleanFunction {
 /// [`Self::union()`], [`Self::intsec()`], and [`Self::diff()`]. As an
 /// implementor, it suffices to implement the functions operating on edges.
 pub trait BooleanVecSet: Function {
-    /// Add a new variable to the manager and get the corresponding singleton
-    /// set
+    /// Get the singleton set {var}
     ///
-    /// This adds a new level to the decision diagram.
-    fn new_singleton<'id>(manager: &mut Self::Manager<'id>) -> AllocResult<Self>;
+    /// Panics if `var` is greater or equal to the number of variables in
+    /// `manager`.
+    fn singleton<'id>(manager: &Self::Manager<'id>, var: VarNo) -> AllocResult<Self> {
+        Ok(Self::from_edge(
+            manager,
+            Self::singleton_edge(manager, var)?,
+        ))
+    }
 
     /// Get the empty set ∅
     ///
@@ -1241,15 +1247,12 @@ pub trait BooleanVecSet: Function {
     /// Get the subset of `self` not containing `var`, formally
     /// `{s ∈ self | var ∉ s}`
     ///
-    /// `var` must be a singleton set, otherwise the result is unspecified.
-    /// Ideally, the implementation panics.
-    ///
     /// Locking behavior: acquires a shared manager lock
     ///
     /// Panics if `self` and `var` do not belong to the same manager.
-    fn subset0(&self, var: &Self) -> AllocResult<Self> {
+    fn subset0(&self, var: VarNo) -> AllocResult<Self> {
         self.with_manager_shared(|manager, set| {
-            let e = Self::subset0_edge(manager, set, var.as_edge(manager))?;
+            let e = Self::subset0_edge(manager, set, var)?;
             Ok(Self::from_edge(manager, e))
         })
     }
@@ -1257,15 +1260,12 @@ pub trait BooleanVecSet: Function {
     /// Get the subset of `self` containing `var` with `var` removed afterwards,
     /// formally `{s ∖ {var} | s ∈ self ∧ var ∈ s}`
     ///
-    /// `var` must be a singleton set, otherwise the result is unspecified.
-    /// Ideally, the implementation panics.
-    ///
     /// Locking behavior: acquires a shared manager lock
     ///
     /// Panics if `self` and `var` do not belong to the same manager.
-    fn subset1(&self, var: &Self) -> AllocResult<Self> {
+    fn subset1(&self, var: VarNo) -> AllocResult<Self> {
         self.with_manager_shared(|manager, set| {
-            let e = Self::subset1_edge(manager, set, var.as_edge(manager))?;
+            let e = Self::subset1_edge(manager, set, var)?;
             Ok(Self::from_edge(manager, e))
         })
     }
@@ -1274,15 +1274,12 @@ pub trait BooleanVecSet: Function {
     /// respect to `var`, formally
     /// `{s ∪ {var} | s ∈ self ∧ var ∉ s} ∪ {s ∖ {var} | s ∈ self ∧ var ∈ s}`
     ///
-    /// `var` must be a singleton set, otherwise the result is unspecified.
-    /// Ideally, the implementation panics.
-    ///
     /// Locking behavior: acquires a shared manager lock
     ///
     /// Panics if `self` and `var` do not belong to the same manager.
-    fn change(&self, var: &Self) -> AllocResult<Self> {
+    fn change(&self, var: VarNo) -> AllocResult<Self> {
         self.with_manager_shared(|manager, set| {
-            let e = Self::change_edge(manager, set, var.as_edge(manager))?;
+            let e = Self::change_edge(manager, set, var)?;
             Ok(Self::from_edge(manager, e))
         })
     }
@@ -1323,6 +1320,12 @@ pub trait BooleanVecSet: Function {
         })
     }
 
+    /// Edge version of [`Self::singleton()`]
+    fn singleton_edge<'id>(
+        manager: &Self::Manager<'id>,
+        var: VarNo,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
+
     /// Edge version of [`Self::empty()`]
     fn empty_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self>;
 
@@ -1333,21 +1336,21 @@ pub trait BooleanVecSet: Function {
     fn subset0_edge<'id>(
         manager: &Self::Manager<'id>,
         set: &EdgeOfFunc<'id, Self>,
-        var: &EdgeOfFunc<'id, Self>,
+        var: VarNo,
     ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
     /// Edge version of [`Self::subset1()`]
     fn subset1_edge<'id>(
         manager: &Self::Manager<'id>,
         set: &EdgeOfFunc<'id, Self>,
-        var: &EdgeOfFunc<'id, Self>,
+        var: VarNo,
     ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
     /// Edge version of [`Self::change()`]
     fn change_edge<'id>(
         manager: &Self::Manager<'id>,
         set: &EdgeOfFunc<'id, Self>,
-        var: &EdgeOfFunc<'id, Self>,
+        var: VarNo,
     ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
     /// Compute the union `lhs ∪ rhs`, edge version
@@ -1429,9 +1432,13 @@ pub trait PseudoBooleanFunction: Function {
         ))
     }
 
-    /// Get a fresh variable, i.e. a function that is 1 if the variable is true
-    /// and 0 otherwise. This adds a new level to a decision diagram.
-    fn new_var<'id>(manager: &mut Self::Manager<'id>) -> AllocResult<Self>;
+    /// Get the function that is 1 if the variable is true and 0 otherwise.
+    ///
+    /// Panics if `var` is greater or equal to the number of variables in
+    /// `manager`.
+    fn var<'id>(manager: &Self::Manager<'id>, var: VarNo) -> AllocResult<Self> {
+        Ok(Self::from_edge(manager, Self::var_edge(manager, var)?))
+    }
 
     /// Point-wise addition `self + rhs`
     ///
@@ -1505,48 +1512,54 @@ pub trait PseudoBooleanFunction: Function {
         })
     }
 
-    /// Get the constant `value`, edge version
+    /// Edge version of [`Self::constant()`]
     fn constant_edge<'id>(
         manager: &Self::Manager<'id>,
         value: Self::Number,
     ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
-    /// Point-wise addition `self + rhs`, edge version
+    /// Edge version of [`Self::var()`]
+    fn var_edge<'id>(
+        manager: &Self::Manager<'id>,
+        var: VarNo,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
+
+    /// Edge version of [`Self::add()`]
     fn add_edge<'id>(
         manager: &Self::Manager<'id>,
         lhs: &EdgeOfFunc<'id, Self>,
         rhs: &EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
-    /// Point-wise subtraction `self - rhs`, edge version
+    /// Edge version of [`Self::sub()`]
     fn sub_edge<'id>(
         manager: &Self::Manager<'id>,
         lhs: &EdgeOfFunc<'id, Self>,
         rhs: &EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
-    /// Point-wise multiplication `self * rhs`, edge version
+    /// Edge version of [`Self::mul()`]
     fn mul_edge<'id>(
         manager: &Self::Manager<'id>,
         lhs: &EdgeOfFunc<'id, Self>,
         rhs: &EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
-    /// Point-wise division `self / rhs`, edge version
+    /// Edge version of [`Self::div()`]
     fn div_edge<'id>(
         manager: &Self::Manager<'id>,
         lhs: &EdgeOfFunc<'id, Self>,
         rhs: &EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
-    /// Point-wise minimum `min(self, rhs)`, edge version
+    /// Edge version of [`Self::min()`]
     fn min_edge<'id>(
         manager: &Self::Manager<'id>,
         lhs: &EdgeOfFunc<'id, Self>,
         rhs: &EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
-    /// Point-wise maximum `max(self, rhs)`, edge version
+    /// Edge version of [`Self::max()`]
     fn max_edge<'id>(
         manager: &Self::Manager<'id>,
         lhs: &EdgeOfFunc<'id, Self>,
@@ -1644,10 +1657,14 @@ pub trait TVLFunction: Function {
         })
     }
 
-    /// Get a fresh variable, i.e. a function that is true if the variable is
-    /// true, false if the variable is false, and undefined otherwise. This adds
-    /// a new level to a decision diagram.
-    fn new_var<'id>(manager: &mut Self::Manager<'id>) -> AllocResult<Self>;
+    /// Get the function that is true if the variable is true, false if the
+    /// variable is false, and undefined otherwise
+    ///
+    /// Panics if `var` is greater or equal to the number of variables in
+    /// `manager`.
+    fn var<'id>(manager: &Self::Manager<'id>, var: VarNo) -> AllocResult<Self> {
+        Ok(Self::from_edge(manager, Self::var_edge(manager, var)?))
+    }
 
     /// Compute the negation `¬self`
     ///
@@ -1811,6 +1828,12 @@ pub trait TVLFunction: Function {
             cofactor(tag, node, 2),
         )
     }
+
+    /// Edge version of [`Self::var()`]
+    fn var_edge<'id>(
+        manager: &Self::Manager<'id>,
+        var: VarNo,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
     /// Compute the negation `¬edge`, edge version
     #[must_use]

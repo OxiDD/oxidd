@@ -13,7 +13,7 @@ The following is a very simple example of using OxiDD's BDDs:
    manager = BDDManager(100_000_000, 1_000_000, 1)
 
    # Create 10 variables
-   x = [manager.new_var() for i in range(10)]
+   x = [manager.var(i) for i in manager.add_vars(10)]
 
    assert (x[0] & x[1]).satisfiable()
    assert (x[0] & ~x[0]).sat_count_float(10) == 0

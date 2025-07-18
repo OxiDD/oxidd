@@ -19,6 +19,7 @@ use std::hash::{BuildHasherDefault, Hasher};
 use std::iter::FusedIterator;
 use std::marker::PhantomData;
 use std::mem::{align_of, ManuallyDrop};
+use std::ops::Range;
 use std::ptr::{addr_of, addr_of_mut, NonNull};
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering::{Acquire, Relaxed};
@@ -32,16 +33,16 @@ use parking_lot::Mutex;
 use parking_lot::MutexGuard;
 use rustc_hash::FxHasher;
 
+use oxidd_core::error::DuplicateVarName;
 use oxidd_core::function::EdgeOfFunc;
-use oxidd_core::util::{AbortOnDrop, AllocResult, Borrowed, DropWith};
+use oxidd_core::util::{AbortOnDrop, AllocResult, Borrowed, DropWith, OnDrop, VarNameMap};
 use oxidd_core::{
-    DiagramRules, HasApplyCache, InnerNode, LevelNo, ManagerEventSubscriber, Node, Tag,
+    DiagramRules, HasApplyCache, InnerNode, LevelNo, ManagerEventSubscriber, Node, Tag, VarNo,
 };
 
 use crate::node::NodeBase;
 use crate::terminal_manager::TerminalManager;
-use crate::util::rwlock::RwLock;
-use crate::util::{Invariant, TryLock};
+use crate::util::{rwlock::RwLock, Invariant, TryLock, VarLevelMap};
 
 // === Type Constructors =======================================================
 
@@ -159,6 +160,8 @@ where
     MD: DropWith<Edge<'id, N, ET, TAG_BITS>>,
 {
     unique_table: Vec<Mutex<LevelViewSet<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>>>,
+    var_level_map: VarLevelMap,
+    var_name_map: VarNameMap,
     data: ManuallyDrop<MD>,
     store_inner: *const StoreInner<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>,
     gc_count: AtomicU64,
@@ -275,6 +278,8 @@ where
     unsafe fn init_in(slot: *mut Self, data: MD, threads: u32) {
         let data = RwLock::new(Manager {
             unique_table: Vec::new(),
+            var_level_map: VarLevelMap::new(),
+            var_name_map: VarNameMap::new(),
             data: ManuallyDrop::new(data),
             store_inner: slot,
             gc_count: AtomicU64::new(0),
@@ -766,39 +771,146 @@ where
         self.store().num_items()
     }
 
-    #[inline]
+    #[inline(always)]
     fn num_levels(&self) -> LevelNo {
         self.unique_table.len() as LevelNo
     }
 
-    fn add_level(&mut self, f: impl FnOnce(LevelNo) -> Self::InnerNode) -> AllocResult<Self::Edge> {
-        let level_no = self.unique_table.len() as LevelNo;
-        assert!(level_no != LevelNo::MAX, "too many levels");
+    #[inline(always)]
+    fn num_named_vars(&self) -> VarNo {
+        self.var_name_map.named_count() as VarNo
+    }
+
+    #[track_caller]
+    fn add_vars(&mut self, additional: VarNo) -> Range<VarNo> {
+        let len = self.unique_table.len() as VarNo;
+        let new_len = len.checked_add(additional).expect("too many variables");
+        let range = len as VarNo..new_len as VarNo;
 
         self.data.pre_reorder(self);
         MD::pre_reorder_mut(self);
 
-        let node = f(level_no);
-        node.assert_level_matches(level_no);
+        self.unique_table
+            .resize_with(new_len as usize, || Mutex::new(LevelViewSet::default()));
+        self.var_level_map.extend(additional);
+        self.var_name_map.add_unnamed(additional);
 
-        let [e1, e2] = add_node(self.store(), node)?;
-
-        let mut set = LevelViewSet::default();
-        // SAFETY: edges in unique table entries are always untagged and point
-        // to inner nodes
-        set.insert(e1);
-        self.unique_table.push(Mutex::new(set));
+        debug_assert_eq!(new_len as usize, self.unique_table.len());
+        debug_assert_eq!(new_len as usize, self.var_level_map.len());
+        debug_assert_eq!(new_len, self.var_name_map.len());
 
         self.data.post_reorder(self);
         MD::post_reorder_mut(self);
 
-        Ok(e2)
+        range
     }
 
+    #[track_caller]
+    fn add_named_vars<S: Into<String>>(
+        &mut self,
+        names: impl IntoIterator<Item = S>,
+    ) -> Result<Range<VarNo>, DuplicateVarName> {
+        self.data.pre_reorder(self);
+        MD::pre_reorder_mut(self);
+
+        let len = self.var_name_map.len();
+        let mut on_drop = OnDrop::new(self, |this| {
+            // This block is executed whenever `on_drop` gets dropped, i.e.,
+            // even if iterating over `names` or converting a value of type `S`
+            // into a `String` panics. This way, we ensure that the manager's
+            // state remains consistent.
+            let new_len = this.var_name_map.len();
+            this.unique_table
+                .resize_with(new_len as usize, || Mutex::new(LevelViewSet::default()));
+            this.var_level_map.extend((new_len - len) as VarNo);
+
+            debug_assert_eq!(new_len as usize, this.unique_table.len());
+            debug_assert_eq!(new_len as usize, this.var_level_map.len());
+            debug_assert_eq!(new_len, this.var_name_map.len());
+
+            this.data.post_reorder(this);
+            MD::post_reorder_mut(this);
+        });
+
+        let mut names = names.into_iter();
+        let range = on_drop.data_mut().var_name_map.add_named(names.by_ref())?;
+        drop(on_drop);
+
+        if names.next().is_some() {
+            // important: panic only after dropping `on_drop`
+            panic!("too many variables");
+        }
+
+        Ok(range)
+    }
+
+    #[track_caller]
+    fn add_named_vars_from_map(
+        &mut self,
+        map: VarNameMap,
+    ) -> Result<Range<VarNo>, DuplicateVarName> {
+        if !self.var_name_map.is_empty() {
+            return self.add_named_vars(map.into_names_iter());
+        }
+
+        self.data.pre_reorder(self);
+        MD::pre_reorder_mut(self);
+
+        let n = map.len();
+        self.unique_table
+            .resize_with(n as usize, || Mutex::new(LevelViewSet::default()));
+        self.var_level_map.extend(n);
+        self.var_name_map = map;
+
+        debug_assert_eq!(n as usize, self.unique_table.len());
+        debug_assert_eq!(n as usize, self.var_level_map.len());
+        debug_assert_eq!(n, self.var_name_map.len());
+
+        self.data.post_reorder(self);
+        MD::post_reorder_mut(self);
+
+        Ok(0..n)
+    }
+
+    #[track_caller]
+    #[inline(always)]
+    fn var_name(&self, var: VarNo) -> &str {
+        self.var_name_map.var_name(var)
+    }
+
+    #[track_caller]
+    #[inline(always)]
+    fn set_var_name(
+        &mut self,
+        var: VarNo,
+        name: impl Into<String>,
+    ) -> Result<(), DuplicateVarName> {
+        self.var_name_map.set_var_name(var, name)
+    }
+
+    #[inline(always)]
+    fn name_to_var(&self, name: impl AsRef<str>) -> Option<VarNo> {
+        self.var_name_map.name_to_var(name)
+    }
+
+    #[track_caller]
+    #[inline(always)]
+    fn var_to_level(&self, var: VarNo) -> LevelNo {
+        self.var_level_map.var_to_level(var)
+    }
+
+    #[track_caller]
+    #[inline(always)]
+    fn level_to_var(&self, level: LevelNo) -> VarNo {
+        self.var_level_map.level_to_var(level)
+    }
+
+    #[track_caller]
     #[inline(always)]
     fn level(&self, no: LevelNo) -> Self::LevelView<'_> {
         LevelView {
             store: self.store(),
+            var_level_map: &self.var_level_map,
             allow_node_removal: self.reorder_gc_prepared,
             level: no,
             set: self.unique_table[no as usize].lock(),
@@ -809,6 +921,7 @@ where
     fn levels(&self) -> Self::LevelIterator<'_> {
         LevelIter {
             store: self.store(),
+            var_level_map: &self.var_level_map,
             allow_node_removal: self.reorder_gc_prepared,
             level_front: 0,
             level_back: self.unique_table.len() as LevelNo,
@@ -930,6 +1043,7 @@ where
     MD: DropWith<Edge<'id, N, ET, TAG_BITS>>,
 {
     store: &'a ArcSlab<N, StoreInner<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>, PAGE_SIZE>,
+    var_level_map: &'a VarLevelMap,
     /// SAFETY invariant: If set to true, a garbage collection is prepared
     /// (i.e., there are no "weak" edges).
     allow_node_removal: bool,
@@ -956,6 +1070,7 @@ where
         self.level_front += 1;
         Some(LevelView {
             store: self.store,
+            var_level_map: self.var_level_map,
             allow_node_removal: self.allow_node_removal,
             level,
             set: mutex.lock(),
@@ -1011,6 +1126,7 @@ where
         self.level_back -= 1;
         Some(LevelView {
             store: self.store,
+            var_level_map: self.var_level_map,
             allow_node_removal: self.allow_node_removal,
             level: self.level_back,
             set: mutex.lock(),
@@ -1298,6 +1414,7 @@ where
     MD: DropWith<Edge<'id, N, ET, TAG_BITS>>,
 {
     store: &'a ArcSlab<N, StoreInner<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>, PAGE_SIZE>,
+    var_level_map: &'a VarLevelMap,
     /// SAFETY invariant: If set to true, a garbage collection is prepared
     /// (i.e., there are no "weak" edges).
     allow_node_removal: bool,
@@ -1388,6 +1505,7 @@ where
 
     #[inline]
     unsafe fn swap(&mut self, other: &mut Self) {
+        self.var_level_map.swap_levels(self.level, other.level);
         std::mem::swap(&mut *self.set, &mut *other.set);
     }
 
@@ -1400,6 +1518,7 @@ where
     fn take(&mut self) -> Self::Taken {
         TakenLevelView {
             store: self.store,
+            var_level_map: self.var_level_map,
             allow_node_removal: self.allow_node_removal,
             level: self.level,
             set: std::mem::take(&mut self.set),
@@ -1416,6 +1535,7 @@ where
     MD: DropWith<Edge<'id, N, ET, TAG_BITS>>,
 {
     store: &'a ArcSlab<N, StoreInner<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>, PAGE_SIZE>,
+    var_level_map: &'a VarLevelMap,
     /// SAFETY invariant: If set to true, a garbage collection is prepared
     /// (i.e., there are no "weak" edges).
     ///
@@ -1512,6 +1632,7 @@ where
 
     #[inline]
     unsafe fn swap(&mut self, other: &mut Self) {
+        self.var_level_map.swap_levels(self.level, other.level);
         std::mem::swap(&mut self.set, &mut other.set);
     }
 
@@ -1520,10 +1641,11 @@ where
         self.set.iter()
     }
 
-    #[inline]
+    #[inline(always)]
     fn take(&mut self) -> Self::Taken {
         TakenLevelView {
             store: self.store,
+            var_level_map: self.var_level_map,
             allow_node_removal: self.allow_node_removal,
             level: self.level,
             set: std::mem::take(&mut self.set),
