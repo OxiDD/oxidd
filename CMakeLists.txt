@@ -6,7 +6,7 @@ project(OxiDD
     HOMEPAGE_URL "https://oxidd.net"
     LANGUAGES CXX)
 
-# spell-checker:ignore INCLUDEDIR,STREQUAL,LIBDIR
+# spell-checker:ignore CTEST,INCLUDEDIR,STREQUAL,LIBDIR
 
 # --- Settings -----------------------------------------------------------------
 
@@ -78,8 +78,8 @@ target_include_directories(oxidd_ffi_c INTERFACE
 
 add_library(oxidd ALIAS oxidd_ffi_c)
 
-add_subdirectory(bindings/cpp/tests EXCLUDE_FROM_ALL)
-
+set(CMAKE_SKIP_TEST_ALL_DEPENDENCY FALSE)
+add_subdirectory(bindings/cpp/tests)
 
 # --- Installation -------------------------------------------------------------
 

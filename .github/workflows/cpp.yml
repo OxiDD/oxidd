@@ -107,7 +107,7 @@ jobs:
       run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=${{ matrix.compiler.cc }} -DCMAKE_CXX_COMPILER=${{ matrix.compiler.cxx }}
     - name: Build
       working-directory: build
-      run: make boolean-function
+      run: make all
     - name: Run Tests
       working-directory: build
       run: make test
@@ -125,7 +125,7 @@ jobs:
       run: cmake -B build -DCMAKE_BUILD_TYPE=Debug
     - name: Build
       working-directory: build
-      run: make boolean-function
+      run: make all
     - name: Run Tests
       working-directory: build
       run: make test
@@ -140,7 +140,7 @@ jobs:
       - name: CMake Configure
         run: cmake -B build
       - name: Build
-        run: cmake --build build --target bindings/cpp/tests/boolean-function
+        run: cmake --build build
       - name: Run Tests
         working-directory: build
         run: ctest -C Debug
