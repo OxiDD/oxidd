@@ -1,0 +1,14 @@
+name: Install cbindgen
+author: OxiDD Contributors
+description: Install cbindgen from GitHub releases (Linux only)
+runs:
+  using: composite
+  steps:
+    - name: Install
+      shell: sh
+      run: |
+        cbindgen_path="$(dirname $(which cargo))/cbindgen"
+        url=https://github.com/mozilla/cbindgen/releases/download/0.29.0/cbindgen-ubuntu22.04
+        test "$(uname -m)" = "aarch64" && url="${url}-aarch64"
+        curl --output "$cbindgen_path" "$url" --location --silent --show-error --fail --retry 5
+        chmod +x "$cbindgen_path"

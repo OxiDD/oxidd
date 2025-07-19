@@ -1,6 +1,6 @@
 name: Rust
 
-# spell-checker:ignore awalsh,dtolnay,pkgs
+# spell-checker:ignore dtolnay,pkgs
 
 on:
   push:
@@ -22,10 +22,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - uses: awalsh128/cache-apt-pkgs-action@latest
-      with:
-        packages: cbindgen
-        version: 1.0
+    - uses: ./.github/actions/install-cbindgen-linux
     - uses: dtolnay/rust-toolchain@master
       with:
         toolchain: nightly
@@ -46,10 +43,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - uses: awalsh128/cache-apt-pkgs-action@latest
-      with:
-        packages: cbindgen
-        version: 1.0
+    - uses: ./.github/actions/install-cbindgen-linux
     - uses: dtolnay/rust-toolchain@master
       with:
         toolchain: ${{ matrix.toolchain }}

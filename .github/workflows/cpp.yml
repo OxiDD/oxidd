@@ -1,6 +1,6 @@
 name: C++
 
-# spell-checker:ignore awalsh,ctest,DCMAKE,doxyindexer,pkgs
+# spell-checker:ignore ctest,DCMAKE,doxyindexer,pkgs
 
 on:
   push:
@@ -34,10 +34,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - uses: awalsh128/cache-apt-pkgs-action@latest
-      with:
-        packages: cbindgen
-        version: 1.0
+    - uses: ./.github/actions/install-cbindgen-linux
     - uses: actions/cache@v4
       id: cache-doxygen
       with:
@@ -99,10 +96,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - uses: awalsh128/cache-apt-pkgs-action@latest
-      with:
-        packages: cbindgen
-        version: 1.0
+    - uses: ./.github/actions/install-cbindgen-linux
     - name: CMake Configure
       run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=${{ matrix.compiler.cc }} -DCMAKE_CXX_COMPILER=${{ matrix.compiler.cxx }}
     - name: Build
