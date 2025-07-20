@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-24.04
 
     env:
-      doxygen_version: 1.14.0
+      doxygen_version: 1.13.2
 
     permissions:
       pull-requests: write
