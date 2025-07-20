@@ -41,7 +41,7 @@ Issues = "https://github.com/OxiDD/oxidd/issues"
 
 [project.optional-dependencies]
 # spell-checker:ignore pydata
-dev = ["mypy ~= 1.13", "pyright ~= 1.1", "ruff ~= 0.7"]
+dev = ["mypy == 1.16.1", "pyright ~= 1.1", "ruff ~= 0.12"]
 docs = ["Sphinx ~= 8.0", "pydata-sphinx-theme ~= 0.16"]
 test = ["pytest >= 8.0"]
 
