@@ -1,56 +1,57 @@
-//! Three-valued [`BitVec`]
+//! Three-valued bit vector
 
 use std::fmt::{self, Write};
 
-use bitvec::vec::BitVec;
-
-/// Three-valued [`BitVec`]
+/// Three-valued bit vector
 #[derive(Clone, PartialEq, Eq, Default)]
-pub struct TVBitVec(BitVec);
+pub struct TVBitVec {
+    data: Vec<u32>,
+    len: usize,
+}
 
 impl TVBitVec {
+    const BITS_PER_ELEMENT: usize = 2;
+    const ELEMENTS_PER_BLOCK: usize = u32::BITS as usize / Self::BITS_PER_ELEMENT;
+
     #[allow(unused)] // used in tests
     pub fn new() -> Self {
         Default::default()
     }
 
     pub fn with_capacity(len: usize) -> Self {
-        Self(BitVec::with_capacity(2 * len))
+        Self {
+            data: Vec::with_capacity(len.div_ceil(Self::ELEMENTS_PER_BLOCK)),
+            len,
+        }
     }
 
     pub fn push(&mut self, value: Option<bool>) {
-        let (b0, b1) = match value {
-            Some(v) => (true, v),
-            None => (false, false),
+        let bits = match value {
+            Some(v) => 0b10 | v as u32,
+            None => 0b00,
         };
-        self.0.push(b0);
-        self.0.push(b1);
-    }
-
-    #[allow(unused)]
-    pub fn set(&mut self, index: usize, value: Option<bool>) {
-        let (b0, b1) = match value {
-            Some(v) => (true, v),
-            None => (false, false),
-        };
-        self.0.set(2 * index, b0);
-        self.0.set(2 * index + 1, b1);
-    }
-}
-
-impl std::ops::Index<usize> for TVBitVec {
-    type Output = Option<bool>;
-
-    #[inline]
-    fn index(&self, index: usize) -> &Self::Output {
-        if self.0[2 * index] {
-            if self.0[2 * index + 1] {
-                &Some(true)
-            } else {
-                &Some(false)
-            }
+        let offset = self.data.len() % Self::ELEMENTS_PER_BLOCK;
+        if offset == 0 {
+            self.data.push(bits);
         } else {
-            &None
+            let block = self.data.last_mut().unwrap();
+            *block |= bits << (Self::BITS_PER_ELEMENT * offset);
+        }
+    }
+
+    pub fn at(&self, index: usize) -> Option<bool> {
+        if index >= self.len {
+            panic!(
+                "index out of bounds: the len is {} but the index is {index}",
+                self.len
+            );
+        }
+        let block = self.data[index / Self::ELEMENTS_PER_BLOCK];
+        let i = index % Self::ELEMENTS_PER_BLOCK;
+        if block & (1 << (i + 1)) != 0 {
+            Some(block & (1 << i) != 0)
+        } else {
+            None
         }
     }
 }
@@ -77,13 +78,17 @@ impl fmt::Debug for OptBoolDebug {
 impl fmt::Debug for TVBitVec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list()
-            .entries(self.0.chunks(2).map(|bits| {
-                if !bits[0] {
-                    OptBoolDebug::None
-                } else if bits[1] {
-                    OptBoolDebug::True
+            .entries((0..self.len).map(|i| {
+                let block = self.data[i / Self::ELEMENTS_PER_BLOCK];
+                let i = i % Self::ELEMENTS_PER_BLOCK;
+                if block & (1 << (i + 1)) != 0 {
+                    if block & (1 << i) != 0 {
+                        OptBoolDebug::True
+                    } else {
+                        OptBoolDebug::False
+                    }
                 } else {
-                    OptBoolDebug::False
+                    OptBoolDebug::None
                 }
             }))
             .finish()

@@ -33,8 +33,8 @@ linear-hashtbl.workspace = true
 # https://github.com/rust-lang/rustc-hash/issues/45
 rustc-hash = "1.1"
 
-# bit vectors
-bitvec = "1"
+# bit sets
+fixedbitset = "0.5.7"
 
 # thread pool
 rayon = "1.10"

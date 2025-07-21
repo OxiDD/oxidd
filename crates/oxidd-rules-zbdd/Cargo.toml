@@ -19,8 +19,8 @@ oxidd-derive.workspace = true
 # for implementing `DotStyle`
 oxidd-dump.workspace = true
 
-# bit vectors for memory efficient valuations
-bitvec = "1"
+# bit set for memory efficient valuations
+fixedbitset = "0.5.7"
 
 # document feature flags
 document-features = "0.2"

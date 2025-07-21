@@ -25,10 +25,10 @@
 use std::collections::hash_map::Entry;
 use std::fmt::{self, Write};
 
-use bitvec::{slice::BitSlice, vec::BitVec};
 use bumpalo::boxed::Box as BumpBox;
 use bumpalo::collections::Vec as BumpVec;
 use derive_builder::Builder;
+use fixedbitset::FixedBitSet;
 use rustc_hash::FxHashMap;
 
 pub mod aiger;
@@ -830,16 +830,16 @@ impl Circuit {
     /// Returns [`None`] if acyclic, or [`Some(literal)`][Some] if `literal`
     /// depends on itself.
     pub fn find_cycle(&self) -> Option<Literal> {
-        let mut visited = BitVec::repeat(false, self.gates.len() * 2);
+        let mut visited = FixedBitSet::with_capacity(self.gates.len() * 2);
 
-        fn inner(gates: &GateVec2d, visited: &mut BitSlice, index: usize) -> bool {
-            if visited[index * 2 + 1] {
+        fn inner(gates: &GateVec2d, visited: &mut FixedBitSet, index: usize) -> bool {
+            if visited.contains(index * 2 + 1) {
                 return false; // finished
             }
-            if visited[index * 2] {
+            if visited.contains(index * 2) {
                 return true; // discovered -> cycle
             }
-            visited.set(index * 2, true); // discovered
+            visited.insert(index * 2); // discovered
 
             for &l in gates.get(index).unwrap().1 {
                 if l.is_gate() && inner(gates, visited, l.0 >> Literal::VAR_LSB) {
@@ -847,12 +847,12 @@ impl Circuit {
                 }
             }
 
-            visited.set(index * 2 + 1, true); // finished
+            visited.insert(index * 2 + 1); // finished
             false
         }
 
         for index in 0..self.gates.len() {
-            if inner(&self.gates, visited.as_mut_bitslice(), index) {
+            if inner(&self.gates, &mut visited, index) {
                 return Some(Literal::from_gate(false, index));
             }
         }
@@ -883,8 +883,8 @@ impl Circuit {
     /// The additional `Vec<Literal>` maps the gates of `self` to literals valid
     /// in the simplified circuit.
     ///
-    /// Hint: [`Problem::simplify`] uses this method to simplify the circuit and
-    /// also maps the
+    /// Hint: [`Problem::simplify()`] uses this method to simplify the circuit
+    /// and also maps the literals in the problem details accordingly.
     pub fn simplify(
         &self,
         roots: impl IntoIterator<Item = Literal>,
@@ -894,7 +894,9 @@ impl Circuit {
         let bump = bumpalo::Bump::new();
         let mut gate_map = Vec::new();
         gate_map.resize(self.gates.len(), Literal::UNDEF);
-        let mut input_set = BitVec::repeat(false, 2 * (self.gates.len() + self.inputs.len()));
+        // Whether a non-constant literal (hence 2 * vars) is an input to the
+        // current gate
+        let mut input_set = FixedBitSet::with_capacity(2 * (self.gates.len() + self.inputs.len()));
         let mut new_gates: GateVec2d =
             GateVec2d::with_capacity(self.gates.len(), self.gates.all_elements().len());
         let mut unique_map = FxHashMap::default();
@@ -904,7 +906,7 @@ impl Circuit {
             bump: &'a bumpalo::Bump,
             gates: &GateVec2d,
             index: usize,
-            input_set: &mut BitSlice,
+            input_set: &mut FixedBitSet,
             unique_map: &mut FxHashMap<(GateKind, BumpBox<'a, [Literal]>), Literal>,
             new_gates: &mut GateVec2d,
             gate_map: &mut [Literal],
@@ -1006,10 +1008,10 @@ impl Circuit {
                 match kind {
                     GateKind::And | GateKind::Or => {
                         for (i, &l) in inputs.iter().enumerate() {
-                            if input_set[map(!l)] {
+                            if input_set.contains(map(!l)) {
                                 // found complement literal -> clear `input_set` and return ⊥/⊤
                                 for &l in &inputs[..i] {
-                                    input_set.set(map(l), false);
+                                    input_set.remove(map(l));
                                 }
                                 gate_map[index] = match kind {
                                     GateKind::And => Literal::FALSE, // x ∧ ¬x ≡ ⊥
@@ -1018,21 +1020,21 @@ impl Circuit {
                                 };
                                 return Ok(());
                             }
-                            input_set.set(map(l), true);
+                            input_set.insert(map(l));
                         }
                     }
                     GateKind::Xor => {
                         for &l in &inputs {
                             let i = map(l);
-                            input_set.set(i, !input_set[i]);
+                            input_set.toggle(i);
                         }
                     }
                 }
 
                 inputs.retain(|&l| {
                     let i = map(l);
-                    if input_set[i] {
-                        input_set.set(i, false);
+                    if input_set.contains(i) {
+                        input_set.remove(i);
                         true
                     } else {
                         false
@@ -1216,7 +1218,7 @@ impl AIGERDetails {
     /// Get the initial value of latch `i`
     #[inline(always)]
     pub fn latch_init_value(&self, i: usize) -> Option<bool> {
-        self.latch_init_values[i]
+        self.latch_init_values.at(i)
     }
 
     /// Get the output definitions

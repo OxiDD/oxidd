@@ -13,7 +13,7 @@ use std::fmt;
 use std::io;
 use std::str::FromStr;
 
-use bitvec::prelude::*;
+use fixedbitset::FixedBitSet;
 use is_sorted::IsSorted;
 
 use oxidd_core::error::OutOfMemory;
@@ -244,7 +244,7 @@ impl DumpHeader {
             }
         }
 
-        let mut permids_present: BitVec = bitvec![0; header.nvars as usize];
+        let mut permids_present = FixedBitSet::with_capacity(header.nvars as usize);
         for &id in &header.permids {
             if id >= header.nvars {
                 return err(format!(
@@ -252,10 +252,10 @@ impl DumpHeader {
                     header.nvars,
                 ));
             }
-            if permids_present[id as usize] {
+            if permids_present.contains(id as usize) {
                 return err(format!("variable ({id}) occurs twice in .permids"));
             }
-            permids_present.set(id as usize, true);
+            permids_present.insert(id as usize);
         }
 
         if !orderedvarnames.is_empty() && orderedvarnames.len() != header.nvars as usize {
@@ -604,7 +604,7 @@ where
         *idx = nnodes;
     }
     let nsuppvars = node_map.iter().filter(|(_, m)| !m.is_empty()).count() as u32;
-    let mut supp_levels: BitVec = bitvec![0; nvars as usize];
+    let mut supp_levels = FixedBitSet::with_capacity(nvars as usize);
     let mut suppvar_idx = nsuppvars;
     // rev() -> assign node IDs bottom-up
     for (i, (var_idx, level)) in node_map.iter_mut().enumerate().rev() {
@@ -613,7 +613,7 @@ where
         }
         suppvar_idx -= 1;
         *var_idx = suppvar_idx;
-        supp_levels.set(i, true);
+        supp_levels.insert(i);
         for (_, idx) in level.iter_mut() {
             nnodes += 1; // pre increment -> numbers in range 1..=#nodes
             *idx = nnodes;
@@ -635,7 +635,7 @@ where
                     "variable name must be ASCII text without control characters and spaces",
                 ));
             }
-            if supp_levels[manager.var_to_level(var) as usize] {
+            if supp_levels.contains(manager.var_to_level(var) as usize) {
                 write!(file, " {name}")?;
             }
         }
@@ -651,7 +651,7 @@ where
 
     write!(file, ".ids")?;
     for id in 0..nvars {
-        if supp_levels[manager.var_to_level(id) as usize] {
+        if supp_levels.contains(manager.var_to_level(id) as usize) {
             write!(file, " {id}")?;
         }
     }
@@ -660,7 +660,7 @@ where
     write!(file, ".permids")?;
     for var in 0..nvars {
         let level = manager.var_to_level(var);
-        if supp_levels[level as usize] {
+        if supp_levels.contains(level as usize) {
             write!(file, " {level}")?;
         }
     }

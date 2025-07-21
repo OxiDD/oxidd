@@ -3,7 +3,7 @@
 use std::mem::size_of;
 use std::ops::{Range, RangeFrom, RangeTo};
 
-use bitvec::vec::BitVec;
+use fixedbitset::FixedBitSet;
 use nom::branch::alt;
 use nom::character::complete::{char, line_ending, not_line_ending, space0, space1, u64};
 use nom::combinator::{consumed, cut, eof, value};
@@ -276,7 +276,7 @@ where
 {
     fn rec<'a, E: ParseError<&'a [u8]> + ContextError<&'a [u8]>>(
         input: &'a [u8],
-        inserted: &mut BitVec,
+        inserted: &mut FixedBitSet,
         buffer: &mut Vec<Tree<usize>>,
         one_based: bool,
         unique_leaves: bool,
@@ -296,12 +296,10 @@ where
                 }
                 n -= 1;
             }
-            if inserted.len() <= n {
-                inserted.resize(n + 1, false);
-            } else if unique_leaves && inserted[n] {
+            if unique_leaves && n < inserted.len() && inserted.contains(n) {
                 return fail(span, "second occurrence in tree");
             }
-            inserted.set(n, true);
+            inserted.grow_and_insert(n);
             return Ok((input, (Tree::Leaf(n), (span, n))));
         }
 
@@ -345,7 +343,7 @@ where
     }
 
     move |input| {
-        let mut inserted = BitVec::new();
+        let mut inserted = FixedBitSet::new();
         let (input, _) = space0(input)?;
         let (input, (span, res)) = cut(consumed(|input| {
             rec(
@@ -356,7 +354,7 @@ where
                 unique_leaves,
             )
         }))(input)?;
-        if let Some(n) = inserted.first_zero() {
+        if let Some(n) = inserted.zeroes().next() {
             return Err(Err::Failure(E::from_external_error(
                 span,
                 ErrorKind::Fail,

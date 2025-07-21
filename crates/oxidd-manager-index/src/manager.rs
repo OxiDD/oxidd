@@ -25,9 +25,9 @@ use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering::{Acquire, Relaxed};
 use std::sync::Arc;
 
-use bitvec::vec::BitVec;
 use crossbeam_utils::CachePadded;
 use derive_where::derive_where;
+use fixedbitset::FixedBitSet;
 use linear_hashtbl::raw::RawTable;
 use parking_lot::{Condvar, Mutex, MutexGuard};
 use rustc_hash::FxHasher;
@@ -2491,14 +2491,14 @@ unsafe impl<
 
 // === NodeSet =================================================================
 
-/// Node set implementation using a [bit vector][BitVec]
+/// Node set implementation using a [bit set][FixedBitSet]
 ///
 /// Since nodes are stored in an array, we can use a single bit vector. This
 /// reduces space consumption dramatically and increases the performance.
 #[derive(Default, Clone, PartialEq, Eq)]
 pub struct NodeSet {
     len: usize,
-    data: BitVec,
+    data: FixedBitSet,
 }
 
 impl<'id, N: NodeBase, ET: Tag> oxidd_core::util::NodeSet<Edge<'id, N, ET>> for NodeSet {
@@ -2510,14 +2510,10 @@ impl<'id, N: NodeBase, ET: Tag> oxidd_core::util::NodeSet<Edge<'id, N, ET>> for 
     #[inline]
     fn insert(&mut self, edge: &Edge<'id, N, ET>) -> bool {
         let index = edge.node_id();
-        if index < self.data.len() {
-            if self.data[index] {
-                return false;
-            }
-        } else {
-            self.data.resize((index + 1).next_power_of_two(), false);
+        if index < self.data.len() && self.data.contains(index) {
+            return false;
         }
-        self.data.set(index, true);
+        self.data.grow_and_insert(index);
         self.len += 1;
         true
     }
@@ -2526,7 +2522,7 @@ impl<'id, N: NodeBase, ET: Tag> oxidd_core::util::NodeSet<Edge<'id, N, ET>> for 
     fn contains(&self, edge: &Edge<'id, N, ET>) -> bool {
         let index = edge.node_id();
         if index < self.data.len() {
-            self.data[index]
+            self.data.contains(index)
         } else {
             false
         }
@@ -2535,9 +2531,9 @@ impl<'id, N: NodeBase, ET: Tag> oxidd_core::util::NodeSet<Edge<'id, N, ET>> for 
     #[inline]
     fn remove(&mut self, edge: &Edge<'id, N, ET>) -> bool {
         let index = edge.node_id();
-        if index < self.data.len() && self.data[index] {
+        if index < self.data.len() && self.data.contains(index) {
             self.len -= 1;
-            self.data.set(index, false);
+            self.data.remove(index);
             true
         } else {
             false

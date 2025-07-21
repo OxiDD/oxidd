@@ -2,7 +2,7 @@
 
 use std::hash::BuildHasher;
 
-use bitvec::vec::BitVec;
+use fixedbitset::FixedBitSet;
 
 use oxidd_core::{
     function::{
@@ -1379,14 +1379,20 @@ where
         edge: &EdgeOfFunc<'id, Self>,
         args: impl IntoIterator<Item = (VarNo, bool)>,
     ) -> bool {
-        let mut values = BitVec::new();
-        values.resize(manager.num_levels() as usize, false);
+        // `choices` maps levels to the child number to choose
+        let mut choices = FixedBitSet::with_capacity(manager.num_levels() as usize);
         for (var, val) in args {
-            values.set(manager.var_to_level(var) as usize, val);
+            // child 0 is "then"/"true", hence the negation
+            choices.set(manager.var_to_level(var) as usize, !val);
         }
 
         #[inline] // this function is tail-recursive
-        fn inner<M>(manager: &M, edge: Borrowed<M::Edge>, complement: bool, values: BitVec) -> bool
+        fn inner<M>(
+            manager: &M,
+            edge: Borrowed<M::Edge>,
+            complement: bool,
+            choices: &FixedBitSet,
+        ) -> bool
         where
             M: Manager<EdgeTag = EdgeTag>,
             M::InnerNode: HasLevel,
@@ -1394,14 +1400,14 @@ where
             let complement = complement ^ (edge.tag() == EdgeTag::Complemented);
             match manager.get_node(&edge) {
                 Node::Inner(node) => {
-                    let edge = node.child((!values[node.level() as usize]) as usize);
-                    inner(manager, edge, complement, values)
+                    let edge = node.child(choices.contains(node.level() as usize) as usize);
+                    inner(manager, edge, complement, choices)
                 }
                 Node::Terminal(_) => !complement,
             }
         }
 
-        inner(manager, edge.borrowed(), false, values)
+        inner(manager, edge.borrowed(), false, &choices)
     }
 }
 

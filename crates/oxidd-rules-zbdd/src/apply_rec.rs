@@ -4,8 +4,7 @@ use std::borrow::Borrow;
 use std::cmp::{Ord, Ordering};
 use std::hash::{BuildHasher, Hash};
 
-use bitvec::slice::BitSlice;
-use bitvec::vec::BitVec;
+use fixedbitset::FixedBitSet;
 
 use oxidd_core::VarNo;
 use oxidd_core::{
@@ -986,14 +985,27 @@ where
         edge: &EdgeOfFunc<'id, Self>,
         args: impl IntoIterator<Item = (VarNo, bool)>,
     ) -> bool {
-        let mut values = BitVec::new();
-        values.resize(manager.num_levels() as usize, false);
+        // map from levels to values
+        let mut values = FixedBitSet::with_capacity(manager.num_levels() as usize);
+        // A skipped node on the traversal through the ZBDD means that the
+        // variable associated with the level must be false. We check this via
+        // the counter `ones`. Initially, `ones` is equal to the number of
+        // variables set to true. Whenever we visit a node whose associated
+        // variable is set to true, we decrement the `ones`. The assignment
+        // given in `args` is satisfying iff the traversal reaches the base
+        // terminal and `ones` is 0 then.
+        let mut ones: usize = 0;
         for (var, val) in args {
-            values.set(manager.var_to_level(var) as usize, val);
+            let level = manager.var_to_level(var) as usize;
+            if values.contains(level) != val {
+                values.set(manager.var_to_level(var) as usize, val);
+                ones = ones.wrapping_add_signed(if val { 1 } else { -1 });
+            }
         }
+        debug_assert_eq!(values.count_ones(..), ones);
 
         #[inline] // tail-recursive
-        fn inner<M>(manager: &M, edge: Borrowed<M::Edge>, mut values: BitVec) -> Option<BitVec>
+        fn inner<M>(manager: &M, edge: Borrowed<M::Edge>, values: &FixedBitSet, ones: usize) -> bool
         where
             M: Manager<Terminal = ZBDDTerminal>,
             M::InnerNode: HasLevel,
@@ -1001,20 +1013,16 @@ where
             match manager.get_node(&edge) {
                 Node::Inner(node) => {
                     let level = node.level() as usize;
-                    let edge = node.child((!values[level]) as usize);
-                    values.set(level, false);
-                    inner(manager, edge, values)
+                    let val = values.contains(level);
+                    // first child is the HI edge, hence the negation below
+                    let edge = node.child((!val) as usize);
+                    inner(manager, edge, values, ones - val as usize)
                 }
-                Node::Terminal(t) if *t.borrow() == ZBDDTerminal::Base => Some(values),
-                Node::Terminal(_) => None,
+                Node::Terminal(t) => ones == 0 && *t.borrow() == ZBDDTerminal::Base,
             }
         }
 
-        if let Some(values) = inner(manager, edge.borrowed(), values) {
-            BitSlice::not_any(&values)
-        } else {
-            false
-        }
+        inner(manager, edge.borrowed(), &values, ones)
     }
 }
 

@@ -25,9 +25,8 @@ use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering::{Acquire, Relaxed};
 
 use arcslab::{ArcSlab, ArcSlabRef, AtomicRefCounted, ExtHandle, IntHandle};
-use bitvec::bitvec;
-use bitvec::vec::BitVec;
 use derive_where::derive_where;
+use fixedbitset::FixedBitSet;
 use linear_hashtbl::raw::RawTable;
 use parking_lot::Mutex;
 use parking_lot::MutexGuard;
@@ -1706,14 +1705,14 @@ impl<'a, 'id, N, ET, const TAG_BITS: u32> FusedIterator for LevelViewIter<'a, 'i
 
 // === Node Set ================================================================
 
-/// Node set implementation using [bit vectors][BitVec]
+/// Node set implementation using [bit sets][FixedBitSet]
 ///
 /// Since nodes are stored on large pages, we can use one bit vector per page.
 /// This reduces space consumption dramatically and increases the performance.
 #[derive(Clone, PartialEq, Eq, Default)]
 pub struct NodeSet<const PAGE_SIZE: usize, const TAG_BITS: u32> {
     len: usize,
-    data: HashMap<usize, BitVec, BuildHasherDefault<FxHasher>>,
+    data: HashMap<usize, FixedBitSet, BuildHasherDefault<FxHasher>>,
 }
 
 impl<const PAGE_SIZE: usize, const TAG_BITS: u32> NodeSet<PAGE_SIZE, TAG_BITS> {
@@ -1741,17 +1740,17 @@ impl<'id, InnerNode, ET, const PAGE_SIZE: usize, const TAG_BITS: u32>
         match self.data.entry(page) {
             std::collections::hash_map::Entry::Occupied(mut e) => {
                 let page = e.get_mut();
-                if page[offset] {
+                if page.contains(offset) {
                     false
                 } else {
-                    page.set(offset, true);
+                    page.insert(offset);
                     self.len += 1;
                     true
                 }
             }
             std::collections::hash_map::Entry::Vacant(e) => {
-                let mut page = bitvec![0; Self::NODES_PER_PAGE];
-                page.set(offset, true);
+                let mut page = FixedBitSet::with_capacity(Self::NODES_PER_PAGE);
+                page.insert(offset);
                 e.insert(page);
                 self.len += 1;
                 true
@@ -1763,7 +1762,7 @@ impl<'id, InnerNode, ET, const PAGE_SIZE: usize, const TAG_BITS: u32>
     fn contains(&self, edge: &Edge<'id, InnerNode, ET, TAG_BITS>) -> bool {
         let (page, offset) = Self::page_offset(edge);
         match self.data.get(&page) {
-            Some(page) => page[offset],
+            Some(page) => page.contains(offset),
             None => false,
         }
     }
@@ -1772,8 +1771,8 @@ impl<'id, InnerNode, ET, const PAGE_SIZE: usize, const TAG_BITS: u32>
         let (page, offset) = Self::page_offset(edge);
         match self.data.get_mut(&page) {
             Some(page) => {
-                if page[offset] {
-                    page.set(offset, false);
+                if page.contains(offset) {
+                    page.remove(offset);
                     self.len -= 1;
                     true
                 } else {
