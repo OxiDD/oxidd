@@ -17,7 +17,7 @@ use fixedbitset::FixedBitSet;
 use is_sorted::IsSorted;
 
 use oxidd_core::error::OutOfMemory;
-use oxidd_core::function::Function;
+use oxidd_core::function::{EdgeOfFunc, Function, INodeOfFunc, TermOfFunc};
 use oxidd_core::util::{AllocResult, Borrowed, EdgeDropGuard, EdgeHashMap, EdgeVecDropGuard};
 use oxidd_core::{DiagramRules, Edge, HasLevel, InnerNode, LevelNo, Manager, Node, VarNo};
 
@@ -527,12 +527,12 @@ pub fn export<'id, F: Function>(
     is_complemented: impl Fn(&<F::Manager<'id> as Manager>::Edge) -> bool,
 ) -> io::Result<()>
 where
-    <F::Manager<'id> as Manager>::InnerNode: HasLevel,
-    <F::Manager<'id> as Manager>::Terminal: crate::AsciiDisplay,
+    INodeOfFunc<'id, F>: HasLevel,
+    TermOfFunc<'id, F>: crate::AsciiDisplay,
 {
     assert!(function_names.is_none() || function_names.unwrap().len() == functions.len());
     assert!(
-        ascii || <F::Manager<'id> as Manager>::InnerNode::ARITY == 2,
+        ascii || INodeOfFunc::<'id, F>::ARITY == 2,
         "binary mode is (currently) only supported for binary nodes"
     );
 
@@ -668,7 +668,7 @@ where
 
     // TODO: .auxids?
 
-    let idx = |e: &<F::Manager<'id> as Manager>::Edge| {
+    let idx = |e: &EdgeOfFunc<'id, F>| {
         let idx = match manager.get_node(e) {
             Node::Inner(node) => {
                 let (_, map) = &node_map[node.level() as usize];
@@ -684,7 +684,7 @@ where
             idx
         }
     };
-    let bin_idx = |e: &<F::Manager<'id> as Manager>::Edge, node_id: usize| {
+    let bin_idx = |e: &EdgeOfFunc<'id, F>, node_id: usize| {
         let idx = match manager.get_node(e) {
             Node::Inner(node) => {
                 let (_, map) = &node_map[node.level() as usize];
@@ -906,14 +906,11 @@ pub fn import<'id, F: Function>(
     header: &DumpHeader,
     manager: &F::Manager<'id>,
     support_vars: impl IntoIterator<Item = VarNo>,
-    complement: impl Fn(
-        &F::Manager<'id>,
-        <F::Manager<'id> as Manager>::Edge,
-    ) -> AllocResult<<F::Manager<'id> as Manager>::Edge>,
+    complement: impl Fn(&F::Manager<'id>, EdgeOfFunc<'id, F>) -> AllocResult<EdgeOfFunc<'id, F>>,
 ) -> io::Result<Vec<F>>
 where
-    <F::Manager<'id> as Manager>::InnerNode: HasLevel,
-    <F::Manager<'id> as Manager>::Terminal: FromStr,
+    INodeOfFunc<'id, F>: HasLevel,
+    TermOfFunc<'id, F>: FromStr,
 {
     let suppvar_level_map =
         Vec::from_iter(support_vars.into_iter().map(|v| manager.var_to_level(v)));

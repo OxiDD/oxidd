@@ -4,7 +4,7 @@ use std::borrow::Borrow;
 
 use fixedbitset::FixedBitSet;
 
-use oxidd_core::function::{EdgeOfFunc, Function, NumberBase, PseudoBooleanFunction};
+use oxidd_core::function::{EdgeOfFunc, Function, INodeOfFunc, NumberBase, PseudoBooleanFunction};
 use oxidd_core::util::{AllocResult, Borrowed, EdgeDropGuard};
 use oxidd_core::{ApplyCache, Edge, HasApplyCache, HasLevel, InnerNode, Manager, Node, Tag, VarNo};
 use oxidd_derive::Function;
@@ -106,7 +106,7 @@ impl<F: Function> MTBDDFunction<F> {
 impl<F: Function, T: NumberBase> PseudoBooleanFunction for MTBDDFunction<F>
 where
     for<'id> F::Manager<'id>: Manager<Terminal = T> + HasMTBDDOpApplyCache<F::Manager<'id>>,
-    for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
+    for<'id> INodeOfFunc<'id, F>: HasLevel,
 {
     type Number = T;
 

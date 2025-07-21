@@ -7,7 +7,8 @@ use fixedbitset::FixedBitSet;
 
 use oxidd_core::{
     function::{
-        BooleanFunction, BooleanFunctionQuant, BooleanOperator, EdgeOfFunc, Function, FunctionSubst,
+        BooleanFunction, BooleanFunctionQuant, BooleanOperator, EdgeOfFunc, Function,
+        FunctionSubst, INodeOfFunc,
     },
     util::{
         AllocResult, Borrowed, EdgeDropGuard, EdgeVecDropGuard, OptBool, SatCountCache,
@@ -799,7 +800,7 @@ impl<F: Function> BDDFunction<F> {
 impl<F: Function> FunctionSubst for BDDFunction<F>
 where
     for<'id> F::Manager<'id>: Manager<Terminal = BDDTerminal> + HasBDDOpApplyCache<F::Manager<'id>>,
-    for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
+    for<'id> INodeOfFunc<'id, F>: HasLevel,
 {
     fn substitute_edge<'id, 'a>(
         manager: &'a Self::Manager<'id>,
@@ -817,7 +818,7 @@ where
 impl<F: Function> BooleanFunction for BDDFunction<F>
 where
     for<'id> F::Manager<'id>: Manager<Terminal = BDDTerminal> + HasBDDOpApplyCache<F::Manager<'id>>,
-    for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
+    for<'id> INodeOfFunc<'id, F>: HasLevel,
 {
     #[inline]
     fn var_edge<'id>(
@@ -1184,7 +1185,7 @@ where
 impl<F: Function> BooleanFunctionQuant for BDDFunction<F>
 where
     for<'id> F::Manager<'id>: Manager<Terminal = BDDTerminal> + HasBDDOpApplyCache<F::Manager<'id>>,
-    for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
+    for<'id> INodeOfFunc<'id, F>: HasLevel,
 {
     #[inline]
     fn restrict_edge<'id>(
@@ -1301,8 +1302,8 @@ pub mod mt {
     where
         for<'id> F::Manager<'id>:
             Manager<Terminal = BDDTerminal> + HasBDDOpApplyCache<F::Manager<'id>> + HasWorkers,
-        for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
-        for<'id> <F::Manager<'id> as Manager>::Edge: Send + Sync,
+        for<'id> INodeOfFunc<'id, F>: HasLevel,
+        for<'id> EdgeOfFunc<'id, F>: Send + Sync,
     {
         fn substitute_edge<'id, 'a>(
             manager: &'a Self::Manager<'id>,
@@ -1323,8 +1324,8 @@ pub mod mt {
     where
         for<'id> F::Manager<'id>:
             Manager<Terminal = BDDTerminal> + HasBDDOpApplyCache<F::Manager<'id>> + HasWorkers,
-        for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
-        for<'id> <F::Manager<'id> as Manager>::Edge: Send + Sync,
+        for<'id> INodeOfFunc<'id, F>: HasLevel,
+        for<'id> EdgeOfFunc<'id, F>: Send + Sync,
     {
         #[inline(always)]
         fn var_edge<'id>(
@@ -1501,8 +1502,8 @@ pub mod mt {
     where
         for<'id> F::Manager<'id>:
             Manager<Terminal = BDDTerminal> + HasBDDOpApplyCache<F::Manager<'id>> + HasWorkers,
-        for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
-        for<'id> <F::Manager<'id> as Manager>::Edge: Send + Sync,
+        for<'id> INodeOfFunc<'id, F>: HasLevel,
+        for<'id> EdgeOfFunc<'id, F>: Send + Sync,
     {
         #[inline]
         fn restrict_edge<'id>(

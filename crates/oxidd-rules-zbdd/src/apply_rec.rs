@@ -6,11 +6,10 @@ use std::hash::{BuildHasher, Hash};
 
 use fixedbitset::FixedBitSet;
 
-use oxidd_core::VarNo;
 use oxidd_core::{
-    function::{BooleanFunction, BooleanVecSet, EdgeOfFunc, Function},
+    function::{BooleanFunction, BooleanVecSet, EdgeOfFunc, Function, INodeOfFunc},
     util::{AllocResult, Borrowed, EdgeDropGuard, OptBool, SatCountCache, SatCountNumber},
-    ApplyCache, Edge, HasApplyCache, HasLevel, InnerNode, LevelNo, Manager, Node, Tag,
+    ApplyCache, Edge, HasApplyCache, HasLevel, InnerNode, LevelNo, Manager, Node, Tag, VarNo,
 };
 use oxidd_derive::Function;
 use oxidd_dump::dot::DotStyle;
@@ -551,8 +550,8 @@ impl<F: Function> BooleanVecSet for ZBDDFunction<F>
 where
     for<'id> F::Manager<'id>: Manager<Terminal = ZBDDTerminal>
         + HasZBDDOpApplyCache<F::Manager<'id>>
-        + HasZBDDCache<<F::Manager<'id> as Manager>::Edge>,
-    for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
+        + HasZBDDCache<EdgeOfFunc<'id, F>>,
+    for<'id> INodeOfFunc<'id, F>: HasLevel,
 {
     fn singleton_edge<'id>(
         manager: &Self::Manager<'id>,
@@ -642,8 +641,8 @@ impl<F: Function> BooleanFunction for ZBDDFunction<F>
 where
     for<'id> F::Manager<'id>: Manager<Terminal = ZBDDTerminal>
         + HasZBDDOpApplyCache<F::Manager<'id>>
-        + HasZBDDCache<<F::Manager<'id> as Manager>::Edge>,
-    for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
+        + HasZBDDCache<EdgeOfFunc<'id, F>>,
+    for<'id> INodeOfFunc<'id, F>: HasLevel,
 {
     fn var_edge<'id>(
         manager: &Self::Manager<'id>,
@@ -1063,10 +1062,10 @@ pub mod mt {
     where
         for<'id> F::Manager<'id>: Manager<Terminal = ZBDDTerminal>
             + super::HasZBDDOpApplyCache<F::Manager<'id>>
-            + super::HasZBDDCache<<F::Manager<'id> as Manager>::Edge>
+            + super::HasZBDDCache<EdgeOfFunc<'id, F>>
             + HasWorkers,
-        for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
-        for<'id> <F::Manager<'id> as Manager>::Edge: Send + Sync,
+        for<'id> INodeOfFunc<'id, F>: HasLevel,
+        for<'id> EdgeOfFunc<'id, F>: Send + Sync,
     {
         #[inline(always)]
         fn singleton_edge<'id>(
@@ -1157,10 +1156,10 @@ pub mod mt {
     where
         for<'id> F::Manager<'id>: Manager<Terminal = ZBDDTerminal>
             + super::HasZBDDOpApplyCache<F::Manager<'id>>
-            + super::HasZBDDCache<<F::Manager<'id> as Manager>::Edge>
+            + super::HasZBDDCache<EdgeOfFunc<'id, F>>
             + HasWorkers,
-        for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
-        for<'id> <F::Manager<'id> as Manager>::Edge: Send + Sync,
+        for<'id> INodeOfFunc<'id, F>: HasLevel,
+        for<'id> EdgeOfFunc<'id, F>: Send + Sync,
     {
         #[inline(always)]
         fn var_edge<'id>(

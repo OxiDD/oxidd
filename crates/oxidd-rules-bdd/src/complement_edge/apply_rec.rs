@@ -6,7 +6,8 @@ use fixedbitset::FixedBitSet;
 
 use oxidd_core::{
     function::{
-        BooleanFunction, BooleanFunctionQuant, BooleanOperator, EdgeOfFunc, Function, FunctionSubst,
+        BooleanFunction, BooleanFunctionQuant, BooleanOperator, EdgeOfFunc, Function,
+        FunctionSubst, INodeOfFunc,
     },
     util::{
         AllocResult, Borrowed, EdgeDropGuard, EdgeVecDropGuard, OptBool, SatCountCache,
@@ -18,23 +19,16 @@ use oxidd_core::{
 use oxidd_derive::Function;
 use oxidd_dump::dot::DotStyle;
 
-use crate::{complement_edge::add_literal_to_cube, stat};
-use crate::{
-    complement_edge::is_false,
-    recursor::{Recursor, SequentialRecursor},
-};
+use crate::complement_edge::{add_literal_to_cube, is_false};
+use crate::recursor::{Recursor, SequentialRecursor};
+use crate::stat;
 
-use super::collect_cofactors;
-use super::get_terminal;
-use super::not;
-use super::not_owned;
-use super::reduce;
-use super::BCDDOp;
-use super::BCDDTerminal;
-use super::EdgeTag;
-use super::NodesOrDone;
 #[cfg(feature = "statistics")]
 use super::STAT_COUNTERS;
+use super::{
+    collect_cofactors, get_terminal, not, not_owned, reduce, BCDDOp, BCDDTerminal, EdgeTag,
+    NodesOrDone,
+};
 
 // spell-checker:ignore fnode,gnode,hnode,vnode,flevel,glevel,hlevel,vlevel
 
@@ -988,7 +982,7 @@ impl<F: Function> FunctionSubst for BCDDFunction<F>
 where
     for<'id> F::Manager<'id>:
         Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag> + HasBCDDOpApplyCache<F::Manager<'id>>,
-    for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
+    for<'id> INodeOfFunc<'id, F>: HasLevel,
 {
     fn substitute_edge<'id, 'a>(
         manager: &'a Self::Manager<'id>,
@@ -1007,7 +1001,7 @@ impl<F: Function> BooleanFunction for BCDDFunction<F>
 where
     for<'id> F::Manager<'id>:
         Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag> + HasBCDDOpApplyCache<F::Manager<'id>>,
-    for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
+    for<'id> INodeOfFunc<'id, F>: HasLevel,
 {
     fn var_edge<'id>(
         manager: &Self::Manager<'id>,
@@ -1415,7 +1409,7 @@ impl<F: Function> BooleanFunctionQuant for BCDDFunction<F>
 where
     for<'id> F::Manager<'id>:
         Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag> + HasBCDDOpApplyCache<F::Manager<'id>>,
-    for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
+    for<'id> INodeOfFunc<'id, F>: HasLevel,
 {
     #[inline]
     fn restrict_edge<'id>(
@@ -1542,8 +1536,8 @@ pub mod mt {
         for<'id> F::Manager<'id>: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag>
             + HasBCDDOpApplyCache<F::Manager<'id>>
             + HasWorkers,
-        for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
-        for<'id> <F::Manager<'id> as Manager>::Edge: Send + Sync,
+        for<'id> INodeOfFunc<'id, F>: HasLevel,
+        for<'id> EdgeOfFunc<'id, F>: Send + Sync,
     {
         fn substitute_edge<'id, 'a>(
             manager: &'a Self::Manager<'id>,
@@ -1565,8 +1559,8 @@ pub mod mt {
         for<'id> F::Manager<'id>: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag>
             + HasBCDDOpApplyCache<F::Manager<'id>>
             + HasWorkers,
-        for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
-        for<'id> <F::Manager<'id> as Manager>::Edge: Send + Sync,
+        for<'id> INodeOfFunc<'id, F>: HasLevel,
+        for<'id> EdgeOfFunc<'id, F>: Send + Sync,
     {
         #[inline(always)]
         fn var_edge<'id>(
@@ -1742,8 +1736,8 @@ pub mod mt {
         for<'id> F::Manager<'id>: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag>
             + HasBCDDOpApplyCache<F::Manager<'id>>
             + HasWorkers,
-        for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
-        for<'id> <F::Manager<'id> as Manager>::Edge: Send + Sync,
+        for<'id> INodeOfFunc<'id, F>: HasLevel,
+        for<'id> EdgeOfFunc<'id, F>: Send + Sync,
     {
         #[inline]
         fn restrict_edge<'id>(

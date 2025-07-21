@@ -4,6 +4,7 @@ use oxidd::{
     util::AllocResult, BooleanFunction, HasLevel, HasWorkers, Manager, ManagerRef, VarNo,
     WorkerPool,
 };
+use oxidd_core::function::INodeOfFunc;
 use oxidd_parser::{Circuit, GateKind, Literal, Var, Vec2d};
 use parking_lot::Mutex;
 
@@ -96,7 +97,7 @@ pub(crate) fn construct_bool_circuit<B>(
 ) where
     B: BooleanFunction + Send + Sync + 'static,
     for<'id> B::Manager<'id>: HasWorkers,
-    for<'id> <B::Manager<'id> as Manager>::InnerNode: HasLevel,
+    for<'id> INodeOfFunc<'id, B>: HasLevel,
     B::ManagerRef: HasWorkers,
 {
     let scheme = cli.gate_build_scheme;
@@ -453,7 +454,7 @@ fn prepare<B>(
 ) -> (Vec2d<User>, Vec<OperandSlot<B>>, usize)
 where
     B: BooleanFunction,
-    for<'id> <B::Manager<'id> as Manager>::InnerNode: HasLevel,
+    for<'id> INodeOfFunc<'id, B>: HasLevel,
 {
     debug_assert_eq!(roots.len(), root_results.len());
 

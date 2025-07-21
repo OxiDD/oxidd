@@ -14,6 +14,7 @@ use clap::{Parser, ValueEnum};
 use num_bigint::BigUint;
 use oxidd::util::SatCountCache;
 use oxidd::{BooleanFunction, Edge, HasLevel, HasWorkers, Manager, ManagerRef, VarNo, WorkerPool};
+use oxidd_core::function::{ETagOfFunc, INodeOfFunc, TermOfFunc};
 use oxidd_core::util::VarNameMap;
 use oxidd_core::{ApplyCache, HasApplyCache};
 use oxidd_dump::{dddmp, dot};
@@ -339,12 +340,11 @@ fn bool_dd_main<B, O>(cli: &Cli, mref: B::ManagerRef)
 where
     B: BooleanFunction + Send + Sync + 'static,
     B::ManagerRef: HasWorkers + Send + 'static,
-    for<'id> B: dot::DotStyle<<B::Manager<'id> as Manager>::EdgeTag>,
+    for<'id> B: dot::DotStyle<ETagOfFunc<'id, B>>,
     for<'id> B::Manager<'id>: HasWorkers + HasApplyCache<B::Manager<'id>, O>,
-    for<'id> <B::Manager<'id> as Manager>::InnerNode: HasLevel,
-    for<'id> <B::Manager<'id> as Manager>::EdgeTag: fmt::Debug,
-    for<'id> <B::Manager<'id> as Manager>::Terminal:
-        FromStr + fmt::Display + oxidd_dump::AsciiDisplay,
+    for<'id> INodeOfFunc<'id, B>: HasLevel,
+    for<'id> ETagOfFunc<'id, B>: fmt::Debug,
+    for<'id> TermOfFunc<'id, B>: FromStr + fmt::Display + oxidd_dump::AsciiDisplay,
     O: Copy + Ord + Hash,
 {
     let mut funcs: Vec<(B, String)> = Vec::new();
@@ -372,24 +372,6 @@ where
 
     mref.with_manager_exclusive(|manager| manager.add_named_vars_from_map(var_name_map))
         .unwrap();
-
-    /*
-    mref.with_manager_shared(|manager| {
-        for level in manager.levels() {
-            println!("level {}", oxidd_core::LevelView::level_no(&level));
-            for edge in oxidd_core::LevelView::iter(&level) {
-                let node = manager.get_node(edge).unwrap_inner();
-                println!(
-                    "  {}: {} {} at level {}",
-                    edge.node_id(),
-                    oxidd_core::InnerNode::child(node, 0).node_id(),
-                    oxidd_core::InnerNode::child(node, 1).node_id(),
-                    oxidd_core::HasLevel::level(node),
-                );
-            }
-        }
-    });
-    */
 
     let report_dd_node_count = |gc_count_before_construction: Option<u64>| {
         mref.with_manager_shared(|manager| {

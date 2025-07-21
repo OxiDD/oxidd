@@ -2,7 +2,7 @@
 
 use std::borrow::Borrow;
 
-use oxidd_core::function::{EdgeOfFunc, Function, TVLFunction};
+use oxidd_core::function::{EdgeOfFunc, Function, INodeOfFunc, TVLFunction};
 use oxidd_core::util::{AllocResult, Borrowed, EdgeDropGuard};
 use oxidd_core::{ApplyCache, Edge, HasApplyCache, HasLevel, InnerNode, Manager, Node, Tag, VarNo};
 use oxidd_derive::Function;
@@ -268,7 +268,7 @@ impl<F: Function> TDDFunction<F> {
 impl<F: Function> TVLFunction for TDDFunction<F>
 where
     for<'id> F::Manager<'id>: Manager<Terminal = TDDTerminal> + HasTDDOpApplyCache<F::Manager<'id>>,
-    for<'id> <F::Manager<'id> as Manager>::InnerNode: HasLevel,
+    for<'id> INodeOfFunc<'id, F>: HasLevel,
 {
     #[inline]
     fn var_edge<'id>(

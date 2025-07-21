@@ -1,14 +1,9 @@
 use std::fmt;
 use std::io;
 
-use oxidd_core::function::Function;
+use oxidd_core::function::{ETagOfFunc, Function, INodeOfFunc, TermOfFunc};
 use oxidd_core::util::EdgeDropGuard;
-use oxidd_core::Edge;
-use oxidd_core::HasLevel;
-use oxidd_core::InnerNode;
-use oxidd_core::LevelNo;
-use oxidd_core::LevelView;
-use oxidd_core::Manager;
+use oxidd_core::{Edge, HasLevel, InnerNode, LevelNo, LevelView, Manager};
 
 /// Dump the entire decision diagram represented by `manager` as Graphviz DOT
 /// code to `file`
@@ -21,10 +16,10 @@ pub fn dump_all<'a, 'id, F, D>(
     functions: impl IntoIterator<Item = (&'a F, D)>,
 ) -> io::Result<()>
 where
-    F: 'a + Function + super::DotStyle<<F::Manager<'id> as Manager>::EdgeTag>,
-    <F::Manager<'id> as Manager>::InnerNode: HasLevel,
-    <F::Manager<'id> as Manager>::EdgeTag: fmt::Debug,
-    <F::Manager<'id> as Manager>::Terminal: fmt::Display,
+    F: 'a + Function + super::DotStyle<ETagOfFunc<'id, F>>,
+    INodeOfFunc<'id, F>: HasLevel,
+    ETagOfFunc<'id, F>: fmt::Debug,
+    TermOfFunc<'id, F>: fmt::Display,
     D: fmt::Display,
 {
     writeln!(file, "digraph DD {{")?;

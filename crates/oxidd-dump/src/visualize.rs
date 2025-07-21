@@ -5,7 +5,8 @@ use std::io;
 use std::io::{BufRead, Write};
 use std::net::TcpListener;
 
-use oxidd_core::{function::Function, HasLevel, Manager};
+use oxidd_core::function::{Function, INodeOfFunc, TermOfFunc};
+use oxidd_core::HasLevel;
 
 /// Serve the provided decision diagram for visualization
 ///
@@ -29,8 +30,8 @@ pub fn visualize<'id, F: Function>(
     port: Option<u16>,
 ) -> io::Result<()>
 where
-    <F::Manager<'id> as Manager>::InnerNode: HasLevel,
-    <F::Manager<'id> as Manager>::Terminal: crate::AsciiDisplay,
+    INodeOfFunc<'id, F>: HasLevel,
+    TermOfFunc<'id, F>: crate::AsciiDisplay,
 {
     visualize_all(
         [VisualizationInput {
@@ -54,8 +55,8 @@ pub fn visualize_all<'a, 'id, F: Function + 'a>(
 ) -> io::Result<()>
 where
     F::Manager<'id>: 'a,
-    <F::Manager<'id> as Manager>::InnerNode: HasLevel,
-    <F::Manager<'id> as Manager>::Terminal: crate::AsciiDisplay,
+    INodeOfFunc<'id, F>: HasLevel,
+    TermOfFunc<'id, F>: crate::AsciiDisplay,
 {
     let port = port.unwrap_or(4000);
 

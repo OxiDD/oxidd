@@ -73,9 +73,9 @@ impl<M: Manager, O: Copy, const ARITY: usize> oxidd_core::ApplyCache<M, O>
         &self,
         _manager: &M,
         _operator: O,
-        _operands: &[Borrowed<<M as Manager>::Edge>],
+        _operands: &[Borrowed<M::Edge>],
         _numeric_operands: &[u32],
-        _value: Borrowed<<M as Manager>::Edge>,
+        _value: Borrowed<M::Edge>,
     ) {
         // Just forget about it
     }
