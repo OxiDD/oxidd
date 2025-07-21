@@ -1,155 +1,264 @@
-//! Export the diagrams over http to other tools (polling for changes)
+//! Visualization with [OxiDD-viz](https://oxidd.net/viz)
 
-use std::io;
-
-use std::io::{BufRead, Write};
+use std::fmt;
+use std::io::{self, Read, Write};
 use std::net::TcpListener;
 
 use oxidd_core::function::{Function, INodeOfFunc, TermOfFunc};
 use oxidd_core::HasLevel;
 
-/// Serve the provided decision diagram for visualization
+use crate::AsciiDisplay;
+
+/// [OxiDD-viz]-compatible decision diagram exporter that
+/// serves decision diagram dumps on localhost via HTTP
 ///
-/// `dd_name` is the name that is sent to the visualization tool.
+/// [OxiDD-viz] is a webapp that runs locally in your browser. You can directly
+/// send decision diagrams to it via an HTTP connection. Here, the `Visualizer`
+/// acts as a small HTTP server that accepts connections once you call
+/// [`Visualizer::serve()`]. The webapp repeatedly polls on the configured port
+/// to directly display the decision diagrams then.
 ///
-/// `vars` are edges representing *all* variables in the decision diagram. The
-/// order does not matter. `var_names` are the names of these variables
-/// (optional). If given, there must be `vars.len()` names in the same order as
-/// in `vars`.
-///
-/// `functions` are edges pointing to the root nodes of functions.
-/// `function_names` are the corresponding names (optional). If given, there
-/// must be `functions.len()` names in the same order as in `function_names`.
-///
-/// `port` is the port to provide the data on, which defaults to 4000.
-pub fn visualize<'id, F: Function>(
-    manager: &F::Manager<'id>,
-    dd_name: &str,
-    functions: &[&F],
-    function_names: Option<&[&str]>,
-    port: Option<u16>,
-) -> io::Result<()>
-where
-    INodeOfFunc<'id, F>: HasLevel,
-    TermOfFunc<'id, F>: crate::AsciiDisplay,
-{
-    visualize_all(
-        [VisualizationInput {
-            dd_name,
-            manager,
-            functions,
-            function_names,
-        }],
-        port,
-    )
+/// [OxiDD-viz]: https://oxidd.net/viz
+pub struct Visualizer {
+    port: u16,
+    buf: Vec<u8>,
 }
 
-/// Serve the provided decision diagrams for visualization
-///
-/// `inputs` is the vector of visualizations to send all at once.
-///
-/// `port` is the port to provide the data on, which defaults to 4000.
-pub fn visualize_all<'a, 'id, F: Function + 'a>(
-    inputs: impl IntoIterator<Item = VisualizationInput<'a, 'id, F>>,
-    port: Option<u16>,
-) -> io::Result<()>
-where
-    F::Manager<'id>: 'a,
-    INodeOfFunc<'id, F>: HasLevel,
-    TermOfFunc<'id, F>: crate::AsciiDisplay,
-{
-    let port = port.unwrap_or(4000);
-
-    let mut body_buffer = Vec::with_capacity(2 * 1024 * 1024);
-    body_buffer.push(b'[');
-    for VisualizationInput {
-        dd_name,
-        function_names,
-        functions,
-        manager,
-    } in inputs
-    {
-        write!(body_buffer, "{{\"type\":\"{}\",\"name\":\"", F::REPR_ID)?;
-        write!(JsonStrWriter(&mut body_buffer), "{dd_name}")?;
-        body_buffer.extend_from_slice(b"\",\"diagram\":\"");
-        crate::dddmp::export(
-            JsonStrWriter(&mut body_buffer),
-            manager,
-            true,
-            dd_name,
-            functions,
-            function_names,
-        )?;
-        body_buffer.extend_from_slice(b"\"},");
+impl Default for Visualizer {
+    #[inline]
+    fn default() -> Self {
+        Self::new()
     }
-    body_buffer.pop(); // trailing ','
-    body_buffer.push(b']');
+}
 
-    let listener = TcpListener::bind(("localhost", port))?;
-    println!("Data can be read on http://localhost:{port}");
+impl Visualizer {
+    /// Create a new visualizer
+    pub fn new() -> Self {
+        Self {
+            port: 4000,
+            buf: Vec::with_capacity(2 * 1024 * 1024), // 2 MiB
+        }
+    }
 
-    for stream in listener.incoming() {
-        let mut stream = stream?;
+    /// Customize the port on which to serve the visualization data
+    ///
+    /// The default port is 4000.
+    ///
+    /// Returns `self`.
+    #[inline(always)]
+    pub fn port(mut self, port: u16) -> Self {
+        self.port = port;
+        self
+    }
 
-        let req_line = {
-            let mut stream = io::BufReader::new(&mut stream);
-            let mut buffer = String::new();
-            stream.read_line(&mut buffer)?;
-            buffer
-        };
-
-        // Basic routing: only handle GET /diagrams
-        if req_line.starts_with("GET /diagrams ") {
-            write!(
-                stream,
-                "HTTP/1.1 200 OK\r\n\
-                Content-Type: application/json\r\n\
-                Access-Control-Allow-Origin: *\r\n\
-                Content-Length: {}\r\n\
-                \r\n",
-                body_buffer.len(),
-            )?;
-            stream.write_all(&body_buffer)?;
-            break;
+    fn add_diagram_start(&mut self, ty: &str, diagram_name: &str) {
+        let buf = &mut self.buf;
+        if !buf.is_empty() {
+            buf.push(b',');
         }
 
-        stream.write_all(b"HTTP/1.1 404 NOT FOUND\r\n\r\nNot Found")?;
+        buf.extend_from_slice(b"{\"type\":\"");
+        buf.extend_from_slice(ty.as_bytes());
+        buf.extend_from_slice(b"\",\"name\":\"");
+        json_escape(buf, diagram_name.as_bytes());
+        buf.extend_from_slice(b"\",\"diagram\":\"");
     }
 
-    println!("Visualization has been sent!");
-    Ok(())
+    /// Add a decision diagram for visualization
+    ///
+    /// `diagram_name` can be used as an identifier in case you add multiple
+    /// diagrams. `functions` is an iterator over [`Function`]s.
+    ///
+    /// The visualization includes all nodes reachable from the root nodes
+    /// referenced by `functions`. If you wish to name the functions, use
+    /// [`Self::add_with_names()`].
+    ///
+    /// Returns `self` to allow chaining.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use oxidd_core::function::Function;
+    /// # use oxidd_dump::Visualizer;
+    /// # fn viz<'id, F: Function>(manager: &F::Manager<'id>, f0: &F, f1: &F)
+    /// # where
+    /// #    oxidd_core::function::INodeOfFunc<'id, F>: oxidd_core::HasLevel,
+    /// #    oxidd_core::function::TermOfFunc<'id, F>: oxidd_dump::AsciiDisplay,
+    /// # {
+    /// Visualizer::new()
+    ///     .add("my_diagram", manager, [f0, f1])
+    ///     .serve()
+    ///     .expect("failed to serve diagram due to I/O error")
+    /// # }
+    /// ```
+    pub fn add<'id, FR: std::ops::Deref>(
+        mut self,
+        diagram_name: &str,
+        manager: &<FR::Target as Function>::Manager<'id>,
+        functions: impl IntoIterator<Item = FR>,
+    ) -> Self
+    where
+        FR::Target: Function,
+        INodeOfFunc<'id, FR::Target>: HasLevel,
+        TermOfFunc<'id, FR::Target>: AsciiDisplay,
+    {
+        self.add_diagram_start(FR::Target::REPR_ID, diagram_name);
+        crate::dddmp::ExportSettings::default()
+            .strict(false) // adjust names without error
+            .ascii()
+            .diagram_name(diagram_name)
+            .export(JsonStrWriter(&mut self.buf), manager, functions)
+            .unwrap(); // writing to a Vec<u8> should not lead to I/O errors
+        self.buf.extend_from_slice(b"\"}");
+
+        self
+    }
+
+    /// Add a decision diagram for visualization
+    ///
+    /// `diagram_name` can be used as an identifier in case you add multiple
+    /// diagrams. `functions` is an iterator over pairs of a [`Function`] and
+    /// a name.
+    ///
+    /// The visualization includes all nodes reachable from the root nodes
+    /// referenced by `functions`.
+    ///
+    /// Returns `self` to allow chaining.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use oxidd_core::function::Function;
+    /// # use oxidd_dump::Visualizer;
+    /// # fn viz<'id, F: Function>(manager: &F::Manager<'id>, phi: &F, res: &F)
+    /// # where
+    /// #    oxidd_core::function::INodeOfFunc<'id, F>: oxidd_core::HasLevel,
+    /// #    oxidd_core::function::TermOfFunc<'id, F>: oxidd_dump::AsciiDisplay,
+    /// # {
+    /// Visualizer::new()
+    ///     .add_with_names("my_diagram", manager, [(phi, "ϕ"), (res, "result")])
+    ///     .serve()
+    ///     .expect("failed to serve diagram due to I/O error")
+    /// # }
+    /// ```
+    pub fn add_with_names<'id, FR: std::ops::Deref, D: fmt::Display>(
+        mut self,
+        diagram_name: &str,
+        manager: &<FR::Target as Function>::Manager<'id>,
+        functions: impl IntoIterator<Item = (FR, D)>,
+    ) -> Self
+    where
+        FR::Target: Function,
+        INodeOfFunc<'id, FR::Target>: HasLevel,
+        TermOfFunc<'id, FR::Target>: AsciiDisplay,
+    {
+        self.add_diagram_start(FR::Target::REPR_ID, diagram_name);
+        crate::dddmp::ExportSettings::default()
+            .strict(false) // adjust names without error
+            .ascii()
+            .diagram_name(diagram_name)
+            .export_with_names(JsonStrWriter(&mut self.buf), manager, functions)
+            .unwrap(); // writing to a Vec<u8> should not lead to I/O errors
+        self.buf.extend_from_slice(b"\"}");
+
+        self
+    }
+
+    /// Remove all previously added decision diagrams
+    #[inline(always)]
+    pub fn clear(&mut self) {
+        self.buf.clear();
+    }
+
+    /// Serve the provided decision diagram for visualization
+    ///
+    /// Blocks until the visualization has been fetched by
+    /// [OxiDD-viz](https://oxidd.net/viz).
+    ///
+    /// On success, all previously added decision diagrams are removed from the
+    /// internal buffer. On error, the internal buffer is left as-is.
+    pub fn serve(&mut self) -> io::Result<()> {
+        let port = self.port;
+        let listener = TcpListener::bind(("localhost", port))?;
+        println!("Data can be read on http://localhost:{port}");
+
+        // Basic routing: only handle "GET /diagrams"
+        // After the path, there should be "HTTP/1.1" (or something alike),
+        // so expecting the space is fine.
+        const EXPECTED_REQ_START: &[u8] = b"GET /diagrams ";
+        let mut recv_buf = [0; const { EXPECTED_REQ_START.len() }];
+
+        let mut stream = loop {
+            let (mut stream, _) = listener.accept()?;
+            stream.read_exact(&mut recv_buf)?;
+            if recv_buf == EXPECTED_REQ_START {
+                break stream;
+            }
+            stream.write_all(b"HTTP/1.1 404 NOT FOUND\r\n\r\nNot Found")?;
+        };
+
+        let len = self.buf.len() + 2; // 2 -> account for outer brackets
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\n\
+            Content-Type: application/json\r\n\
+            Access-Control-Allow-Origin: *\r\n\
+            Content-Length: {len}\r\n\
+            \r\n\
+            ["
+        )?;
+        self.buf.push(b']');
+        if let Err(err) = stream.write_all(&self.buf) {
+            self.buf.pop();
+            return Err(err);
+        }
+        self.buf.clear();
+        println!("Visualization has been sent!");
+        Ok(())
+    }
 }
 
-/// Input for the visualization
-pub struct VisualizationInput<'a, 'id, F: Function> {
-    /// The manager that the functions are from
-    pub manager: &'a F::Manager<'id>,
-    /// The name of the diagram
-    pub dd_name: &'a str,
-    /// The functions to visualize
-    pub functions: &'a [&'a F],
-    /// The names of the functions to visualize
-    pub function_names: Option<&'a [&'a str]>,
+#[inline]
+fn hex_digit(c: u8) -> u8 {
+    if c >= 10 {
+        b'a' + c - 10
+    } else {
+        b'0' + c
+    }
+}
+
+fn json_escape(target: &mut Vec<u8>, data: &[u8]) {
+    for &c in data {
+        let mut seq;
+        target.extend_from_slice(match c {
+            0x08 => b"\\b",
+            b'\t' => b"\\t",
+            b'\n' => b"\\n",
+            0x0c => b"\\f",
+            b'\r' => b"\\r",
+            b'\\' => b"\\\\",
+            b'"' => b"\\\"",
+            _ if c < 0x20 => {
+                seq = *b"\\u0000";
+                seq[4] = hex_digit(c >> 4);
+                seq[5] = hex_digit(c & 0b1111);
+                &seq
+            }
+            0x7f => b"\\u007f", // ASCII DEL
+            _ => {
+                target.push(c);
+                continue;
+            }
+        })
+    }
 }
 
 struct JsonStrWriter<'a>(&'a mut Vec<u8>);
 
 impl std::io::Write for JsonStrWriter<'_> {
+    #[inline]
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        for &c in buf {
-            match c {
-                0x08 => self.0.extend_from_slice(b"\\b"),
-                b'\t' => self.0.extend_from_slice(b"\\t"),
-                b'\n' => self.0.extend_from_slice(b"\\n"),
-                0x0c => self.0.extend_from_slice(b"\\ff"),
-                b'\r' => self.0.extend_from_slice(b"\\r"),
-                b'\\' => self.0.extend_from_slice(b"\\\\"),
-                b'"' => self.0.extend_from_slice(b"\\\""),
-                _ if c < 0x20 => write!(self.0, "\\u{c:04x}")?,
-                0x7f => self.0.extend_from_slice(b"\\u007f"), // ASCII DEL
-                _ => self.0.push(c),
-            }
-        }
+        json_escape(self.0, buf);
         Ok(buf.len())
     }
 

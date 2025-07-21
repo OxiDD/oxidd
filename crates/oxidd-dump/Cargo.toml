@@ -16,6 +16,7 @@ rust-version.workspace = true
 
 [dependencies]
 oxidd-core.workspace = true
+oxidd-derive.workspace = true
 
 # bit sets
 fixedbitset = { version = "0.5.7", optional = true }

@@ -5,7 +5,7 @@ use oxidd::ManagerRef;
 use oxidd::PseudoBooleanFunction;
 use oxidd_core::Manager;
 use oxidd_dump::dot::dump_all;
-use oxidd_dump::visualize::visualize;
+use oxidd_dump::Visualizer;
 
 fn main() -> AllocResult<()> {
     let manager_ref: MTBDDManagerRef<I64> = oxidd::mtbdd::new_manager(1024, 1024, 1024, 1);
@@ -27,7 +27,10 @@ fn main() -> AllocResult<()> {
         let file = std::fs::File::create("mtbdd.dot").expect("could not create `tdd.dot`");
         dump_all(file, manager, [(&res, "(x1 + x2) * (3 - x4)")]).expect("dot export failed");
 
-        visualize(manager, "diagram", &[&res], Some(&["f"]), None).expect("visualization failed");
+        Visualizer::new()
+            .add("Sample MTBDD", manager, [&res, c3])
+            .serve()
+            .ok();
 
         Ok(())
     })

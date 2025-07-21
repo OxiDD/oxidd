@@ -1,15 +1,3 @@
-//! Im- and export to the [DDDMP] format used by CUDD
-//!
-//! Currently, versions 2.0 and 3.0 are supported, where version 2.0 the version
-//! bundled with the CUDD 3.0 release, while version 3.0 was probably defined by
-//! the authors of tools like [BDDSampler] and [Logic2BDD] and solely adds the
-//! `.varnames` field.
-//!
-//! [DDDMP]: https://github.com/ssoelvsten/cudd/tree/main/dddmp
-//! [BDDSampler]: https://github.com/davidfa71/BDDSampler
-//! [Logic2BDD]: https://github.com/davidfa71/Extending-Logic
-
-use std::fmt;
 use std::io;
 use std::str::FromStr;
 
@@ -18,45 +6,23 @@ use is_sorted::IsSorted;
 
 use oxidd_core::error::OutOfMemory;
 use oxidd_core::function::{EdgeOfFunc, Function, INodeOfFunc, TermOfFunc};
-use oxidd_core::util::{AllocResult, Borrowed, EdgeDropGuard, EdgeHashMap, EdgeVecDropGuard};
-use oxidd_core::{DiagramRules, Edge, HasLevel, InnerNode, LevelNo, Manager, Node, VarNo};
+use oxidd_core::util::{AllocResult, EdgeDropGuard, EdgeVecDropGuard};
+use oxidd_core::{DiagramRules, HasLevel, InnerNode, LevelNo, Manager, VarNo};
 
-// spell-checker:ignore varinfo,varnames,suppvar,suppvars,suppvarnames
-// spell-checker:ignore ordervar,orderedvarnames
+use super::{Code, VarInfo};
+
+// spell-checker:ignore varinfo,varnames,suppvar,suppvarnames,orderedvarnames
 // spell-checker:ignore permid,permids,auxids,rootids,rootnames
 // spell-checker:ignore nnodes,nvars,nsuppvars,nroots
 
-type FxBuildHasher = std::hash::BuildHasherDefault<rustc_hash::FxHasher>;
-
-/// Encoding of the variable ID and then/else edges in binary format
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-#[repr(u8)]
-enum Code {
-    Terminal,
-    AbsoluteID,
-    RelativeID,
-    Relative1,
+/// Compare, mapping `Equal` to `Greater`
+fn cmp_strict<T: Ord>(a: &T, b: &T) -> Option<std::cmp::Ordering> {
+    Some(a.cmp(b).then(std::cmp::Ordering::Greater))
 }
 
-impl From<u8> for Code {
-    fn from(value: u8) -> Self {
-        match value {
-            0 => Code::Terminal,
-            1 => Code::AbsoluteID,
-            2 => Code::RelativeID,
-            3 => Code::Relative1,
-            _ => panic!(),
-        }
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum VarInfo {
-    VariableID,
-    PermutationID,
-    AuxiliaryID,
-    VariableName,
-    None,
+/// Helper function to return a parse error
+fn err<T>(msg: impl Into<Box<dyn std::error::Error + Send + Sync>>) -> io::Result<T> {
+    Err(io::Error::new(io::ErrorKind::InvalidData, msg))
 }
 
 /// Information from the header of a DDDMP file
@@ -483,413 +449,6 @@ impl DumpHeader {
     }
 }
 
-/// Helper function to return a parse error
-fn err<T>(msg: impl Into<Box<dyn std::error::Error + Send + Sync>>) -> io::Result<T> {
-    Err(io::Error::new(io::ErrorKind::InvalidData, msg))
-}
-
-/// Compare, mapping `Equal` to `Greater`
-fn cmp_strict<T: Ord>(a: &T, b: &T) -> Option<std::cmp::Ordering> {
-    Some(a.cmp(b).then(std::cmp::Ordering::Greater))
-}
-
-struct Ascii<T>(T);
-impl<T: crate::AsciiDisplay> fmt::Display for Ascii<&T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-#[inline]
-fn is_complemented<E: Edge>(edge: &E) -> bool {
-    edge.tag() != Default::default()
-}
-
-/// Export the decision diagram in `manager` to `file`
-///
-/// `ascii` indicates whether to use the ASCII or binary format.
-///
-/// `dd_name` is the name that is output to the `.dd` field, unless it is an
-/// empty string. It must be ASCII text without control characters.
-///
-/// `functions` are edges pointing to the root nodes of functions.
-/// `function_names` are the corresponding names (optional). If given, there
-/// must be `functions.len()` names in the same order as in `function_names`.
-///
-/// Variable names will only be exported if all variables have a name (see
-/// [`Manager::var_name()`]). Like , `dd_name` variable names must be ASCII text
-/// without control characters.
-pub fn export<'id, F: Function>(
-    mut file: impl io::Write,
-    manager: &F::Manager<'id>,
-    ascii: bool,
-    dd_name: &str,
-    functions: &[&F],
-    function_names: Option<&[&str]>,
-) -> io::Result<()>
-where
-    INodeOfFunc<'id, F>: HasLevel,
-    TermOfFunc<'id, F>: crate::AsciiDisplay,
-{
-    assert!(function_names.is_none() || function_names.unwrap().len() == functions.len());
-    assert!(
-        ascii || INodeOfFunc::<'id, F>::ARITY == 2,
-        "binary mode is (currently) only supported for binary nodes"
-    );
-
-    writeln!(file, ".ver DDDMP-2.0")?;
-    writeln!(file, ".mode {}", if ascii { 'A' } else { 'B' })?;
-
-    // TODO: other .varinfo modes?
-    writeln!(file, ".varinfo {}", VarInfo::None as u32)?;
-
-    if !dd_name.is_empty() {
-        let invalid = |c: char| !c.is_ascii() || c.is_ascii_control();
-        if dd_name.chars().any(invalid) {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "decision diagram name must be ASCII text without control characters",
-            ));
-        }
-        writeln!(file, ".dd {dd_name}")?;
-    }
-
-    let nvars = manager.num_levels();
-
-    // Map from the current level number to its internal var index (almost the
-    // same numbering, but vars not in the support removed, i.e., range
-    // `0..nsuppvars`), and the nodes (as edges) contained at this level
-    // together with their indexes.
-    let mut node_map: Vec<(LevelNo, EdgeHashMap<F::Manager<'id>, usize, FxBuildHasher>)> =
-        (0..nvars).map(|_| (0, EdgeHashMap::new(manager))).collect();
-    let mut terminal_map: EdgeHashMap<F::Manager<'id>, usize, FxBuildHasher> =
-        EdgeHashMap::new(manager);
-
-    fn rec_add_map<M: Manager>(
-        manager: &M,
-        node_map: &mut Vec<(u32, EdgeHashMap<M, usize, FxBuildHasher>)>,
-        terminal_map: &mut EdgeHashMap<M, usize, FxBuildHasher>,
-        e: Borrowed<M::Edge>,
-    ) where
-        M::InnerNode: HasLevel,
-    {
-        match manager.get_node(&e) {
-            Node::Inner(node) => {
-                let (_, map) = &mut node_map[node.level() as usize];
-                // Map to 0 -> we assign the indexes below
-                let res = map.insert(&e.with_tag(Default::default()), 0);
-                if res.is_none() {
-                    for e in node.children() {
-                        rec_add_map::<M>(manager, node_map, terminal_map, e);
-                    }
-                }
-            }
-            Node::Terminal(_) => {
-                terminal_map.insert(&e.with_tag(Default::default()), 0);
-            }
-        }
-    }
-
-    for &func in functions {
-        rec_add_map::<F::Manager<'id>>(
-            manager,
-            &mut node_map,
-            &mut terminal_map,
-            func.as_edge(manager).borrowed(),
-        );
-    }
-
-    let mut nnodes = 0;
-    for (_, idx) in &mut terminal_map {
-        nnodes += 1; // pre increment -> numbers in range 1..=#nodes
-        *idx = nnodes;
-    }
-    let nsuppvars = node_map.iter().filter(|(_, m)| !m.is_empty()).count() as u32;
-    let mut supp_levels = FixedBitSet::with_capacity(nvars as usize);
-    let mut suppvar_idx = nsuppvars;
-    // rev() -> assign node IDs bottom-up
-    for (i, (var_idx, level)) in node_map.iter_mut().enumerate().rev() {
-        if level.is_empty() {
-            continue;
-        }
-        suppvar_idx -= 1;
-        *var_idx = suppvar_idx;
-        supp_levels.insert(i);
-        for (_, idx) in level.iter_mut() {
-            nnodes += 1; // pre increment -> numbers in range 1..=#nodes
-            *idx = nnodes;
-        }
-    }
-    writeln!(file, ".nnodes {nnodes}")?;
-    writeln!(file, ".nvars {nvars}")?;
-    writeln!(file, ".nsuppvars {nsuppvars}")?;
-
-    if manager.num_named_vars() == manager.num_vars() {
-        write!(file, ".suppvarnames")?;
-        for var in 0..nvars {
-            let name = manager.var_name(var);
-            let invalid =
-                |c: char| !c.is_ascii() || c.is_ascii_control() || c.is_ascii_whitespace();
-            if name.chars().any(invalid) {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "variable name must be ASCII text without control characters and spaces",
-                ));
-            }
-            if supp_levels.contains(manager.var_to_level(var) as usize) {
-                write!(file, " {name}")?;
-            }
-        }
-        writeln!(file)?;
-
-        write!(file, ".orderedvarnames")?;
-        for level in 0..nvars {
-            let name = manager.var_name(manager.level_to_var(level));
-            write!(file, " {name}")?;
-        }
-        writeln!(file)?;
-    }
-
-    write!(file, ".ids")?;
-    for id in 0..nvars {
-        if supp_levels.contains(manager.var_to_level(id) as usize) {
-            write!(file, " {id}")?;
-        }
-    }
-    writeln!(file)?;
-
-    write!(file, ".permids")?;
-    for var in 0..nvars {
-        let level = manager.var_to_level(var);
-        if supp_levels.contains(level as usize) {
-            write!(file, " {level}")?;
-        }
-    }
-    writeln!(file)?;
-
-    // TODO: .auxids?
-
-    let idx = |e: &EdgeOfFunc<'id, F>| {
-        let idx = match manager.get_node(e) {
-            Node::Inner(node) => {
-                let (_, map) = &node_map[node.level() as usize];
-                *map.get(&e.with_tag(Default::default())).unwrap() as isize
-            }
-            Node::Terminal(_) => {
-                *terminal_map.get(&e.with_tag(Default::default())).unwrap() as isize
-            }
-        };
-        if is_complemented(e) {
-            -idx
-        } else {
-            idx
-        }
-    };
-    let bin_idx = |e: &EdgeOfFunc<'id, F>, node_id: usize| {
-        let idx = match manager.get_node(e) {
-            Node::Inner(node) => {
-                let (_, map) = &node_map[node.level() as usize];
-                *map.get(&e.with_tag(Default::default())).unwrap()
-            }
-            Node::Terminal(_) => {
-                if manager.num_terminals() == 1 {
-                    // TODO: This may be bad in case there could be more
-                    // terminals for the decision diagram type (i.e. the value
-                    // returned by `manager.num_terminals()` is not always 1),
-                    // but currently, there is only a single one.
-                    return (Code::Terminal, 0);
-                }
-                todo!();
-            }
-        };
-        if idx == node_id - 1 {
-            (Code::Relative1, 0)
-        } else if node_id - idx < idx {
-            (Code::RelativeID, node_id - idx)
-        } else {
-            (Code::AbsoluteID, idx)
-        }
-    };
-
-    writeln!(file, ".nroots {}", functions.len())?;
-    write!(file, ".rootids")?;
-    for &func in functions {
-        write!(file, " {}", idx(func.as_edge(manager)))?;
-    }
-    writeln!(file)?;
-    if let Some(function_names) = function_names {
-        write!(file, ".rootnames")?;
-        for &name in function_names {
-            let invalid =
-                |c: char| !c.is_ascii() || c.is_ascii_control() || c.is_ascii_whitespace();
-            if name.is_empty() || name.chars().any(invalid) {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "function name must be ASCII text without control characters and spaces",
-                ));
-            }
-            write!(file, " {name}")?;
-        }
-        writeln!(file)?;
-    }
-
-    writeln!(file, ".nodes")?;
-
-    #[inline]
-    const fn node_code(var: Code, t: Code, e_complement: bool, e: Code) -> u8 {
-        ((var as u8) << 5) | ((t as u8) << 3) | ((e_complement as u8) << 2) | e as u8
-    }
-
-    let mut exported_nodes = 0;
-    for (edge, &node_id) in terminal_map.iter() {
-        // This implementation relies on that the iteration order for
-        // `EdgeHashMap`s stays the same as long as no elements are
-        // inserted/removed. To be sure, we assert that this assumption holds.
-        assert_eq!(exported_nodes + 1, node_id);
-        if ascii {
-            // <Node-index> [<Var-extra-info>] <Var-internal-index> <Then-index>
-            // <Else-index>
-            let node = manager.get_node(edge);
-            let desc = Ascii(node.unwrap_terminal());
-            writeln!(file, "{node_id} {desc} 0 0")?;
-        } else {
-            let terminal = node_code(Code::Terminal, Code::Terminal, false, Code::Terminal);
-            write_escaped(&mut file, &[terminal])?;
-        }
-        exported_nodes += 1;
-    }
-    // Work from bottom to top
-    for &(var_idx, ref level) in node_map.iter().rev() {
-        for (e, &node_id) in level.iter() {
-            assert_eq!(exported_nodes + 1, node_id);
-            let node = manager.get_node(e).unwrap_inner();
-            if ascii {
-                // <Node-index> [<Var-extra-info>] <Var-internal-index> <Then-index>
-                // <Else-index>
-                write!(file, "{node_id} {var_idx}")?;
-                for child in node.children() {
-                    write!(file, " {}", idx(&child))?;
-                }
-                writeln!(file)?;
-            } else {
-                let mut iter = node.children();
-                let t = iter.next().unwrap();
-                let t_lvl = manager.get_node(&t).level();
-                let e = iter.next().unwrap();
-                let e_lvl = manager.get_node(&e).level();
-                debug_assert!(iter.next().is_none());
-
-                let mut var_code = Code::AbsoluteID;
-                let mut var_idx = var_idx;
-                let min_lvl = std::cmp::min(t_lvl, e_lvl);
-                if min_lvl != LevelNo::MAX {
-                    let (min_var_idx, _) = node_map[min_lvl as usize];
-                    if var_idx == min_var_idx - 1 {
-                        var_code = Code::Relative1;
-                    } else if min_var_idx - var_idx < var_idx {
-                        var_code = Code::RelativeID;
-                        var_idx = min_var_idx - var_idx;
-                    }
-                }
-
-                let (t_code, t_idx) = bin_idx(&t, node_id);
-                let (e_code, e_idx) = bin_idx(&e, node_id);
-
-                debug_assert!(!is_complemented(&*t));
-                write_escaped(
-                    &mut file,
-                    &[node_code(var_code, t_code, is_complemented(&*e), e_code)],
-                )?;
-                if var_code == Code::AbsoluteID || var_code == Code::RelativeID {
-                    encode_7bit(&mut file, var_idx as usize)?;
-                }
-                if t_code == Code::AbsoluteID || t_code == Code::RelativeID {
-                    encode_7bit(&mut file, t_idx)?;
-                }
-                if e_code == Code::AbsoluteID || e_code == Code::RelativeID {
-                    encode_7bit(&mut file, e_idx)?;
-                }
-                assert!(u64::BITS >= usize::BITS);
-            }
-            exported_nodes += 1;
-        }
-    }
-
-    writeln!(file, ".end")?;
-
-    Ok(())
-}
-
-/// 7-bit encode an integer and write it (escaped) via `writer`
-fn encode_7bit(writer: impl io::Write, mut value: usize) -> io::Result<()> {
-    let mut buf = [0u8; (usize::BITS as usize + 8 - 1) / 7];
-    let mut idx = buf.len() - 1;
-    buf[idx] = (value as u8).wrapping_shl(1);
-    value >>= 7;
-    while value != 0 {
-        idx -= 1;
-        buf[idx] = (value as u8).wrapping_shl(1) | 1;
-        value >>= 7;
-    }
-    write_escaped(writer, &buf[idx..])
-}
-
-/// Write an DDDMP-style escaped byte
-fn write_escaped(mut writer: impl io::Write, buf: &[u8]) -> io::Result<()> {
-    for &c in buf {
-        match c {
-            0x00 => writer.write_all(&[0x00, 0x00])?,
-            0x0a => writer.write_all(&[0x00, 0x01])?,
-            0x0d => writer.write_all(&[0x00, 0x02])?,
-            0x1a => writer.write_all(&[0x00, 0x03])?,
-            _ => writer.write_all(&[c])?,
-        }
-    }
-    Ok(())
-}
-
-/// Read and unescape a byte. Counterpart of [`write_escaped()`]
-fn read_unescape(input: impl io::BufRead) -> io::Result<u8> {
-    // In principle, `io::Read` (instead of `io::BufRead`) is enough, but not
-    // passing a buffered reader would be very bad for performance.
-    let mut bytes = input.bytes();
-    let eof_msg = "unexpected end of file";
-    match bytes.next() {
-        None => return err(eof_msg),
-        Some(Ok(0)) => {}
-        Some(res) => return res,
-    };
-    match bytes.next() {
-        None => err(eof_msg),
-        Some(Ok(0x00)) => Ok(0x00),
-        Some(Ok(0x01)) => Ok(0x0a),
-        Some(Ok(0x02)) => Ok(0x0d),
-        Some(Ok(0x03)) => Ok(0x1a),
-        Some(Ok(b)) => Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("invalid escape sequence 0x00 0x{b:x}"),
-        )),
-        Some(e) => e,
-    }
-}
-
-/// 7-bit decode a number from `input` (unescaping the bytes via
-/// [`read_unescape()`])
-fn decode_7bit(mut input: impl io::BufRead) -> io::Result<usize> {
-    let mut res = 0usize;
-    loop {
-        let b = read_unescape(&mut input)?;
-        match res.checked_shl(7) {
-            Some(v) => res = v,
-            None => return err("integer too large"),
-        }
-        res |= (b >> 1) as usize;
-        if b & 1 == 0 {
-            return Ok(res);
-        }
-    }
-}
-
 /// Import the decision diagram from `input` into `manager` after loading
 /// `header` from `input`
 ///
@@ -1227,6 +786,48 @@ where
     Ok(nodes.into_vec())
 }
 
+/// Read and unescape a byte. Counterpart of [`write_escaped()`]
+fn read_unescape(input: impl io::BufRead) -> io::Result<u8> {
+    // In principle, `io::Read` (instead of `io::BufRead`) is enough, but not
+    // passing a buffered reader would be very bad for performance.
+    let mut bytes = input.bytes();
+    let eof_msg = "unexpected end of file";
+    match bytes.next() {
+        None => return err(eof_msg),
+        Some(Ok(0)) => {}
+        Some(res) => return res,
+    };
+    match bytes.next() {
+        None => err(eof_msg),
+        Some(Ok(0x00)) => Ok(0x00),
+        Some(Ok(0x01)) => Ok(0x0a),
+        Some(Ok(0x02)) => Ok(0x0d),
+        Some(Ok(0x03)) => Ok(0x1a),
+        Some(Ok(b)) => Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("invalid escape sequence 0x00 0x{b:x}"),
+        )),
+        Some(e) => e,
+    }
+}
+
+/// 7-bit decode a number from `input` (unescaping the bytes via
+/// [`read_unescape()`])
+fn decode_7bit(mut input: impl io::BufRead) -> io::Result<usize> {
+    let mut res = 0usize;
+    loop {
+        let b = read_unescape(&mut input)?;
+        match res.checked_shl(7) {
+            Some(v) => res = v,
+            None => return err("integer too large"),
+        }
+        res |= (b >> 1) as usize;
+        if b & 1 == 0 {
+            return Ok(res);
+        }
+    }
+}
+
 /// Remove leading spaces and tabs
 const fn trim_start(mut s: &[u8]) -> &[u8] {
     while let [b' ' | b'\t', rest @ ..] = s {
@@ -1460,40 +1061,6 @@ fn parse_edge_list(input: &[u8], dst: &mut Vec<isize>, line_no: usize) -> io::Re
 #[cfg(test)]
 mod test {
     use super::*;
-
-    #[test]
-    fn test_encode_7bit() -> io::Result<()> {
-        let mut buf: Vec<u8> = Vec::new();
-
-        if usize::BITS == 64 {
-            encode_7bit(&mut buf, usize::MAX)?;
-            assert_eq!(
-                &buf[..],
-                &[
-                    0b0000_0011, //  1
-                    0b1111_1111, //  8
-                    0b1111_1111, // 15
-                    0b1111_1111, // 22
-                    0b1111_1111, // 29
-                    0b1111_1111, // 36
-                    0b1111_1111, // 43
-                    0b1111_1111, // 50
-                    0b1111_1111, // 57
-                    0b1111_1110, // 64
-                ]
-            );
-        }
-
-        buf.clear();
-        encode_7bit(&mut buf, 0)?;
-        assert_eq!(&buf[..], &[0, 0]); // 2 times 0 due to escaping
-
-        buf.clear();
-        encode_7bit(&mut buf, 1)?;
-        assert_eq!(&buf[..], &[0b10]);
-
-        Ok(())
-    }
 
     #[test]
     fn test_decode_7bit() -> io::Result<()> {

@@ -566,21 +566,19 @@ where
             PROGRESS.set_task("dddmp export", 1);
             fs::File::create(dmpfile)
                 .and_then(|file| {
-                    let functions: Vec<_> = funcs.iter().map(|(f, _)| f).collect();
-                    let function_names: Vec<&str> = funcs.iter().map(|(_, n)| n.as_str()).collect();
-
                     let mut writer = std::io::BufWriter::new(file);
                     let start = Instant::now();
-                    dddmp::export(
+                    let mut export = dddmp::ExportSettings::default();
+                    if cli.dddmp_ascii {
+                        export = export.ascii();
+                    }
+                    export.export_with_names(
                         &mut writer,
                         manager,
-                        cli.dddmp_ascii,
-                        "",
-                        &functions,
-                        Some(&function_names),
+                        funcs.iter().map(|(a, b)| (a, b)),
                     )?;
                     println!(
-                        "exported BDD ({} bytes) in {}",
+                        "exported decision diagram ({} bytes) in {}",
                         writer.stream_position().unwrap_or_default(),
                         HDuration(start.elapsed())
                     );

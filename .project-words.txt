@@ -109,6 +109,7 @@ nanorand
 nanos
 newtype
 NOLINTNEXTLINE
+nonblocking
 nonnull
 nonoverlapping
 noreturn

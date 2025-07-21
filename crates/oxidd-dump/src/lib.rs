@@ -24,4 +24,6 @@ pub mod dddmp;
 pub mod dot;
 
 #[cfg(feature = "visualize")]
-pub mod visualize;
+mod visualize;
+#[cfg(feature = "visualize")]
+pub use visualize::Visualizer;
