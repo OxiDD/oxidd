@@ -136,6 +136,16 @@ impl fmt::Display for TDDTerminal {
     }
 }
 
+impl From<TDDTerminal> for Option<bool> {
+    fn from(value: TDDTerminal) -> Self {
+        match value {
+            TDDTerminal::False => Some(false),
+            TDDTerminal::Unknown => None,
+            TDDTerminal::True => Some(true),
+        }
+    }
+}
+
 // --- Operations & Apply Implementation ---------------------------------------
 
 /// Native operations of this TDD implementation

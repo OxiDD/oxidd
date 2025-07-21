@@ -806,7 +806,8 @@ pub trait BooleanFunction: Function {
     ///
     /// Locking behavior: acquires the manager's lock for shared access.
     ///
-    /// Panics if any variable number in `args` is larger that the
+    /// Panics if any variable number in `args` is larger that the number of
+    /// variables in the containing manager.
     fn eval(&self, args: impl IntoIterator<Item = (VarNo, bool)>) -> bool {
         self.with_manager_shared(|manager, edge| Self::eval_edge(manager, edge, args))
     }
@@ -1565,6 +1566,31 @@ pub trait PseudoBooleanFunction: Function {
         lhs: &EdgeOfFunc<'id, Self>,
         rhs: &EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>>;
+
+    /// Evaluate this function
+    ///
+    /// `args` consists of pairs `(variable, value)` and determines the
+    /// valuation for all variables in the function's domain. The order is
+    /// irrelevant (except that if the valuation for a variable is given
+    /// multiple times, the last value counts).
+    ///
+    /// Should there be a decision node for a variable not part of the domain,
+    /// then `unknown` is used as the decision value.
+    ///
+    /// Locking behavior: acquires the manager's lock for shared access.
+    ///
+    /// Panics if any variable number in `args` is larger that the number of
+    /// variables in the containing manager.
+    fn eval(&self, args: impl IntoIterator<Item = (VarNo, bool)>) -> Self::Number {
+        self.with_manager_shared(|manager, edge| Self::eval_edge(manager, edge, args))
+    }
+
+    /// `Edge` version of [`Self::eval()`]
+    fn eval_edge<'id>(
+        manager: &Self::Manager<'id>,
+        edge: &EdgeOfFunc<'id, Self>,
+        args: impl IntoIterator<Item = (VarNo, bool)>,
+    ) -> Self::Number;
 }
 
 /// Function of three valued logic
@@ -1947,4 +1973,29 @@ pub trait TVLFunction: Function {
         let g = EdgeDropGuard::new(manager, Self::imp_strict_edge(manager, if_edge, else_edge)?);
         Self::or_edge(manager, &*f, &*g)
     }
+
+    /// Evaluate this function
+    ///
+    /// `args` consists of pairs `(variable, value)` and determines the
+    /// valuation for all variables in the function's domain. The order is
+    /// irrelevant (except that if the valuation for a variable is given
+    /// multiple times, the last value counts).
+    ///
+    /// Should there be a decision node for a variable not part of the domain,
+    /// then `unknown` is used as the decision value.
+    ///
+    /// Locking behavior: acquires the manager's lock for shared access.
+    ///
+    /// Panics if any variable number in `args` is larger that the number of
+    /// variables in the containing manager.
+    fn eval(&self, args: impl IntoIterator<Item = (VarNo, Option<bool>)>) -> Option<bool> {
+        self.with_manager_shared(|manager, edge| Self::eval_edge(manager, edge, args))
+    }
+
+    /// `Edge` version of [`Self::eval()`]
+    fn eval_edge<'id>(
+        manager: &Self::Manager<'id>,
+        edge: &EdgeOfFunc<'id, Self>,
+        args: impl IntoIterator<Item = (VarNo, Option<bool>)>,
+    ) -> Option<bool>;
 }

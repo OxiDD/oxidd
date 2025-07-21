@@ -762,6 +762,7 @@ pub fn derive_pseudo_boolean_function(input: syn::DeriveInput) -> TokenStream {
                 edge_ty,
                 struct_field,
             } = ctx;
+            let field = &struct_field.ident;
             let inner = &struct_field.ty;
 
             let constant_func = struct_field
@@ -777,6 +778,22 @@ pub fn derive_pseudo_boolean_function(input: syn::DeriveInput) -> TokenStream {
                 #[inline]
                 fn constant_edge<'__id>(manager: &#manager_ty, value: <Self as #trait_path>::Number) -> ::oxidd_core::util::AllocResult<#edge_ty> {
                     <#inner as #trait_path>::constant_edge(manager, value)
+                }
+
+                #[inline]
+                fn eval(
+                    &self,
+                    args: impl ::std::iter::IntoIterator<Item = (::oxidd_core::VarNo, bool)>,
+                ) -> Self::Number {
+                    <#inner as #trait_path>::eval(&self.#field, args)
+                }
+                #[inline]
+                fn eval_edge<'__id>(
+                    manager: &#manager_ty,
+                    edge: &#edge_ty,
+                    args: impl ::std::iter::IntoIterator<Item = (::oxidd_core::VarNo, bool)>,
+                ) -> Self::Number {
+                    <#inner as #trait_path>::eval_edge(manager, edge, args)
                 }
             }
         },
@@ -850,6 +867,22 @@ pub fn derive_tvl_function(input: syn::DeriveInput) -> TokenStream {
                     ::oxidd_core::util::Borrowed<'__a, #edge_ty>,
                 )> {
                     <#inner as #trait_path>::cofactors_edge(manager, f)
+                }
+
+                #[inline]
+                fn eval(
+                    &self,
+                    args: impl ::std::iter::IntoIterator<Item = (::oxidd_core::VarNo, ::std::option::Option<bool>)>,
+                ) -> ::std::option::Option<bool> {
+                    <#inner as #trait_path>::eval(&self.#field, args)
+                }
+                #[inline]
+                fn eval_edge<'__id>(
+                    manager: &#manager_ty,
+                    edge: &#edge_ty,
+                    args: impl ::std::iter::IntoIterator<Item = (::oxidd_core::VarNo, ::std::option::Option<bool>)>,
+                ) -> ::std::option::Option<bool> {
+                    <#inner as #trait_path>::eval_edge(manager, edge, args)
                 }
             }
         },

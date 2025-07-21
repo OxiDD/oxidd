@@ -1,8 +1,12 @@
 //! Recursive single-threaded apply algorithms
 
+use std::borrow::Borrow;
+
+use fixedbitset::FixedBitSet;
+
 use oxidd_core::function::{EdgeOfFunc, Function, NumberBase, PseudoBooleanFunction};
 use oxidd_core::util::{AllocResult, Borrowed, EdgeDropGuard};
-use oxidd_core::{ApplyCache, Edge, HasApplyCache, HasLevel, InnerNode, Manager, Tag, VarNo};
+use oxidd_core::{ApplyCache, Edge, HasApplyCache, HasLevel, InnerNode, Manager, Node, Tag, VarNo};
 use oxidd_derive::Function;
 use oxidd_dump::dot::DotStyle;
 
@@ -180,6 +184,37 @@ where
         rhs: &EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         apply_bin::<_, T, { MTBDDOp::Max as u8 }>(manager, lhs.borrowed(), rhs.borrowed())
+    }
+
+    #[inline]
+    fn eval_edge<'id>(
+        manager: &Self::Manager<'id>,
+        edge: &EdgeOfFunc<'id, Self>,
+        args: impl IntoIterator<Item = (VarNo, bool)>,
+    ) -> T {
+        // `choices` maps levels to the child number to choose
+        let mut choices = FixedBitSet::with_capacity(manager.num_levels() as usize);
+        for (var, val) in args {
+            // child 0 is "then"/"true", hence the negation
+            choices.set(manager.var_to_level(var) as usize, !val);
+        }
+
+        #[inline] // this function is tail-recursive
+        fn inner<M, T: Clone>(manager: &M, edge: Borrowed<M::Edge>, choices: &FixedBitSet) -> T
+        where
+            M: Manager<Terminal = T>,
+            M::InnerNode: HasLevel,
+        {
+            match manager.get_node(&edge) {
+                Node::Inner(node) => {
+                    let edge = node.child(choices.contains(node.level() as usize) as usize);
+                    inner(manager, edge, choices)
+                }
+                Node::Terminal(t) => t.borrow().clone(),
+            }
+        }
+
+        inner(manager, edge.borrowed(), &choices)
     }
 }
 

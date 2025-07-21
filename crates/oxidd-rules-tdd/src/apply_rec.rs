@@ -385,6 +385,52 @@ where
             else_edge.borrowed(),
         )
     }
+
+    #[inline]
+    fn eval_edge<'id>(
+        manager: &Self::Manager<'id>,
+        edge: &EdgeOfFunc<'id, Self>,
+        args: impl IntoIterator<Item = (VarNo, Option<bool>)>,
+    ) -> Option<bool> {
+        const ELEMENTS_PER_BLOCK: u32 = u32::BITS / 2;
+        // `choices` maps levels to the child number to choose
+        let mut choices = vec![0u32; manager.num_levels().div_ceil(ELEMENTS_PER_BLOCK) as usize];
+        for (var, val) in args {
+            let level = manager.var_to_level(var);
+            let block = &mut choices[(level / ELEMENTS_PER_BLOCK) as usize];
+            let shift = 2 * (level % ELEMENTS_PER_BLOCK);
+            let mask = !(0b11 << shift);
+            let val = match val {
+                Some(true) => 0,
+                None => 1,
+                Some(false) => 2,
+            };
+            *block = (val << shift) | (*block & mask);
+        }
+
+        #[inline] // this function is tail-recursive
+        fn inner<M>(manager: &M, edge: Borrowed<M::Edge>, choices: &[u32]) -> Option<bool>
+        where
+            M: Manager<Terminal = TDDTerminal>,
+            M::InnerNode: HasLevel,
+        {
+            const ELEMENTS_PER_BLOCK: u32 = u32::BITS / 2;
+            match manager.get_node(&edge) {
+                Node::Inner(node) => {
+                    let level = node.level();
+                    let block = choices[(level / ELEMENTS_PER_BLOCK) as usize];
+                    let shift = 2 * (level % ELEMENTS_PER_BLOCK);
+                    let val = (block >> shift) & 0b11;
+
+                    let edge = node.child(val as usize);
+                    inner(manager, edge, choices)
+                }
+                Node::Terminal(t) => (*t.borrow()).into(),
+            }
+        }
+
+        inner(manager, edge.borrowed(), &choices)
+    }
 }
 
 impl<F: Function, T: Tag> DotStyle<T> for TDDFunction<F> {
