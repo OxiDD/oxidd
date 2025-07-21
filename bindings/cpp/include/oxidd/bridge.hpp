@@ -5,6 +5,7 @@
 
 #include "oxidd/capi.h"
 #include <concepts>
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <utility>
@@ -697,6 +698,37 @@ public:
   [[nodiscard]] std::size_t approx_num_inner_nodes() const noexcept {
     assert(!is_invalid());
     return Derived::_c_approx_num_inner_nodes(_manager);
+  }
+
+  /// @}
+  /// @name Garbage collection
+  /// @{
+
+  /// Perform garbage collection
+  ///
+  /// This method looks for nodes that are neither referenced by a `function`
+  /// nor another node and removes them. The method works from top to bottom, so
+  /// if a node is only referenced by nodes that can be removed, this node will
+  /// be removed as well.
+  ///
+  /// Locking behavior: acquires the manager's lock for shared access.
+  ///
+  /// @returns  The count of nodes removed
+  std::size_t gc() noexcept {
+    assert(!is_invalid());
+    return Derived::_c_gc(_manager);
+  }
+
+  /// Get the count of garbage collections
+  ///
+  /// `this` must not be invalid (check via `is_invalid()`).
+  ///
+  /// Locking behavior: acquires the manager's lock for shared access.
+  ///
+  /// @returns  The garbage collection count
+  [[nodiscard]] std::uint64_t gc_count() const noexcept {
+    assert(!is_invalid());
+    return Derived::_c_gc_count(_manager);
   }
 
   /// @}

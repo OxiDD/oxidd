@@ -251,6 +251,31 @@ impl BCDDManager {
         })
     }
 
+    /// Perform garbage collection.
+    ///
+    /// This method looks for nodes that are neither referenced by a
+    /// :class:`BCDDFunction` nor another node and removes them. The method
+    /// works from top to bottom, so if a node is only referenced by nodes
+    /// that can be removed, this node will be removed as well.
+    ///
+    /// Locking behavior: acquires the manager's lock for shared access.
+    ///
+    /// Returns:
+    ///     int: The count of nodes removed
+    fn gc(&self, py: Python) -> usize {
+        py.allow_threads(|| self.0.with_manager_shared(|manager| manager.gc()))
+    }
+
+    /// Get the count of garbage collections.
+    ///
+    /// Locking behavior: acquires the manager's lock for shared access.
+    ///
+    /// Returns:
+    ///     int: The garbage collection count
+    fn gc_count(&self) -> u64 {
+        self.0.with_manager_shared(|manager| manager.gc_count())
+    }
+
     /// Get the Boolean function that is true if and only if `var` is true.
     ///
     /// Locking behavior: acquires the manager's lock for shared access.

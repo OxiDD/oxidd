@@ -844,6 +844,33 @@ class Manager(Generic[F], Protocol):
         raise NotImplementedError
 
     @abstractmethod
+    def gc(self) -> int:
+        """Perform garbage collection.
+
+        This method looks for nodes that are neither referenced by a
+        :class:`Function` nor another node and removes them. The method works
+        from top to bottom, so if a node is only referenced by nodes that can be
+        removed, this node will be removed as well.
+
+        Locking behavior: acquires the manager's lock for shared access.
+
+        Returns:
+            The count of nodes removed
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def gc_count(self) -> int:
+        """Get the count of garbage collections.
+
+        Locking behavior: acquires the manager's lock for shared access.
+
+        Returns:
+            The garbage collection count
+        """
+        raise NotImplementedError
+
+    @abstractmethod
     def dump_all_dot_file(
         self,
         /,

@@ -575,6 +575,33 @@ pub unsafe extern "C" fn oxidd_bcdd_manager_level_to_var(
         .with_manager_shared(|manager| manager.level_to_var(level))
 }
 
+/// Perform garbage collection
+///
+/// This method looks for nodes that are neither referenced by a `bcdd_function`
+/// nor another node and removes them. The method works from top to bottom, so
+/// if a node is only referenced by nodes that can be removed, this node will be
+/// removed as well.
+///
+/// Locking behavior: acquires the manager's lock for shared access.
+///
+/// @returns  The count of nodes removed
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bcdd_manager_gc(manager: bcdd_manager_t) -> usize {
+    manager.get().with_manager_shared(|manager| manager.gc())
+}
+
+/// Get the count of garbage collections
+///
+/// Locking behavior: acquires the manager's lock for shared access.
+///
+/// @returns  The garbage collection count
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bcdd_manager_gc_count(manager: bcdd_manager_t) -> u64 {
+    manager
+        .get()
+        .with_manager_shared(|manager| manager.gc_count())
+}
+
 /// Get the Boolean function that is true if and only if `var` is true
 ///
 /// Locking behavior: acquires the manager's lock for shared access.

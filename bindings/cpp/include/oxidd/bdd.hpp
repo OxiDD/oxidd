@@ -45,6 +45,9 @@ class bdd_manager
   OXIDD_LINK_C(num_inner_nodes)
   OXIDD_LINK_C(approx_num_inner_nodes)
 
+  OXIDD_LINK_C(gc)
+  OXIDD_LINK_C(gc_count)
+
 #undef OXIDD_LINK_C
 #define OXIDD_LINK_C(x) static constexpr auto _c_##x = capi::oxidd_bdd_##x;
   // boolean_function_manager

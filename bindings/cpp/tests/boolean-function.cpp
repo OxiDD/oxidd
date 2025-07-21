@@ -752,6 +752,7 @@ void test_all_boolean_functions_2vars_t1() {
   M mgr(inner_node_capacity, apply_cache_capacity, threads);
 
   assert(!mgr.is_invalid());
+  assert(mgr.gc_count() == 0);
 
   assert(mgr.run_in_worker_pool([]() { return 42; }) == 42);
   assert(mgr.run_in_worker_pool([&mgr]() { return mgr; }) == mgr);
@@ -791,6 +792,10 @@ void test_all_boolean_functions_2vars_t1() {
 
     test_cofactors(mgr);
   });
+
+  const std::uint64_t gc_count = mgr.gc_count();
+  mgr.gc();
+  assert(mgr.gc_count() == gc_count + 1);
 
   test_add_vars(mgr);
 }
