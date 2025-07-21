@@ -79,7 +79,6 @@ where
             dd_name,
             functions,
             function_names,
-            |_| false,
         )?;
         body_buffer.extend_from_slice(b"\"},");
     }

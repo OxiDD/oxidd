@@ -500,6 +500,11 @@ impl<T: crate::AsciiDisplay> fmt::Display for Ascii<&T> {
     }
 }
 
+#[inline]
+fn is_complemented<E: Edge>(edge: &E) -> bool {
+    edge.tag() != Default::default()
+}
+
 /// Export the decision diagram in `manager` to `file`
 ///
 /// `ascii` indicates whether to use the ASCII or binary format.
@@ -511,9 +516,6 @@ impl<T: crate::AsciiDisplay> fmt::Display for Ascii<&T> {
 /// `function_names` are the corresponding names (optional). If given, there
 /// must be `functions.len()` names in the same order as in `function_names`.
 ///
-/// `is_complemented` is a function that returns whether an edge is
-/// complemented.
-///
 /// Variable names will only be exported if all variables have a name (see
 /// [`Manager::var_name()`]). Like , `dd_name` variable names must be ASCII text
 /// without control characters.
@@ -524,7 +526,6 @@ pub fn export<'id, F: Function>(
     dd_name: &str,
     functions: &[&F],
     function_names: Option<&[&str]>,
-    is_complemented: impl Fn(&<F::Manager<'id> as Manager>::Edge) -> bool,
 ) -> io::Result<()>
 where
     INodeOfFunc<'id, F>: HasLevel,
@@ -794,10 +795,10 @@ where
                 let (t_code, t_idx) = bin_idx(&t, node_id);
                 let (e_code, e_idx) = bin_idx(&e, node_id);
 
-                debug_assert!(!is_complemented(&t));
+                debug_assert!(!is_complemented(&*t));
                 write_escaped(
                     &mut file,
-                    &[node_code(var_code, t_code, is_complemented(&e), e_code)],
+                    &[node_code(var_code, t_code, is_complemented(&*e), e_code)],
                 )?;
                 if var_code == Code::AbsoluteID || var_code == Code::RelativeID {
                     encode_7bit(&mut file, var_idx as usize)?;

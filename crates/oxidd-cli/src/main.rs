@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use clap::{Parser, ValueEnum};
 use num_bigint::BigUint;
 use oxidd::util::SatCountCache;
-use oxidd::{BooleanFunction, Edge, HasLevel, HasWorkers, Manager, ManagerRef, VarNo, WorkerPool};
+use oxidd::{BooleanFunction, HasLevel, HasWorkers, Manager, ManagerRef, VarNo, WorkerPool};
 use oxidd_core::function::{ETagOfFunc, INodeOfFunc, TermOfFunc};
 use oxidd_core::util::VarNameMap;
 use oxidd_core::{ApplyCache, HasApplyCache};
@@ -578,7 +578,6 @@ where
                         "",
                         &functions,
                         Some(&function_names),
-                        |e| e.tag() != Default::default(),
                     )?;
                     println!(
                         "exported BDD ({} bytes) in {}",
