@@ -21,12 +21,6 @@ fn main() {
         manager.gc();
 
         let file = std::fs::File::create("tdd.dot").expect("could not create `tdd.dot`");
-        dump_all(
-            file,
-            manager,
-            [(&x1, "x1"), (&x2, "x2"), (&x3, "x3"), (&x4, "x4")],
-            [(&res, "(x1 ∧ x2) ∨ x4")],
-        )
-        .expect("dot export failed");
+        dump_all(file, manager, [(&res, "(x1 ∧ x2) ∨ x4")]).expect("dot export failed");
     });
 }
