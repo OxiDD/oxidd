@@ -1274,7 +1274,7 @@ pub mod mt {
     /// Boolean function backed by a binary decision diagram, multi-threaded
     /// version
     #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Function, Debug)]
-    #[repr_id = "BCDD"]
+    #[repr_id = "BDD"]
     #[repr(transparent)]
     pub struct BDDFunctionMT<F: Function>(F);
 
