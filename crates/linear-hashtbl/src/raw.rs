@@ -340,6 +340,11 @@ impl<T, S: Status, A: Clone + Allocator> RawTable<T, S, A> {
         new_data.resize_with(new_cap, || Slot::FREE);
         let old_data = core::mem::replace(&mut self.data, new_data.into_boxed_slice());
 
+        if new_cap == 0 {
+            self.free = 0;
+            return;
+        }
+
         let new_data = &mut self.data[..];
         let new_mask = new_cap - 1;
         // `.into_vec()` is needed for `allocator-api2` boxes
