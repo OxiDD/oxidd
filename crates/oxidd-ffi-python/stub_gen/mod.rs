@@ -114,6 +114,16 @@ impl Parameter {
                 let mut v = String::new();
                 for tok in kv {
                     write!(v, "{tok}")?;
+
+                    fn assign(string: &mut String, s: &str) {
+                        string.clear();
+                        string.push_str(s);
+                    }
+                    match v.as_str() {
+                        "false" => assign(&mut v, "False"),
+                        "true" => assign(&mut v, "True"),
+                        _ => {}
+                    }
                 }
                 params.push(Parameter {
                     name,
