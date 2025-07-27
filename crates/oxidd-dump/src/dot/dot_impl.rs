@@ -1,25 +1,28 @@
 use std::fmt;
 use std::io;
+use std::ops::Deref;
 
 use oxidd_core::function::{ETagOfFunc, Function, INodeOfFunc, TermOfFunc};
 use oxidd_core::util::EdgeDropGuard;
 use oxidd_core::{Edge, HasLevel, InnerNode, LevelNo, LevelView, Manager};
+
+use super::DotStyle;
 
 /// Dump the entire decision diagram represented by `manager` as Graphviz DOT
 /// code to `file`
 ///
 /// To label functions in the decision diagram, you can pass pairs of function
 /// and name (type `D`, implementing [`std::fmt::Display`]).
-pub fn dump_all<'a, 'id, F, D>(
+pub fn dump_all<'a, 'id, FR: Deref, D>(
     mut file: impl io::Write,
-    manager: &F::Manager<'id>,
-    functions: impl IntoIterator<Item = (&'a F, D)>,
+    manager: &<FR::Target as Function>::Manager<'id>,
+    functions: impl IntoIterator<Item = (FR, D)>,
 ) -> io::Result<()>
 where
-    F: 'a + Function + super::DotStyle<ETagOfFunc<'id, F>>,
-    INodeOfFunc<'id, F>: HasLevel,
-    ETagOfFunc<'id, F>: fmt::Debug,
-    TermOfFunc<'id, F>: fmt::Display,
+    FR::Target: 'a + Function + DotStyle<ETagOfFunc<'id, FR::Target>>,
+    INodeOfFunc<'id, FR::Target>: HasLevel,
+    ETagOfFunc<'id, FR::Target>: fmt::Debug,
+    TermOfFunc<'id, FR::Target>: fmt::Display,
     D: fmt::Display,
 {
     writeln!(file, "digraph DD {{")?;
@@ -109,7 +112,7 @@ where
     }
 
     for (parent_type, parent, child, idx, tag) in edges {
-        let (style, bold, color) = F::edge_style(idx, tag);
+        let (style, bold, color) = FR::Target::edge_style(idx, tag);
         let bold = if bold { ",bold" } else { "" };
         writeln!(
             file,

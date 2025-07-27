@@ -404,21 +404,18 @@ where
         let (functions, function_names) =
             if !functions.is_null() && !function_names.is_null() && num_function_names != 0 {
                 (
-                    std::slice::from_raw_parts(functions, num_function_names)
-                        .iter()
-                        .map(|g| g.get().expect("invalid DD function"))
-                        .collect(),
+                    std::slice::from_raw_parts(functions, num_function_names),
                     std::slice::from_raw_parts(function_names, num_function_names),
                 )
             } else {
-                (Vec::new(), [].as_slice())
+                ([].as_slice(), [].as_slice())
             };
 
         oxidd_dump::dot::dump_all(
             file,
             manager,
             functions.iter().zip(function_names).map(|(f, &name)| {
-                let f: &CF::Function = f;
+                let f = f.get().expect("invalid DD function");
                 (f, c_char_to_str(name))
             }),
         )

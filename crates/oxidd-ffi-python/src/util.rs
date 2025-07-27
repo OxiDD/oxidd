@@ -1,15 +1,21 @@
 //! Primitives and utilities
 
 use std::fmt;
+use std::marker::PhantomData;
 use std::ops::Range;
+use std::path::Path;
 
+use oxidd_core::function::{ETagOfFunc, INodeOfFunc, TermOfFunc};
+use oxidd_dump::dot::DotStyle;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::pyclass::boolean_struct::True;
-use pyo3::types::{PyRange, PyString, PyTuple};
+use pyo3::types::{PyIterator, PyRange, PyString, PyTuple};
 use pyo3::PyClass;
 
-use oxidd::{BooleanFunction, BooleanOperator, LevelNo, Manager, ManagerRef, VarNo};
+use oxidd::{
+    BooleanFunction, BooleanOperator, Function, HasLevel, LevelNo, Manager, ManagerRef, VarNo,
+};
 use oxidd_core::Countable;
 
 // pyi: class DDMemoryError(MemoryError):
@@ -161,27 +167,123 @@ pub(crate) fn add_named_vars<'py, M: ManagerRef>(
     })
 }
 
-pub(crate) fn collect_func_str_pairs<'py, F, PYF>(
-    pairs: Option<&Bound<'py, PyAny>>,
-) -> PyResult<Vec<(F, Bound<'py, PyString>)>>
+struct DerefSelf<T>(T);
+
+impl<T> std::ops::Deref for DerefSelf<T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &self.0
+    }
+}
+
+struct PyStringDisplay<'py>(Bound<'py, PyString>);
+
+impl<'py> fmt::Display for PyStringDisplay<'py> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0.to_string_lossy())
+    }
+}
+
+struct FuncStrPairIter<'py, F, PYF> {
+    iter: Bound<'py, PyIterator>,
+    i: usize,
+    len: Option<usize>,
+    err: PyResult<()>,
+    _phantom: PhantomData<(F, PYF)>,
+}
+
+impl<'py, F, PYF> TryFrom<&Bound<'py, PyAny>> for FuncStrPairIter<'py, F, PYF> {
+    type Error = PyErr;
+
+    fn try_from(iterable: &Bound<'py, PyAny>) -> Result<Self, PyErr> {
+        let len = iterable.len().ok();
+        Ok(Self {
+            iter: iterable.try_iter()?,
+            i: 0,
+            len,
+            err: Ok(()),
+            _phantom: PhantomData,
+        })
+    }
+}
+
+impl<'py, F, PYF> Iterator for FuncStrPairIter<'py, F, PYF>
 where
     F: Clone,
     PYF: Sync + PyClass<Frozen = True> + AsRef<F>,
 {
-    let mut ps = Vec::new();
-    if let Some(pairs) = pairs {
-        if let Ok(len) = pairs.len() {
-            ps.reserve(len);
-        }
-        for pair in pairs.try_iter()? {
-            let pair: Bound<PyTuple> = pair?.downcast_into()?;
+    type Item = (DerefSelf<F>, PyStringDisplay<'py>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let res = self.iter.next()?.and_then(|pair| {
+            let pair: Bound<PyTuple> = pair.downcast_into()?;
             let f = pair.get_borrowed_item(0)?;
             let f = f.downcast::<PYF>()?.get().as_ref().clone();
-            let s: Bound<PyString> = pair.get_item(1)?.downcast_into()?;
-            ps.push((f, s));
+            let s = pair.get_item(1)?.downcast_into()?;
+            Ok((DerefSelf(f), PyStringDisplay(s)))
+        });
+        if let Err(err) = res {
+            self.err = Err(err);
+            return None;
+        }
+        self.i += 1;
+        res.ok()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self.len {
+            Some(len) => {
+                let n = len - self.i;
+                (n, Some(n))
+            }
+            None => (0, None),
         }
     }
-    Ok(ps)
+}
+
+struct OptIter<I>(Option<I>);
+
+impl<I: Iterator> Iterator for OptIter<I> {
+    type Item = I::Item;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.as_mut()?.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match &self.0 {
+            Some(it) => it.size_hint(),
+            None => (0, Some(0)),
+        }
+    }
+}
+
+pub(crate) fn dump_all_dot_file<'py, F, PYF>(
+    manager_ref: &F::ManagerRef,
+    path: &Path,
+    functions: Option<&Bound<'py, PyAny>>,
+) -> PyResult<()>
+where
+    F: Function + for<'id> DotStyle<ETagOfFunc<'id, F>>,
+    PYF: Sync + PyClass<Frozen = True> + AsRef<F>,
+    for<'id> INodeOfFunc<'id, F>: HasLevel,
+    for<'id> ETagOfFunc<'id, F>: fmt::Debug,
+    for<'id> TermOfFunc<'id, F>: fmt::Display,
+{
+    let file = std::fs::File::create(path)?;
+
+    let mut iter = OptIter(match functions {
+        Some(iterable) => Some(FuncStrPairIter::<F, PYF>::try_from(iterable)?),
+        None => None,
+    });
+    manager_ref
+        .with_manager_shared(|manager| oxidd_dump::dot::dump_all(file, manager, &mut iter))?;
+
+    if let Some(it) = iter.0 {
+        it.err?;
+    }
+
+    Ok(())
 }
 
 pub(crate) fn boolean_operator(obj: &Bound<PyAny>) -> PyResult<BooleanOperator> {

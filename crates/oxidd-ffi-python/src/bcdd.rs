@@ -365,21 +365,7 @@ impl BCDDManager {
         path: PathBuf,
         functions: Option<&Bound<'py, PyAny>>,
     ) -> PyResult<()> {
-        let collect =
-            crate::util::collect_func_str_pairs::<oxidd::bcdd::BCDDFunction, BCDDFunction>;
-        let functions = collect(functions)?;
-
-        let file = std::fs::File::create(path)?;
-
-        self.0.with_manager_shared(|manager| {
-            oxidd_dump::dot::dump_all(
-                file,
-                manager,
-                functions.iter().map(|(f, s)| (f, s.to_string_lossy())),
-            )
-        })?;
-
-        Ok(())
+        crate::util::dump_all_dot_file::<_, BCDDFunction>(&self.0, &path, functions)
     }
 }
 
