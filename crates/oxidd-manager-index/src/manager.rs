@@ -645,7 +645,9 @@ where
                 if let Some(id) = shared.next_free.pop() {
                     // SAFETY: `id` is the ID of a free slot, we have exclusive access
                     let (next_free, slot) = unsafe { self.use_free_slot(id) };
-                    shared.next_free.push(next_free);
+                    if next_free != 0 {
+                        shared.next_free.push(next_free);
+                    }
                     return Ok((id, slot));
                 }
 
@@ -701,6 +703,7 @@ where
     /// SAFETY: `slot` must contain a node. `id` is the ID of `slot`.
     #[inline]
     unsafe fn free_slot(&self, slot: &mut Slot<N>, id: u32) {
+        debug_assert!(id as usize >= TERMINALS);
         // SAFETY: We don't use the node in `slot` again.
         unsafe { ManuallyDrop::take(&mut slot.node) }.drop_with(|edge| self.drop_edge(edge));
 
