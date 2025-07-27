@@ -567,7 +567,7 @@ where
                 1
             };
 
-            self.get_slot_from_shared(node_count_delta)
+            self.get_slot_from_shared(state, node_count_delta)
         });
         match res {
             Ok((id, slot)) => {
@@ -607,61 +607,63 @@ where
     /// uninitialized slot as well as a reference pointing to that slot.
     #[cold]
     #[allow(clippy::mut_from_ref)]
-    fn get_slot_from_shared(&self, delta: i32) -> AllocResult<(u32, &mut Slot<N>)> {
-        LOCAL_STORE_STATE.with(|local| {
-            let mut shared = self.state.lock();
+    fn get_slot_from_shared(
+        &self,
+        local: &LocalStoreState,
+        delta: i32,
+    ) -> AllocResult<(u32, &mut Slot<N>)> {
+        let mut shared = self.state.lock();
 
-            shared.node_count += delta as i64;
-            if shared.gc_state == GCState::Init && shared.node_count >= shared.gc_hwm as i64 {
-                shared.gc_state = GCState::Triggered;
-                self.gc_signal.1.notify_one();
+        shared.node_count += delta as i64;
+        if shared.gc_state == GCState::Init && shared.node_count >= shared.gc_hwm as i64 {
+            shared.gc_state = GCState::Triggered;
+            self.gc_signal.1.notify_one();
+        }
+
+        if local.current_store.get() == self.addr() {
+            debug_assert_eq!(local.next_free.get(), 0);
+            debug_assert_eq!(local.initialized.get() % CHUNK_SIZE, 0);
+
+            if let Some(id) = shared.next_free.pop() {
+                // SAFETY: `id` is the ID of a free slot, we have exclusive access
+                let (next_free, slot) = unsafe { self.use_free_slot(id) };
+                local.next_free.set(next_free);
+                return Ok((id, slot));
             }
 
-            if local.current_store.get() == self.addr() {
-                debug_assert_eq!(local.next_free.get(), 0);
-                debug_assert_eq!(local.initialized.get() % CHUNK_SIZE, 0);
-
-                if let Some(id) = shared.next_free.pop() {
-                    // SAFETY: `id` is the ID of a free slot, we have exclusive access
-                    let (next_free, slot) = unsafe { self.use_free_slot(id) };
-                    local.next_free.set(next_free);
-                    return Ok((id, slot));
-                }
-
-                let index = shared.allocated;
-                let slots = &self.inner_nodes.slots;
-                if (index as usize + CHUNK_SIZE as usize) < slots.len() {
-                    shared.allocated = (index / CHUNK_SIZE + 1) * CHUNK_SIZE;
-                    local.initialized.set(index + 1);
-                } else if (index as usize) < slots.len() {
-                    shared.allocated += 1;
-                } else {
-                    return Err(OutOfMemory);
-                }
-                // SAFETY: `index` is in bounds, the slot is uninitialized
-                let slot = unsafe { &mut *slots.get_unchecked(index as usize).get() };
-                Ok((index + TERMINALS as u32, slot))
-            } else {
-                if let Some(id) = shared.next_free.pop() {
-                    // SAFETY: `id` is the ID of a free slot, we have exclusive access
-                    let (next_free, slot) = unsafe { self.use_free_slot(id) };
-                    if next_free != 0 {
-                        shared.next_free.push(next_free);
-                    }
-                    return Ok((id, slot));
-                }
-
-                let index = shared.allocated;
-                let slots = &self.inner_nodes.slots;
-                if (index as usize) >= slots.len() {
-                    return Err(OutOfMemory);
-                }
+            let index = shared.allocated;
+            let slots = &self.inner_nodes.slots;
+            if (index as usize + CHUNK_SIZE as usize) < slots.len() {
+                shared.allocated = (index / CHUNK_SIZE + 1) * CHUNK_SIZE;
+                local.initialized.set(index + 1);
+            } else if (index as usize) < slots.len() {
                 shared.allocated += 1;
-                // SAFETY: `index` is in bounds, the slot is uninitialized
-                let slot = unsafe { &mut *slots.get_unchecked(index as usize).get() };
-                Ok((index + TERMINALS as u32, slot))
+            } else {
+                return Err(OutOfMemory);
             }
-        })
+            // SAFETY: `index` is in bounds, the slot is uninitialized
+            let slot = unsafe { &mut *slots.get_unchecked(index as usize).get() };
+            Ok((index + TERMINALS as u32, slot))
+        } else {
+            if let Some(id) = shared.next_free.pop() {
+                // SAFETY: `id` is the ID of a free slot, we have exclusive access
+                let (next_free, slot) = unsafe { self.use_free_slot(id) };
+                if next_free != 0 {
+                    shared.next_free.push(next_free);
+                }
+                return Ok((id, slot));
+            }
+
+            let index = shared.allocated;
+            let slots = &self.inner_nodes.slots;
+            if (index as usize) >= slots.len() {
+                return Err(OutOfMemory);
+            }
+            shared.allocated += 1;
+            // SAFETY: `index` is in bounds, the slot is uninitialized
+            let slot = unsafe { &mut *slots.get_unchecked(index as usize).get() };
+            Ok((index + TERMINALS as u32, slot))
+        }
     }
 
     /// Drop an edge that originates from the unique table.
