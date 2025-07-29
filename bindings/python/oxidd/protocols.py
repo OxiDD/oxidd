@@ -899,13 +899,13 @@ class BooleanFunctionManager(Manager[BF], Protocol):
     """Manager whose nodes represent Boolean functions."""
 
     @abstractmethod
-    def var(self, /, var: int) -> BF:
-        """Get the Boolean function that is true if and only if `var` is true.
+    def var(self, /, var: int | str) -> BF:
+        """Get the Boolean function that is true if and only if ``var`` is true.
 
         Acquires the manager's lock for exclusive access.
 
         Args:
-            var: The variable number.
+            var: The variable number or name.
 
         Returns:
             A Boolean function that is true if and only if the variable is true
@@ -913,17 +913,18 @@ class BooleanFunctionManager(Manager[BF], Protocol):
         Raises:
             DDMemoryError: If the operation runs out of memory
             IndexError: If ``var >= self.num_vars()``
+            KeyError: If ``var`` is a string and ``self.name_to_var(var) is None``
         """
         raise NotImplementedError
 
     @abstractmethod
-    def not_var(self, /, var: int) -> BF:
-        """Get the Boolean function that is true if and only if `var` is false.
+    def not_var(self, /, var: int | str) -> BF:
+        """Get the Boolean function that is true if and only if ``var`` is false.
 
         Acquires the manager's lock for exclusive access.
 
         Args:
-            var: The variable number.
+            var: The variable number or name.
 
         Returns:
             A Boolean function that is true if and only if the variable is false
@@ -931,6 +932,7 @@ class BooleanFunctionManager(Manager[BF], Protocol):
         Raises:
             DDMemoryError: If the operation runs out of memory
             IndexError: If ``var >= self.num_vars()``
+            KeyError: If ``var`` is a string and ``self.name_to_var(var) is None``
         """
         raise NotImplementedError
 

@@ -167,6 +167,34 @@ pub(crate) fn add_named_vars<'py, M: ManagerRef>(
     })
 }
 
+#[derive(FromPyObject)]
+pub(crate) enum VarId {
+    #[pyo3(transparent, annotation = "int")]
+    Number(VarNo),
+    #[pyo3(transparent, annotation = "str")]
+    Name(String),
+}
+
+pub(crate) fn with_var_no<MR: ManagerRef, R>(
+    manager_ref: &MR,
+    var: VarId,
+    f: impl for<'id> FnOnce(&MR::Manager<'id>, VarNo) -> PyResult<R>,
+) -> PyResult<R> {
+    manager_ref.with_manager_shared(|manager| {
+        let var = match var {
+            VarId::Number(var) => {
+                var_no_bounds_check(manager, var)?;
+                var
+            }
+            VarId::Name(name) => match manager.name_to_var(&name) {
+                Some(var) => var,
+                None => return Err(pyo3::exceptions::PyKeyError::new_err(name)),
+            },
+        };
+        f(manager, var)
+    })
+}
+
 struct DerefSelf<T>(T);
 
 impl<T> std::ops::Deref for DerefSelf<T> {

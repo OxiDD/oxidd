@@ -276,12 +276,12 @@ impl BCDDManager {
         self.0.with_manager_shared(|manager| manager.gc_count())
     }
 
-    /// Get the Boolean function that is true if and only if `var` is true.
+    /// Get the Boolean function that is true if and only if ``var`` is true.
     ///
     /// Locking behavior: acquires the manager's lock for shared access.
     ///
     /// Args:
-    ///     var (int): The variable number
+    ///     var (int | str): The variable number or name
     ///
     /// Returns:
     ///     BCDDFunction: A Boolean function that is true if and only if the
@@ -289,20 +289,21 @@ impl BCDDManager {
     ///
     /// Raises:
     ///     DDMemoryError: If the operation runs out of memory
-    ///     IndexError: If ``var >= self.num_vars()``
-    fn var(&self, var: VarNo) -> PyResult<BCDDFunction> {
-        self.0.with_manager_shared(|manager| {
-            crate::util::var_no_bounds_check(manager, var)?;
+    ///     IndexError: If ``var`` is an ``int`` and ``var >= self.num_vars()``
+    ///     KeyError: If ``var`` is a string and
+    ///         ``self.name_to_var(var) is None``
+    fn var(&self, var: crate::util::VarId) -> PyResult<BCDDFunction> {
+        crate::util::with_var_no(&self.0, var, |manager, var| {
             oxidd::bcdd::BCDDFunction::var(manager, var).try_into()
         })
     }
 
-    /// Get the Boolean function that is true if and only if `var` is true.
+    /// Get the Boolean function that is true if and only if ``var`` is false.
     ///
     /// Locking behavior: acquires the manager's lock for shared access.
     ///
     /// Args:
-    ///     var (int): The variable number
+    ///     var (int | str): The variable number or name
     ///
     /// Returns:
     ///     BCDDFunction: A Boolean function that is true if and only if the
@@ -310,10 +311,11 @@ impl BCDDManager {
     ///
     /// Raises:
     ///     DDMemoryError: If the operation runs out of memory
-    ///     IndexError: If ``var >= self.num_vars()``
-    fn not_var(&self, var: VarNo) -> PyResult<BCDDFunction> {
-        self.0.with_manager_shared(|manager| {
-            crate::util::var_no_bounds_check(manager, var)?;
+    ///     IndexError: If ``var`` is an ``int`` and ``var >= self.num_vars()``
+    ///     KeyError: If ``var`` is a string and
+    ///         ``self.name_to_var(var) is None``
+    fn not_var(&self, var: crate::util::VarId) -> PyResult<BCDDFunction> {
+        crate::util::with_var_no(&self.0, var, |manager, var| {
             oxidd::bcdd::BCDDFunction::not_var(manager, var).try_into()
         })
     }
