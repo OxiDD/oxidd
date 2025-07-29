@@ -2,9 +2,9 @@ use std::fmt;
 use std::io;
 use std::ops::Deref;
 
-use oxidd_core::function::{ETagOfFunc, Function, INodeOfFunc, TermOfFunc};
+use oxidd_core::function::{ETagOfFunc, Function, TermOfFunc};
 use oxidd_core::util::EdgeDropGuard;
-use oxidd_core::{Edge, HasLevel, InnerNode, LevelNo, LevelView, Manager};
+use oxidd_core::{Edge, InnerNode, LevelNo, LevelView, Manager};
 
 use super::DotStyle;
 
@@ -20,52 +20,41 @@ pub fn dump_all<'a, 'id, FR: Deref, D>(
 ) -> io::Result<()>
 where
     FR::Target: 'a + Function + DotStyle<ETagOfFunc<'id, FR::Target>>,
-    INodeOfFunc<'id, FR::Target>: HasLevel,
     ETagOfFunc<'id, FR::Target>: fmt::Debug,
     TermOfFunc<'id, FR::Target>: fmt::Display,
     D: fmt::Display,
 {
     writeln!(file, "digraph DD {{")?;
 
-    let mut last_level = LevelNo::MAX;
-
     let mut edges = Vec::new();
 
-    for level in manager.levels() {
+    for (level_no, level) in manager.levels().enumerate() {
+        let level_no = level_no as LevelNo;
+        let level_name = manager.var_name(manager.level_to_var(level_no));
+        if level_name.is_empty() {
+            writeln!(
+                file,
+                "  {{ rank = same; l{level_no:x} [label=\"{level_no}\", color=\"#AAAAAA\", shape=none, tooltip=\"level {level_no}\"];"
+            )?;
+        } else {
+            // TODO: escaping for level_name
+            writeln!(
+                file,
+                "  {{ rank = same; l{level_no:x} [label=\"{level_name}\", shape=none, tooltip=\"level {level_no}\"];"
+            )?;
+        }
+
         for edge in level.iter() {
             let id = edge.node_id();
             let node = manager
                 .get_node(edge)
                 .expect_inner("unique tables should not include terminal nodes");
             let rc = node.ref_count();
-            let level = node.level();
 
             // note outgoing edges
             // TODO: maybe use a second pass instead?
             for (idx, child) in node.children().enumerate() {
                 edges.push(('x', id, child.node_id(), idx, child.tag()));
-            }
-
-            if level != last_level {
-                if last_level != LevelNo::MAX {
-                    // No closing braces before the first level
-                    writeln!(file, "  }};")?;
-                }
-
-                let level_name = manager.var_name(manager.level_to_var(level));
-                if level_name.is_empty() {
-                    writeln!(
-                        file,
-                        "  {{ rank = same; l{level:x} [label=\"{level}\", color=\"#AAAAAA\", shape=none, tooltip=\"level {level}\"];"
-                    )?;
-                } else {
-                    // TODO: escaping for level_name
-                    writeln!(
-                        file,
-                        "  {{ rank = same; l{level:x} [label=\"{level_name}\", shape=none, tooltip=\"level {level}\"];"
-                    )?;
-                }
-                last_level = level;
             }
 
             // Unreferenced nodes are gray
@@ -75,8 +64,9 @@ where
                 "    x{id:x} [label=\"\"{color}, tooltip=\"id: {id:#x}, rc: {rc}\"];"
             )?;
         }
+
+        writeln!(file, "  }};")?;
     }
-    writeln!(file, "  }};")?;
 
     const TERMINAL_LEVEL: LevelNo = LevelNo::MAX;
     writeln!(file, "  {{ rank = same; l{TERMINAL_LEVEL:x} [label=\"-\", shape=none, tooltip=\"level {TERMINAL_LEVEL} (terminals)\"];")?;
