@@ -392,8 +392,8 @@ impl ZBDDManager {
     ///
     /// Args:
     ///     path (str | PathLike[str]): Path of the output file. If a file at
-    ///         ``path`` exists, it will be truncated, otherwise a new one will
-    ///         be created.
+    ///         ``path`` exists, it will be overwritten, otherwise a new one
+    ///         will be created.
     ///     functions (Iterable[tuple[ZBDDFunction, str]]): Optional names for
     ///         ZBDD functions
     ///
@@ -403,12 +403,37 @@ impl ZBDDManager {
         signature = (/, path, functions=None),
         text_signature = "($self, /, path, functions=[])"
     )]
+    fn dump_all_dot<'py>(
+        &self,
+        path: PathBuf,
+        functions: Option<&Bound<'py, PyAny>>,
+    ) -> PyResult<()> {
+        crate::util::dump_all_dot::<_, ZBDDFunction>(&self.0, &path, functions)
+    }
+    /// Deprecated alias for :meth:`dump_all_dot`.
+    ///
+    /// Args:
+    ///     path (str | PathLike[str]): Path of the output file. If a file at
+    ///         ``path`` exists, it will be overwritten, otherwise a new one
+    ///         will be created.
+    ///     functions (Iterable[tuple[ZBDDFunction, str]]): Optional names for
+    ///         BCDD functions
+    ///
+    /// Returns:
+    ///     None
+    ///
+    /// .. deprecated:: 0.11
+    ///    Use :meth:`dump_all_dot` instead
+    #[pyo3(
+        signature = (/, path, functions=None),
+        text_signature = "($self, /, path, functions=[])"
+    )]
     fn dump_all_dot_file<'py>(
         &self,
         path: PathBuf,
         functions: Option<&Bound<'py, PyAny>>,
     ) -> PyResult<()> {
-        crate::util::dump_all_dot_file::<_, ZBDDFunction>(&self.0, &path, functions)
+        crate::util::dump_all_dot::<_, ZBDDFunction>(&self.0, &path, functions)
     }
 }
 

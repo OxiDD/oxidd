@@ -286,7 +286,7 @@ impl<I: Iterator> Iterator for OptIter<I> {
     }
 }
 
-pub(crate) fn dump_all_dot_file<'py, F, PYF>(
+pub(crate) fn dump_all_dot<'py, F, PYF>(
     manager_ref: &F::ManagerRef,
     path: &Path,
     functions: Option<&Bound<'py, PyAny>>,
@@ -304,8 +304,9 @@ where
         Some(iterable) => Some(FuncStrPairIter::<F, PYF>::try_from(iterable)?),
         None => None,
     });
-    manager_ref
-        .with_manager_shared(|manager| oxidd_dump::dot::dump_all(file, manager, &mut iter))?;
+    manager_ref.with_manager_shared(|manager| {
+        oxidd_dump::dot::dump_all(std::io::BufWriter::new(file), manager, &mut iter)
+    })?;
 
     if let Some(it) = iter.0 {
         it.err?;

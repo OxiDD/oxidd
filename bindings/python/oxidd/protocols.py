@@ -871,7 +871,7 @@ class Manager(Generic[F], Protocol):
         raise NotImplementedError
 
     @abstractmethod
-    def dump_all_dot_file(
+    def dump_all_dot(
         self,
         /,
         path: str | PathLike[str],
@@ -886,8 +886,23 @@ class Manager(Generic[F], Protocol):
 
         Args:
             path: Path of the output file. If a file at ``path`` exists, it will
-                be truncated, otherwise a new one will be created.
+                be overwritten, otherwise a new one will be created.
             functions: Optional names for DD functions
+        """
+        raise NotImplementedError
+
+    @deprecated("Use dump_all_dot instead")
+    @abstractmethod
+    def dump_all_dot_file(
+        self,
+        /,
+        path: str | PathLike[str],
+        functions: Iterable[tuple[F, str]] = [],
+    ) -> None:
+        """Deprecated alias for :meth:`dump_all_dot`.
+
+        .. deprecated:: 0.11
+           Use :meth:`dump_all_dot` instead.
         """
         raise NotImplementedError
 
