@@ -11,9 +11,7 @@ use oxidd_core::{DiagramRules, HasLevel, InnerNode, LevelNo, Manager, VarNo};
 
 use super::{Code, VarInfo};
 
-// spell-checker:ignore varinfo,varnames,suppvar,suppvarnames,orderedvarnames
-// spell-checker:ignore permid,permids,auxids,rootids,rootnames
-// spell-checker:ignore nnodes,nvars,nsuppvars,nroots
+// spell-checker:dictionaries dddmp
 
 /// Compare, mapping `Equal` to `Greater`
 fn cmp_strict<T: Ord>(a: &T, b: &T) -> Option<std::cmp::Ordering> {

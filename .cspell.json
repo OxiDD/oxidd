@@ -4,6 +4,7 @@
   "language": "en",
   "ignorePaths": [
     "/.cache/",
+    "/.cspell.json",
     "/.cspellcache",
     "/.git",
     "/.project-words.txt",
@@ -21,6 +22,25 @@
       "name": "project-words",
       "path": "./.project-words.txt",
       "addWords": true
+    },
+    {
+      "name": "dddmp",
+      "words": [
+        "auxids",
+        "nnodes",
+        "nroots",
+        "nsuppvars",
+        "nvars",
+        "permid",
+        "permids",
+        "orderedvarnames",
+        "rootids",
+        "rootnames",
+        "suppvar",
+        "suppvarnames",
+        "varinfo",
+        "varnames",
+      ]
     }
   ],
   "dictionaries": [
