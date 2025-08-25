@@ -17,6 +17,12 @@ pub trait AsciiDisplay {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error>;
 }
 
+/// Parse a value from a string, along with a tag
+pub trait ParseTagged<Tag>: Sized {
+    /// Parse the string `s`
+    fn parse(s: &str) -> Option<(Self, Tag)>;
+}
+
 #[cfg(feature = "dddmp")]
 pub mod dddmp;
 

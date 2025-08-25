@@ -101,15 +101,14 @@ pub enum BDDTerminal {
 #[derive(Debug, PartialEq, Eq)]
 pub struct ParseTerminalErr;
 
-impl std::str::FromStr for BDDTerminal {
-    type Err = ParseTerminalErr;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "t" | "T" | "true" | "True" | "TRUE" | "⊤" => Ok(BDDTerminal::True),
-            "f" | "F" | "false" | "False" | "FALSE" | "⊥" => Ok(BDDTerminal::False),
-            _ => Err(ParseTerminalErr),
-        }
+impl<Tag: Default> oxidd_dump::ParseTagged<Tag> for BDDTerminal {
+    fn parse(s: &str) -> Option<(Self, Tag)> {
+        let val = match s {
+            "t" | "T" | "true" | "True" | "TRUE" | "⊤" | "1" => BDDTerminal::True,
+            "f" | "F" | "false" | "False" | "FALSE" | "⊥" | "0" => BDDTerminal::False,
+            _ => return None,
+        };
+        Some((val, Tag::default()))
     }
 }
 

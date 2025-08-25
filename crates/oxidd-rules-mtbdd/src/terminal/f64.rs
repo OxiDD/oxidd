@@ -92,11 +92,9 @@ impl NumberBase for F64 {
     }
 }
 
-impl FromStr for F64 {
-    type Err = std::num::ParseFloatError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(match s {
+impl<Tag: Default> oxidd_dump::ParseTagged<Tag> for F64 {
+    fn parse(s: &str) -> Option<(Self, Tag)> {
+        let val = match s {
             "nan" | "NaN" | "NAN" => Self(f64::NAN),
             "-∞" | "-inf" | "-infinity" | "-Inf" | "-Infinity" | "-INF" | "-INFINITY"
             | "MinusInf" => Self(f64::NEG_INFINITY),
@@ -104,8 +102,9 @@ impl FromStr for F64 {
             | "+infinity" | "+Inf" | "+Infinity" | "+INF" | "+INFINITY" | "PlusInf" => {
                 Self(f64::INFINITY)
             }
-            _ => Self(f64::from_str(s)?),
-        })
+            _ => Self(f64::from_str(s).ok()?),
+        };
+        Some((val, Tag::default()))
     }
 }
 

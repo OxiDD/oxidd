@@ -1,13 +1,14 @@
 use std::io;
-use std::str::FromStr;
 
 use fixedbitset::FixedBitSet;
 use is_sorted::IsSorted;
 
 use oxidd_core::error::OutOfMemory;
-use oxidd_core::function::{EdgeOfFunc, Function, INodeOfFunc, TermOfFunc};
+use oxidd_core::function::{ETagOfFunc, EdgeOfFunc, Function, INodeOfFunc, TermOfFunc};
 use oxidd_core::util::{AllocResult, EdgeDropGuard, EdgeVecDropGuard};
-use oxidd_core::{DiagramRules, HasLevel, InnerNode, LevelNo, Manager, VarNo};
+use oxidd_core::{DiagramRules, Edge, HasLevel, InnerNode, LevelNo, Manager, VarNo};
+
+use crate::ParseTagged;
 
 use super::{Code, VarInfo};
 
@@ -468,7 +469,7 @@ pub fn import<'id, F: Function>(
 ) -> io::Result<Vec<F>>
 where
     INodeOfFunc<'id, F>: HasLevel,
-    TermOfFunc<'id, F>: FromStr,
+    TermOfFunc<'id, F>: ParseTagged<ETagOfFunc<'id, F>>,
 {
     let suppvar_level_map =
         Vec::from_iter(support_vars.into_iter().map(|v| manager.var_to_level(v)));
@@ -532,9 +533,9 @@ fn import_ascii<M: Manager>(
 ) -> io::Result<Vec<M::Edge>>
 where
     M::InnerNode: HasLevel,
-    M::Terminal: FromStr,
+    M::Terminal: ParseTagged<M::EdgeTag>,
 {
-    let mut nodes: Vec<M::Edge> = Vec::with_capacity(header.nnodes);
+    let mut nodes = EdgeVecDropGuard::new(manager, Vec::with_capacity(header.nnodes));
     let mut line = Vec::new();
     let mut line_no = header.lines + 1;
     let mut children = Vec::with_capacity(M::InnerNode::ARITY);
@@ -588,7 +589,7 @@ where
             ));
         }
 
-        let res = if children.contains(&0) {
+        let node = if children.contains(&0) {
             // terminal
             let string = match std::str::from_utf8(var_id) {
                 Ok(s) => s,
@@ -598,11 +599,12 @@ where
                     ));
                 }
             };
-            let terminal: M::Terminal = match string.parse() {
-                Ok(t) => t,
-                Err(_) => return err(format!("invalid terminal description (line {line_no})")),
+            let Some((terminal, tag)) = M::Terminal::parse(string) else {
+                return err(format!(
+                    "invalid terminal description '{string}' (line {line_no})"
+                ));
             };
-            manager.get_terminal(terminal)
+            manager.get_terminal(terminal)?.with_tag_owned(tag)
         } else {
             let (_, var_id) = parse_u32(var_id, line_no)?;
             let Some(&level) = suppvar_level_map.get(var_id as usize) else {
@@ -637,18 +639,8 @@ where
                     }
                 }),
             )
-            .then_insert(manager, level)
+            .then_insert(manager, level)?
         };
-        let node = match res {
-            Ok(e) => e,
-            Err(OutOfMemory) => {
-                for e in nodes {
-                    manager.drop_edge(e);
-                }
-                return Err(io::ErrorKind::OutOfMemory.into());
-            }
-        };
-
         nodes.push(node);
 
         children.clear();
@@ -656,7 +648,7 @@ where
         line_no += 1;
     }
 
-    Ok(nodes)
+    Ok(nodes.into_vec())
 }
 
 fn import_bin<M: Manager>(

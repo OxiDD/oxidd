@@ -7,7 +7,6 @@ use std::hash::{BuildHasherDefault, Hash};
 use std::io;
 use std::io::{Seek, Write};
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use std::time::{Duration, Instant};
 
 use clap::{Parser, ValueEnum};
@@ -344,7 +343,8 @@ where
     for<'id> B::Manager<'id>: HasWorkers + HasApplyCache<B::Manager<'id>, O>,
     for<'id> INodeOfFunc<'id, B>: HasLevel,
     for<'id> ETagOfFunc<'id, B>: fmt::Debug,
-    for<'id> TermOfFunc<'id, B>: FromStr + fmt::Display + oxidd_dump::AsciiDisplay,
+    for<'id> TermOfFunc<'id, B>:
+        oxidd_dump::ParseTagged<ETagOfFunc<'id, B>> + fmt::Display + oxidd_dump::AsciiDisplay,
     O: Copy + Ord + Hash,
 {
     let mut funcs: Vec<(B, String)> = Vec::new();

@@ -117,19 +117,14 @@ pub enum ZBDDTerminal {
     Base,
 }
 
-/// Error returned when parsing a [`ZBDDTerminal`] from string fails
-#[derive(Debug, PartialEq, Eq)]
-pub struct ParseTerminalErr;
-
-impl std::str::FromStr for ZBDDTerminal {
-    type Err = ParseTerminalErr;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "e" | "E" | "empty" | "Empty" | "EMPTY" | "∅" => Ok(ZBDDTerminal::Empty),
-            "b" | "B" | "base" | "Base" | "BASE" | "{∅}" => Ok(ZBDDTerminal::Base),
-            _ => Err(ParseTerminalErr),
-        }
+impl<Tag: Default> oxidd_dump::ParseTagged<Tag> for ZBDDTerminal {
+    fn parse(s: &str) -> Option<(Self, Tag)> {
+        let val = match s {
+            "e" | "E" | "empty" | "Empty" | "EMPTY" | "∅" | "0" => ZBDDTerminal::Empty,
+            "b" | "B" | "base" | "Base" | "BASE" | "{∅}" => ZBDDTerminal::Base,
+            _ => return None,
+        };
+        Some((val, Tag::default()))
     }
 }
 

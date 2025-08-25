@@ -64,11 +64,9 @@ impl PartialOrd for I64 {
     }
 }
 
-impl FromStr for I64 {
-    type Err = std::num::ParseIntError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(match s {
+impl<Tag: Default> oxidd_dump::ParseTagged<Tag> for I64 {
+    fn parse(s: &str) -> Option<(Self, Tag)> {
+        let val = match s {
             "nan" | "NaN" | "NAN" => Self::NaN,
             "-∞" | "-inf" | "-infinity" | "-Inf" | "-Infinity" | "-INF" | "-INFINITY"
             | "MinusInf" => Self::MinusInf,
@@ -76,8 +74,9 @@ impl FromStr for I64 {
             | "+infinity" | "+Inf" | "+Infinity" | "+INF" | "+INFINITY" | "PlusInf" => {
                 Self::PlusInf
             }
-            _ => Self::Num(i64::from_str(s)?),
-        })
+            _ => Self::Num(i64::from_str(s).ok()?),
+        };
+        Some((val, Tag::default()))
     }
 }
 

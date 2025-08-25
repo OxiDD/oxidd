@@ -240,11 +240,14 @@ where
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Countable, Debug)]
 pub struct BCDDTerminal;
 
-impl std::str::FromStr for BCDDTerminal {
-    type Err = std::convert::Infallible;
-
-    fn from_str(_s: &str) -> Result<Self, Self::Err> {
-        Ok(BCDDTerminal)
+impl oxidd_dump::ParseTagged<EdgeTag> for BCDDTerminal {
+    fn parse(s: &str) -> Option<(Self, EdgeTag)> {
+        let tag = match s {
+            "t" | "T" | "true" | "True" | "TRUE" | "⊤" | "1" => EdgeTag::None,
+            "f" | "F" | "false" | "False" | "FALSE" | "⊥" | "0" => EdgeTag::Complemented,
+            _ => return None,
+        };
+        Some((BCDDTerminal, tag))
     }
 }
 

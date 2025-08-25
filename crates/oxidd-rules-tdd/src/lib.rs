@@ -99,20 +99,15 @@ impl std::ops::Not for TDDTerminal {
     }
 }
 
-/// Error returned when parsing a [`TDDTerminal`] from string fails
-#[derive(Debug, PartialEq, Eq)]
-pub struct ParseTerminalErr;
-
-impl std::str::FromStr for TDDTerminal {
-    type Err = ParseTerminalErr;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "f" | "F" | "false" | "False" | "FALSE" | "⊥" => Ok(TDDTerminal::False),
-            "u" | "U" | "unknown" | "Unknown" | "UNKNOWN" => Ok(TDDTerminal::Unknown),
-            "t" | "T" | "true" | "True" | "TRUE" | "⊤" => Ok(TDDTerminal::True),
-            _ => Err(ParseTerminalErr),
-        }
+impl<Tag: Default> oxidd_dump::ParseTagged<Tag> for TDDTerminal {
+    fn parse(s: &str) -> Option<(Self, Tag)> {
+        let val = match s {
+            "f" | "F" | "false" | "False" | "FALSE" | "⊥" | "0" => TDDTerminal::False,
+            "u" | "U" | "unknown" | "Unknown" | "UNKNOWN" | "?" => TDDTerminal::Unknown,
+            "t" | "T" | "true" | "True" | "TRUE" | "⊤" | "1" => TDDTerminal::True,
+            _ => return None,
+        };
+        Some((val, Tag::default()))
     }
 }
 
