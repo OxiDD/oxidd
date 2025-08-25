@@ -142,6 +142,10 @@ impl Parameter {
             if *kind == FunctionKind::FunctionPassModule {
                 iter.next(); // skip over module parameter
             }
+
+            // Allow to name the first parameter differently on the Rust side,
+            // e.g., for using `PyRef` as its type.
+            let mut is_self = *kind == FunctionKind::Method;
             for param in iter {
                 match param {
                     syn::FnArg::Receiver(_) => {
@@ -162,13 +166,19 @@ impl Parameter {
                                 }
                             }
                         }
-                        let mut name = pat_ident.ident.to_string();
-                        if let Some(n) = name.strip_prefix('_') {
-                            name = n.to_string();
-                        }
+                        let name = if is_self {
+                            "self".into()
+                        } else {
+                            let mut name = pat_ident.ident.to_string();
+                            if let Some(n) = name.strip_prefix('_') {
+                                name = n.to_string();
+                            }
+                            name
+                        };
                         params.push(Self::name_only(name));
                     }
                 }
+                is_self = false;
             }
             if !params.is_empty() && add_positional_delimiter {
                 params.push(Self::name_only("/"));
