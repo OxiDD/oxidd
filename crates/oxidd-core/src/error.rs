@@ -15,6 +15,12 @@ impl fmt::Display for OutOfMemory {
 }
 impl std::error::Error for OutOfMemory {}
 
+impl From<OutOfMemory> for std::io::Error {
+    fn from(_: OutOfMemory) -> Self {
+        std::io::ErrorKind::OutOfMemory.into()
+    }
+}
+
 /// Error details for labelling a variable with a name that is already in use
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct DuplicateVarName {

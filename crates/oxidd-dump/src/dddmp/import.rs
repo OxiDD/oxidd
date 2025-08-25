@@ -516,14 +516,7 @@ where
         let e = manager.clone_edge(&nodes[node_index]);
         roots.push(F::from_edge(
             manager,
-            if root > 0 {
-                e
-            } else {
-                match complement(manager, e) {
-                    Ok(e) => e,
-                    Err(OutOfMemory) => return Err(io::ErrorKind::OutOfMemory.into()),
-                }
-            },
+            if root > 0 { e } else { complement(manager, e)? },
         ));
     }
 
