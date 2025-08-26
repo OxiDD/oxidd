@@ -413,7 +413,7 @@ where
         let var_map: &[VarNo] = &var_map[..]; // to help rust-analyzer
         let support_vars = Vec::from_iter(
             header
-                .support_var_permutation()
+                .support_var_order()
                 .iter()
                 .map(|&i| var_map.get(i as usize).copied().unwrap_or(i)),
         );
