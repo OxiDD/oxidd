@@ -1,6 +1,5 @@
 use std::io;
 
-use fixedbitset::FixedBitSet;
 use is_sorted::IsSorted;
 
 use oxidd_core::error::OutOfMemory;
@@ -35,9 +34,11 @@ pub struct DumpHeader {
     nnodes: usize,
     nvars: u32,
     /// Support variable IDs (in strictly ascending order)
-    ids: Vec<u32>,
-    /// Positions of support variables
-    permids: Vec<u32>,
+    ids: Vec<VarNo>,
+    /// Mapping from positions to support variables
+    support_var_order: Vec<VarNo>,
+    /// Mapping from support variables to levels
+    permids: Vec<LevelNo>,
     auxids: Vec<u32>, // optional
     /// Variable names in the original order (optional)
     varnames: Vec<String>,
@@ -60,6 +61,7 @@ impl DumpHeader {
             nnodes: 0,
             nvars: 0,
             ids: Vec::new(),
+            support_var_order: Vec::new(),
             permids: Vec::new(),
             auxids: Vec::new(),
             varnames: Vec::new(),
@@ -209,19 +211,32 @@ impl DumpHeader {
             }
         }
 
-        let mut permids_present = FixedBitSet::with_capacity(header.nvars as usize);
-        for &id in &header.permids {
-            if id >= header.nvars {
+        let mut level_count = vec![0u32; header.nvars as usize];
+        for &level in &header.permids {
+            let Some(count) = level_count.get_mut(level as usize) else {
                 return err(format!(
-                    "support variables in .permids must be less than .nvars ({})",
+                    "levels in .permids must be less than .nvars ({})",
                     header.nvars,
                 ));
+            };
+            if *count != 0 {
+                return err(format!("level ({level}) occurs twice in .permids"));
             }
-            if permids_present.contains(id as usize) {
-                return err(format!("variable ({id}) occurs twice in .permids"));
-            }
-            permids_present.insert(id as usize);
+            *count = 1;
         }
+        // accumulate the counts such that level_count maps from the level
+        // number to the position
+        let mut count = 0;
+        for i in level_count.iter_mut() {
+            let present = *i;
+            *i = count;
+            count += present;
+        }
+        header.support_var_order.resize(nsuppvars as usize, 0);
+        for (&var, &level) in header.ids.iter().zip(&header.permids) {
+            header.support_var_order[level_count[level as usize] as usize] = var;
+        }
+        drop(level_count);
 
         if !orderedvarnames.is_empty() && orderedvarnames.len() != header.nvars as usize {
             return err(format!(
@@ -375,29 +390,49 @@ impl DumpHeader {
     /// ascending order.
     ///
     /// Example: Consider a decision diagram that was created with the variables
-    /// `x`, `y` and `z`, in this order (`x` is the top-most variable). Suppose
-    /// that only `y` and `z` are used by the dumped functions. Then this
-    /// function returns `[1, 2]` regardless of any subsequent reordering.
+    /// `x`, `y`, and `z`, in this order (`x` is the top-most variable). Suppose
+    /// that only `y` and `z` are used by the dumped functions. Then, the
+    /// returned slice is `[1, 2]`, regardless of any subsequent reordering.
     ///
     /// Corresponds to the DDDMP `.ids` field.
-    pub fn support_vars(&self) -> &[u32] {
+    pub fn support_vars(&self) -> &[VarNo] {
         &self.ids
     }
 
-    /// Permutation of the variables in the true support of the decision
-    /// diagram. The returned slice is always [`DumpHeader::num_support_vars()`]
+    /// Order of the support variables
+    ///
+    /// The returned slice is always [`DumpHeader::num_support_vars()`] elements
+    /// long and represents a mapping from positions to variable numbers.
+    ///
+    /// Example: Consider a decision diagram that was created with the variables
+    /// `x`, `y`, and `z` (`x` is the top-most variable). The variables were
+    /// re-ordered to `z`, `x`, `y`. Suppose that only `y` and `z` are used by
+    /// the dumped functions. Then, the returned slice is `[2, 1]`.
+    pub fn support_var_order(&self) -> &[VarNo] {
+        &self.support_var_order
+    }
+
+    /// Mapping from the variables in the true support of the decision diagram
+    /// to their levels.
+    ///
+    /// The returned slice is always [`DumpHeader::num_support_vars()`]
     /// elements long. If the value at the `i`th index is `l`, then the `i`th
     /// support variable is at level `l` in the dumped decision diagram. By the
     /// `i`th support variable, we mean the variable `header.support_vars()[i]`
     /// in the original numbering.
     ///
     /// Example: Consider a decision diagram that was created with the variables
-    /// `x`, `y` and `z` (`x` is the top-most variable). The variables were
+    /// `x`, `y`, and `z` (`x` is the top-most variable). The variables were
     /// re-ordered to `z`, `x`, `y`. Suppose that only `y` and `z` are used by
-    /// the dumped functions. Then this function returns `[2, 0]`.
+    /// the dumped functions. Then, the returned slice is `[2, 0]`.
     ///
     /// Corresponds to the DDDMP `.permids` field.
-    pub fn support_var_permutation(&self) -> &[u32] {
+    pub fn support_var_to_level(&self) -> &[LevelNo] {
+        &self.permids
+    }
+    /// Deprecated alias for [`Self::support_var_to_level()`]
+    #[deprecated(since = "0.11.0", note = "use support_var_to_level instead")]
+    pub fn support_var_permutation(&self) -> &[LevelNo] {
         &self.permids
     }
 
@@ -418,7 +453,7 @@ impl DumpHeader {
     /// variable names are non-empty unless only `.suppvarnames` is given in the
     /// input (in which case only the names of support variables are non-empty).
     /// The return value is only `None` if neither of `.varnames`,
-    /// `.orderedvarnames` and `.suppvarnames` is present in the input.
+    /// `.orderedvarnames`, and `.suppvarnames` is present in the input.
     pub fn var_names(&self) -> Option<&[String]> {
         if self.varnames.is_empty() {
             None
