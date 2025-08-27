@@ -2,7 +2,7 @@
 
 use std::fmt;
 use std::io::{self, Read, Write};
-use std::net::TcpListener;
+use std::net::{TcpListener, TcpStream};
 
 use oxidd_core::function::{Function, INodeOfFunc, TermOfFunc};
 use oxidd_core::HasLevel;
@@ -182,20 +182,49 @@ impl Visualizer {
         let listener = TcpListener::bind(("localhost", port))?;
         println!("Data can be read on http://localhost:{port}");
 
+        while !self.handle_client(listener.accept()?.0)? {}
+        Ok(())
+    }
+
+    /// Non-blocking version of [`Self::serve()`]
+    ///
+    /// Unlike [`Self::serve()`], this method sets the [`TcpListener`] into
+    /// [non-blocking mode][TcpListener::set_nonblocking()], allowing to run
+    /// different tasks while waiting for a connection by
+    /// [OxiDD-viz](https://oxidd.net/viz).
+    ///
+    /// Note that you need to call [`poll()`][VisualizationListener::poll()]
+    /// repeatedly on the returned [`VisualizationListener`] to accept a TCP
+    /// connection.
+    pub fn serve_nonblocking(&mut self) -> io::Result<VisualizationListener<'_>> {
+        let port = self.port;
+        let listener = TcpListener::bind(("localhost", port))?;
+        listener.set_nonblocking(true)?;
+        println!("Data can be read on http://localhost:{port}");
+
+        Ok(VisualizationListener {
+            visualizer: self,
+            listener,
+        })
+    }
+
+    /// Returns `Ok(true)` if the visualization has been sent, `Ok(false)` if
+    /// the client requested a path different from `/diagrams`
+    fn handle_client(&mut self, mut stream: TcpStream) -> io::Result<bool> {
         // Basic routing: only handle "GET /diagrams"
         // After the path, there should be "HTTP/1.1" (or something alike),
         // so expecting the space is fine.
         const EXPECTED_REQ_START: &[u8] = b"GET /diagrams ";
         let mut recv_buf = [0; const { EXPECTED_REQ_START.len() }];
-
-        let mut stream = loop {
-            let (mut stream, _) = listener.accept()?;
-            stream.read_exact(&mut recv_buf)?;
-            if recv_buf == EXPECTED_REQ_START {
-                break stream;
-            }
-            stream.write_all(b"HTTP/1.1 404 NOT FOUND\r\n\r\nNot Found")?;
+        let matches = match stream.read_exact(&mut recv_buf) {
+            Ok(()) => recv_buf == EXPECTED_REQ_START,
+            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => false,
+            Err(e) => return Err(e),
         };
+        if !matches {
+            stream.write_all(b"HTTP/1.1 404 NOT FOUND\r\n\r\nNot Found")?;
+            return Ok(false);
+        }
 
         let len = self.buf.len() + 2; // 2 -> account for outer brackets
         write!(
@@ -214,7 +243,42 @@ impl Visualizer {
         }
         self.buf.clear();
         println!("Visualization has been sent!");
-        Ok(())
+        Ok(true)
+    }
+}
+
+/// A non-blocking [`TcpListener`] for decision diagram visualization
+pub struct VisualizationListener<'a> {
+    visualizer: &'a mut Visualizer,
+    listener: TcpListener,
+}
+
+impl VisualizationListener<'_> {
+    /// Poll for clients like [OxiDD-viz](https://oxidd.net/viz)
+    ///
+    /// If a connection was established, this method will directly handle the
+    /// client. If the decision diagram(s) were successfully sent, the return
+    /// value is `Ok(true)`. If no client was available
+    /// ([`TcpListener::accept()`] returned an error with
+    /// [`io::ErrorKind::WouldBlock`]), the return value is `Ok(false)`.
+    /// `Err(..)` signals a communication error.
+    pub fn poll(&mut self) -> io::Result<bool> {
+        loop {
+            match self.listener.accept() {
+                Ok((stream, _)) => {
+                    if self.visualizer.handle_client(stream)? {
+                        return Ok(true);
+                    }
+                }
+                Err(e) => {
+                    return if e.kind() == io::ErrorKind::WouldBlock {
+                        Ok(false)
+                    } else {
+                        Err(e)
+                    };
+                }
+            }
+        }
     }
 }
 

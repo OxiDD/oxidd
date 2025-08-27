@@ -32,4 +32,4 @@ pub mod dot;
 #[cfg(feature = "visualize")]
 mod visualize;
 #[cfg(feature = "visualize")]
-pub use visualize::Visualizer;
+pub use visualize::{VisualizationListener, Visualizer};
