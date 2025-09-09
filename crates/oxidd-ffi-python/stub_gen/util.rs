@@ -107,23 +107,20 @@ pub mod parse {
     }
 
     pub fn expect_string_opt(tok: Option<TokenTree>, context: impl ToTokens) -> Result<String> {
-        if let Some(tok) = tok {
-            if let TokenTree::Literal(literal) = &tok {
-                let mut s = literal.to_string();
-                if s.len() > 2 && s.as_bytes()[0] == b'"' && s.pop().unwrap() == '"' {
-                    s.remove(0);
-                    return Ok(s);
-                }
-            }
+        let Some(tok) = tok else {
+            bail!(
+                "expected a string literal at the end of '{}'",
+                context.to_token_stream()
+            )
+        };
+        if let Ok(lit) = syn::parse2::<syn::LitStr>(TokenStream::from(tok.clone())) {
+            Ok(lit.value())
+        } else {
             bail!(
                 "expected a string literal, got {tok} in {}",
                 context.to_token_stream()
             )
         }
-        bail!(
-            "expected a string literal at the end of '{}'",
-            context.to_token_stream()
-        )
     }
 
     pub fn expect_group_opt(tok: Option<TokenTree>, context: impl ToTokens) -> Result<TokenStream> {
