@@ -1,6 +1,6 @@
 use std::ffi::c_char;
 use std::hash::BuildHasherDefault;
-use std::mem::ManuallyDrop;
+use std::mem::{ManuallyDrop, MaybeUninit};
 
 use rustc_hash::FxHasher;
 
@@ -392,6 +392,7 @@ pub unsafe extern "C" fn oxidd_bcdd_manager_add_named_vars_iter(
 /// @param  manager  The manager
 /// @param  var      The variable number. Must be less than the variable count
 ///                  (`oxidd_bcdd_manager_num_vars()`).
+/// @param  len      Output parameter for the string length.
 ///
 /// @returns  The name, or `NULL` for unnamed variables. The caller receives
 ///           ownership of the allocation and should eventually deallocate the
@@ -400,10 +401,15 @@ pub unsafe extern "C" fn oxidd_bcdd_manager_add_named_vars_iter(
 pub unsafe extern "C" fn oxidd_bcdd_manager_var_name(
     manager: bcdd_manager_t,
     var: VarNo,
+    len: Option<&mut MaybeUninit<usize>>,
 ) -> *const c_char {
-    manager
-        .get()
-        .with_manager_shared(|manager| crate::util::to_c_str(manager.var_name(var)))
+    manager.get().with_manager_shared(|manager| {
+        let name = manager.var_name(var);
+        if let Some(len) = len {
+            len.write(name.len());
+        }
+        crate::util::to_c_str(name)
+    })
 }
 #[cfg(feature = "cpp")]
 /// Get `var`'s name
@@ -441,41 +447,15 @@ pub unsafe extern "C" fn oxidd_bcdd_manager_var_name_cpp(
 /// @param  manager  The manager
 /// @param  var      The variable number. Must be less than the variable count
 ///                  (`oxidd_bcdd_manager_num_vars()`).
-/// @param  name     A null-terminated UTF-8 string to be used as the variable
-///                  name.
+/// @param  name     A UTF-8 string to be used as the variable name.
 ///                  May also be `NULL` to represent an empty string.
+/// @param  len      Length of `name` in bytes (excluding any trailing null
+///                  byte)
 ///
 /// @returns  `(oxidd_var_no_t) -1` on success, otherwise the variable which
 ///           already uses `name`
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_bcdd_manager_set_var_name(
-    manager: bcdd_manager_t,
-    var: VarNo,
-    name: *const c_char,
-) -> VarNo {
-    manager.set_var_name(var, &crate::util::c_char_to_str(name))
-}
-/// Label `var` as `name`
-///
-/// An empty name means that the variable will become unnamed, and cannot be
-/// retrieved via `oxidd_bcdd_manager_name_to_var()` anymore.
-///
-/// Note that variable names are required to be unique. If labelling `var` as
-/// `name` would violate uniqueness, then `var`'s name is left unchanged.
-///
-/// Locking behavior: acquires the manager's lock for exclusive access.
-///
-/// @param  manager  The manager
-/// @param  var      The variable number. Must be less than the variable count
-///                  (`oxidd_bcdd_manager_num_vars()`).
-/// @param  name     A UTF-8 string to be used as the variable name.
-///                  May also be `NULL` to represent an empty string.
-/// @param  len      Byte length of `name`
-///
-/// @returns  `(oxidd_var_no_t) -1` on success, otherwise the variable which
-///           already uses `name`
-#[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_manager_set_var_name_with_len(
     manager: bcdd_manager_t,
     var: VarNo,
     name: *const c_char,
@@ -492,38 +472,14 @@ pub unsafe extern "C" fn oxidd_bcdd_manager_set_var_name_with_len(
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @param  manager  The manager
-/// @param  name     Null-terminated UTF-8 string to look up.
+/// @param  name     UTF-8 string to look up.
 ///                  May also be `NULL` to represent an empty string.
+/// @param  len      Length of `name` in bytes (excluding any trailing null
+///                  byte)
 ///
 /// @returns  The variable number if found, otherwise `(oxidd_var_no_t) -1`
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_bcdd_manager_name_to_var(
-    manager: bcdd_manager_t,
-    name: *const c_char,
-) -> VarNo {
-    let name = crate::util::c_char_to_str(name);
-    if name.is_empty() {
-        return VarNo::MAX;
-    }
-    manager
-        .get()
-        .with_manager_shared(|manager| manager.name_to_var(name).unwrap_or(VarNo::MAX))
-}
-/// Get the variable number for the given variable name, if present
-///
-/// Note that you cannot retrieve unnamed variables. Calling this function with
-/// an empty name will always result in `(oxidd_var_no_t) -1`.
-///
-/// Locking behavior: acquires the manager's lock for shared access.
-///
-/// @param  manager  The manager
-/// @param  name     UTF-8 string to look up.
-///                  May also be `NULL` to represent an empty string.
-/// @param  len      Byte length of `name`
-///
-/// @returns  The variable number if found, otherwise `(oxidd_var_no_t) -1`
-#[no_mangle]
-pub unsafe extern "C" fn oxidd_bcdd_manager_name_to_var_with_len(
     manager: bcdd_manager_t,
     name: *const c_char,
     len: usize,

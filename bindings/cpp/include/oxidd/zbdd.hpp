@@ -1,7 +1,8 @@
+/// @file   zbdd.hpp
+/// @brief  Zero-suppressed binary decision diagrams
+
 #pragma once
 
-#include "oxidd/capi.h"
-#include "oxidd/util.hpp"
 #include <oxidd/bridge.hpp>
 
 namespace oxidd {
@@ -40,8 +41,8 @@ class zbdd_manager
   OXIDD_LINK_C(add_named_vars)
   OXIDD_LINK_C(add_named_vars_iter)
   OXIDD_LINK_C(var_name_cpp)
-  OXIDD_LINK_C(set_var_name_with_len)
-  OXIDD_LINK_C(name_to_var_with_len)
+  OXIDD_LINK_C(set_var_name)
+  OXIDD_LINK_C(name_to_var)
   OXIDD_LINK_C(var_to_level)
   OXIDD_LINK_C(level_to_var)
 

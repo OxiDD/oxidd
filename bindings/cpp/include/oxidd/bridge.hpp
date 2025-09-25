@@ -615,8 +615,8 @@ public:
   std::optional<var_no_t> set_var_name(var_no_t var,
                                        std::string_view name) noexcept {
     assert(!is_invalid());
-    var_no_t present = Derived::_c_set_var_name_with_len(
-        _manager, var, name.data(), name.size());
+    var_no_t present =
+        Derived::_c_set_var_name(_manager, var, name.data(), name.size());
     return present == invalid_var_no ? std::nullopt : std::optional(present);
   }
 
@@ -635,8 +635,7 @@ public:
   [[nodiscard]] std::optional<var_no_t>
   name_to_var(std::string_view name) const noexcept {
     assert(!is_invalid());
-    var_no_t var =
-        Derived::_c_name_to_var_with_len(_manager, name.data(), name.size());
+    var_no_t var = Derived::_c_name_to_var(_manager, name.data(), name.size());
     return var == invalid_var_no ? std::nullopt : std::optional(var);
   }
 
