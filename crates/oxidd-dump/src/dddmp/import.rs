@@ -539,9 +539,7 @@ where
     let nodes = EdgeVecDropGuard::new(manager, nodes);
     debug_assert_eq!(nodes.len(), header.nnodes);
 
-    let mut buf = Vec::with_capacity(8);
-    input.read_to_end(&mut buf)?;
-    if &buf[..4] != b".end" || !buf[4..].iter().all(|b| b.is_ascii_whitespace()) {
+    if !reads_expected(input, b".end")? {
         return err("file must end with '.end'");
     }
 
@@ -557,6 +555,14 @@ where
     }
 
     Ok(roots)
+}
+
+/// Check if the remaining bytes in `file` are `expected` plus whitespace
+/// characters only
+fn reads_expected(mut file: impl io::Read, expected: &[u8]) -> io::Result<bool> {
+    let mut buf = Vec::with_capacity(expected.len() + 2);
+    file.read_to_end(&mut buf)?;
+    Ok(buf.starts_with(expected) && buf[expected.len()..].iter().all(u8::is_ascii_whitespace))
 }
 
 fn import_ascii<M: Manager>(
