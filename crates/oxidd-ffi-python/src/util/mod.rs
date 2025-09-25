@@ -2,24 +2,22 @@
 
 use std::fmt;
 use std::marker::PhantomData;
-use std::ops::Range;
+use std::ops::{Deref, Range};
 use std::path::Path;
 
-use oxidd_core::function::{ETagOfFunc, INodeOfFunc, TermOfFunc};
-use oxidd_dump::dot::DotStyle;
-use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
-use pyo3::pyclass::boolean_struct::True;
 use pyo3::types::{PyIterator, PyRange, PyString, PyTuple};
-use pyo3::PyClass;
 
 use oxidd::{
     BooleanFunction, BooleanOperator, Function, HasLevel, LevelNo, Manager, ManagerRef, VarNo,
 };
-use oxidd_core::Countable;
+use oxidd_core::function::{ETagOfFunc, INodeOfFunc, TermOfFunc};
+use oxidd_dump::dot::DotStyle;
+
+mod dddmp;
+pub use dddmp::*;
 
 // pyi: class DDMemoryError(MemoryError):
-//d Exception that is raised in case a DD operation runs out of memory
 pyo3::create_exception!(
     oxidd.util,
     DDMemoryError,
@@ -27,8 +25,35 @@ pyo3::create_exception!(
     "Exception that is raised in case a DD operation runs out of memory."
 );
 
+macro_rules! enum_conversion_fn {
+    ($f:ident, $pyt:literal -> $t:ty) => {
+        pub fn $f(obj: &::pyo3::Bound<::pyo3::types::PyAny>) -> ::pyo3::PyResult<$t> {
+            if let Ok(val) = obj.getattr("value") {
+                if let Ok(val) = val.extract() {
+                    if val <= <$t as ::oxidd_core::Countable>::MAX_VALUE {
+                        return Ok(<$t as ::oxidd_core::Countable>::from_usize(val));
+                    }
+                }
+            }
+            Err(match obj.get_type().fully_qualified_name() {
+                Ok(name) => ::pyo3::exceptions::PyTypeError::new_err(format!(
+                    concat!("Expected an instance of ", $pyt, " got {}"),
+                    name.to_string_lossy()
+                )),
+                Err(_) => ::pyo3::exceptions::PyTypeError::new_err(concat!(
+                    "Expected an instance of ",
+                    $pyt
+                )),
+            })
+        }
+    };
+}
+use enum_conversion_fn;
+
+enum_conversion_fn!(boolean_operator, "oxidd.util.BooleanOperator" -> BooleanOperator);
+
 #[inline]
-pub(crate) fn var_no_bounds_check<M: Manager>(manager: &M, var: VarNo) -> PyResult<()> {
+pub fn var_no_bounds_check<M: Manager>(manager: &M, var: VarNo) -> PyResult<()> {
     if var < manager.num_vars() {
         Ok(())
     } else {
@@ -39,7 +64,7 @@ pub(crate) fn var_no_bounds_check<M: Manager>(manager: &M, var: VarNo) -> PyResu
 }
 
 #[inline]
-pub(crate) fn level_no_bounds_check<M: Manager>(manager: &M, level: LevelNo) -> PyResult<()> {
+pub fn level_no_bounds_check<M: Manager>(manager: &M, level: LevelNo) -> PyResult<()> {
     if level < manager.num_vars() {
         Ok(())
     } else {
@@ -99,7 +124,7 @@ impl DuplicateVarName {
     }
 }
 
-pub(crate) fn add_named_vars<'py, M: ManagerRef>(
+pub fn add_named_vars<'py, M: ManagerRef>(
     manager_ref: &M,
     py: Python<'py>,
     names: &Bound<'py, PyAny>,
@@ -168,14 +193,14 @@ pub(crate) fn add_named_vars<'py, M: ManagerRef>(
 }
 
 #[derive(FromPyObject)]
-pub(crate) enum VarId {
+pub enum VarId {
     #[pyo3(transparent, annotation = "int")]
     Number(VarNo),
     #[pyo3(transparent, annotation = "str")]
     Name(String),
 }
 
-pub(crate) fn with_var_no<MR: ManagerRef, R>(
+pub fn with_var_no<MR: ManagerRef, R>(
     manager_ref: &MR,
     var: VarId,
     f: impl for<'id> FnOnce(&MR::Manager<'id>, VarNo) -> PyResult<R>,
@@ -195,35 +220,18 @@ pub(crate) fn with_var_no<MR: ManagerRef, R>(
     })
 }
 
-struct DerefSelf<T>(T);
-
-impl<T> std::ops::Deref for DerefSelf<T> {
-    type Target = T;
-    fn deref(&self) -> &T {
-        &self.0
-    }
-}
-
-struct PyStringDisplay<'py>(Bound<'py, PyString>);
-
-impl<'py> fmt::Display for PyStringDisplay<'py> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0.to_string_lossy())
-    }
-}
-
-struct FuncStrPairIter<'py, F, PYF> {
+pub struct TryIter<'py, T> {
     iter: Bound<'py, PyIterator>,
     i: usize,
     len: Option<usize>,
-    err: PyResult<()>,
-    _phantom: PhantomData<(F, PYF)>,
+    pub err: PyResult<()>,
+    _phantom: PhantomData<T>,
 }
 
-impl<'py, F, PYF> TryFrom<&Bound<'py, PyAny>> for FuncStrPairIter<'py, F, PYF> {
+impl<'py, T> TryFrom<&Bound<'py, PyAny>> for TryIter<'py, T> {
     type Error = PyErr;
 
-    fn try_from(iterable: &Bound<'py, PyAny>) -> Result<Self, PyErr> {
+    fn try_from(iterable: &Bound<'py, PyAny>) -> PyResult<Self> {
         let len = iterable.len().ok();
         Ok(Self {
             iter: iterable.try_iter()?,
@@ -235,21 +243,11 @@ impl<'py, F, PYF> TryFrom<&Bound<'py, PyAny>> for FuncStrPairIter<'py, F, PYF> {
     }
 }
 
-impl<'py, F, PYF> Iterator for FuncStrPairIter<'py, F, PYF>
-where
-    F: Clone,
-    PYF: Sync + PyClass<Frozen = True> + AsRef<F>,
-{
-    type Item = (DerefSelf<F>, PyStringDisplay<'py>);
+impl<'py, T: FromPyObject<'py>> Iterator for TryIter<'py, T> {
+    type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let res = self.iter.next()?.and_then(|pair| {
-            let pair: Bound<PyTuple> = pair.downcast_into()?;
-            let f = pair.get_borrowed_item(0)?;
-            let f = f.downcast::<PYF>()?.get().as_ref().clone();
-            let s = pair.get_item(1)?.downcast_into()?;
-            Ok((DerefSelf(f), PyStringDisplay(s)))
-        });
+        let res = self.iter.next()?.and_then(|v| v.extract::<T>());
         if let Err(err) = res {
             self.err = Err(err);
             return None;
@@ -269,6 +267,23 @@ where
     }
 }
 
+pub fn collect_vec<'py, T: FromPyObject<'py>>(obj: &Bound<'py, PyAny>) -> PyResult<Vec<T>> {
+    obj.try_iter()?
+        .map(|v| v.and_then(|v| v.extract()))
+        .collect()
+}
+
+#[derive(Clone, FromPyObject)]
+pub struct PyStringDisplay<'py>(Bound<'py, PyString>);
+
+impl<'py> fmt::Display for PyStringDisplay<'py> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0.to_string_lossy())
+    }
+}
+
+pub type FuncStrPairIter<'py, PYF> = TryIter<'py, (PYF, PyStringDisplay<'py>)>;
+
 struct OptIter<I>(Option<I>);
 
 impl<I: Iterator> Iterator for OptIter<I> {
@@ -286,22 +301,22 @@ impl<I: Iterator> Iterator for OptIter<I> {
     }
 }
 
-pub(crate) fn dump_all_dot<'py, F, PYF>(
-    manager_ref: &F::ManagerRef,
+pub fn dump_all_dot<'py, PYF>(
+    manager_ref: &<PYF::Target as Function>::ManagerRef,
     path: &Path,
     functions: Option<&Bound<'py, PyAny>>,
 ) -> PyResult<()>
 where
-    F: Function + for<'id> DotStyle<ETagOfFunc<'id, F>>,
-    PYF: Sync + PyClass<Frozen = True> + AsRef<F>,
-    for<'id> INodeOfFunc<'id, F>: HasLevel,
-    for<'id> ETagOfFunc<'id, F>: fmt::Debug,
-    for<'id> TermOfFunc<'id, F>: fmt::Display,
+    PYF: FromPyObject<'py> + Deref,
+    PYF::Target: Function + for<'id> DotStyle<ETagOfFunc<'id, PYF::Target>>,
+    for<'id> INodeOfFunc<'id, PYF::Target>: HasLevel,
+    for<'id> ETagOfFunc<'id, PYF::Target>: fmt::Debug,
+    for<'id> TermOfFunc<'id, PYF::Target>: fmt::Display,
 {
     let file = std::fs::File::create(path)?;
 
     let mut iter = OptIter(match functions {
-        Some(iterable) => Some(FuncStrPairIter::<F, PYF>::try_from(iterable)?),
+        Some(iterable) => Some(FuncStrPairIter::<PYF>::try_from(iterable)?),
         None => None,
     });
     manager_ref.with_manager_shared(|manager| {
@@ -315,24 +330,7 @@ where
     Ok(())
 }
 
-pub(crate) fn boolean_operator(obj: &Bound<PyAny>) -> PyResult<BooleanOperator> {
-    if let Ok(val) = obj.getattr("value") {
-        if let Ok(val) = val.extract() {
-            if val <= BooleanOperator::MAX_VALUE {
-                return Ok(BooleanOperator::from_usize(val));
-            }
-        }
-    }
-    Err(match obj.get_type().fully_qualified_name() {
-        Ok(name) => PyTypeError::new_err(format!(
-            "Expected an instance of oxidd.util.BooleanOperator, got {}",
-            name.to_string_lossy()
-        )),
-        Err(_) => PyTypeError::new_err("Expected an instance of oxidd.util.BooleanOperator"),
-    })
-}
-
-pub(crate) fn eval<B: BooleanFunction>(f: &B, args: &Bound<PyAny>) -> PyResult<bool> {
+pub fn eval<B: BooleanFunction>(f: &B, args: &Bound<PyAny>) -> PyResult<bool> {
     let mut vals = Vec::with_capacity(args.len().unwrap_or(0));
     f.with_manager_shared(|manager, edge| {
         let num_vars = manager.num_vars();
@@ -347,4 +345,16 @@ pub(crate) fn eval<B: BooleanFunction>(f: &B, args: &Bound<PyAny>) -> PyResult<b
         }
         Ok(B::eval_edge(manager, edge, vals))
     })
+}
+
+pub fn visualize_serve(py: Python<'_>, visualizer: &mut oxidd_dump::Visualizer) -> PyResult<()> {
+    // Polling repeatedly is not as elegant as just waiting (via
+    // `visualizer.serve()`), but this appears to be the only way we can handle
+    // Python signals and, e.g., return in case of a keyboard interrupt.
+    let mut listener = visualizer.serve_nonblocking()?;
+    while !py.allow_threads(|| listener.poll())? {
+        py.check_signals()?;
+        py.allow_threads(|| std::thread::sleep(std::time::Duration::from_millis(200)));
+    }
+    Ok(())
 }

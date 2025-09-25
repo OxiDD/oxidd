@@ -21,7 +21,8 @@ doc = false
 
 [dependencies]
 oxidd-core = { workspace = true }
-oxidd-dump = { workspace = true, features = ["dddmp", "dot"] }
+oxidd-dump = { workspace = true, features = ["dddmp", "dot", "visualize"] }
+oxidd-reorder = { workspace = true }
 oxidd = { workspace = true, features = ["bdd", "bcdd", "zbdd"] }
 
 pyo3 = { version = "0.25.1", features = [

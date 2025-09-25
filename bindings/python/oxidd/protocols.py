@@ -5,6 +5,7 @@ from __future__ import annotations
 __all__ = [
     "Manager",
     "BooleanFunctionManager",
+    "ReorderingManager",
     "Function",
     "FunctionSubst",
     "BooleanFunction",
@@ -19,7 +20,7 @@ from typing import Generic, Protocol, TypeVar
 
 from typing_extensions import Self, deprecated
 
-from .util import BooleanOperator
+from .util import BooleanOperator, DDDMPFile, DDDMPVersion
 
 
 class Function(Protocol):
@@ -649,7 +650,7 @@ class BooleanFunctionQuant(BooleanFunction, Protocol):
         raise NotImplementedError
 
 
-F = TypeVar("F", bound=Function, contravariant=True)
+F = TypeVar("F", bound=Function)
 
 
 class Manager(Generic[F], Protocol):
@@ -871,6 +872,158 @@ class Manager(Generic[F], Protocol):
         raise NotImplementedError
 
     @abstractmethod
+    def import_dddmp(
+        self, /, file: DDDMPFile, support_vars: Iterable[int] | None = None
+    ) -> list[F]:
+        """Import the decision diagram from the DDDMP ``file``.
+
+        Note that the support variables must also be ordered by their current
+        level (lower level numbers first). To this end, you can use
+        :meth:`ReorderingManager.set_var_order` with ``support_vars`` (or
+        :attr:`file.support_var_order
+        <oxidd.util.DDDMPFile.support_var_order>`).
+
+        Args:
+            file: The DDDMP file handle
+            support_vars: Optional mapping from support variables of the DDDMP
+                file to variable numbers in this manager. By default,
+                :attr:`file.support_var_order <oxidd.util.DDDMPFile.support_var_order>`
+                will be used.
+
+        Returns:
+            The imported DD functions
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def export_dddmp(
+        self,
+        /,
+        path: str | PathLike[str],
+        functions: Iterable[F],
+        *,
+        version: DDDMPVersion = DDDMPVersion.V2_0,
+        ascii: bool = False,
+        strict: bool = True,
+        diagram_name: str = "",
+    ) -> None:
+        """Export the given decision diagram functions as DDDMP file.
+
+        Locking behavior: acquires the manager's lock for shared access.
+
+        Args:
+            path: Path of the output file. If a file at ``path`` exists, it will
+                be overwritten, otherwise a new one will be created.
+            functions: Functions to export (must be stored in this manager).
+            version: DDDMP format version to use
+            ascii (bool): If ``True``, ASCII mode will be enforced for the
+                export. By default (and if ``False``), binary mode will be used
+                if supported for the decision diagram kind.
+                Binary mode is currently supported for BCDDs only.
+            strict: If ``True`` (the default), enable `strict mode`_
+            diagram_name: Name of the decision diagram
+
+        Returns:
+            None
+
+        .. _`strict mode`: https://docs.rs/oxidd-dump/latest/oxidd_dump/dddmp/struct.ExportSettings.html#method.strict
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def export_dddmp_with_names(
+        self,
+        /,
+        path: str | PathLike[str],
+        functions: Iterable[tuple[F, str]],
+        *,
+        version: DDDMPVersion = DDDMPVersion.V2_0,
+        ascii: bool = False,
+        strict: bool = True,
+        diagram_name: str = "",
+    ) -> None:
+        """Export the given decision diagram functions as DDDMP file.
+
+        Locking behavior: acquires the manager's lock for shared access.
+
+        Args:
+            path: Path of the output file. If a file at ``path`` exists, it will
+                be overwritten, otherwise a new one will be created.
+            functions: Pairs of function and name. All functions must be stored
+                in this manager.
+            version: DDDMP format version to use
+            ascii: If ``True``, ASCII mode will be enforced for the export. By
+                default (and if ``False``), binary mode will be used if
+                supported for the decision diagram kind.
+                Binary mode is currently supported for BCDDs only.
+            strict: If ``True`` (the default), enable `strict mode`_
+            diagram_name: Name of the decision diagram
+
+        Returns:
+            None
+
+        .. _`strict mode`: https://docs.rs/oxidd-dump/latest/oxidd_dump/dddmp/struct.Export.html#method.strict
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def visualize(
+        self,
+        /,
+        diagram_name: str,
+        functions: Iterable[F],
+        *,
+        port: int = 4000,
+    ) -> None:
+        """Serve the given decision diagram functions for visualization.
+
+        Blocks until the visualization has been fetched by `OxiDD-vis`_ (or
+        another compatible tool).
+
+        Locking behavior: acquires the manager's lock for shared access.
+
+        Args:
+            diagram_name: Name of the decision diagram
+            functions: Functions to visualize (must be stored in this manager)
+            port: The port to provide the data on, defaults to 4000.
+
+        Returns:
+            None
+
+        .. _OxiDD-vis: https://oxidd.net/vis
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def visualize_with_names(
+        self,
+        /,
+        diagram_name: str,
+        functions: Iterable[tuple[F, str]],
+        *,
+        port: int = 4000,
+    ) -> None:
+        """Serve the given decision diagram functions for visualization.
+
+        Blocks until the visualization has been fetched by `OxiDD-vis`_ (or
+        another compatible tool).
+
+        Locking behavior: acquires the manager's lock for shared access.
+
+        Args:
+            diagram_name: Name of the decision diagram
+            functions: Pairs of function and name. All functions must be stored
+                in this manager.
+            port: The port to provide the data on, defaults to 4000.
+
+        Returns:
+            None
+
+        .. _OxiDD-vis: https://oxidd.net/vis
+        """
+        raise NotImplementedError
+
+    @abstractmethod
     def dump_all_dot(
         self,
         /,
@@ -903,6 +1056,27 @@ class Manager(Generic[F], Protocol):
 
         .. deprecated:: 0.11
            Use :meth:`dump_all_dot` instead.
+        """
+        raise NotImplementedError
+
+
+class ReorderingManager(Manager[F], Protocol):
+    """Manager that supports variable reordering."""
+
+    @abstractmethod
+    def set_var_order(self, /, order: Iterable[int]) -> None:
+        """Reorder the variables according to ``order``.
+
+        If a variable ``x`` occurs before variable ``y`` in ``order``, then
+        ``x`` will be above ``y`` in the decision diagram when this function
+        returns. Variables not mentioned in ``order`` will be placed in a
+        position such that the least number of level swaps need to be
+        performed.
+
+        Locking behavior: acquires the manager's lock for exclusive access.
+
+        Args:
+            order: The variable order to establish
         """
         raise NotImplementedError
 

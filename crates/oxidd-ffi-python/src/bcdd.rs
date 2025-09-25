@@ -342,6 +342,220 @@ impl BCDDManager {
             .with_manager_shared(|manager| BCDDFunction(oxidd::bcdd::BCDDFunction::f(manager)))
     }
 
+    /// Reorder the variables according to ``order``.
+    ///
+    /// If a variable ``x`` occurs before variable ``y`` in ``order``, then
+    /// ``x`` will be above ``y`` in the decision diagram when this function
+    /// returns. Variables not mentioned in ``order`` will be placed in a
+    /// position such that the least number of level swaps need to be
+    /// performed.
+    ///
+    /// Locking behavior: acquires the manager's lock for exclusive access.
+    ///
+    /// Args:
+    ///     order (Iterable[int]): The variable order to establish
+    ///
+    /// Returns:
+    ///     None
+    fn set_var_order(&self, py: Python, order: &Bound<PyAny>) -> PyResult<()> {
+        let order: Vec<VarNo> = crate::util::collect_vec(order)?;
+        py.allow_threads(|| {
+            self.0
+                .with_manager_exclusive(|manager| oxidd_reorder::set_var_order(manager, &order))
+        });
+        Ok(())
+    }
+
+    /// Import the decision diagram from the DDDMP ``file``.
+    ///
+    /// Note that the support variables must also be ordered by their current
+    /// level (lower level numbers first). To this end, you can use
+    /// :meth:`set_var_order` with ``support_vars`` (or
+    /// :attr:`file.support_var_order
+    /// <oxidd.util.DDDMPFile.support_var_order>`).
+    ///
+    /// Locking behavior: acquires the manager's lock for shared access.
+    ///
+    /// Args:
+    ///     file (DDDMPFile): The DDDMP file handle
+    ///     support_vars (Iterable[int] | None): Optional mapping from support
+    ///         variables of the DDDMP file to variable numbers in this manager.
+    ///         By default, :attr:`file.support_var_order
+    ///         <oxidd.util.DDDMPFile.support_var_order>` will be used.
+    ///
+    /// Returns:
+    ///     list[BCDDFunction]: The imported BCDD functions
+    #[pyo3(signature = (/, file, support_vars = None))]
+    fn import_dddmp<'py>(
+        &self,
+        py: Python<'py>,
+        file: &mut crate::util::DDDMPFile,
+        support_vars: Option<&Bound<'py, PyAny>>,
+    ) -> PyResult<Bound<'py, PyList>> {
+        let imported = crate::util::import_dddmp(&self.0, file, support_vars)?;
+        PyList::new(py, imported.into_iter().map(BCDDFunction))
+    }
+
+    /// Export the given decision diagram functions as DDDMP file.
+    ///
+    /// Locking behavior: acquires the manager's lock for shared access.
+    ///
+    /// Args:
+    ///     path (str | PathLike[str]): Path of the output file. If a file at
+    ///         ``path`` exists, it will be overwritten, otherwise a new one
+    ///         will be created.
+    ///     functions (Iterable[BCDDFunction]): Functions to export (must be
+    ///         stored in this manager).
+    ///     version (DDDMPVersion): DDDMP format version to use
+    ///     ascii (bool): If ``True``, ASCII mode will be enforced for the
+    ///         export. By default (and if ``False``), binary mode will be used
+    ///         if supported for the decision diagram kind.
+    ///         Binary mode is currently supported for BCDDs only.
+    ///     strict (bool): If ``True`` (the default), enable `strict mode`_
+    ///     diagram_name (str): Name of the decision diagram
+    ///
+    /// Returns:
+    ///     None
+    ///
+    /// .. _`strict mode`: https://docs.rs/oxidd-dump/latest/oxidd_dump/dddmp/struct.ExportSettings.html#method.strict
+    #[pyo3(
+        signature = (/, path, functions, *, version=None, ascii=false, strict=true, diagram_name=""),
+        text_signature = "($self, /, path, functions, *, version=DDDMPVersion.V2_0, ascii=False, strict=True, diagram_name=\"\")"
+    )]
+    fn export_dddmp<'py>(
+        &self,
+        path: PathBuf,
+        functions: &Bound<'py, PyAny>,
+        version: Option<&Bound<'py, PyAny>>,
+        ascii: bool,
+        strict: bool,
+        diagram_name: &str,
+    ) -> PyResult<()> {
+        crate::util::export_dddmp::<BCDDFunction>(
+            &self.0,
+            &path,
+            functions,
+            version,
+            ascii,
+            strict,
+            diagram_name,
+        )
+    }
+
+    /// Export the given decision diagram functions as DDDMP file.
+    ///
+    /// Locking behavior: acquires the manager's lock for shared access.
+    ///
+    /// Args:
+    ///     path (str | PathLike[str]): Path of the output file. If a file at
+    ///         ``path`` exists, it will be overwritten, otherwise a new one
+    ///         will be created.
+    ///     functions (Iterable[tuple[BCDDFunction, str]]): Pairs of function
+    ///         and name. All functions must be stored in this manager.
+    ///     version (DDDMPVersion): DDDMP format version to use
+    ///     ascii (bool): If ``True``, ASCII mode will be enforced for the
+    ///         export. By default (and if ``False``), binary mode will be used
+    ///         if supported for the decision diagram kind.
+    ///         Binary mode is currently supported for BCDDs only.
+    ///     strict (bool): If ``True`` (the default), enable `strict mode`_
+    ///     diagram_name (str): Name of the decision diagram
+    ///
+    /// Returns:
+    ///     None
+    ///
+    /// .. _`strict mode`: https://docs.rs/oxidd-dump/latest/oxidd_dump/dddmp/struct.ExportSettings.html#method.strict
+    #[pyo3(
+        signature = (/, path, functions, *, version=None, ascii=false, strict=true, diagram_name=""),
+        text_signature = "($self, /, path, functions, *, version=DDDMPVersion.V2_0, ascii=False, strict=True, diagram_name=\"\")"
+    )]
+    fn export_dddmp_with_names<'py>(
+        &self,
+        path: PathBuf,
+        functions: &Bound<'py, PyAny>,
+        version: Option<&Bound<'py, PyAny>>,
+        ascii: bool,
+        strict: bool,
+        diagram_name: &str,
+    ) -> PyResult<()> {
+        crate::util::export_dddmp_with_names::<BCDDFunction>(
+            &self.0,
+            &path,
+            functions,
+            version,
+            ascii,
+            strict,
+            diagram_name,
+        )
+    }
+
+    /// Serve the given decision diagram functions for visualization.
+    ///
+    /// Blocks until the visualization has been fetched by `OxiDD-vis`_ (or
+    /// another compatible tool).
+    ///
+    /// Locking behavior: acquires the manager's lock for shared access.
+    ///
+    /// Args:
+    ///     diagram_name (str): Name of the decision diagram
+    ///     functions (Iterable[BCDDFunction]): Functions to visualize (must be
+    ///         stored in this manager)
+    ///     port (int): The port to provide the data on, defaults to 4000.
+    ///
+    /// Returns:
+    ///     None
+    ///
+    /// .. _OxiDD-vis: https://oxidd.net/vis
+    #[pyo3(signature = (/, diagram_name, functions, *, port=4000))]
+    fn visualize<'py>(
+        &self,
+        py: Python<'py>,
+        diagram_name: &str,
+        functions: &Bound<'py, PyAny>,
+        port: u16,
+    ) -> PyResult<()> {
+        let mut visualizer = oxidd_dump::Visualizer::new().port(port);
+        let mut iter = crate::util::TryIter::<BCDDFunction>::try_from(functions)?;
+        visualizer = self
+            .0
+            .with_manager_shared(|manager| visualizer.add(diagram_name, manager, &mut iter));
+        crate::util::visualize_serve(py, &mut visualizer)?;
+        iter.err
+    }
+
+    /// Serve the given decision diagram functions for visualization.
+    ///
+    /// Blocks until the visualization has been fetched by `OxiDD-vis`_ (or
+    /// another compatible tool).
+    ///
+    /// Locking behavior: acquires the manager's lock for shared access.
+    ///
+    /// Args:
+    ///     diagram_name (str): Name of the decision diagram
+    ///     functions (Iterable[tuple[BCDDFunction, str]]): Pairs of function
+    ///         and name. All functions must be stored in this manager.
+    ///     port (int): The port to provide the data on, defaults to 4000.
+    ///
+    /// Returns:
+    ///     None
+    ///
+    /// .. _OxiDD-vis: https://oxidd.net/vis
+    #[pyo3(signature = (/, diagram_name, functions, *, port=4000))]
+    fn visualize_with_names<'py>(
+        &self,
+        py: Python<'py>,
+        diagram_name: &str,
+        functions: &Bound<'py, PyAny>,
+        port: u16,
+    ) -> PyResult<()> {
+        let mut visualizer = oxidd_dump::Visualizer::new().port(port);
+        let mut iter = crate::util::FuncStrPairIter::<BCDDFunction>::try_from(functions)?;
+        visualizer = self.0.with_manager_shared(|manager| {
+            visualizer.add_with_names(diagram_name, manager, &mut iter)
+        });
+        crate::util::visualize_serve(py, &mut visualizer)?;
+        iter.err
+    }
+
     /// Dump the entire decision diagram in this manager as Graphviz DOT code.
     ///
     /// The output may also include nodes that are not reachable from
@@ -367,7 +581,7 @@ impl BCDDManager {
         path: PathBuf,
         functions: Option<&Bound<'py, PyAny>>,
     ) -> PyResult<()> {
-        crate::util::dump_all_dot::<_, BCDDFunction>(&self.0, &path, functions)
+        crate::util::dump_all_dot::<BCDDFunction>(&self.0, &path, functions)
     }
     /// Deprecated alias for :meth:`dump_all_dot`.
     ///
@@ -392,7 +606,7 @@ impl BCDDManager {
         path: PathBuf,
         functions: Option<&Bound<'py, PyAny>>,
     ) -> PyResult<()> {
-        crate::util::dump_all_dot::<_, BCDDFunction>(&self.0, &path, functions)
+        crate::util::dump_all_dot::<BCDDFunction>(&self.0, &path, functions)
     }
 }
 
@@ -447,7 +661,7 @@ impl BCDDSubstitution {
 /// :meth:`Function <oxidd.protocols.Function.__lt__>` protocol for more
 /// details.
 #[pyclass(frozen, eq, ord, hash, module = "oxidd.bcdd")]
-#[derive(PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BCDDFunction(oxidd::bcdd::BCDDFunction);
 
 impl TryFrom<AllocResult<oxidd::bcdd::BCDDFunction>> for BCDDFunction {
@@ -463,8 +677,10 @@ impl TryFrom<AllocResult<oxidd::bcdd::BCDDFunction>> for BCDDFunction {
     }
 }
 
-impl AsRef<oxidd::bcdd::BCDDFunction> for BCDDFunction {
-    fn as_ref(&self) -> &oxidd::bcdd::BCDDFunction {
+impl std::ops::Deref for BCDDFunction {
+    type Target = oxidd::bcdd::BCDDFunction;
+
+    fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
