@@ -184,15 +184,17 @@ pub fn to_c_str(str: &str) -> *const c_char {
     }
 }
 
+/// Functions implemented in `interop.cpp`
+///
 /// cbindgen:ignore
 #[cfg(feature = "cpp")]
-extern "C" {
-    // The following functions are implemented in `interop.cpp`
-
-    /// C++ `std::string::assign(char *, size_t)`
-    ///
-    /// `std::ffi::c_void` should be `std::string`, but this is difficult to
-    /// realize
-    #[link_name = "oxidd$interop$std$string$assign"]
-    pub fn cpp_std_string_assign(string: *mut std::ffi::c_void, data: *const u8, len: usize);
+mod cpp {
+    extern "C" {
+        /// C++ `std::string::assign(char *, size_t)`
+        ///
+        /// `std::ffi::c_void` should be `std::string`, but this is difficult to
+        /// realize
+        #[link_name = "oxidd$interop$std$string$assign"]
+        pub fn std_string_assign(string: *mut std::ffi::c_void, data: *const u8, len: usize);
+    }
 }

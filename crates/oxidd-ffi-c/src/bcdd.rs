@@ -433,7 +433,7 @@ pub unsafe extern "C" fn oxidd_bcdd_manager_var_name_cpp(
 ) {
     manager.get().with_manager_shared(|manager| {
         let name = manager.var_name(var);
-        crate::util::cpp_std_string_assign(string, name.as_ptr(), name.len());
+        crate::util::cpp::std_string_assign(string, name.as_ptr(), name.len());
     })
 }
 
