@@ -115,6 +115,7 @@ add_library(oxidd ALIAS oxidd_ffi_c)
 
 set(CMAKE_SKIP_TEST_ALL_DEPENDENCY FALSE)
 add_subdirectory(bindings/cpp/tests)
+add_subdirectory(bindings/cpp/examples)
 
 # --- Installation -------------------------------------------------------------
 
