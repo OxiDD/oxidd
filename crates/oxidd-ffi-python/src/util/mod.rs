@@ -352,9 +352,9 @@ pub fn visualize_serve(py: Python<'_>, visualizer: &mut oxidd_dump::Visualizer) 
     // `visualizer.serve()`), but this appears to be the only way we can handle
     // Python signals and, e.g., return in case of a keyboard interrupt.
     let mut listener = visualizer.serve_nonblocking()?;
-    while !py.allow_threads(|| listener.poll())? {
+    while !py.detach(|| listener.poll())? {
         py.check_signals()?;
-        py.allow_threads(|| std::thread::sleep(std::time::Duration::from_millis(200)));
+        py.detach(|| std::thread::sleep(std::time::Duration::from_millis(200)));
     }
     Ok(())
 }

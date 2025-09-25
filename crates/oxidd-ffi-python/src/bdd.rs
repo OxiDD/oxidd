@@ -263,7 +263,7 @@ impl BDDManager {
     /// Returns:
     ///     int: The count of nodes removed
     fn gc(&self, py: Python) -> usize {
-        py.allow_threads(|| self.0.with_manager_shared(|manager| manager.gc()))
+        py.detach(|| self.0.with_manager_shared(|manager| manager.gc()))
     }
 
     /// Get the count of garbage collections.
@@ -359,7 +359,7 @@ impl BDDManager {
     ///     None
     fn set_var_order(&self, py: Python, order: &Bound<PyAny>) -> PyResult<()> {
         let order: Vec<VarNo> = crate::util::collect_vec(order)?;
-        py.allow_threads(|| {
+        py.detach(|| {
             self.0
                 .with_manager_exclusive(|manager| oxidd_reorder::set_var_order(manager, &order))
         });
@@ -809,7 +809,7 @@ impl BDDFunction {
     /// Raises:
     ///     DDMemoryError: If the operation runs out of memory
     fn __invert__(&self, py: Python) -> PyResult<Self> {
-        py.allow_threads(move || self.0.not()).try_into()
+        py.detach(move || self.0.not()).try_into()
     }
     /// Compute the conjunction ``self ∧ rhs``.
     ///
@@ -825,7 +825,7 @@ impl BDDFunction {
     /// Raises:
     ///     DDMemoryError: If the operation runs out of memory
     fn __and__(&self, py: Python, rhs: &Self) -> PyResult<Self> {
-        py.allow_threads(move || self.0.and(&rhs.0)).try_into()
+        py.detach(move || self.0.and(&rhs.0)).try_into()
     }
     /// Compute the disjunction ``self ∨ rhs``.
     ///
@@ -841,7 +841,7 @@ impl BDDFunction {
     /// Raises:
     ///     DDMemoryError: If the operation runs out of memory
     fn __or__(&self, py: Python, rhs: &Self) -> PyResult<Self> {
-        py.allow_threads(move || self.0.or(&rhs.0)).try_into()
+        py.detach(move || self.0.or(&rhs.0)).try_into()
     }
     /// Compute the exclusive disjunction ``self ⊕ rhs``.
     ///
@@ -857,7 +857,7 @@ impl BDDFunction {
     /// Raises:
     ///     DDMemoryError: If the operation runs out of memory
     fn __xor__(&self, py: Python, rhs: &Self) -> PyResult<Self> {
-        py.allow_threads(move || self.0.xor(&rhs.0)).try_into()
+        py.detach(move || self.0.xor(&rhs.0)).try_into()
     }
     /// Compute the negated conjunction ``self ⊼ rhs``.
     ///
@@ -874,7 +874,7 @@ impl BDDFunction {
     ///     DDMemoryError: If the operation runs out of memory
     #[pyo3(signature = (rhs, /))]
     fn nand(&self, py: Python, rhs: &Self) -> PyResult<Self> {
-        py.allow_threads(move || self.0.nand(&rhs.0)).try_into()
+        py.detach(move || self.0.nand(&rhs.0)).try_into()
     }
     /// Compute the negated disjunction ``self ⊽ rhs``.
     ///
@@ -891,7 +891,7 @@ impl BDDFunction {
     ///     DDMemoryError: If the operation runs out of memory
     #[pyo3(signature = (rhs, /))]
     fn nor(&self, py: Python, rhs: &Self) -> PyResult<Self> {
-        py.allow_threads(move || self.0.nor(&rhs.0)).try_into()
+        py.detach(move || self.0.nor(&rhs.0)).try_into()
     }
     /// Compute the equivalence ``self ↔ rhs``.
     ///
@@ -908,7 +908,7 @@ impl BDDFunction {
     ///     DDMemoryError: If the operation runs out of memory
     #[pyo3(signature = (rhs, /))]
     fn equiv(&self, py: Python, rhs: &Self) -> PyResult<Self> {
-        py.allow_threads(move || self.0.equiv(&rhs.0)).try_into()
+        py.detach(move || self.0.equiv(&rhs.0)).try_into()
     }
     /// Compute the implication ``self → rhs`` (or ``f ≤ g``).
     ///
@@ -925,7 +925,7 @@ impl BDDFunction {
     ///     DDMemoryError: If the operation runs out of memory
     #[pyo3(signature = (rhs, /))]
     fn imp(&self, py: Python, rhs: &Self) -> PyResult<Self> {
-        py.allow_threads(move || self.0.imp(&rhs.0)).try_into()
+        py.detach(move || self.0.imp(&rhs.0)).try_into()
     }
     /// Compute the strict implication ``self < rhs``.
     ///
@@ -942,8 +942,7 @@ impl BDDFunction {
     ///     DDMemoryError: If the operation runs out of memory
     #[pyo3(signature = (rhs, /))]
     fn imp_strict(&self, py: Python, rhs: &Self) -> PyResult<Self> {
-        py.allow_threads(move || self.0.imp_strict(&rhs.0))
-            .try_into()
+        py.detach(move || self.0.imp_strict(&rhs.0)).try_into()
     }
 
     /// Compute the BDD for the conditional ``t if self else e``.
@@ -960,7 +959,7 @@ impl BDDFunction {
     /// Raises:
     ///     DDMemoryError: If the operation runs out of memory
     fn ite(&self, py: Python, t: &Self, e: &Self) -> PyResult<Self> {
-        py.allow_threads(move || self.0.ite(&t.0, &e.0)).try_into()
+        py.detach(move || self.0.ite(&t.0, &e.0)).try_into()
     }
 
     /// Create a new substitution object from pairs ``(var, replacement)``.
@@ -1000,7 +999,7 @@ impl BDDFunction {
     ///     Self: ``self`` with variables substituted
     #[pyo3(signature = (substitution, /))]
     fn substitute(&self, py: Python, substitution: &BDDSubstitution) -> PyResult<Self> {
-        py.allow_threads(move || self.0.substitute(&substitution.0))
+        py.detach(move || self.0.substitute(&substitution.0))
             .try_into()
     }
 
@@ -1023,7 +1022,7 @@ impl BDDFunction {
     /// Raises:
     ///     DDMemoryError: If the operation runs out of memory
     fn forall(&self, py: Python, vars: &Self) -> PyResult<Self> {
-        py.allow_threads(move || self.0.forall(&vars.0)).try_into()
+        py.detach(move || self.0.forall(&vars.0)).try_into()
     }
     /// Compute the existential quantification over ``vars``.
     ///
@@ -1044,7 +1043,7 @@ impl BDDFunction {
     /// Raises:
     ///     DDMemoryError: If the operation runs out of memory
     fn exists(&self, py: Python, vars: &Self) -> PyResult<Self> {
-        py.allow_threads(move || self.0.exists(&vars.0)).try_into()
+        py.detach(move || self.0.exists(&vars.0)).try_into()
     }
     /// Deprecated alias for :meth:`exists`.
     ///
@@ -1086,7 +1085,7 @@ impl BDDFunction {
     /// Raises:
     ///     DDMemoryError: If the operation runs out of memory
     fn unique(&self, py: Python, vars: &Self) -> PyResult<Self> {
-        py.allow_threads(move || self.0.unique(&vars.0)).try_into()
+        py.detach(move || self.0.unique(&vars.0)).try_into()
     }
 
     /// Combined application of ``op`` and :meth:`forall`.
@@ -1115,7 +1114,7 @@ impl BDDFunction {
         vars: &Self,
     ) -> PyResult<Self> {
         let op = crate::util::boolean_operator(op)?;
-        py.allow_threads(move || self.0.apply_forall(op, &rhs.0, &vars.0))
+        py.detach(move || self.0.apply_forall(op, &rhs.0, &vars.0))
             .try_into()
     }
     /// Combined application of ``op`` and :meth:`exists`.
@@ -1144,7 +1143,7 @@ impl BDDFunction {
         vars: &Self,
     ) -> PyResult<Self> {
         let op = crate::util::boolean_operator(op)?;
-        py.allow_threads(move || self.0.apply_exists(op, &rhs.0, &vars.0))
+        py.detach(move || self.0.apply_exists(op, &rhs.0, &vars.0))
             .try_into()
     }
     /// Deprecated alias for ``apply_exists()``.
@@ -1203,7 +1202,7 @@ impl BDDFunction {
         vars: &Self,
     ) -> PyResult<Self> {
         let op = crate::util::boolean_operator(op)?;
-        py.allow_threads(move || self.0.apply_unique(op, &rhs.0, &vars.0))
+        py.detach(move || self.0.apply_unique(op, &rhs.0, &vars.0))
             .try_into()
     }
 
@@ -1215,7 +1214,7 @@ impl BDDFunction {
     ///     int: The count of descendant nodes including the node referenced by
     ///     ``self`` and terminal nodes.
     fn node_count(&self, py: Python) -> usize {
-        py.allow_threads(move || self.0.node_count())
+        py.detach(move || self.0.node_count())
     }
 
     /// Check for satisfiability.
@@ -1251,7 +1250,7 @@ impl BDDFunction {
     /// Returns:
     ///     int: The exact number of satisfying assignments
     fn sat_count(&self, py: Python, vars: LevelNo) -> BigUint {
-        py.allow_threads(move || {
+        py.detach(move || {
             self.0
                 .sat_count::<BigUint, BuildHasherDefault<FxHasher>>(vars, &mut Default::default())
         })
@@ -1268,7 +1267,7 @@ impl BDDFunction {
     /// Returns:
     ///     float: (An approximation of) the number of satisfying assignments
     fn sat_count_float(&self, py: Python, vars: LevelNo) -> f64 {
-        py.allow_threads(move || {
+        py.detach(move || {
             self.0
                 .sat_count::<F64, BuildHasherDefault<FxHasher>>(vars, &mut Default::default())
                 .0
@@ -1284,7 +1283,7 @@ impl BDDFunction {
     ///     value means that the i-th variable is false, true, or "don't care,"
     ///     respectively, or ``None`` if ``self`` is unsatisfiable
     fn pick_cube<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        match py.allow_threads(move || self.0.pick_cube(move |_, _, _| false)) {
+        match py.detach(move || self.0.pick_cube(move |_, _, _| false)) {
             Some(r) => {
                 let iter = r.into_iter().map(|v| match v {
                     OptBool::None => PyNone::get(py).to_owned().into_any(),
@@ -1303,7 +1302,7 @@ impl BDDFunction {
     ///     Self: The satisfying assignment as decision diagram, or ``⊥`` if
     ///     ``self`` is unsatisfiable
     fn pick_cube_dd(&self, py: Python) -> PyResult<Self> {
-        py.allow_threads(move || self.0.pick_cube_dd(move |_, _, _| false))
+        py.detach(move || self.0.pick_cube_dd(move |_, _, _| false))
             .try_into()
     }
     /// Pick a satisfying assignment as DD, with choices as of ``literal_set``.
@@ -1328,7 +1327,7 @@ impl BDDFunction {
     /// Raises:
     ///     DDMemoryError: If the operation runs out of memory
     fn pick_cube_dd_set(&self, py: Python, literal_set: &Self) -> PyResult<Self> {
-        py.allow_threads(move || self.0.pick_cube_dd_set(&literal_set.0))
+        py.detach(move || self.0.pick_cube_dd_set(&literal_set.0))
             .try_into()
     }
 
