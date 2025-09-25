@@ -216,7 +216,7 @@ where
     let mut target_order = sort_order(num_levels, order.iter().map(|&v| manager.var_to_level(v)));
 
     manager.reorder(|manager| {
-        if num_levels <= 16 {
+        if num_levels <= 16 || manager.workers().current_num_threads() == 1 {
             bubble_sort(&mut target_order, |upper_no| unsafe {
                 level_down(manager, upper_no)
             });
