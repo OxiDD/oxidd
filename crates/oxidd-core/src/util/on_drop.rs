@@ -86,7 +86,8 @@ impl Drop for AbortOnDrop<'_> {
 
 /// Drop guard for edges to ensure that they are not leaked
 pub struct EdgeDropGuard<'a, M: Manager> {
-    manager: &'a M,
+    /// Manager containing the edge
+    pub manager: &'a M,
     edge: ManuallyDrop<M::Edge>,
 }
 
@@ -136,7 +137,8 @@ impl<'a, M: Manager> DerefMut for EdgeDropGuard<'a, M> {
 
 /// Drop guard for vectors of edges to ensure that they are not leaked
 pub struct EdgeVecDropGuard<'a, M: Manager> {
-    manager: &'a M,
+    /// Manager containing the edges
+    pub manager: &'a M,
     vec: Vec<M::Edge>,
 }
 
@@ -180,7 +182,8 @@ impl<'a, M: Manager> DerefMut for EdgeVecDropGuard<'a, M> {
 
 /// Drop guard for inner nodes to ensure that they are not leaked
 pub struct InnerNodeDropGuard<'a, M: Manager> {
-    manager: &'a M,
+    /// Manager that is used to drop the node in the drop handler
+    pub manager: &'a M,
     node: ManuallyDrop<M::InnerNode>,
 }
 
