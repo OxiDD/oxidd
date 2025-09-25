@@ -250,7 +250,7 @@ impl<'a> ExportSettings<'a> {
     ///
     /// ```
     /// # use oxidd_core::function::{self, Function};
-    /// # use oxidd_dump::dddmp::Export;
+    /// # use oxidd_dump::dddmp::ExportSettings;
     /// # fn export<F: Function>(f: &F, g: &F, h: &F) -> std::io::Result<()>
     /// # where
     /// #    for<'id> function::INodeOfFunc<'id, F>: oxidd_core::HasLevel,
