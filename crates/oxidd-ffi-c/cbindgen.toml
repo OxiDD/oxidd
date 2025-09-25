@@ -1,5 +1,5 @@
 # spell-checker:ignore autogen,elif,STDC,GNUC,declspec,nodiscard,myvariant
-# spell-checker:ignore Zunpretty
+# spell-checker:ignore Wnullability,Zunpretty
 
 # The language to output bindings in
 #
@@ -27,7 +27,11 @@ header = """
 
 # An optional string of text to output at the end of the generated file
 # default: doesn't emit anything
-#trailer = "/* Text to put at the end of the generated file */"
+trailer = """
+#ifdef __clang__
+  #pragma GCC diagnostic pop
+#endif
+"""
 
 # An optional name to use as an include guard
 # default: doesn't emit an include guard
@@ -115,10 +119,16 @@ after_includes = """
   #define _OXIDD_NODISCARD
 #endif
 
-#ifdef __GNUC__
-#define _OXIDD_NONNULL __attribute__((nonnull))
+#ifdef __clang__
+  #define _OXIDD_NONNULL _Nonnull
+  // When using `_Nonnull`, Clang's nullability-completeness lint will complain
+  // about all pointer types without a `_Nonnull`, `_Nullable`, or
+  // `_Null_unspecified` qualifier. But apparently, cbindgen does not allow
+  // generating `_Nullable` automatically. Hence, we disable the lint.
+  #pragma GCC diagnostic push
+  #pragma GCC diagnostic ignored "-Wnullability-completeness"
 #else
-#define _OXIDD_NONNULL
+  #define _OXIDD_NONNULL
 #endif
 /** @endcond */
 """
