@@ -1293,7 +1293,7 @@ pub unsafe extern "C" fn oxidd_bdd_ite(cond: bdd_t, then_case: bdd_t, else_case:
     op3(cond, then_case, else_case, BDDFunction::ite)
 }
 
-/// Substitute `vars` in the BDD `f` by `replacement`
+/// Substitute variables in the BDD `f` according to `substitution`
 ///
 /// The substitution is performed in a parallel fashion, e.g.:
 /// `(¬x ∧ ¬y)[x ↦ ¬x ∧ ¬y, y ↦ ⊥] = ¬(¬x ∧ ¬y) ∧ ¬⊥ = x ∨ y`

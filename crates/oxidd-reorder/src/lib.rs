@@ -193,7 +193,7 @@ where
 
 /// Reorder the variables according to `order`
 ///
-/// Like [`set_var_order_seq()`] but with concurrent swap operations.
+/// Like [`set_var_order_seq()`], but with concurrent swap operations.
 ///
 /// If a variable `x` occurs before variable `y` in `order`, then `x` will be
 /// above `y` in the decision diagram when this function returns. Variables not
@@ -236,8 +236,8 @@ where
 /// is: If the value at index `i` is greater than the value at index `i + 1`,
 /// then level `i` and `i + 1` need to be swapped.
 ///
-/// `input_order` conceptually describes how the variables should be ordered in
-/// the end, i.e., the variables corresponding to the given levels should be
+/// `input_order` describes how the variables should be ordered in the end,
+/// i.e., the variables corresponding to the given levels should be
 /// reordered such that the level numbers would be increasing in that order.
 #[track_caller]
 fn sort_order(num_levels: u32, input_order: impl IntoIterator<Item = LevelNo>) -> Vec<u32> {

@@ -489,12 +489,22 @@ impl DumpHeader {
 /// Important: there must not be any read/seek/... operations on `input` after
 /// reading `header` using [`DumpHeader::load()`].
 ///
-/// `support_vars` contains variables in the true support of the decision
-/// diagram in `input`. The variables must be ordered by their current level
-/// (lower level numbers first).
+/// `support_vars` can be used to adjust the mapping from support variables in
+/// the DDDMP file to variables in the manager. The iterator must yield
+/// [`header.num_support_vars()`][DumpHeader::num_support_vars()] variable
+/// numbers valid in the manager. If the `i`-th value is `v`, then the `i`-th
+/// support variable (see [`DumpHeader::support_vars()`]) will be mapped to
+/// variable `v` in `manager`. In the simplest case,
+/// [`header.support_var_order()`][DumpHeader::support_var_order()] can be used.
+///
+/// Note that the support variables must also be ordered by their current level
+/// (lower level numbers first). To this end, you can use
+/// [`oxidd_reorder::set_var_order()`][set_var_order] with `support_vars`.
 ///
 /// `complement` is a function that returns the complemented edge for a given
 /// edge.
+///
+/// [set_var_order]: https://docs.rs/oxidd-reorder/latest/oxidd_reorder/fn.set_var_order.html
 pub fn import<'id, F: Function>(
     mut input: impl io::BufRead,
     header: &DumpHeader,
@@ -508,7 +518,11 @@ where
 {
     let suppvar_level_map =
         Vec::from_iter(support_vars.into_iter().map(|v| manager.var_to_level(v)));
-    assert_eq!(suppvar_level_map.len(), header.ids.len());
+    assert_eq!(
+        suppvar_level_map.len(),
+        header.ids.len(),
+        "`support_vars` must provide one target variable per support variable in the DDDMP file",
+    );
     assert!(
         IsSorted::is_sorted_by(&mut suppvar_level_map.iter(), cmp_strict),
         "`support_vars` must be sorted by the variables' current level",

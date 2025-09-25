@@ -1120,7 +1120,8 @@ pub unsafe extern "C" fn oxidd_bcdd_cofactors(f: bcdd_t) -> bcdd_pair_t {
 /// Get the cofactor `f_true` of `f`
 ///
 /// This function is slightly more efficient than `oxidd_bcdd_cofactors()` in
-/// case `f_false` is not needed.
+/// case `f_false` is not needed. For a more detailed description, see
+/// `oxidd_bcdd_cofactors()`.
 ///
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
@@ -1140,7 +1141,8 @@ pub unsafe extern "C" fn oxidd_bcdd_cofactor_true(f: bcdd_t) -> bcdd_t {
 /// Get the cofactor `f_false` of `f`
 ///
 /// This function is slightly more efficient than `oxidd_bcdd_cofactors()` in
-/// case `f_true` is not needed.
+/// case `f_true` is not needed. For a more detailed description, see
+/// `oxidd_bcdd_cofactors()`.
 ///
 /// Locking behavior: acquires the manager's lock for shared access.
 ///

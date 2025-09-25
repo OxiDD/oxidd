@@ -1075,8 +1075,9 @@ pub unsafe trait LevelView<E: Edge, N: InnerNode<E>> {
     ///
     /// Panics if
     /// - the children of `node` are stored in a different manager, or
-    /// - `N` implements [`HasLevel`] and [`HasLevel::level(node)`] returns a
-    ///   different level.
+    /// - `N` implements [`HasLevel`] and
+    ///   [`HasLevel::level(node)`][HasLevel::level()] returns a different
+    ///   level.
     #[must_use]
     fn get_or_insert(&mut self, node: N) -> AllocResult<E>;
 

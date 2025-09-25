@@ -1469,7 +1469,7 @@ public:
   /// @returns  The level of the underlying inner node or `std::nullopt` for
   ///           terminals and invalid functions
   ///
-  /// @deprecated  use node_level() instead
+  /// @deprecated  use `node_level()` instead
   [[deprecated("use node_level instead"), nodiscard]] level_no_t
   level() const noexcept {
     const Derived &self = *static_cast<const Derived *>(this);

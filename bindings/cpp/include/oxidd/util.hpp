@@ -292,9 +292,9 @@ public:
   [[nodiscard]] std::span<const opt_bool> span() const noexcept {
     return {data(), size()};
   }
-  /// Deprecated alias for span()
+  /// Deprecated alias for `span()`
   ///
-  /// @deprecated  Use span() instead.
+  /// @deprecated  Use `span()` instead.
   [[nodiscard, deprecated("use span instead")]] std::span<const opt_bool>
   slice() const noexcept {
     return {data(), size()};
