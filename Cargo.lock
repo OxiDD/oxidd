@@ -644,6 +644,7 @@ dependencies = [
  "oxidd",
  "oxidd-core",
  "oxidd-dump",
+ "oxidd-reorder",
  "rustc-hash",
 ]
 

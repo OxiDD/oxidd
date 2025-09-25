@@ -18,7 +18,8 @@ use oxidd_core::function::BooleanOperator;
 use oxidd_core::{LevelNo, VarNo};
 
 use crate::util::{
-    assignment_t, op1, op2, op3, var_no_bool_pair_t, CFunction, CManagerRef, FUNC_UNWRAP_MSG,
+    assignment_t, dddmp::dddmp_export_settings_t, error_t, op1, op2, op3, str_t,
+    var_no_bool_pair_t, CFunction, CManagerRef, FUNC_UNWRAP_MSG,
 };
 
 /// Reference to a manager of a simple binary decision diagram (BDD)
@@ -372,11 +373,13 @@ pub unsafe extern "C" fn oxidd_bdd_manager_add_named_vars(
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_bdd_manager_add_named_vars_iter(
     manager: bdd_manager_t,
-    iter: crate::util::str_iter_t,
+    iter: crate::util::iter<str_t>,
 ) -> crate::util::duplicate_var_name_result_t {
-    manager
-        .get()
-        .with_manager_exclusive(|manager| manager.add_named_vars(iter).into())
+    manager.get().with_manager_exclusive(|manager| {
+        manager
+            .add_named_vars(iter.map(str_t::to_string_lossy))
+            .into()
+    })
 }
 
 /// Get `var`'s name
@@ -550,6 +553,468 @@ pub unsafe extern "C" fn oxidd_bdd_manager_gc_count(manager: bdd_manager_t) -> u
     manager
         .get()
         .with_manager_shared(|manager| manager.gc_count())
+}
+
+/// Reorder the variables in `manager` according to `order`
+///
+/// If a variable `x` occurs before variable `y` in `order`, then `x` will be
+/// above `y` in the decision diagram when this function returns. Variables not
+/// mentioned in `order` will be placed in a position such that the least number
+/// of level swaps need to be performed.
+///
+/// Locking behavior: acquires the manager's lock for exclusive access.
+///
+/// @param  manager  The manager
+/// @param  order    The variable order to establish
+/// @param  len      Length of the array referenced by `order`
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_manager_set_var_order(
+    manager: bdd_manager_t,
+    order: *const VarNo,
+    len: usize,
+) {
+    if order.is_null() || len < 2 {
+        return;
+    }
+    let order = std::slice::from_raw_parts(order, len);
+    manager
+        .get()
+        .with_manager_exclusive(|manager| oxidd_reorder::set_var_order(manager, order))
+}
+
+/// Import the decision diagram from the DDDMP `file` into `manager`
+///
+/// Note that the support variables must also be ordered by their current
+/// level (lower level numbers first). To this end, you can use
+/// `set_var_order()` with `support_vars` (or
+/// `oxidd_dddmp_support_var_order(file)`).
+///
+/// Locking behavior: acquires the manager's lock for shared access.
+///
+/// @param  manager       The manager
+/// @param  file          The DDDMP file handle
+/// @param  support_vars  Optional mapping from support variables of the DDDMP
+///                       file to variable numbers in this manager. By default,
+///                       `oxidd_dddmp_support_var_order(file)` will be used.
+///                       If non-null, the pointer must reference an array with
+///                       `oxidd_dddmp_num_support_vars(file)` elements.
+/// @param  roots         Pointer to space for `oxidd_dddmp_num_roots(file)`
+///                       BDD functions (`bdd_t`).
+///                       On success, the imported BDD functions will be
+///                       written here.
+///                       On error, the memory will be left unchanged.
+/// @param  error         Output parameter for error details. May be `NULL` to
+///                       ignore these details. The error struct does not need
+///                       to be initialized but is guaranteed to be initialized
+///                       on return (if the pointer is non-null).
+///
+/// @returns  The imported BDD functions (or an empty vector on error)
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_manager_import_dddmp(
+    manager: bdd_manager_t,
+    file: &mut crate::util::dddmp::dddmp_file_t,
+    support_vars: *const VarNo,
+    roots: *mut bdd_t,
+    error: *mut error_t,
+) -> bool {
+    file.import_into(manager, support_vars, roots, error)
+}
+
+/// Export the given decision diagram functions as DDDMP file at `path`
+///
+/// If a file at `path` exists, it will be truncated, otherwise a new one will
+/// be created.
+///
+/// Locking behavior: acquires the manager's lock for shared access.
+///
+/// @param  manager         The manager
+/// @param  path            Path at which the DOT file should be written
+/// @param  path_len        Length of `path` in bytes (excluding any trailing
+///                         null byte)
+/// @param  functions       Array of `num_functions` BDD functions in `manager`
+///                         to be exported
+/// @param  num_functions   Count of functions
+/// @param  function_names  Array of `num_functions` null-terminated UTF-8
+///                         strings, each labelling the respective BDD function.
+///                         May be `NULL`, in which case there will be no
+///                         labels.
+/// @param  settings        Export settings. If `NULL`, the default settings
+///                         will be used.
+/// @param  error           Output parameter for error details. May be `NULL` to
+///                         ignore these details (the function will return
+///                         `false` upon an error nonetheless).
+///                         The error struct does not need to be initialized
+///                         but is guaranteed to be initialized on return
+///                         (if the pointer is non-null).
+///
+/// @returns  `true` on success
+///
+/// @see  `oxidd_bdd_manager_export_dddmp_iter()` and
+///       `oxidd_bdd_manager_export_dddmp_with_names_iter()` for versions of
+///       this function which take the BDD functions via an iterator instead of
+///       an array
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_manager_export_dddmp(
+    manager: bdd_manager_t,
+    path: *const c_char,
+    path_len: usize,
+    functions: *const bdd_t,
+    num_functions: usize,
+    function_names: *const *const c_char,
+    settings: Option<&dddmp_export_settings_t>,
+    error: *mut error_t,
+) -> bool {
+    crate::util::dddmp::export(
+        manager,
+        crate::util::c_char_array_to_os_str(path, path_len),
+        functions,
+        num_functions,
+        function_names,
+        settings,
+        error,
+    )
+    .is_some()
+}
+
+/// Export the given decision diagram functions as DDDMP file at `path`
+///
+/// If a file at `path` exists, it will be truncated, otherwise a new one will
+/// be created.
+///
+/// Locking behavior: acquires the manager's lock for shared access.
+///
+/// @param  manager    The manager
+/// @param  path       Path at which the DOT file should be written
+/// @param  path_len   Length of `path` in bytes (excluding any trailing null
+///                    byte)
+/// @param  functions  Iterator over BDD functions in `manager` to be exported
+/// @param  settings   Export settings. If `NULL`, the default settings will be
+///                    used.
+/// @param  error      Output parameter for error details. May be `NULL` to
+///                    ignore these details (the function will return `false`
+///                    upon an error nonetheless).
+///                    The error struct does not need to be initialized but is
+///                    guaranteed to be initialized on return (if the pointer is
+///                    non-null).
+///
+/// @returns  `true` on success
+///
+/// @see  `oxidd_bdd_manager_export_dddmp()` for a version of this function that
+///       allows specifying the BDD functions (and their names) as an array,
+///       `oxidd_bdd_manager_export_dddmp_with_names_iter()` for a version where
+///       the BDD functions are given via an iterator but along with a name each
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_manager_export_dddmp_iter(
+    manager: bdd_manager_t,
+    path: *const c_char,
+    path_len: usize,
+    functions: crate::util::iter<bdd_t>,
+    settings: Option<&dddmp_export_settings_t>,
+    error: *mut error_t,
+) -> bool {
+    let path = crate::util::c_char_array_to_os_str(path, path_len);
+    crate::util::dddmp::export_iter(manager, path, functions, settings, error).is_some()
+}
+
+/// Export the given decision diagram functions as DDDMP file at `path`
+///
+/// If a file at `path` exists, it will be truncated, otherwise a new one will
+/// be created.
+///
+/// Locking behavior: acquires the manager's lock for shared access.
+///
+/// @param  manager    The manager
+/// @param  path       Path at which the DOT file should be written
+/// @param  path_len   Length of `path` in bytes (excluding any trailing null
+///                    byte)
+/// @param  functions  Iterator over BDD functions in `manager` to be exported
+///                    along with their names
+/// @param  settings   Export settings. If `NULL`, the default settings will be
+///                    used.
+/// @param  error      Output parameter for error details. May be `NULL` to
+///                    ignore these details (the function will return `false`
+///                    upon an error nonetheless).
+///                    The error struct does not need to be initialized but is
+///                    guaranteed to be initialized on return (if the pointer is
+///                    non-null).
+///
+/// @returns  `true` on success
+///
+/// @see  `oxidd_bdd_manager_export_dddmp()` for a version of this function that
+///       allows specifying the BDD functions and their names as an array each,
+///       `oxidd_bdd_manager_export_dddmp_iter()` for a version where the BDD
+///       functions are given via an iterator but without function names
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_manager_export_dddmp_with_names_iter(
+    manager: bdd_manager_t,
+    path: *const c_char,
+    path_len: usize,
+    functions: crate::util::iter<crate::util::named<bdd_t>>,
+    settings: Option<&dddmp_export_settings_t>,
+    error: *mut error_t,
+) -> bool {
+    let path = crate::util::c_char_array_to_os_str(path, path_len);
+    crate::util::dddmp::export_with_names_iter(manager, path, functions, settings, error).is_some()
+}
+
+/// Serve the given decision diagram functions for visualization
+///
+/// Blocks until the visualization has been fetched by
+/// <a href="https://oxidd.net/vis">OxiDD-vis</a> (or another compatible tool).
+///
+/// Locking behavior: acquires the manager's lock for shared access.
+///
+/// @param  manager           The manager
+/// @param  diagram_name      Name of the decision diagram
+/// @param  diagram_name_len  Length of `diagram_name` in bytes (excluding any
+///                           trailing null bytes)
+/// @param  functions         Array of `num_functions` functions to visualize
+///                           (must be stored in `manager`)
+/// @param  num_functions     Count of functions
+/// @param  function_names    Array of `num_functions` null-terminated UTF-8
+///                           strings, each labelling the respective BDD
+///                           function.
+///                           May also be `NULL`, in which case there will be no
+///                           labels.
+/// @param  port              The port to provide the data on. When passing `0`,
+///                           the default port 4000 will be used.
+/// @param  error             Output parameter for error details. May be `NULL`
+///                           to ignore these details (the function will return
+///                           `false` upon an error nonetheless).
+///                           The error struct does not need to be initialized
+///                           but is guaranteed to be initialized on return
+///                           (if the pointer is non-null).
+///
+/// @returns  `true` on success
+///
+/// @see  `oxidd_bdd_manager_visualize_iter()` and
+///       `oxidd_bdd_manager_visualize_with_names_iter()` for versions of this
+///       function which take the BDD functions via an iterator instead of an
+///       array
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_manager_visualize(
+    manager: bdd_manager_t,
+    diagram_name: *const c_char,
+    diagram_name_len: usize,
+    functions: *const bdd_t,
+    num_functions: usize,
+    function_names: *const *const c_char,
+    port: u16,
+    error: *mut error_t,
+) -> bool {
+    crate::util::dddmp::visualize(
+        manager,
+        &crate::util::c_char_array_to_str(diagram_name, diagram_name_len),
+        functions,
+        num_functions,
+        function_names,
+        port,
+        error,
+    )
+    .is_some()
+}
+
+/// Serve the given decision diagram functions for visualization
+///
+/// Blocks until the visualization has been fetched by
+/// <a href="https://oxidd.net/vis">OxiDD-vis</a> (or another compatible tool).
+///
+/// Locking behavior: acquires the manager's lock for shared access.
+///
+/// @param  manager           The manager
+/// @param  diagram_name      Name of the decision diagram
+/// @param  diagram_name_len  Length of `diagram_name` in bytes (excluding any
+///                           trailing null bytes)
+/// @param  functions         Iterator over BDD functions in `manager` to be
+///                           visualized
+/// @param  port              The port to provide the data on. When passing `0`,
+///                           the default port 4000 will be used.
+/// @param  error             Output parameter for error details. May be `NULL`
+///                           to ignore these details (the function will return
+///                           `false` upon an error nonetheless).
+///                           The error struct does not need to be initialized
+///                           but is guaranteed to be initialized on return
+///                           (if the pointer is non-null).
+///
+/// @returns  `true` on success
+///
+/// @see  `oxidd_bdd_manager_visualize()` for a version of this function that
+///       allows specifying the BDD functions (and their names) as an array,
+///       `oxidd_bdd_manager_visualize_with_names_iter()` for a version where
+///       the BDD functions are given via an iterator but along with a name each
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_manager_visualize_iter(
+    manager: bdd_manager_t,
+    diagram_name: *const c_char,
+    diagram_name_len: usize,
+    functions: crate::util::iter<bdd_t>,
+    port: u16,
+    error: *mut error_t,
+) -> bool {
+    let diagram_name = crate::util::c_char_array_to_str(diagram_name, diagram_name_len);
+    crate::util::dddmp::visualize_iter(manager, &diagram_name, functions, port, error).is_some()
+}
+
+/// Serve the given decision diagram functions for visualization
+///
+/// Blocks until the visualization has been fetched by
+/// <a href="https://oxidd.net/vis">OxiDD-vis</a> (or another compatible tool).
+///
+/// Locking behavior: acquires the manager's lock for shared access.
+///
+/// @param  manager           The manager
+/// @param  diagram_name      Name of the decision diagram
+/// @param  diagram_name_len  Length of `diagram_name` in bytes (excluding any
+///                           trailing null bytes)
+/// @param  functions         Iterator over BDD functions in `manager` to be
+///                           visualized along with their names
+/// @param  port              The port to provide the data on. When passing `0`,
+///                           the default port 4000 will be used.
+/// @param  error             Output parameter for error details. May be `NULL`
+///                           to ignore these details (the function will return
+///                           `false` upon an error nonetheless).
+///                           The error struct does not need to be initialized
+///                           but is guaranteed to be initialized on return
+///                           (if the pointer is non-null).
+///
+/// @returns  `true` on success
+///
+/// @see  `oxidd_bdd_manager_visualize()` for a version of this function that
+///       allows specifying the BDD functions and their names as an array each,
+///       `oxidd_bdd_manager_visualize_iter()` for a version where the BDD
+///       functions are given via an iterator but without function names
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_manager_visualize_with_names_iter(
+    manager: bdd_manager_t,
+    diagram_name: *const c_char,
+    diagram_name_len: usize,
+    functions: crate::util::iter<crate::util::named<bdd_t>>,
+    port: u16,
+    error: *mut error_t,
+) -> bool {
+    let diagram_name = crate::util::c_char_array_to_str(diagram_name, diagram_name_len);
+    crate::util::dddmp::visualize_with_names_iter(manager, &diagram_name, functions, port, error)
+        .is_some()
+}
+
+/// Dump the entire decision diagram represented by `manager` as Graphviz DOT
+/// code to a file at `path`
+///
+/// If a file at `path` exists, it will be truncated, otherwise a new one will
+/// be created.
+///
+/// This function optionally allows to name BDD functions. If `functions` and
+/// `function_names` are non-null and `num_function_names` is non-zero, then
+/// `functions` and `function_names` are assumed to point to an array of length
+/// (at least) `num_function_names`. In this case, the i-th function is labeled
+/// with the i-th function name.
+///
+/// The output may also include nodes that are not reachable from `functions`.
+///
+/// Locking behavior: acquires the manager's lock for shared access.
+///
+/// @param  manager             The manager
+/// @param  path                Path at which the DOT file should be written
+/// @param  path_len            Length of `path` in bytes (excluding any
+///                             trailing null byte)
+/// @param  functions           Array of `num_function_names` BDD functions in
+///                             `manager` to be labeled.
+///                             May be `NULL`, in which case there will be no
+///                             labels.
+/// @param  function_names      Array of `num_function_names` null-terminated
+///                             UTF-8 strings, each labelling the respective
+///                             BDD function.
+///                             May also be `NULL`, in which case there will be
+///                             no labels.
+/// @param  num_function_names  Count of functions to be labeled
+/// @param  error               Output parameter for error details. May be
+///                             `NULL` to ignore these details (the function
+///                             will return `false` upon an error nonetheless).
+///                             The error struct does not need to be initialized
+///                             but is guaranteed to be initialized on return
+///                             (if the pointer is non-null).
+///
+/// @returns  `true` on success
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_manager_dump_all_dot_path(
+    manager: bdd_manager_t,
+    path: *const c_char,
+    path_len: usize,
+    functions: *const bdd_t,
+    function_names: *const *const c_char,
+    num_function_names: usize,
+    error: *mut error_t,
+) -> bool {
+    crate::util::dump_all_dot_path(
+        manager,
+        crate::util::c_char_array_to_os_str(path, path_len),
+        functions,
+        function_names,
+        num_function_names,
+        error,
+    )
+    .is_some()
+}
+/// Dump the entire decision diagram represented by `manager` as Graphviz DOT
+/// code to a file at `path`
+///
+/// @deprecated  Use `oxidd_bdd_manager_dump_all_dot_path()` instead
+#[deprecated(
+    since = "0.11.0",
+    note = "use oxidd_bdd_manager_dump_all_dot_path instead"
+)]
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_manager_dump_all_dot_file(
+    manager: bdd_manager_t,
+    path: *const c_char,
+    path_len: usize,
+    functions: *const bdd_t,
+    function_names: *const *const c_char,
+    num_function_names: usize,
+) -> bool {
+    oxidd_bdd_manager_dump_all_dot_path(
+        manager,
+        path,
+        path_len,
+        functions,
+        function_names,
+        num_function_names,
+        std::ptr::null_mut(),
+    )
+}
+
+/// Dump the entire decision diagram represented by `manager` as Graphviz DOT
+/// code to a file at `path`
+///
+/// If a file at `path` exists, it will be truncated, otherwise a new one will
+/// be created.
+///
+/// The output may also include nodes that are not reachable from `functions`.
+///
+/// Locking behavior: acquires the manager's lock for shared access.
+///
+/// @param  manager    The manager
+/// @param  path       Path at which the DOT file should be written
+/// @param  path_len   Length of `path` in bytes (excluding any trailing null
+///                    byte)
+/// @param  functions  Iterator over decision diagram functions and their labels
+/// @param  error      Output parameter for error details. May be `NULL` to
+///                    ignore these details (the function will return `false`
+///                    upon an error nonetheless). The error struct does not
+///                    need to be initialized but is guaranteed to be
+///                    initialized on return (if the pointer is non-null).
+///
+/// @returns  `true` on success
+#[no_mangle]
+pub unsafe extern "C" fn oxidd_bdd_manager_dump_all_dot_path_iter(
+    manager: bdd_manager_t,
+    path: *const c_char,
+    path_len: usize,
+    functions: crate::util::iter<crate::util::named<bdd_t>>,
+    error: *mut error_t,
+) -> bool {
+    let path = crate::util::c_char_array_to_os_str(path, path_len);
+    crate::util::dump_all_dot_path_iter(manager, path, functions, error).is_some()
 }
 
 /// Get the Boolean function that is true if and only if `var` is true
@@ -1153,10 +1618,7 @@ pub unsafe extern "C" fn oxidd_bdd_pick_cube(f: bdd_t) -> assignment_t {
             std::mem::forget(v);
             assignment_t { data, len }
         }
-        None => assignment_t {
-            data: std::ptr::null_mut(),
-            len: 0,
-        },
+        None => assignment_t::EMPTY,
     }
 }
 
@@ -1213,54 +1675,13 @@ pub unsafe extern "C" fn oxidd_bdd_eval(
     args: *const var_no_bool_pair_t,
     num_args: usize,
 ) -> bool {
-    let args = std::slice::from_raw_parts(args, num_args);
+    let args = crate::util::slice_from_raw_parts(args, num_args);
 
     f.get()
         .expect(FUNC_UNWRAP_MSG)
         .with_manager_shared(|manager, edge| {
             BDDFunction::eval_edge(manager, edge, args.iter().map(|p| (p.var, p.val)))
         })
-}
-
-/// Dump the entire decision diagram represented by `manager` as Graphviz DOT
-/// code to a file at `path`
-///
-/// If a file at `path` exists, it will be truncated, otherwise a new one will
-/// be created.
-///
-/// This function optionally allows to name BDD functions. If `functions` and
-/// `function_names` are non-null and `num_function_names` is non-zero, then
-/// `functions` and `function_names` are assumed to point to an array of length
-/// (at least) `num_function_names`. In this case, the i-th function is labeled
-/// with the i-th function name.
-///
-/// The output may also include nodes that are not reachable from `functions`.
-///
-/// Locking behavior: acquires the manager's lock for shared access.
-///
-/// @param  manager             The manager
-/// @param  path                Path at which the DOT file should be written
-/// @param  functions           Array of `num_function_names` BDD functions in
-///                             `manager` to be labeled.
-///                             May be `NULL`, in which case there will be no
-///                             labels.
-/// @param  function_names      Array of `num_function_names` null-terminated
-///                             UTF-8 strings, each labelling the respective
-///                             BDD function.
-///                             May be `NULL`, in which case there will be no
-///                             labels.
-/// @param  num_function_names  Count of functions to be labeled
-///
-/// @returns  `true` on success
-#[no_mangle]
-pub unsafe extern "C" fn oxidd_bdd_manager_dump_all_dot_file(
-    manager: bdd_manager_t,
-    path: *const c_char,
-    functions: *const bdd_t,
-    function_names: *const *const c_char,
-    num_function_names: usize,
-) -> bool {
-    crate::util::dump_all_dot_file(manager, path, functions, function_names, num_function_names)
 }
 
 /// Print statistics to stderr

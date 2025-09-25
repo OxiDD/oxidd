@@ -17,10 +17,12 @@ class bcdd_function;
 class bcdd_manager
     : public bridge::manager<bcdd_manager, bcdd_function,
                              capi::oxidd_bcdd_manager_t>,
+      public bridge::reordering_manager<bcdd_manager>,
       public bridge::boolean_function_manager<bcdd_manager, bcdd_function> {
   // friends
   friend class bridge::manager<bcdd_manager, bcdd_function,
                                capi::oxidd_bcdd_manager_t>;
+  friend class bridge::reordering_manager<bcdd_manager>;
   friend class bridge::boolean_function_manager<bcdd_manager, bcdd_function>;
 
   friend class bridge::function<bcdd_function, bcdd_manager,
@@ -46,11 +48,23 @@ class bcdd_manager
   OXIDD_LINK_C(var_to_level)
   OXIDD_LINK_C(level_to_var)
 
+  OXIDD_LINK_C(set_var_order)
+
   OXIDD_LINK_C(num_inner_nodes)
   OXIDD_LINK_C(approx_num_inner_nodes)
 
   OXIDD_LINK_C(gc)
   OXIDD_LINK_C(gc_count)
+
+  OXIDD_LINK_C(import_dddmp)
+  OXIDD_LINK_C(export_dddmp)
+  OXIDD_LINK_C(export_dddmp_iter)
+  OXIDD_LINK_C(export_dddmp_with_names_iter)
+  OXIDD_LINK_C(visualize)
+  OXIDD_LINK_C(visualize_iter)
+  OXIDD_LINK_C(visualize_with_names_iter)
+  OXIDD_LINK_C(dump_all_dot_path)
+  OXIDD_LINK_C(dump_all_dot_path_iter)
 
 #undef OXIDD_LINK_C
 #define OXIDD_LINK_C(x) static constexpr auto _c_##x = capi::oxidd_bcdd_##x;
@@ -104,9 +118,13 @@ class bcdd_function
   friend class bridge::boolean_function_quant<bcdd_function>;
   friend class bridge::has_level<bcdd_function>;
 
+  friend class bcdd_manager;
+  friend class bridge::manager<bcdd_manager, bcdd_function,
+                               capi::oxidd_bcdd_manager_t>;
   friend class bridge::substitution<bcdd_function>;
 
   // C API functions
+  using c_named_t = capi::oxidd_named_bcdd_t;
 #define OXIDD_LINK_C(x) static constexpr auto _c_##x = capi::oxidd_bcdd_##x;
   // function
   OXIDD_LINK_C(ref)
@@ -172,5 +190,53 @@ public:
 ///
 /// @see  `bcdd_function::substitute()`, `bridge::substitution`
 using bcdd_substitution = bridge::substitution<bcdd_function>;
+
+/// @cond
+namespace bridge::detail {
+
+extern "C" inline capi::oxidd_opt_bcdd_t
+oxidd_iter_bcdd_callback_helper(void *data);
+
+template <> struct iter_adapter<capi::oxidd_bcdd_t> {
+  using c_iter_t = capi::oxidd_iter_bcdd_t;
+  using c_opt_value_t = capi::oxidd_opt_bcdd_t;
+
+  static constexpr auto helper = oxidd_iter_bcdd_callback_helper;
+
+  static capi::oxidd_bcdd_t map(const bcdd_function &val) noexcept {
+    return val.to_c_api();
+  }
+};
+
+extern "C" inline capi::oxidd_opt_bcdd_t
+oxidd_iter_bcdd_callback_helper(void *data) {
+  auto *ctx = static_cast<c_iter_vtable<capi::oxidd_bcdd_t> *>(data);
+  return ctx->next(ctx);
+}
+
+extern "C" inline capi::oxidd_opt_named_bcdd_t
+oxidd_iter_named_bcdd_callback_helper(void *data);
+
+template <> struct iter_adapter<capi::oxidd_named_bcdd_t> {
+  using c_iter_t = capi::oxidd_iter_named_bcdd_t;
+  using c_opt_value_t = capi::oxidd_opt_named_bcdd_t;
+
+  static constexpr auto helper = oxidd_iter_named_bcdd_callback_helper;
+
+  static capi::oxidd_named_bcdd_t map(const auto &val) noexcept {
+    const std::string_view str(std::get<1>(val));
+    const capi::oxidd_str_t name{.ptr = str.data(), .len = str.size()};
+    return {.func = std::get<0>(val).to_c_api(), .name = name};
+  }
+};
+
+extern "C" inline capi::oxidd_opt_named_bcdd_t
+oxidd_iter_named_bcdd_callback_helper(void *data) {
+  auto *ctx = static_cast<c_iter_vtable<capi::oxidd_named_bcdd_t> *>(data);
+  return ctx->next(ctx);
+}
+
+} // namespace bridge::detail
+/// @endcond
 
 } // namespace oxidd

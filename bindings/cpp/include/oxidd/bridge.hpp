@@ -1,12 +1,16 @@
-/// @file  bridge.hpp
-/// @brief Bridge between the C and the C++ APIs
+/// @file   bridge.hpp
+/// @brief  Bridge between the C and the C++ APIs
 
 #pragma once
 
 #include <concepts>
 #include <cstdint>
+#include <cstring>
 #include <functional>
+#include <iterator>
 #include <optional>
+#include <string_view>
+#include <type_traits>
 #include <utility>
 #include <variant>
 
@@ -53,42 +57,42 @@ using empty_if = std::conditional_t<Cond, std::monostate, T>;
 // functions with C linkage that call the function passed via the data pointer
 // with C++ linkage.
 
-extern "C" capi::oxidd_opt_str_t oxidd_str_callback_helper(void *data);
 extern "C" capi::oxidd_size_hint_t oxidd_size_hint_callback_helper(void *data);
 
-/// Bridge between a C++ iterator over `std::string_view`-convertible values and
-/// capi::oxidd_str_iter_t
-template <std::input_iterator I, std::sentinel_for<I> E = I,
+template <typename T> struct iter_adapter {};
+
+struct c_iter_vtable_base {
+  capi::oxidd_size_hint_t (*size_hint)(c_iter_vtable_base *);
+};
+
+template <typename T> struct c_iter_vtable : public c_iter_vtable_base {
+  iter_adapter<T>::c_opt_value_t (*next)(c_iter_vtable *);
+};
+
+/// Bridge between a C++ iterator and `iter_adapter<T>::c_iter_t`
+template <typename T, std::input_iterator I, std::sentinel_for<I> E = I,
           bool NoExcept = noexcept(std::declval<I>() != std::declval<E>()) &&
-                          noexcept(std::declval<I>()) &&
-                          noexcept(std::string_view(*std::declval<I>()).data())>
-  requires std::convertible_to<std::iter_value_t<I>, std::string_view>
-class c_str_iter {
-  // declare C linkage functions as friends
-  using str_helper_t = decltype(oxidd_str_callback_helper);
-  friend str_helper_t oxidd_str_callback_helper;
+                          noexcept(++(std::declval<I &>())) &&
+                          noexcept(*(std::declval<I>())) &&
+                          (std::is_lvalue_reference_v<std::iter_value_t<I>> ||
+                           std::is_nothrow_move_constructible_v<
+                               std::remove_cvref_t<std::iter_value_t<I>>>)>
+class c_iter : c_iter_vtable<T> {
+  using adapter = iter_adapter<T>;
 
-  using size_hint_helper_t = decltype(oxidd_size_hint_callback_helper);
-  friend size_hint_helper_t oxidd_size_hint_callback_helper;
-
-  // callback function pointers
-  using next_fn_t = capi::oxidd_opt_str_t (*)(c_str_iter<I, E, NoExcept> *);
-  using size_hint_fn_t =
-      capi::oxidd_size_hint_t (*)(c_str_iter<I, E, NoExcept> *);
-
-  next_fn_t _next =
-      [](c_str_iter<I, E, NoExcept> *ctx) noexcept -> capi::oxidd_opt_str_t {
+  static adapter::c_opt_value_t _next_fn(c_iter_vtable<T> *ctx_base) {
+    auto *ctx = static_cast<c_iter *>(ctx_base);
     try {
-      if (ctx->_pre_increment)
+      if (ctx->_current.has_value()) {
+        ctx->_current.reset();
         ++(ctx->_begin);
-      if (ctx->_begin == ctx->_end) {
-        ctx->_pre_increment = false;
-      } else {
-        ctx->_pre_increment = true;
-        std::string_view view(*ctx->_begin);
-        return {.is_some = true,
-                // NOLINTNEXTLINE(*-stringview-data-usage)
-                .str = {.ptr = view.data(), .len = view.size()}};
+      }
+      if (ctx->_begin != ctx->_end) {
+        ctx->_current.emplace(*ctx->_begin);
+        if constexpr (std::is_lvalue_reference_v<iter_t>)
+          return {.is_some = true, .value = adapter::map(ctx->_current->get())};
+        else
+          return {.is_some = true, .value = adapter::map(*ctx->_current)};
       }
     } catch (...) {
       if constexpr (NoExcept) {
@@ -97,48 +101,72 @@ class c_str_iter {
         ctx->_exception = std::current_exception();
       }
     }
-    return {.is_some = false}; // str is allowed to be uninitialized
-  };
+    return {.is_some = false}; // value is allowed to be uninitialized
+  }
 
-  constexpr static size_hint_fn_t _make_size_hint_fn() {
+  constexpr static decltype(c_iter_vtable_base::size_hint)
+  _make_size_hint_fn() {
     using diff_ty = typename std::iter_difference_t<I>;
     if constexpr (std::sized_sentinel_for<E, I> &&
                   std::is_convertible_v<diff_ty, std::ptrdiff_t>) {
-      return [](c_str_iter<I, E, NoExcept> *ctx) noexcept
-                 -> capi::oxidd_size_hint_t {
-        try {
-          const std::ptrdiff_t d = ctx->_end - ctx->_begin;
-          if (d >= 0) {
-            const auto u = static_cast<size_t>(d);
-            return {.lower = u, .upper = u};
-          }
-        } catch (...) { // NOLINT(*-empty-catch)
-        }
-        return {.lower = 0, .upper = std::numeric_limits<size_t>::max()};
-      };
+      return
+          [](c_iter_vtable_base *ctx_base) noexcept -> capi::oxidd_size_hint_t {
+            auto *ctx = static_cast<c_iter *>(ctx_base);
+            try {
+              const std::ptrdiff_t d = ctx->_end - ctx->_begin;
+              if (d >= 0) {
+                const auto u = static_cast<size_t>(d);
+                return {.lower = u, .upper = u};
+              }
+            } catch (...) { // NOLINT(*-empty-catch)
+            }
+            return {.lower = 0, .upper = std::numeric_limits<size_t>::max()};
+          };
     }
     return nullptr;
   }
-  size_hint_fn_t _size_hint = _make_size_hint_fn();
 
+private:
   [[no_unique_address]] empty_if<NoExcept, std::exception_ptr> _exception;
-  bool _pre_increment = false;
+
+  // We store the current C++ iterator value in the `_current` field because
+  // the values returned by `operator*()` of the iterator may be not trivially
+  // destructible (e.g., a `bdd_function` returned from
+  // `std::views::transform`). In this case, we need to make sure that the value
+  // lives at least until the next *next* operation. Also, for moving iterators
+  // (i.e., ones that return rvalue references), we need to store the temporary
+  // (hence the `std::remove_cvref_t` in the *else* case of `current_t`). In
+  // case the iterator values are lvalue references, we could use them directly
+  // considering their lifetimes. To store them in a `std::optional`, however,
+  // we need to wrap them in a `std::reference_wrapper`.
+  using iter_t = std::iter_reference_t<I>;
+  using current_t = std::conditional_t<
+      std::is_lvalue_reference_v<iter_t>,
+      std::reference_wrapper<std::remove_reference_t<iter_t>>,
+      std::remove_cvref_t<iter_t>>;
+  std::optional<current_t> _current;
+
   I _begin;
   E _end;
 
 public:
-  c_str_iter() = delete;
-  c_str_iter(I begin, E end) : _begin(std::move(begin)), _end(std::move(end)) {}
+  c_iter() = delete;
+  c_iter(I begin, E end) : _begin(std::move(begin)), _end(std::move(end)) {
+    // NOLINTNEXTLINE(*-member-initializer)
+    c_iter_vtable_base::size_hint = _make_size_hint_fn();
+    c_iter_vtable<T>::next = &_next_fn;
+  }
 
   template <typename F, typename... Args>
-  std::invoke_result_t<F, Args..., capi::oxidd_str_iter_t>
+  std::invoke_result_t<F, Args..., typename adapter::c_iter_t>
   use_in_invoke(F &&f, Args &&...args)
-    requires std::invocable<F, Args..., capi::oxidd_str_iter_t>
+    requires std::invocable<F, Args..., typename adapter::c_iter_t>
   {
-    capi::oxidd_str_iter_t c_iter{
-        .next = oxidd_str_callback_helper,
-        .size_hint =
-            _size_hint == nullptr ? nullptr : oxidd_size_hint_callback_helper,
+    typename adapter::c_iter_t c_iter{
+        .next = adapter::helper,
+        .size_hint = c_iter_vtable_base::size_hint == nullptr
+                         ? nullptr
+                         : oxidd_size_hint_callback_helper,
         .context = this};
     const auto result =
         std::invoke(std::forward<F>(f), std::forward<Args>(args)..., c_iter);
@@ -154,32 +182,55 @@ public:
     return result;
   }
 
-  std::string_view current() { return *_begin; }
+  /// Returns `true` iff a *next* operation has been executed and the iterator
+  /// has not reached its end
+  bool has_current() noexcept { return _current.has_value(); }
+
+  /// Get the element that has been returned by the most recent *next* operation
+  ///
+  /// Undefined behavior if `has_current()` is `false`.
+  const std::remove_cvref_t<iter_t> &current() noexcept { return *_current; }
 };
 
-extern "C" inline capi::oxidd_opt_str_t oxidd_str_callback_helper(void *data) {
-  // The template argument for `c_callback` does not matter, `_next` is
-  // always a function pointer at the same offset.
-  auto *ctx = static_cast<c_str_iter<std::string_view *> *>(data);
-  return ctx->_next(ctx);
+extern "C" inline capi::oxidd_opt_str_t
+oxidd_iter_str_callback_helper(void *data);
+
+template <> struct iter_adapter<capi::oxidd_str_t> {
+  using c_iter_t = capi::oxidd_iter_str_t;
+  using c_opt_value_t = capi::oxidd_opt_str_t;
+
+  static constexpr auto helper = oxidd_iter_str_callback_helper;
+
+  static constexpr capi::oxidd_str_t map(std::string_view val) noexcept {
+    return {.ptr = val.data(), .len = val.size()};
+  }
+};
+
+extern "C" inline capi::oxidd_opt_str_t
+oxidd_iter_str_callback_helper(void *data) {
+  auto *ctx = static_cast<c_iter_vtable<capi::oxidd_str_t> *>(data);
+  return ctx->next(ctx);
 }
+
 extern "C" inline capi::oxidd_size_hint_t
 oxidd_size_hint_callback_helper(void *data) {
-  // The template argument for `c_callback` does not matter, `_next` is
-  // always a function pointer at the same offset.
-  auto *ctx = static_cast<c_str_iter<std::string_view *> *>(data);
-  return ctx->_size_hint(ctx);
+  auto *ctx = static_cast<c_iter_vtable_base *>(data);
+  return ctx->size_hint(ctx);
 }
 
 extern "C" void *oxidd_callback_helper(void *data);
+
+struct c_callback_vtable {
+  void *(*func_wrapper)(c_callback_vtable *);
+};
 
 /// Bridge between a C++ callable and a C ABI callback
 template <std::invocable C, bool NoExcept = std::is_nothrow_invocable_v<C>>
   requires std::movable<std::invoke_result_t<C>> ||
            std::is_void_v<std::invoke_result_t<C>>
-class c_callback {
-  void *(*_func_wrapper)(c_callback<C, NoExcept> *) =
-      [](c_callback<C, NoExcept> *ctx) noexcept -> void * {
+class c_callback : c_callback_vtable {
+  static void *_func_wrapper_fn(c_callback_vtable *ctx_base) {
+    auto *ctx = static_cast<c_callback *>(ctx_base);
     try {
       if constexpr (std::is_void_v<result_t>) {
         std::invoke(ctx->_func);
@@ -201,7 +252,6 @@ class c_callback {
   };
 
   using callback_helper_t = decltype(oxidd_callback_helper);
-  friend callback_helper_t oxidd_callback_helper;
   using result_t = std::invoke_result_t<C>;
   static constexpr bool direct_return = std::is_void_v<result_t> ||
                                         std::is_pointer_v<result_t> ||
@@ -220,15 +270,15 @@ class c_callback {
   C _func;
 
 public:
-  c_callback() {
+  c_callback() : c_callback_vtable(&_func_wrapper_fn) {
     if constexpr (std::is_pointer_v<C>)
       _func = nullptr;
   }
   c_callback(const C &func) noexcept(std::is_nothrow_copy_constructible_v<C>)
     requires std::is_copy_constructible_v<C>
-      : _func(func) {}
+      : c_callback_vtable{&_func_wrapper_fn}, _func(func) {}
   c_callback(C &&func) noexcept(std::is_nothrow_move_constructible_v<C>)
-      : _func(std::move(func)) {}
+      : c_callback_vtable{&_func_wrapper_fn}, _func(std::move(func)) {}
 
   template <typename F, typename... Args>
   result_t use_in_invoke(F &&f, Args &&...args) noexcept(
@@ -264,14 +314,18 @@ public:
 };
 
 extern "C" inline void *oxidd_callback_helper(void *data) {
-  // The template argument for `c_callback` does not matter, `_func_wrapper` is
-  // always a function pointer at the same offset.
-  auto *ctx = static_cast<c_callback<void (*)()> *>(data);
-  return ctx->_func_wrapper(ctx);
+  auto *ctx = static_cast<c_callback_vtable *>(data);
+  return ctx->func_wrapper(ctx);
 }
 
 /// Cast a `const std::pair<var_no_t, bool> *` into a
 /// `const capi::oxidd_var_no_bool_pair_t *`
+///
+/// Note that this is type punning, and directly reading/writing the pair
+/// elements via the returned pointer from C/C++ is Undefined Behavior due to
+/// their strict aliasing rules (specifically the ones backing type-based alias
+/// analysis). Accessing the elements from Rust should be fine, however, as its
+/// (proposed) aliasing model does not rely on type information.
 inline const capi::oxidd_var_no_bool_pair_t *
 to_c_var_bool_pair_ptr(const std::pair<var_no_t, bool> *args) {
   // From a C++ perspective, it is nicer to have elements of type
@@ -287,6 +341,21 @@ to_c_var_bool_pair_ptr(const std::pair<var_no_t, bool> *args) {
   static_assert(alignof(cpp_pair) == alignof(c_pair));
 
   return reinterpret_cast<const c_pair *>(args); // NOLINT(*-cast)
+}
+
+inline const capi::oxidd_dddmp_export_settings_t *
+to_c_export_settings(const std::optional<util::dddmp_export_settings> settings,
+                     capi::oxidd_dddmp_export_settings_t &target) {
+  if (!settings.has_value())
+    return nullptr;
+
+  target.version = static_cast<capi::oxidd_dddmp_version>(settings->version);
+  target.ascii = settings->ascii;
+  target.strict = settings->strict;
+  target.diagram_name = {.ptr = settings->diagram_name.data(),
+                         .len = settings->diagram_name.size()};
+
+  return &target;
 }
 
 } // namespace detail
@@ -536,7 +605,8 @@ public:
     requires std::convertible_to<std::iter_value_t<I>, std::string_view>
   {
     assert(!is_invalid());
-    detail::c_str_iter iter(std::move(begin), std::move(end));
+    detail::c_iter<capi::oxidd_str_t, I, E> iter(std::move(begin),
+                                                 std::move(end));
     const capi::oxidd_duplicate_var_name_result_t res =
         iter.use_in_invoke(Derived::_c_add_named_vars_iter, _manager);
     const var_no_range_t added_vars =
@@ -734,6 +804,388 @@ public:
   }
 
   /// @}
+  /// @name Import and export
+  /// @{
+
+  /// Import the decision diagram from the DDDMP `file` into `manager`
+  ///
+  /// Note that the support variables must also be ordered by their current
+  /// level (lower level numbers first). To this end, you can use
+  /// `set_var_order()` with `support_vars` (or
+  /// `oxidd_dddmp_support_var_order(file)`).
+  ///
+  /// Locking behavior: acquires the manager's lock for shared access.
+  ///
+  /// @param  file          The DDDMP file handle
+  /// @param  support_vars  Optional mapping from support variables of the DDDMP
+  ///                       file to variable numbers in this manager. By
+  ///                       default, `oxidd_dddmp_support_var_order(file)` will
+  ///                       be used. If non-null, the pointer must reference an
+  ///                       array with `oxidd_dddmp_num_support_vars(file)`
+  ///                       elements.
+  ///
+  /// @returns  The imported DD functions or an error
+  compat::expected<std::vector<DDFunc>, util::error>
+  import_dddmp(util::dddmp_file &file,
+               std::span<const var_no_t> support_vars = {}) noexcept {
+    static_assert(sizeof(DDFunc) == sizeof(typename DDFunc::c_api_t) &&
+                  alignof(DDFunc) == alignof(typename DDFunc::c_api_t));
+    assert(!is_invalid());
+    assert(support_vars.empty() ||
+           support_vars.size() == file.num_support_vars());
+
+    std::vector<DDFunc> result(file.num_roots());
+    capi::oxidd_error_t err;
+    const bool success = Derived::_c_import_dddmp(
+        _manager, file.to_c_api(),
+        support_vars.empty() ? nullptr : support_vars.data(),
+        // `DDFunc` contains precisely one member of type `DDFunc::c_api_t`
+        // NOLINTNEXTLINE(*-cast)
+        reinterpret_cast<typename DDFunc::c_api_t *>(result.data()), &err);
+    if (success)
+      return result;
+    return compat::unexpected(util::error::from_c_api(err));
+  }
+
+  /// Export the given decision diagram functions as DDDMP file at `path`
+  ///
+  /// If a file at `path` exists, it will be truncated, otherwise a new one will
+  /// be created.
+  ///
+  /// Locking behavior: acquires the manager's lock for shared access.
+  ///
+  /// @param  path       Path at which the DOT file should be written
+  /// @param  functions  Span of DD functions in this manager to be exported
+  /// @param  settings   Optional export settings. If omitted, the default
+  ///                    settings will be used.
+  compat::expected<void, util::error> export_dddmp(
+      std::string_view path, std::span<const DDFunc> functions,
+      std::optional<util::dddmp_export_settings> settings = {}) noexcept {
+    static_assert(sizeof(DDFunc) == sizeof(typename DDFunc::c_api_t) &&
+                  alignof(DDFunc) == alignof(typename DDFunc::c_api_t));
+    assert(!is_invalid());
+    capi::oxidd_dddmp_export_settings_t c_settings;
+    capi::oxidd_error_t err;
+    const bool success = Derived::_c_export_dddmp(
+        _manager, path.data(), path.size(),
+        // NOLINTNEXTLINE(*-cast) // see reinterpret_cast above
+        reinterpret_cast<const DDFunc::c_api_t *>(functions.data()),
+        functions.size(), nullptr,
+        detail::to_c_export_settings(settings, c_settings), &err);
+    if (success)
+      return {};
+    return compat::unexpected(util::error::from_c_api(err));
+  }
+
+  /// Export the given decision diagram functions as DDDMP file at `path`
+  ///
+  /// See `export_dddmp(path, functions, settings)` for more details. This
+  /// overload allows specifying `functions` via iterators.
+  template <std::input_iterator I, std::sentinel_for<I> E>
+  compat::expected<void, util::error>
+  export_dddmp(std::string_view path, I begin, E end,
+               std::optional<util::dddmp_export_settings> settings = {})
+    requires std::convertible_to<std::iter_value_t<I>, const DDFunc &>
+  {
+    assert(!is_invalid());
+    capi::oxidd_dddmp_export_settings_t c_settings;
+    const auto *settings_ptr =
+        detail::to_c_export_settings(settings, c_settings);
+    capi::oxidd_error_t err;
+    detail::c_iter<typename DDFunc::c_api_t, I, E> iter(std::move(begin),
+                                                        std::move(end));
+    const bool success = iter.use_in_invoke( //
+        [this, path, settings_ptr, &err](auto iter) noexcept -> bool {
+          return Derived::_c_export_dddmp_iter(
+              _manager, path.data(), path.size(), iter, settings_ptr, &err);
+        });
+    if (success)
+      return {};
+    return compat::unexpected(util::error::from_c_api(err));
+  }
+
+  /// Export the given decision diagram functions as DDDMP file at `path`
+  ///
+  /// See `export_dddmp(path, functions, settings)` for more details. This
+  /// overload allows specifying `functions` as a range.
+  template <std::ranges::input_range R>
+  compat::expected<void, util::error>
+  export_dddmp(std::string_view path,
+               R &&range, // NOLINT(*-missing-std-forward)
+               std::optional<util::dddmp_export_settings> settings = {})
+    requires std::convertible_to<std::ranges::range_value_t<R>,
+                                 const DDFunc &> &&
+             // using the std::span version will be cheaper
+             (!std::convertible_to<R &&, std::span<const DDFunc>>)
+  {
+    return export_dddmp(path, std::ranges::begin(range),
+                        std::ranges::end(range), settings);
+  }
+
+  /// Export the given decision diagram functions as DDDMP file at `path`
+  ///
+  /// See `export_dddmp_with_names(path, functions, settings)` for more details.
+  /// This overload allows specifying `functions` as iterators.
+  template <std::input_iterator I, std::sentinel_for<I> E>
+  compat::expected<void, util::error> export_dddmp_with_names(
+      std::string_view path, I begin, E end,
+      std::optional<util::dddmp_export_settings> settings = {})
+    requires util::pair_like<std::iter_value_t<I>, const DDFunc &,
+                             std::string_view>
+  {
+    assert(!is_invalid());
+    capi::oxidd_dddmp_export_settings_t c_settings;
+    const auto *settings_ptr =
+        detail::to_c_export_settings(settings, c_settings);
+    capi::oxidd_error_t err;
+    detail::c_iter<typename DDFunc::c_named_t, I, E> iter(std::move(begin),
+                                                          std::move(end));
+    const bool success = iter.use_in_invoke(
+        [this, path, settings_ptr, &err](auto iter) noexcept -> bool {
+          return Derived::_c_export_dddmp_with_names_iter(
+              _manager, path.data(), path.size(), iter, settings_ptr, &err);
+        });
+    if (success)
+      return {};
+    return compat::unexpected(util::error::from_c_api(err));
+  }
+
+  /// Export the given decision diagram functions as DDDMP file at `path`
+  ///
+  /// If a file at `path` exists, it will be truncated, otherwise a new one will
+  /// be created.
+  ///
+  /// Locking behavior: acquires the manager's lock for shared access.
+  ///
+  /// @param  path       Path at which the DOT file should be written
+  /// @param  functions  Range yielding DD functions of this manager to be
+  ///                    exported, paired with a name each
+  /// @param  settings   Optional export settings. If omitted, the default
+  ///                    settings will be used.
+  template <std::ranges::input_range R>
+  compat::expected<void, util::error> export_dddmp_with_names(
+      std::string_view path,
+      R &&functions, // NOLINT(*-missing-std-forward)
+      std::optional<util::dddmp_export_settings> settings = {})
+    requires util::pair_like<std::ranges::range_value_t<R>, const DDFunc &,
+                             std::string_view>
+  {
+    return export_dddmp_with_names(path, std::ranges::begin(functions),
+                                   std::ranges::end(functions), settings);
+  }
+
+  /// Serve the given decision diagram functions for visualization
+  ///
+  /// Blocks until the visualization has been fetched by
+  /// <a href="https://oxidd.net/vis">OxiDD-vis</a> (or another compatible
+  /// tool).
+  ///
+  /// Locking behavior: acquires the manager's lock for shared access.
+  ///
+  /// @param  diagram_name  Name of the decision diagram
+  /// @param  functions     Span of functions to visualize
+  /// @param  port          The port to provide the data on. When passing `0`,
+  ///                       the default port 4000 will be used.
+  compat::expected<void, util::error>
+  visualize(std::string_view diagram_name, std::span<const DDFunc> functions,
+            uint16_t port = 0) noexcept {
+    static_assert(sizeof(DDFunc) == sizeof(typename DDFunc::c_api_t) &&
+                  alignof(DDFunc) == alignof(typename DDFunc::c_api_t));
+    assert(!is_invalid());
+    capi::oxidd_error_t err;
+    const bool success = Derived::_c_visualize(
+        _manager, diagram_name.data(), diagram_name.size(),
+        // NOLINTNEXTLINE(*-cast) // see reinterpret_cast above
+        reinterpret_cast<const DDFunc::c_api_t *>(functions.data()),
+        functions.size(), nullptr, port, &err);
+    if (success)
+      return {};
+    return compat::unexpected(util::error::from_c_api(err));
+  }
+
+  /// Serve the given decision diagram functions for visualization
+  ///
+  /// See `visualize(diagram_name, functions, port)` for more details. This
+  /// overload allows specifying `functions` via iterators.
+  template <std::input_iterator I, std::sentinel_for<I> E>
+  compat::expected<void, util::error>
+  visualize(std::string_view diagram_name, I begin, E end, uint16_t port = 0)
+    requires std::convertible_to<std::iter_value_t<I>, const DDFunc &>
+  {
+    assert(!is_invalid());
+    capi::oxidd_error_t err;
+    detail::c_iter<typename DDFunc::c_api_t, I, E> iter(std::move(begin),
+                                                        std::move(end));
+    const bool success = iter.use_in_invoke( //
+        [this, diagram_name, port, &err](auto iter) noexcept -> bool {
+          return Derived::_c_visualize_iter(_manager, diagram_name.data(),
+                                            diagram_name.size(), iter, port,
+                                            &err);
+        });
+    if (success)
+      return {};
+    return compat::unexpected(util::error::from_c_api(err));
+  }
+
+  /// Serve the given decision diagram functions for visualization
+  ///
+  /// See `visualize(diagram_name, functions, port)` for more details. This
+  /// overload allows specifying `functions` as a range.
+  template <std::ranges::input_range R>
+  compat::expected<void, util::error>
+  visualize(std::string_view diagram_name,
+            R &&range, // NOLINT(*-missing-std-forward)
+            uint16_t port = 0)
+    requires std::convertible_to<std::ranges::range_value_t<R>,
+                                 const DDFunc &> &&
+             // using the std::span version will be cheaper
+             (!std::convertible_to<R &&, std::span<const DDFunc>>)
+  {
+    return visualize(diagram_name, std::ranges::begin(range),
+                     std::ranges::end(range), port);
+  }
+
+  /// Serve the given decision diagram functions for visualization
+  ///
+  /// See `visualize_with_names(diagram_name, functions, port)` for more
+  /// details. This overload allows specifying `functions` via iterators.
+  template <std::input_iterator I, std::sentinel_for<I> E>
+  compat::expected<void, util::error>
+  visualize_with_names(std::string_view diagram_name, I begin, E end,
+                       uint16_t port = 0)
+    requires util::pair_like<std::iter_value_t<I>, const DDFunc &,
+                             std::string_view>
+  {
+    assert(!is_invalid());
+    capi::oxidd_error_t err;
+    detail::c_iter<typename DDFunc::c_named_t, I, E> iter(std::move(begin),
+                                                          std::move(end));
+    const bool success = iter.use_in_invoke( //
+        [this, diagram_name, port, &err](auto iter) noexcept -> bool {
+          return Derived::_c_visualize_with_names_iter(
+              _manager, diagram_name.data(), diagram_name.size(), iter, port,
+              &err);
+        });
+    if (success)
+      return {};
+    return compat::unexpected(util::error::from_c_api(err));
+  }
+
+  /// Serve the given decision diagram functions for visualization
+  ///
+  /// Blocks until the visualization has been fetched by
+  /// <a href="https://oxidd.net/vis">OxiDD-vis</a> (or another compatible
+  /// tool).
+  ///
+  /// Locking behavior: acquires the manager's lock for shared access.
+  ///
+  /// @param  diagram_name  Name of the decision diagram
+  /// @param  functions     Range yielding DD functions of this manager to be
+  ///                       visualized, paired with a name each
+  /// @param  port          The port to provide the data on. When passing `0`,
+  ///                       the default port 4000 will be used.
+  template <std::ranges::input_range R>
+  compat::expected<void, util::error>
+  visualize_with_names(std::string_view diagram_name,
+                       R &&functions, // NOLINT(*-missing-std-forward)
+                       uint16_t port = 0)
+    requires util::pair_like<std::ranges::range_value_t<R>, const DDFunc &,
+                             std::string_view>
+  {
+    return visualize_with_names(diagram_name, std::ranges::begin(functions),
+                                std::ranges::end(functions), port);
+  }
+
+  /// Dump the entire decision diagram represented by `manager` as Graphviz DOT
+  /// code to a file at `path`
+  ///
+  /// If a file at `path` exists, it will be truncated, otherwise a new one will
+  /// be created.
+  ///
+  /// The other overloads of this method allow naming selected DD functions.
+  ///
+  /// Locking behavior: acquires the manager's lock for shared access.
+  compat::expected<void, util::error> dump_all_dot(std::string_view path) {
+    assert(!is_invalid());
+    capi::oxidd_error_t err;
+    if (Derived::_c_dump_all_dot_path(_manager, path.data(), path.size(),
+                                      nullptr, nullptr, 0, &err))
+      return {};
+    return compat::unexpected(util::error::from_c_api(err));
+  }
+
+  /// Dump the entire decision diagram represented by `manager` as Graphviz DOT
+  /// code to a file at `path`
+  ///
+  /// For more details, see `dump_all_dot(path, functions)`
+  template <std::input_iterator I, std::sentinel_for<I> E>
+  compat::expected<void, util::error> dump_all_dot(std::string_view path,
+                                                   I begin, E end)
+    requires util::pair_like<std::iter_value_t<I>, const DDFunc &,
+                             std::string_view>
+  {
+    assert(!is_invalid());
+    capi::oxidd_error_t err;
+    detail::c_iter<typename DDFunc::c_named_t, I, E> iter(std::move(begin),
+                                                          std::move(end));
+    const bool success =
+        iter.use_in_invoke([this, path, &err](auto iter) noexcept -> bool {
+          return Derived::_c_dump_all_dot_path_iter(_manager, path.data(),
+                                                    path.size(), iter, &err);
+        });
+    if (success) {
+      return {};
+    }
+    return compat::unexpected(util::error::from_c_api(err));
+  }
+
+  /// Dump the entire decision diagram represented by `manager` as Graphviz DOT
+  /// code to a file at `path`
+  ///
+  /// If a file at `path` exists, it will be truncated, otherwise a new one will
+  /// be created.
+  ///
+  /// `functions` is a range yielding pairs of a DD function and a name. The DD
+  /// functions will be marked with their names in the output. Nonetheless, the
+  /// output will include all nodes stored in this manager, even if they are not
+  /// reachable from the DD functions of the range.
+  ///
+  /// Locking behavior: acquires the manager's lock for shared access.
+  template <std::ranges::input_range R>
+  compat::expected<void, util::error>
+  dump_all_dot(std::string_view path,
+               R &&functions) // NOLINT(*-missing-std-forward)
+    requires util::pair_like<std::ranges::range_value_t<R>, const DDFunc &,
+                             std::string_view>
+  {
+    return dump_all_dot(path, std::ranges::begin(functions),
+                        std::ranges::end(functions));
+  }
+
+  /// @}
+};
+
+/// Manager that supports variable reordering
+template <class Derived> class reordering_manager {
+  friend Derived;
+  reordering_manager() = default;
+
+public:
+  /// Reorder the variables in this manager according to `order`
+  ///
+  /// If a variable `x` occurs before variable `y` in `order`, then `x` will be
+  /// above `y` in the decision diagram when this function returns. Variables
+  /// not mentioned in `order` will be placed in a position such that the least
+  /// number of level swaps need to be performed.
+  ///
+  /// `this` must not be invalid (check via `is_invalid()`).
+  ///
+  /// Locking behavior: acquires the manager's lock for exclusive access.
+  void set_var_order(std::span<const var_no_t> order) noexcept {
+    const Derived &self = *static_cast<const Derived *>(this);
+    assert(!self.is_invalid());
+    Derived::_c_set_var_order(self.to_c_api(), order.data(), order.size());
+  }
 };
 
 /// Manager for Boolean functions

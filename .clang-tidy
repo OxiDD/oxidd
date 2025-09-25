@@ -1,8 +1,9 @@
 ---
-# spell-checker:ignore cppcoreguidelines
+# spell-checker:ignore cppcoreguidelines,rvalue
 Checks: 'bugprone-*,-bugprone-easily-swappable-parameters,cppcoreguidelines-*,modernize-*,-modernize-use-trailing-return-type,misc-*,-misc-include-cleaner,-misc-no-recursion,readability-*,performance-*,portability-*,-readability-braces-around-statements,-readability-function-cognitive-complexity,-readability-identifier-length,-readability-isolate-declaration'
 FormatStyle: file
 CheckOptions:
+  cppcoreguidelines-rvalue-reference-param-not-moved.AllowPartialMove: true
   readability-identifier-naming.PrivateMemberPrefix: '_'
   readability-identifier-naming.PrivateMethodPrefix: '_'
   readability-identifier-naming.ClassCase: 'lower_case'

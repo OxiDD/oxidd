@@ -1,7 +1,6 @@
-use std::borrow::Cow;
-use std::ffi::{c_char, CStr};
+use std::ffi::{c_char, OsStr};
 use std::fmt;
-use std::mem::{ManuallyDrop, MaybeUninit};
+use std::mem::ManuallyDrop;
 use std::ops::Range;
 
 use oxidd::error::DuplicateVarName;
@@ -9,6 +8,116 @@ use oxidd::util::AllocResult;
 use oxidd::{Manager, ManagerRef, VarNo};
 use oxidd_core::function::{ETagOfFunc, INodeOfFunc, TermOfFunc};
 use oxidd_core::util::Substitution;
+
+pub mod dddmp;
+
+mod interop;
+pub use interop::*;
+
+/// General-purpose error type with human-readable error messages
+#[repr(C)]
+pub struct error_t {
+    /// A human-readable error message. This points to a null-terminated string.
+    msg: *const c_char,
+    /// Byte length of the message (excluding the trailing null byte)
+    msg_len: usize,
+    /// Capacity of the message character array. May be zero although `msg_len`
+    /// is non-zero to mean that the string is borrowed. This field is for
+    /// internal use only.
+    _msg_cap: usize,
+}
+
+impl error_t {
+    /// cbindgen:ignore
+    pub const NONE: Self = error_t {
+        msg: c"".as_ptr(),
+        msg_len: 0,
+        _msg_cap: 0,
+    };
+}
+
+impl From<&'static std::ffi::CStr> for error_t {
+    fn from(value: &'static std::ffi::CStr) -> Self {
+        error_t {
+            msg: value.as_ptr(),
+            msg_len: value.count_bytes(),
+            _msg_cap: 0,
+        }
+    }
+}
+
+impl From<String> for error_t {
+    fn from(value: String) -> Self {
+        let mut msg = ManuallyDrop::new(value.into_bytes());
+        msg.push(0);
+        error_t {
+            msg: msg.as_ptr().cast(),
+            msg_len: msg.len() - 1,
+            _msg_cap: msg.capacity(),
+        }
+    }
+}
+
+impl From<std::io::Error> for error_t {
+    fn from(value: std::io::Error) -> Self {
+        value.to_string().into()
+    }
+}
+
+impl Drop for error_t {
+    fn drop(&mut self) {
+        if self._msg_cap != 0 {
+            debug_assert!(!self.msg.is_null());
+            const { assert!(std::mem::size_of::<c_char>() == std::mem::size_of::<u8>()) };
+            drop(unsafe { Vec::from_raw_parts(self.msg as *mut u8, 0, self._msg_cap) });
+        }
+    }
+}
+
+/// Deallocate the error
+#[no_mangle]
+pub extern "C" fn oxidd_error_free(error: error_t) {
+    drop(error)
+}
+
+/// Handle a possible error by writing it to `target` (unless `target` is null)
+///
+/// # Safety
+///
+/// `target` must either be the null pointer or be valid for writes.
+pub unsafe fn handle_err<T, E: Into<error_t>>(
+    result: Result<T, E>,
+    target: *mut error_t,
+) -> Option<T> {
+    match result {
+        Ok(v) => Some(v),
+        Err(e) => {
+            if !target.is_null() {
+                target.write(e.into());
+            }
+            None
+        }
+    }
+}
+
+pub unsafe fn handle_err_or_init<T, E: Into<error_t>>(
+    result: Result<T, E>,
+    target: *mut error_t,
+) -> Option<T> {
+    if target.is_null() {
+        return result.ok();
+    }
+    match result {
+        Ok(v) => {
+            target.write(error_t::NONE);
+            Some(v)
+        }
+        Err(e) => {
+            target.write(e.into());
+            None
+        }
+    }
+}
 
 /// cbindgen:ignore
 pub const FUNC_UNWRAP_MSG: &str = "the given function is invalid";
@@ -54,156 +163,6 @@ pub trait CFunction: Copy + From<Self::Function> + From<AllocResult<Self::Functi
     const INVALID: Self;
 
     unsafe fn get(self) -> AllocResult<ManuallyDrop<Self::Function>>;
-}
-
-/// A borrowed string
-///
-/// Borrowed means that the receiver must not deallocate the character array
-/// after use.
-#[derive(Clone, Copy)]
-#[repr(C)]
-pub struct str_t {
-    /// Pointer to the character array
-    ptr: *const c_char,
-    /// Byte length of the string
-    len: usize,
-}
-
-impl str_t {
-    unsafe fn to_str_lossy<'a>(self) -> Cow<'a, str> {
-        const { assert!(std::mem::size_of::<c_char>() == 1) };
-        if self.ptr.is_null() {
-            std::borrow::Cow::Borrowed("")
-        } else {
-            String::from_utf8_lossy(std::slice::from_raw_parts(self.ptr.cast(), self.len))
-        }
-    }
-}
-
-/// Optional `str_t`
-#[derive(Clone, Copy)]
-#[repr(C)]
-pub struct opt_str_t {
-    /// Whether a string is present
-    is_some: bool,
-    /// The string. May be uninitialized iff `is_some` is false.
-    str: MaybeUninit<str_t>,
-}
-
-impl From<opt_str_t> for Option<str_t> {
-    fn from(value: opt_str_t) -> Self {
-        if value.is_some {
-            Some(unsafe { value.str.assume_init() })
-        } else {
-            None
-        }
-    }
-}
-
-/// Estimation on the amount of remaining elements in an iterator
-#[repr(C)]
-pub struct size_hint_t {
-    /// Lower bound
-    pub lower: usize,
-    /// Upper bound. `SIZE_MAX` is interpreted as no bound.
-    pub upper: usize,
-}
-
-impl From<size_hint_t> for (usize, Option<usize>) {
-    fn from(hint: size_hint_t) -> Self {
-        let upper = if hint.upper == usize::MAX {
-            None
-        } else {
-            Some(hint.upper)
-        };
-        (hint.lower, upper)
-    }
-}
-
-/// Iterator over strings (`str_t`)
-#[repr(C)]
-pub struct str_iter_t {
-    /// Function to get the next string
-    ///
-    /// If the function returns an `opt_str_t` with `is_some` equal to `false`,
-    /// this signals the end of the iteration.
-    ///
-    /// Must not be `NULL`
-    next: extern "C" fn(*mut std::ffi::c_void) -> opt_str_t,
-    /// Function to get an estimate on remaining element count
-    ///
-    /// @see  `size_hint_t`
-    size_hint: Option<extern "C" fn(*mut std::ffi::c_void) -> size_hint_t>,
-    /// Context passed as an argument when calling `next` and `size_hint`
-    context: *mut std::ffi::c_void,
-}
-
-impl Iterator for str_iter_t {
-    type Item = String;
-
-    fn next(&mut self) -> Option<String> {
-        let str: str_t = Option::from((self.next)(self.context))?;
-        Some(unsafe { str.to_str_lossy() }.into_owned())
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        if let Some(f) = self.size_hint {
-            f(self.context).into()
-        } else {
-            (0, None)
-        }
-    }
-}
-
-/// Equivalent to [`std::ffi::CStr::from_ptr()`] followed by
-/// [`std::ffi::CStr::to_string_lossy()`], except that it allows `ptr` to be
-/// null
-pub unsafe fn c_char_to_str<'a>(ptr: *const c_char) -> std::borrow::Cow<'a, str> {
-    if ptr.is_null() {
-        std::borrow::Cow::Borrowed("")
-    } else {
-        std::ffi::CStr::from_ptr(ptr).to_string_lossy()
-    }
-}
-
-/// Equivalent to [`std::slice::from_raw_parts()`] followed by
-/// [`String::from_utf8_lossy()`], except that it allows `ptr` to be
-/// null
-pub unsafe fn c_char_array_to_str<'a>(ptr: *const c_char, len: usize) -> std::borrow::Cow<'a, str> {
-    const { assert!(std::mem::size_of::<c_char>() == 1) };
-
-    if ptr.is_null() {
-        std::borrow::Cow::Borrowed("")
-    } else {
-        String::from_utf8_lossy(std::slice::from_raw_parts(ptr.cast(), len))
-    }
-}
-
-pub fn to_c_str(str: &str) -> *const c_char {
-    const { assert!(std::mem::size_of::<c_char>() == 1) };
-
-    let len = str.len();
-    if len == 0 {
-        return std::ptr::null_mut();
-    }
-
-    unsafe {
-        let copy: *mut c_char = libc::malloc(len + 1).cast();
-        copy.copy_from(str.as_ptr().cast(), len);
-        copy.add(len).write(0);
-        copy
-    }
-}
-
-#[cfg(feature = "cpp")]
-extern "C" {
-    /// C++ `std::string::assign(char *, size_t)`
-    ///
-    /// `std::ffi::c_void` should be `std::string`, but this is difficult to
-    /// realize with cbindgen
-    #[link_name = "oxidd$interop$std$string$assign"]
-    pub fn cpp_std_string_assign(string: *mut std::ffi::c_void, data: *const u8, len: usize);
-    // implementation in `interop.cpp`
 }
 
 /// Range of variables
@@ -284,6 +243,38 @@ pub struct assignment_t {
     pub len: usize,
 }
 
+impl Drop for assignment_t {
+    fn drop(&mut self) {
+        const { assert!(!std::mem::needs_drop::<oxidd::util::OptBool>()) };
+        if !self.data.is_null() {
+            // Since `OptBool` values do not need to be dropped, we can just use
+            // length 0. This way, we avoid UB in case integers without a
+            // corresponding `OptBool` value are written to `data`.
+            drop(unsafe {
+                Vec::<oxidd::util::OptBool>::from_raw_parts(self.data.cast(), 0, self.len)
+            })
+        }
+    }
+}
+
+impl assignment_t {
+    /// cbindgen:ignore
+    pub const EMPTY: Self = assignment_t {
+        data: std::ptr::null_mut(),
+        len: 0,
+    };
+}
+
+impl From<Vec<oxidd::util::OptBool>> for assignment_t {
+    fn from(mut vec: Vec<oxidd::util::OptBool>) -> Self {
+        vec.shrink_to_fit();
+        let len = vec.len();
+        let data = vec.as_mut_ptr() as _;
+        std::mem::forget(vec);
+        assignment_t { data, len }
+    }
+}
+
 /// Free the given assignment
 ///
 /// `assignment.data` (i.e., the pointer value itself) and `assignment.length`
@@ -292,16 +283,7 @@ pub struct assignment_t {
 /// In case `assignment.data` is `NULL`, this is a no-op.
 #[no_mangle]
 pub unsafe extern "C" fn oxidd_assignment_free(assignment: assignment_t) {
-    if !assignment.data.is_null() {
-        const { assert!(!std::mem::needs_drop::<oxidd::util::OptBool>()) };
-        // Since `OptBool` values do not need to be dropped, we can just use
-        // length 0. This way it does not matter if
-        drop(Vec::<oxidd::util::OptBool>::from_raw_parts(
-            assignment.data.cast(),
-            0,
-            assignment.len,
-        ))
-    }
+    drop(assignment);
 }
 
 pub struct Subst<'a, R> {
@@ -321,6 +303,16 @@ impl<'a, R> Substitution for Subst<'a, R> {
     fn pairs(&self) -> impl ExactSizeIterator<Item = (VarNo, &'a R)> {
         self.vars.iter().copied().zip(self.replacements)
     }
+}
+
+/// A named decision diagram function
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct named<T> {
+    /// The function
+    pub func: T,
+    /// The name
+    pub name: str_t,
 }
 
 #[inline]
@@ -379,46 +371,67 @@ pub unsafe fn op3<CF: CFunction>(
         .into()
 }
 
-pub unsafe fn dump_all_dot_file<CF: CFunction>(
+pub unsafe fn dump_all_dot_path<CF: CFunction>(
     manager: CF::CManagerRef,
-    path: *const c_char,
+    path: &OsStr,
     functions: *const CF,
     function_names: *const *const c_char,
     num_function_names: usize,
-) -> bool
+    error: *mut error_t,
+) -> Option<()>
 where
     CF::Function: for<'id> oxidd_dump::dot::DotStyle<ETagOfFunc<'id, CF::Function>>,
     for<'id> INodeOfFunc<'id, CF::Function>: oxidd_core::HasLevel,
     for<'id> ETagOfFunc<'id, CF::Function>: fmt::Debug,
     for<'id> TermOfFunc<'id, CF::Function>: fmt::Display,
 {
-    let Ok(path) = CStr::from_ptr(path).to_str() else {
-        return false;
-    };
-    let Ok(file) = std::fs::File::create(path) else {
-        return false;
-    };
+    let file = handle_err(std::fs::File::create(path), error)?;
 
-    manager.get().with_manager_shared(|manager| {
-        // collect the functions and their corresponding names
-        let (functions, function_names) =
-            if !functions.is_null() && !function_names.is_null() && num_function_names != 0 {
-                (
-                    std::slice::from_raw_parts(functions, num_function_names),
-                    std::slice::from_raw_parts(function_names, num_function_names),
-                )
-            } else {
-                ([].as_slice(), [].as_slice())
-            };
+    let (functions, function_names) =
+        if !functions.is_null() && !function_names.is_null() && num_function_names != 0 {
+            (
+                std::slice::from_raw_parts(functions, num_function_names),
+                std::slice::from_raw_parts(function_names, num_function_names),
+            )
+        } else {
+            ([].as_slice(), [].as_slice())
+        };
 
-        oxidd_dump::dot::dump_all(
-            file,
-            manager,
-            functions.iter().zip(function_names).map(|(f, &name)| {
-                let f = f.get().expect("invalid DD function");
-                (f, c_char_to_str(name))
-            }),
-        )
-        .is_ok()
-    })
+    let result = manager.get().with_manager_shared(|manager| {
+        let functions = functions
+            .iter()
+            .zip(function_names)
+            .filter_map(|(f, &name)| match f.get() {
+                Ok(f) => Some((f, c_char_to_str(name))),
+                Err(_) => None,
+            });
+        oxidd_dump::dot::dump_all(file, manager, functions)
+    });
+    handle_err_or_init(result, error)
+}
+
+pub unsafe fn dump_all_dot_path_iter<CF: CFunction>(
+    manager: CF::CManagerRef,
+    path: &OsStr,
+    functions: iter<named<CF>>,
+    error: *mut error_t,
+) -> Option<()>
+where
+    CF::Function: for<'id> oxidd_dump::dot::DotStyle<ETagOfFunc<'id, CF::Function>>,
+    for<'id> INodeOfFunc<'id, CF::Function>: oxidd_core::HasLevel,
+    for<'id> ETagOfFunc<'id, CF::Function>: fmt::Debug,
+    for<'id> TermOfFunc<'id, CF::Function>: fmt::Display,
+{
+    let file = handle_err(std::fs::File::create(path), error)?;
+
+    let result = manager.get().with_manager_shared(|manager| {
+        let functions = functions
+            .into_iter()
+            .filter_map(|named| match named.func.get() {
+                Ok(f) => Some((f, named.name.to_str_lossy())),
+                Err(_) => None,
+            });
+        oxidd_dump::dot::dump_all(file, manager, functions)
+    });
+    handle_err_or_init(result, error)
 }

@@ -1,5 +1,5 @@
-/// @file  concepts.hpp
-/// @brief C++20 concepts
+/// @file   concepts.hpp
+/// @brief  C++20 concepts
 
 #pragma once
 
@@ -97,6 +97,11 @@ concept function =
 template <class M>
 concept manager = function<typename M::function> &&
                   std::same_as<typename M::function::manager, M>;
+
+/// Manager that supports variable reordering
+template <class M>
+concept reordering_manager =
+    manager<M> && std::derived_from<M, bridge::reordering_manager<M>>;
 
 /// Substitution extension for `oxidd::concepts::function`
 ///
