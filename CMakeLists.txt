@@ -8,6 +8,10 @@ project(OxiDD
 
 # spell-checker:ignore CTEST,INCLUDEDIR,STREQUAL,LIBDIR
 
+include(CTest)
+include(FetchContent) # to acquire corrosion and tl-expected
+include(GNUInstallDirs)
+
 # --- Settings -----------------------------------------------------------------
 
 if(PROJECT_IS_TOP_LEVEL)
@@ -15,10 +19,19 @@ if(PROJECT_IS_TOP_LEVEL)
 endif()
 
 # This could be derived from the $<CONFIG> if desired.
-set(OXIDD_CARGO_PROFILE "release" CACHE STRING "Sets the build profile used for Rust dependencies (`dev`, `release`, or `release-with-debug`)")
-set_property(CACHE OXIDD_CARGO_PROFILE PROPERTY STRINGS "dev" "release" "release-with-debug")
+set(OXIDD_CARGO_PROFILE "release" CACHE STRING
+    "Sets the build profile used for Rust dependencies (`dev`, `release`, or `release-with-debug`)")
+set_property(CACHE OXIDD_CARGO_PROFILE PROPERTY STRINGS
+    "dev" "release" "release-with-debug")
 
 option(OXIDD_ENABLE_CXX "Enable C++ bindings" ON)
+
+option(OXIDD_COMPAT_ENABLE_TL_EXPECTED
+    "Enable the tl-expected library for compatibility purposes. `std::expected` was introduced in C++23. When using an older C++ standard or standard library, the tl-expected library will be used as a fallback."
+    ON)
+option(OXIDD_COMPAT_EXTERNAL_TL_EXPECTED
+    "Use the system-installed version of tl-expected instead of fetching it from the Git repository. Only effective if OXIDD_COMPAT_ENABLE_TL_EXPECTED is set."
+    OFF)
 
 # Mark some cmake variables as advanced since they don't have to be exposed to the user.
 mark_as_advanced(FORCE
@@ -38,11 +51,6 @@ configure_file(
 
 # --- Build Dependencies -------------------------------------------------------
 
-include(CTest)
-
-# Use FetchContent to acquire Corrosion for the cmake integration of Rust projects.
-include(FetchContent)
-
 FetchContent_Declare(corrosion
     GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
     GIT_TAG v0.5.2)
@@ -50,8 +58,24 @@ FetchContent_MakeAvailable(corrosion)
 
 find_program(CBINDGEN_EXECUTABLE
     NAMES cbindgen
-    DOC "Requires cbindgen to generate the OxiDD headers"
+    DOC "Requires cbindgen to generate the OxiDD C API header"
     REQUIRED)
+
+# --- Dependencies -------------------------------------------------------------
+
+if(OXIDD_COMPAT_ENABLE_TL_EXPECTED)
+    set(EXPECTED_BUILD_TESTS OFF)
+    set(EXPECTED_BUILD_PACKAGE OFF)
+    if(OXIDD_COMPAT_EXTERNAL_TL_EXPECTED)
+        find_package(tl-expected REQUIRED)
+    else()
+        FetchContent_Declare(tl-expected
+            GIT_REPOSITORY https://github.com/TartanLlama/expected.git
+            GIT_TAG v1.3.1
+            EXCLUDE_FROM_ALL)
+        FetchContent_MakeAvailable(tl-expected)
+    endif()
+endif()
 
 
 # --- Main Targets -------------------------------------------------------------
@@ -80,6 +104,9 @@ corrosion_import_crate(
     FEATURES $<$<BOOL:${OXIDD_ENABLE_CXX}>:cpp>
     CRATE_TYPES cdylib staticlib)
 add_dependencies(oxidd_ffi_c oxidd-capi-header)
+if(OXIDD_COMPAT_ENABLE_TL_EXPECTED)
+    target_link_libraries(oxidd_ffi_c INTERFACE tl::expected)
+endif()
 target_include_directories(oxidd_ffi_c INTERFACE
     ${oxidd_capi_include}
     ${PROJECT_SOURCE_DIR}/bindings/cpp/include)
@@ -90,8 +117,6 @@ set(CMAKE_SKIP_TEST_ALL_DEPENDENCY FALSE)
 add_subdirectory(bindings/cpp/tests)
 
 # --- Installation -------------------------------------------------------------
-
-include(GNUInstallDirs)
 
 # C++ headers
 install(DIRECTORY ${PROJECT_SOURCE_DIR}/bindings/cpp/include/oxidd
@@ -145,7 +170,6 @@ else()
         DESTINATION ${CMAKE_INSTALL_LIBDIR}
         RENAME liboxidd.a)
 endif()
-
 
 # --- Dev tools ----------------------------------------------------------------
 
