@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include "oxidd/capi.h"
 #include <concepts>
 #include <cstdint>
 #include <functional>
@@ -11,6 +10,7 @@
 #include <utility>
 #include <variant>
 
+#include <oxidd/compat.hpp>
 #include <oxidd/util.hpp>
 
 #ifndef OXIDD_ENABLE_CXX
@@ -485,8 +485,7 @@ public:
   ///                     number of variables (`num_vars()`) must not overflow.
   ///
   /// @returns  The range of new variable numbers
-  std::ranges::iota_view<var_no_t, var_no_t>
-  add_vars(var_no_t additional) noexcept {
+  var_no_range_t add_vars(var_no_t additional) noexcept {
     assert(!is_invalid());
     capi::oxidd_var_no_range_t range =
         Derived::_c_add_vars(_manager, additional);
@@ -513,39 +512,42 @@ public:
   ///
   /// @returns  Result indicating whether renaming was successful or which name
   ///           is already in use
-  util::duplicate_var_name_result
+  compat::expected<var_no_range_t, util::duplicate_var_name>
   add_named_vars(std::span<const char *const> names) noexcept {
     assert(!is_invalid());
     const capi::oxidd_duplicate_var_name_result_t res =
         Derived::_c_add_named_vars(_manager, names.data(), names.size());
-    const bool is_ok = res.present_var == invalid_var_no;
-    return {
-        .added_vars =
-            std::ranges::iota_view(res.added_vars.start, res.added_vars.end),
-        .name = is_ok ? std::string()
-                      : std::string(
-                            names[res.added_vars.end - res.added_vars.start]),
+    const var_no_range_t added_vars =
+        std::ranges::iota_view(res.added_vars.start, res.added_vars.end);
+    if (res.present_var == invalid_var_no)
+      return added_vars;
+    return compat::unexpected(util::duplicate_var_name{
+        .added_vars = added_vars,
+        .name = std::string(names[res.added_vars.end - res.added_vars.start]),
         .present_var = res.present_var,
-    };
+    });
   }
   /// Add named variables to this decision diagram from an iterator
   ///
   /// See `add_named_vars(range)` for more details.
   template <std::input_iterator I, std::sentinel_for<I> E>
-  util::duplicate_var_name_result add_named_vars(I begin, E end)
+  compat::expected<var_no_range_t, util::duplicate_var_name>
+  add_named_vars(I begin, E end)
     requires std::convertible_to<std::iter_value_t<I>, std::string_view>
   {
     assert(!is_invalid());
     detail::c_str_iter iter(std::move(begin), std::move(end));
     const capi::oxidd_duplicate_var_name_result_t res =
         iter.use_in_invoke(Derived::_c_add_named_vars_iter, _manager);
-    const bool is_ok = res.present_var == invalid_var_no;
-    return {
-        .added_vars =
-            std::ranges::iota_view(res.added_vars.start, res.added_vars.end),
-        .name = is_ok ? std::string() : std::string(iter.current()),
+    const var_no_range_t added_vars =
+        std::ranges::iota_view(res.added_vars.start, res.added_vars.end);
+    if (res.present_var == invalid_var_no)
+      return added_vars;
+    return compat::unexpected(util::duplicate_var_name{
+        .added_vars = added_vars,
+        .name = std::string(iter.current()),
         .present_var = res.present_var,
-    };
+    });
   }
   /// Add named variables to this decision diagram
   ///
@@ -564,7 +566,8 @@ public:
   /// @returns  Result indicating whether renaming was successful or which name
   ///           is already in use
   template <std::ranges::input_range R>
-  util::duplicate_var_name_result
+  compat::expected<var_no_range_t,
+                   util::duplicate_var_name>
   add_named_vars(R &&range) // NOLINT(*-missing-std-forward)
     requires std::convertible_to<std::ranges::range_value_t<R>,
                                  std::string_view> &&

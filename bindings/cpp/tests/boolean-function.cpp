@@ -1,4 +1,6 @@
-#include "oxidd/util.hpp"
+/// @file   boolean-function.cpp
+/// @brief  Test all Boolean functions over a fixed number of variables
+
 #undef NDEBUG // enable runtime assertions regardless of the build type
 
 #include <array>
@@ -689,12 +691,10 @@ template <manager M> void test_add_vars(M &mgr) {
     assert(mgr.var_name(i).empty());
   }
 
-  util::duplicate_var_name_result result =
-      mgr.add_named_vars(var_name_iter(5), var_name_iter_sentinel{7});
-  assert(result.name.empty());
-  assert(!result.is_error());
-  assert(*result.added_vars.begin() == 5);
-  assert(*result.added_vars.end() == 7);
+  const var_no_range_t added_vars =
+      mgr.add_named_vars(var_name_iter(5), var_name_iter_sentinel{7}).value();
+  assert(*added_vars.begin() == 5);
+  assert(*added_vars.end() == 7);
 
   assert(mgr.num_vars() == 7);
   assert(mgr.num_named_vars() == 4);
@@ -722,14 +722,13 @@ template <manager M> void test_add_vars(M &mgr) {
 
   // check that duplicates are handled as intended
   const std::array<std::string, 3> names{"c", "b", "x"};
-  result = mgr.add_named_vars(names);
+  const util::duplicate_var_name err = mgr.add_named_vars(names).error();
   assert(mgr.num_vars() == 8);
   assert(mgr.num_named_vars() == 6);
-  assert(result.is_error());
-  assert(result.name == "b");
-  assert(result.present_var == 1);
-  assert(*result.added_vars.begin() == 7);
-  assert(*result.added_vars.end() == 8);
+  assert(err.name == "b");
+  assert(err.present_var == 1);
+  assert(*err.added_vars.begin() == 7);
+  assert(*err.added_vars.end() == 8);
   assert(mgr.name_to_var("c").value() == 7);
   assert(mgr.name_to_var("b").value() == 1);
   assert(!mgr.name_to_var("x"));
@@ -776,12 +775,10 @@ void test_all_boolean_functions_2vars_t1() {
 #endif // __cpp_exceptions
 
   mgr.run_in_worker_pool([&mgr]() {
-    const util::duplicate_var_name_result res =
-        mgr.add_named_vars(std::array{"a", "b"});
-    assert(!res.is_error());
-    assert(*res.added_vars.begin() == 0);
-    assert(*res.added_vars.end() == 2);
-    assert(res.name.empty());
+    const var_no_range_t added_vars =
+        mgr.add_named_vars(std::array{"a", "b"}).value();
+    assert(*added_vars.begin() == 0);
+    assert(*added_vars.end() == 2);
 
     const test_all_boolean_functions test(mgr);
     test.basic();

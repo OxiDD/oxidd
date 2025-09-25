@@ -17,6 +17,7 @@
 #include <version>
 
 #include <oxidd/capi.h>
+#include <oxidd/compat.hpp>
 
 /// OxiDD's main namespace
 namespace oxidd {
@@ -25,6 +26,9 @@ namespace oxidd {
 using level_no_t = capi::oxidd_level_no_t;
 /// Variable numbers
 using var_no_t = capi::oxidd_var_no_t;
+
+/// Variable number range
+using var_no_range_t = std::ranges::iota_view<var_no_t, var_no_t>;
 
 /// Invalid level number number
 constexpr level_no_t invalid_level_no = std::numeric_limits<level_no_t>::max();
@@ -65,17 +69,13 @@ enum class boolean_operator : uint8_t {
   // NOLINTEND(readability-identifier-naming)
 };
 
-/// Result of an operation adding variable names to the manager
-///
-/// Variable names in a manager are generally required to be unique. Upon an
-/// attempt to add a name that is already in use, that name is provided in
-/// `name` and `present_var` refers to the variable already using `name`.
-struct duplicate_var_name_result {
+/// Error details for labelling a variable with a name that is already in use
+struct duplicate_var_name {
   /// Range of variables that have successfully been added
   ///
   /// If no fresh variables were requested, this is simply the empty range
   /// starting and ending at the current variable count.
-  std::ranges::iota_view<var_no_t, var_no_t> added_vars;
+  var_no_range_t added_vars;
 
   /// The duplicate name on error, or the empty string on success
   std::string name;
@@ -84,21 +84,11 @@ struct duplicate_var_name_result {
   /// `invalid_var_no` on success
   var_no_t present_var = invalid_var_no;
 
-  /// Returns `true` iff there was a duplicate variable
-  [[nodiscard]] constexpr bool is_error() const {
-    return present_var != invalid_var_no;
-  }
-
   /// Format the error in a human-readable fashion
-  ///
-  /// If there is no error, nothing will be written to `stream`.
   friend std::ostream &operator<<(std::ostream &stream,
-                                  const duplicate_var_name_result &result) {
-    if (result.is_error()) {
-      stream << "the variable name '" << result.name
-             << "' is already in use for variable number "
-             << result.present_var;
-    }
+                                  const duplicate_var_name &err) {
+    stream << "the variable name '" << err.name
+           << "' is already in use for variable number " << err.present_var;
     return stream;
   }
 };
