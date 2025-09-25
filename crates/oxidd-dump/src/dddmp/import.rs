@@ -706,7 +706,10 @@ where
         let msg = "binary mode is (currently) only supported for diagrams with a single terminal";
         let mut it = manager.terminals();
         let t = EdgeDropGuard::new(manager, it.next().expect(msg));
-        assert!(it.next().is_none(), "{msg}");
+        if let Some(t) = it.next() {
+            manager.drop_edge(t);
+            panic!("{msg}");
+        }
         t
     };
 
