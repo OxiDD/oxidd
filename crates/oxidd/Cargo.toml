@@ -112,7 +112,7 @@ dddmp = ["oxidd-dump/dddmp"]
 ## Visualization using Graphviz DOT
 dot-export = ["oxidd-dump/dot"]
 
-## Visualization using OxiDD-viz
+## Visualization using OxiDD-vis
 visualize = ["oxidd-dump/visualize"]
 
 

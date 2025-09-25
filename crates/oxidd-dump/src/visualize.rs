@@ -1,4 +1,4 @@
-//! Visualization with [OxiDD-viz](https://oxidd.net/viz)
+//! Visualization with [OxiDD-vis](https://oxidd.net/vis)
 
 use std::fmt;
 use std::io::{self, Read, Write};
@@ -9,16 +9,16 @@ use oxidd_core::HasLevel;
 
 use crate::AsciiDisplay;
 
-/// [OxiDD-viz]-compatible decision diagram exporter that
+/// [OxiDD-vis]-compatible decision diagram exporter that
 /// serves decision diagram dumps on localhost via HTTP
 ///
-/// [OxiDD-viz] is a webapp that runs locally in your browser. You can directly
+/// [OxiDD-vis] is a webapp that runs locally in your browser. You can directly
 /// send decision diagrams to it via an HTTP connection. Here, the `Visualizer`
 /// acts as a small HTTP server that accepts connections once you call
 /// [`Visualizer::serve()`]. The webapp repeatedly polls on the configured port
 /// to directly display the decision diagrams then.
 ///
-/// [OxiDD-viz]: https://oxidd.net/viz
+/// [OxiDD-vis]: https://oxidd.net/vis
 pub struct Visualizer {
     port: u16,
     buf: Vec<u8>,
@@ -80,7 +80,7 @@ impl Visualizer {
     /// ```
     /// # use oxidd_core::function::Function;
     /// # use oxidd_dump::Visualizer;
-    /// # fn viz<'id, F: Function>(manager: &F::Manager<'id>, f0: &F, f1: &F)
+    /// # fn vis<'id, F: Function>(manager: &F::Manager<'id>, f0: &F, f1: &F)
     /// # where
     /// #    oxidd_core::function::INodeOfFunc<'id, F>: oxidd_core::HasLevel,
     /// #    oxidd_core::function::TermOfFunc<'id, F>: oxidd_dump::AsciiDisplay,
@@ -130,7 +130,7 @@ impl Visualizer {
     /// ```
     /// # use oxidd_core::function::Function;
     /// # use oxidd_dump::Visualizer;
-    /// # fn viz<'id, F: Function>(manager: &F::Manager<'id>, phi: &F, res: &F)
+    /// # fn vis<'id, F: Function>(manager: &F::Manager<'id>, phi: &F, res: &F)
     /// # where
     /// #    oxidd_core::function::INodeOfFunc<'id, F>: oxidd_core::HasLevel,
     /// #    oxidd_core::function::TermOfFunc<'id, F>: oxidd_dump::AsciiDisplay,
@@ -173,7 +173,7 @@ impl Visualizer {
     /// Serve the provided decision diagram for visualization
     ///
     /// Blocks until the visualization has been fetched by
-    /// [OxiDD-viz](https://oxidd.net/viz).
+    /// [OxiDD-vis](https://oxidd.net/vis) (or another compatible tool).
     ///
     /// On success, all previously added decision diagrams are removed from the
     /// internal buffer. On error, the internal buffer is left as-is.
@@ -191,7 +191,7 @@ impl Visualizer {
     /// Unlike [`Self::serve()`], this method sets the [`TcpListener`] into
     /// [non-blocking mode][TcpListener::set_nonblocking()], allowing to run
     /// different tasks while waiting for a connection by
-    /// [OxiDD-viz](https://oxidd.net/viz).
+    /// [OxiDD-vis](https://oxidd.net/vis) (or another compatible tool).
     ///
     /// Note that you need to call [`poll()`][VisualizationListener::poll()]
     /// repeatedly on the returned [`VisualizationListener`] to accept a TCP
@@ -254,7 +254,7 @@ pub struct VisualizationListener<'a> {
 }
 
 impl VisualizationListener<'_> {
-    /// Poll for clients like [OxiDD-viz](https://oxidd.net/viz)
+    /// Poll for clients like [OxiDD-vis](https://oxidd.net/vis)
     ///
     /// If a connection was established, this method will directly handle the
     /// client. If the decision diagram(s) were successfully sent, the return

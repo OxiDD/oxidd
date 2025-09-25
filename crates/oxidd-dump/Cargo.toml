@@ -47,5 +47,5 @@ dddmp = ["dep:fixedbitset", "dep:rustc-hash", "dep:memchr", "dep:is_sorted"]
 ## Visualization using Graphviz DOT
 dot = []
 
-## Visualization using OxiDD-viz
+## Visualization using OxiDD-vis
 visualize = ["dddmp"]
