@@ -14,7 +14,7 @@ class bdd_function;
 /// Instances can safely be sent to other threads.
 ///
 /// Models `oxidd::concepts::boolean_function_manager`
-class bdd_manager
+class OXIDD_EBO bdd_manager
     : public bridge::manager<bdd_manager, bdd_function,
                              capi::oxidd_bdd_manager_t>,
       public bridge::reordering_manager<bdd_manager>,
@@ -102,7 +102,7 @@ public:
 ///
 /// Models `oxidd::concepts::boolean_function_quant` and
 /// `oxidd::concepts::function_subst`
-class bdd_function
+class OXIDD_EBO bdd_function
     : public bridge::function<bdd_function, bdd_manager, capi::oxidd_bdd_t>,
       public bridge::has_level<bdd_function>,
       public bridge::function_subst<bdd_function>,

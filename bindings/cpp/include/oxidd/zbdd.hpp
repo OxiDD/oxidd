@@ -14,7 +14,7 @@ class zbdd_function;
 /// Instances can safely be sent to other threads.
 ///
 /// Models `oxidd::concepts::boolean_function_manager`
-class zbdd_manager
+class OXIDD_EBO zbdd_manager
     : public bridge::manager<zbdd_manager, zbdd_function,
                              capi::oxidd_zbdd_manager_t>,
       public bridge::reordering_manager<zbdd_manager>,
@@ -134,7 +134,7 @@ public:
 /// zero-suppressed binary decision diagram
 ///
 /// Models `oxidd::concepts::boolean_function`
-class zbdd_function
+class OXIDD_EBO zbdd_function
     : public bridge::function<zbdd_function, zbdd_manager, capi::oxidd_zbdd_t>,
       public bridge::has_level<zbdd_function>,
       public bridge::boolean_function<zbdd_function> {

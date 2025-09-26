@@ -22,6 +22,16 @@
 
 // spell-checker:dictionaries dddmp
 
+/// @cond
+#ifdef _MSC_VER
+// Empty base optimization only fully works with this attribute, see
+// https://stackoverflow.com/a/12714226
+#define OXIDD_EBO __declspec(empty_bases)
+#else
+#define OXIDD_EBO
+#endif
+/// @endcond
+
 /// OxiDD's main namespace
 namespace oxidd {
 
