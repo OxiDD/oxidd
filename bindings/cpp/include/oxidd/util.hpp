@@ -89,7 +89,9 @@ public:
     return _error;
   }
 
-  error(const error &other) = delete;
+  /// Copy constructor
+  error(const error &other) noexcept
+      : _error(capi::oxidd_error_clone(&other._error)) {}
   /// Move constructor
   ///
   /// Note that calling the move constructor will transfer ownership of the
@@ -106,7 +108,11 @@ public:
       capi::oxidd_error_free(_error);
   }
 
-  error &operator=(const error &other) = delete;
+  /// Copy assignment operator
+  error &operator=(const error &other) noexcept {
+    _error = capi::oxidd_error_clone(&other._error);
+    return *this;
+  }
   /// Move assignment operator
   ///
   /// Note that executing a move assignment will transfer ownership of the error

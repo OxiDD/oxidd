@@ -74,6 +74,31 @@ impl Drop for error_t {
     }
 }
 
+/// Clone `error`
+///
+/// The returned `error_t` must be deallocated independently of `error`.
+#[no_mangle]
+pub extern "C" fn oxidd_error_clone(error: &error_t) -> error_t {
+    if error._msg_cap == 0 {
+        error_t {
+            msg: error.msg,
+            msg_len: error.msg_len,
+            _msg_cap: 0,
+        }
+    } else {
+        debug_assert!(!error.msg.is_null());
+        let mut vec = Vec::with_capacity(error.msg_len + 1);
+        vec.extend_from_slice(unsafe { std::slice::from_raw_parts(error.msg, error.msg_len) });
+        vec.push(0);
+        let vec = ManuallyDrop::new(vec);
+        error_t {
+            msg: vec.as_ptr(),
+            msg_len: error.msg_len,
+            _msg_cap: error.msg_len + 1,
+        }
+    }
+}
+
 /// Deallocate the error
 #[no_mangle]
 pub extern "C" fn oxidd_error_free(error: error_t) {
