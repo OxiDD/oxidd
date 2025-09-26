@@ -270,15 +270,16 @@ class c_callback : c_callback_vtable {
   C _func;
 
 public:
-  c_callback() : c_callback_vtable(&_func_wrapper_fn) {
+  c_callback() : c_callback_vtable{.func_wrapper = &_func_wrapper_fn} {
     if constexpr (std::is_pointer_v<C>)
       _func = nullptr;
   }
   c_callback(const C &func) noexcept(std::is_nothrow_copy_constructible_v<C>)
     requires std::is_copy_constructible_v<C>
-      : c_callback_vtable{&_func_wrapper_fn}, _func(func) {}
+      : c_callback_vtable{.func_wrapper = &_func_wrapper_fn}, _func(func) {}
   c_callback(C &&func) noexcept(std::is_nothrow_move_constructible_v<C>)
-      : c_callback_vtable{&_func_wrapper_fn}, _func(std::move(func)) {}
+      : c_callback_vtable{.func_wrapper = &_func_wrapper_fn},
+        _func(std::move(func)) {}
 
   template <typename F, typename... Args>
   result_t use_in_invoke(F &&f, Args &&...args) noexcept(
