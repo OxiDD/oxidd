@@ -188,7 +188,7 @@ pub fn to_c_str(str: &str) -> *const c_char {
 ///
 /// cbindgen:ignore
 #[cfg(feature = "cpp")]
-mod cpp {
+pub mod cpp {
     extern "C" {
         /// C++ `std::string::assign(char *, size_t)`
         ///
