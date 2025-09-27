@@ -41,13 +41,13 @@ Issues = "https://github.com/OxiDD/oxidd/issues"
 
 [project.optional-dependencies]
 # spell-checker:ignore pydata
-dev = ["mypy == 1.16.1", "pyright ~= 1.1", "ruff ~= 0.12"]
+dev = ["mypy == 1.16.1", "basedpyright ~= 1.31", "ruff ~= 0.13"]
 docs = ["Sphinx ~= 8.0", "pydata-sphinx-theme ~= 0.16"]
 test = ["pytest >= 8.0"]
 
 
 [build-system]
-requires = ["maturin ~= 1.8.0"]
+requires = ["maturin ~= 1.8"]
 build-backend = "maturin"
 
 [tool.maturin]
