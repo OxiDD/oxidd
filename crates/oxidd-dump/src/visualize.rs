@@ -182,7 +182,8 @@ impl Visualizer {
         let listener = TcpListener::bind(("localhost", port))?;
         println!("Data can be read on http://localhost:{port}");
 
-        while !self.handle_client(listener.accept()?.0)? {}
+        let mut buf = EMPTY_RECV_BUF;
+        while !self.handle_client(listener.accept()?.0, &mut buf)? {}
         Ok(())
     }
 
@@ -205,39 +206,54 @@ impl Visualizer {
         Ok(VisualizationListener {
             visualizer: self,
             listener,
+            buf: Box::new(EMPTY_RECV_BUF),
         })
     }
 
     /// Returns `Ok(true)` if the visualization has been sent, `Ok(false)` if
-    /// the client requested a path different from `/diagrams`
-    fn handle_client(&mut self, mut stream: TcpStream) -> io::Result<bool> {
+    /// the client did not request `/diagrams`
+    fn handle_client(&mut self, stream: TcpStream, buf: &mut RecvBuf) -> io::Result<bool> {
+        use io::ErrorKind::*;
+        let mut stream = HttpStream::new(stream, buf)?;
+        loop {
+            return match self.handle_req(&mut stream) {
+                Ok(false) => continue,
+                Err(e) if matches!(e.kind(), UnexpectedEof | WouldBlock | TimedOut) => Ok(false),
+                res => res,
+            };
+        }
+    }
+
+    /// Returns `Ok(true)` if the visualization has been sent, `Ok(false)` if
+    /// request is for a path different from `/diagrams`
+    fn handle_req(&mut self, stream: &mut HttpStream) -> io::Result<bool> {
         // Basic routing: only handle "GET /diagrams"
         // After the path, there should be "HTTP/1.1" (or something alike),
         // so expecting the space is fine.
-        const EXPECTED_REQ_START: &[u8] = b"GET /diagrams ";
-        let mut recv_buf = [0; const { EXPECTED_REQ_START.len() }];
-        let matches = match stream.read_exact(&mut recv_buf) {
-            Ok(()) => recv_buf == EXPECTED_REQ_START,
-            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => false,
-            Err(e) => return Err(e),
-        };
-        if !matches {
-            stream.write_all(b"HTTP/1.1 404 NOT FOUND\r\n\r\nNot Found")?;
+        if !stream.next_request_starts_with(b"GET /diagrams ")? {
+            stream.conn.write_all(
+                b"HTTP/1.1 404 NOT FOUND\r\n\
+                Content-Type: text/plain\r\n\
+                Content-Length: 9\r\n\
+                Access-Control-Allow-Origin: *\r\n\
+                \r\n\
+                Not Found",
+            )?;
             return Ok(false);
         }
 
         let len = self.buf.len() + 2; // 2 -> account for outer brackets
         write!(
-            stream,
+            stream.conn,
             "HTTP/1.1 200 OK\r\n\
             Content-Type: application/json\r\n\
-            Access-Control-Allow-Origin: *\r\n\
             Content-Length: {len}\r\n\
+            Access-Control-Allow-Origin: *\r\n\
             \r\n\
             ["
         )?;
         self.buf.push(b']');
-        if let Err(err) = stream.write_all(&self.buf) {
+        if let Err(err) = stream.conn.write_all(&self.buf) {
             self.buf.pop();
             return Err(err);
         }
@@ -247,10 +263,70 @@ impl Visualizer {
     }
 }
 
+type RecvBuf = [u8; 1024];
+const EMPTY_RECV_BUF: RecvBuf = [0; 1024];
+struct HttpStream<'a> {
+    recv_buf: &'a mut RecvBuf,
+    read_bytes: usize,
+    conn: TcpStream,
+}
+
+impl<'a> HttpStream<'a> {
+    fn new(stream: TcpStream, recv_buf: &'a mut RecvBuf) -> io::Result<Self> {
+        stream.set_nonblocking(false)?;
+        stream.set_read_timeout(Some(std::time::Duration::from_secs(3)))?;
+        Ok(Self {
+            recv_buf,
+            read_bytes: 0,
+            conn: stream,
+        })
+    }
+
+    /// Read the next HTTP request and check if it starts with the expected byte
+    /// sequence (e.g., `GET /foo `).
+    fn next_request_starts_with(&mut self, expected: &[u8]) -> io::Result<bool> {
+        debug_assert!(expected.len() <= self.recv_buf.len());
+        let result = loop {
+            // check before read, because we may already have received the
+            // request on the last call
+            if self.read_bytes >= expected.len() {
+                break self.recv_buf[..expected.len()] == *expected;
+            }
+            self.read_bytes += self.conn.read(&mut self.recv_buf[self.read_bytes..])?;
+            if self.read_bytes == 0 {
+                return Err(io::ErrorKind::UnexpectedEof.into());
+            }
+        };
+        // Find the message's end, which is "\r\n\r\n" according to the RFC.
+        // Instead, we just test for the newlines.
+        let mut last_nl = self.recv_buf.len(); // dummy value
+        loop {
+            for (i, &c) in self.recv_buf[..self.read_bytes].iter().enumerate() {
+                if c == b'\n' {
+                    if i == last_nl.wrapping_add(2) {
+                        // there may be another message in the buffer, copy it
+                        // to the beginning
+                        self.recv_buf.copy_within(i + 1..self.read_bytes, 0);
+                        self.read_bytes -= i + 1;
+                        return Ok(result);
+                    }
+                    last_nl = i;
+                }
+            }
+            last_nl = last_nl.wrapping_sub(self.read_bytes);
+            self.read_bytes = self.conn.read(self.recv_buf)?;
+            if self.read_bytes == 0 {
+                return Err(io::ErrorKind::UnexpectedEof.into());
+            }
+        }
+    }
+}
+
 /// A non-blocking [`TcpListener`] for decision diagram visualization
 pub struct VisualizationListener<'a> {
     visualizer: &'a mut Visualizer,
     listener: TcpListener,
+    buf: Box<RecvBuf>,
 }
 
 impl VisualizationListener<'_> {
@@ -266,7 +342,7 @@ impl VisualizationListener<'_> {
         loop {
             match self.listener.accept() {
                 Ok((stream, _)) => {
-                    if self.visualizer.handle_client(stream)? {
+                    if self.visualizer.handle_client(stream, &mut self.buf)? {
                         return Ok(true);
                     }
                 }
