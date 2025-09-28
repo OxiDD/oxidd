@@ -40,7 +40,7 @@ rayon = "1.10"       # thread pools, parallel iterators etc.
 csv = "1.3.0"
 serde = { version = "1.0.204", features = ["derive"] }
 
-sysinfo = "0.37.0" # get available memory
+sysinfo = "0.36.0" # get available memory
 
 
 [features]
