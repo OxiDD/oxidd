@@ -61,9 +61,7 @@ jobs:
       run: |
         rustup target add \
           x86_64-unknown-linux-gnu x86_64-unknown-linux-musl \
-          i686-unknown-linux-gnu i686-unknown-linux-musl \
-          aarch64-unknown-linux-gnu aarch64-unknown-linux-musl \
-          armv7-unknown-linux-gnueabihf armv7-unknown-linux-musleabihf
+          i686-unknown-linux-gnu i686-unknown-linux-musl
     - name: Build wheels
       run: |
         manylinux=manylinux2014
@@ -71,19 +69,19 @@ jobs:
 
         maturin sdist --out dist
 
-        for target in x86_64-unknown-linux-gnu i686-unknown-linux-gnu aarch64-unknown-linux-gnu armv7-unknown-linux-gnueabihf; do
+        for target in x86_64-unknown-linux-gnu i686-unknown-linux-gnu; do
           maturin build --release --out dist --compatibility $manylinux --zig --target $target
         done
 
-        for target in x86_64-unknown-linux-musl i686-unknown-linux-musl aarch64-unknown-linux-musl armv7-unknown-linux-musleabihf; do
+        for target in x86_64-unknown-linux-musl i686-unknown-linux-musl; do
           maturin build --release --out dist --compatibility $musllinux --zig --target $target
         done
 
         for pypy in pypy3.9 pypy3.10 pypy3.11; do
-          for target in x86_64-unknown-linux-gnu i686-unknown-linux-gnu aarch64-unknown-linux-gnu; do
+          for target in x86_64-unknown-linux-gnu i686-unknown-linux-gnu; do
             maturin build --release --out dist --interpreter $pypy --compatibility $manylinux --zig --target $target
           done
-          for target in x86_64-unknown-linux-musl i686-unknown-linux-musl aarch64-unknown-linux-musl; do
+          for target in x86_64-unknown-linux-musl i686-unknown-linux-musl; do
             maturin build --release --out dist --interpreter $pypy --compatibility $musllinux --zig --target $target
           done
         done
@@ -116,6 +114,65 @@ jobs:
         PORT: ${{ secrets.WEBSITE_SSH_PORT }}
         KEY: ${{ secrets.WEBSITE_SSH_KEY }}
         KNOWN_HOSTS: ${{ secrets.WEBSITE_SSH_KNOWN_HOSTS }}
+
+  linux-arm:
+    name: Build wheels for Linux aarch64
+
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: |
+          pypy3.9
+          pypy3.10
+          pypy3.11
+          3.x
+    - name: Install Python build dependencies
+      run: python -m pip install maturin[zig] ruff
+    - name: Add Rust targets to build wheels
+      run: |
+        rustup target add aarch64-unknown-linux-gnu aarch64-unknown-linux-musl \
+          armv7-unknown-linux-gnueabihf armv7-unknown-linux-musleabihf
+    - name: Build wheels
+      run: |
+        manylinux=manylinux2014
+        musllinux=musllinux_1_2
+
+        for target in aarch64-unknown-linux-gnu armv7-unknown-linux-gnueabihf; do
+          maturin build --release --out dist --compatibility $manylinux --zig --target $target
+        done
+
+        for target in aarch64-unknown-linux-musl armv7-unknown-linux-musleabihf; do
+          maturin build --release --out dist --compatibility $musllinux --zig --target $target
+        done
+
+        for pypy in pypy3.9 pypy3.10 pypy3.11; do
+          for target in aarch64-unknown-linux-gnu; do
+            maturin build --release --out dist --interpreter $pypy --compatibility $manylinux --zig --target $target
+          done
+          for target in aarch64-unknown-linux-musl; do
+            maturin build --release --out dist --interpreter $pypy --compatibility $musllinux --zig --target $target
+          done
+        done
+    - name: Test wheels
+      run: |
+        run_tests() {
+          $1 -m venv .venv-$1
+          .venv-$1/bin/pip install "${2}[test]"
+          .venv-$1/bin/pytest
+        }
+        run_tests python3 dist/oxidd-*-cp*-manylinux*_aarch64*.whl
+        run_tests pypy3.9 dist/oxidd-*-pp39-*-manylinux*_aarch64*.whl
+        run_tests pypy3.10 dist/oxidd-*-pp310-*-manylinux*_aarch64*.whl
+        run_tests pypy3.11 dist/oxidd-*-pp311-*-manylinux*_aarch64*.whl
+    - name: Upload wheels
+      uses: actions/upload-artifact@v4
+      with:
+        name: python-wheels-linux-arm
+        path: dist
+
 
   mac:
     name: Build wheels for macOS
@@ -170,12 +227,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Install Rust targets
-      run: rustup target add x86_64-pc-windows-msvc i686-pc-windows-msvc aarch64-pc-windows-msvc
-    - name: Install Maturin
-      uses: baptiste0928/cargo-install@v3
-      with:
-        crate: maturin
-        args: --no-default-features # this is the important part: we don't want xwin
+      run: rustup target add x86_64-pc-windows-msvc i686-pc-windows-msvc
     - uses: actions/setup-python@v5
       with:
         python-version: |
@@ -183,6 +235,10 @@ jobs:
           pypy3.10
           pypy3.11
           3.x
+    - name: Install Python build dependencies
+      run: python -m pip install ruff maturin
+    - name: Install Rust targets
+      run: rustup target add x86_64-pc-windows-msvc i686-pc-windows-msvc
     - name: Install Python (i686)
       run: nuget install pythonx86 -OutputDirectory .python
     - name: Install Python build dependencies
@@ -197,10 +253,6 @@ jobs:
       run: maturin build --release --out dist --interpreter "$(where.exe pypy3.11)"
     - name: Build CPython wheel (i686)
       run: maturin build --release --out dist --interpreter "$(get-item .python\pythonx86*\tools\python.exe)" --target i686-pc-windows-msvc
-    - name: Build CPython wheel (aarch64)
-      run: maturin build --release --out dist --target aarch64-pc-windows-msvc
-      env:
-        PYO3_CROSS: 1
     - name: Test
       run: |
         python -m venv .venv-cp
@@ -221,6 +273,32 @@ jobs:
       with:
         name: python-wheels-win
         path: dist
+
+  win-arm:
+    name: Build wheels for Windows on Arm
+
+    runs-on: windows-11-arm
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: |
+          3.x
+    - name: Install Python build dependencies
+      run: python -m pip install ruff maturin
+    - name: Build CPython wheel (aarch64)
+      run: maturin build --release --out dist --target aarch64-pc-windows-msvc
+    - name: Test
+      run: |
+        python -m venv .venv-cp
+        & ".venv-cp\Scripts\pip.exe" install "$(get-item dist\oxidd-*-cp*-*arm64.whl)[test]"
+        & ".venv-cp\Scripts\pytest.exe"
+    - uses: actions/upload-artifact@v4
+      with:
+        name: python-wheels-win-arm
+        path: dist
+
 
   release:
     name: Release
