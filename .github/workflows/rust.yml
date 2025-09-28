@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: ./.github/actions/install-cbindgen-linux
     - uses: dtolnay/rust-toolchain@master
       with:
@@ -42,7 +42,7 @@ jobs:
         flags: ["", "--release"]
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: ./.github/actions/install-cbindgen-linux
     - uses: dtolnay/rust-toolchain@master
       with:

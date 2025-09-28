@@ -29,8 +29,8 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
+    - uses: actions/checkout@v5
+    - uses: actions/setup-python@v6
       with:
         python-version: |
           pypy3.9
@@ -121,8 +121,8 @@ jobs:
     runs-on: ubuntu-24.04-arm
 
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
+    - uses: actions/checkout@v5
+    - uses: actions/setup-python@v6
       with:
         python-version: |
           pypy3.9
@@ -185,8 +185,8 @@ jobs:
         - { arch: arm64,  image: macos-15 }
 
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
+    - uses: actions/checkout@v5
+    - uses: actions/setup-python@v6
       with:
         python-version: |
           pypy3.9
@@ -225,10 +225,8 @@ jobs:
     runs-on: windows-2022
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Install Rust targets
-      run: rustup target add x86_64-pc-windows-msvc i686-pc-windows-msvc
-    - uses: actions/setup-python@v5
+    - uses: actions/checkout@v5
+    - uses: actions/setup-python@v6
       with:
         python-version: |
           pypy3.9
@@ -280,8 +278,8 @@ jobs:
     runs-on: windows-11-arm
 
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
+    - uses: actions/checkout@v5
+    - uses: actions/setup-python@v6
       with:
         python-version: |
           3.x
@@ -314,7 +312,7 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           path: dist
           pattern: python-wheels-*
