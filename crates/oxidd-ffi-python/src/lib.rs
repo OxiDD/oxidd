@@ -14,7 +14,7 @@ mod zbdd;
 
 mod util;
 
-#[pymodule]
+#[pymodule(gil_used = false)]
 mod _oxidd {
     use oxidd::BooleanOperator;
     use oxidd_dump::dddmp;
