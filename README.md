@@ -19,6 +19,7 @@ OxiDD is a highly modular decision diagram framework written in Rust. The most p
 - **Extensibility**: Due to OxiDD’s modular design, one can implement new kinds of decision diagrams without having to reimplement core data structures.
 - **Concurrency**: Functions represented by DDs can safely be used in multi-threaded contexts. Furthermore, apply algorithms can be executed on multiple CPU cores in parallel.
 - **Performance**: Compared to other popular BDD libraries (e.g., BuDDy, CUDD, and Sylvan), OxiDD is already competitive or even outperforms them.
+- **Visualization**: Display your DDs with ease through [OxiDD-vis](https://oxidd.net/vis).
 - **Support for Reordering**: OxiDD can reorder a decision diagram to a given variable order. Support for dynamic reordering, e.g., via sifting, is about to come.
 
 
