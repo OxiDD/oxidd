@@ -31,7 +31,8 @@ oxidd-test-utils = { version = "0.5", path = "crates/oxidd-test-utils", default-
 
 [profile.release]
 panic = "abort"
+codegen-units = 1
 
 [profile.release-with-debug]
 inherits = "release"
-debug = true
+debug = "limited"
