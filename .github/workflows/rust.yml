@@ -5,9 +5,9 @@ name: Rust
 on:
   push:
     paths:
-    - .github/workflows/rust.yml
-    - crates/**
-    - Cargo.*
+      - .github/workflows/rust.yml
+      - crates/**
+      - Cargo.*
 
 env:
   CARGO_TERM_COLOR: always
@@ -21,15 +21,15 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-    - uses: actions/checkout@v5
-    - uses: ./.github/actions/install-cbindgen-linux
-    - uses: dtolnay/rust-toolchain@master
-      with:
-        toolchain: nightly
-        components: clippy, rustfmt
-    - uses: extractions/setup-just@v2
-    - name: Lint
-      run: just lint-rust
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/install-cbindgen-linux
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly
+          components: clippy, rustfmt
+      - uses: extractions/setup-just@v2
+      - name: Lint
+        run: just lint-rust
 
   test:
     name: Test
@@ -42,12 +42,12 @@ jobs:
         flags: ["", "--release"]
 
     steps:
-    - uses: actions/checkout@v5
-    - uses: ./.github/actions/install-cbindgen-linux
-    - uses: dtolnay/rust-toolchain@master
-      with:
-        toolchain: ${{ matrix.toolchain }}
-    - name: Build
-      run: cargo build ${{ matrix.flags }} --verbose
-    - name: Run Tests
-      run: cargo test ${{ matrix.flags }} --verbose
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/install-cbindgen-linux
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+      - name: Build
+        run: cargo build ${{ matrix.flags }} --verbose
+      - name: Run Tests
+        run: cargo test ${{ matrix.flags }} --verbose

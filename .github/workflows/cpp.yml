@@ -5,13 +5,13 @@ name: C++
 on:
   push:
     paths:
-    - .github/workflows/cpp.yml
-    - bindings/cpp/**
-    - CMakeLists.txt
-    - crates/**
-    - "!crates/oxidd-cli/**"
-    - "!crates/oxidd-ffi-python/**"
-    - Cargo.*
+      - .github/workflows/cpp.yml
+      - bindings/cpp/**
+      - CMakeLists.txt
+      - crates/**
+      - "!crates/oxidd-cli/**"
+      - "!crates/oxidd-ffi-python/**"
+      - Cargo.*
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -33,55 +33,55 @@ jobs:
       pull-requests: write
 
     steps:
-    - uses: actions/checkout@v5
-    - uses: ./.github/actions/install-cbindgen-linux
-    - uses: actions/cache@v4
-      id: cache-doxygen
-      with:
-        path: |
-          ~/.local/bin/doxygen
-          ~/.local/bin/doxyindexer
-        key: doxygen-linux-${{ env.doxygen_version }}
-    - name: Download doxygen
-      if: steps.cache-doxygen.outputs.cache-hit != 'true'
-      run: |
-        mkdir -p ~/.local
-        curl https://www.doxygen.nl/files/doxygen-$doxygen_version.linux.bin.tar.gz | tar -xz -C ~/.local --strip-components=1 doxygen-$doxygen_version/bin/{doxygen,doxyindexer}
-    - name: Add ~/.local/bin to PATH
-      run: echo "$HOME/.local/bin" >> $GITHUB_PATH
-    - name: CMake Configure
-      run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
-    - name: Build Docs
-      working-directory: build
-      run: make oxidd-doc
-    - uses: cpp-linter/cpp-linter-action@v2
-      id: linter
-      env:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/install-cbindgen-linux
+      - uses: actions/cache@v4
+        id: cache-doxygen
+        with:
+          path: |
+            ~/.local/bin/doxygen
+            ~/.local/bin/doxyindexer
+          key: doxygen-linux-${{ env.doxygen_version }}
+      - name: Download doxygen
+        if: steps.cache-doxygen.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/.local
+          curl https://www.doxygen.nl/files/doxygen-$doxygen_version.linux.bin.tar.gz | tar -xz -C ~/.local --strip-components=1 doxygen-$doxygen_version/bin/{doxygen,doxyindexer}
+      - name: Add ~/.local/bin to PATH
+        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: CMake Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+      - name: Build Docs
+        working-directory: build
+        run: make oxidd-doc
+      - uses: cpp-linter/cpp-linter-action@v2
+        id: linter
+        env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        version: 20
-        ignore: "|!bindings/cpp"
-        database: "build/compile_commands.json"
-        style: "file"  # Use .clang-format config file
-        tidy-checks: "" # Use .clang-tidy config file
-        thread-comments: ${{ github.event_name == 'pull_request' && 'update' }}
-        step-summary: true
-    - name: Fail Fast?!
-      if: steps.linter.outputs.checks-failed > 0
-      run: exit 1
-    - name: Deploy Docs
-      if: ${{ github.repository == 'OxiDD/oxidd' && github.ref == 'refs/heads/main' }}
-      working-directory: build/doc/html
-      run: |
-        mkdir -p ~/.ssh
-        echo "$KNOWN_HOSTS" >> ~/.ssh/known_hosts
-        ssh-agent sh -c "echo '$KEY' | ssh-add - && tar -cvz . | ssh -l '$USER' -p '$PORT' '$HOST' /extract-api.sh cpp dev"
-      env:
-        HOST: ${{ secrets.WEBSITE_SSH_HOST }}
-        USER: ${{ secrets.WEBSITE_SSH_USER }}
-        PORT: ${{ secrets.WEBSITE_SSH_PORT }}
-        KEY: ${{ secrets.WEBSITE_SSH_KEY }}
-        KNOWN_HOSTS: ${{ secrets.WEBSITE_SSH_KNOWN_HOSTS }}
+        with:
+          version: 20
+          ignore: "|!bindings/cpp"
+          database: "build/compile_commands.json"
+          style: "file" # Use .clang-format config file
+          tidy-checks: "" # Use .clang-tidy config file
+          thread-comments: ${{ github.event_name == 'pull_request' && 'update' }}
+          step-summary: true
+      - name: Fail Fast?!
+        if: steps.linter.outputs.checks-failed > 0
+        run: exit 1
+      - name: Deploy Docs
+        if: ${{ github.repository == 'OxiDD/oxidd' && github.ref == 'refs/heads/main' }}
+        working-directory: build/doc/html
+        run: |
+          mkdir -p ~/.ssh
+          echo "$KNOWN_HOSTS" >> ~/.ssh/known_hosts
+          ssh-agent sh -c "echo '$KEY' | ssh-add - && tar -cvz . | ssh -l '$USER' -p '$PORT' '$HOST' /extract-api.sh cpp dev"
+        env:
+          HOST: ${{ secrets.WEBSITE_SSH_HOST }}
+          USER: ${{ secrets.WEBSITE_SSH_USER }}
+          PORT: ${{ secrets.WEBSITE_SSH_PORT }}
+          KEY: ${{ secrets.WEBSITE_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.WEBSITE_SSH_KNOWN_HOSTS }}
 
   test-linux:
     name: Test (Linux)
@@ -91,20 +91,20 @@ jobs:
     strategy:
       matrix:
         compiler:
-        - { cc: "gcc", cxx: "g++" }
-        - { cc: "clang", cxx: "clang++" }
+          - { cc: "gcc", cxx: "g++" }
+          - { cc: "clang", cxx: "clang++" }
 
     steps:
-    - uses: actions/checkout@v5
-    - uses: ./.github/actions/install-cbindgen-linux
-    - name: CMake Configure
-      run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=${{ matrix.compiler.cc }} -DCMAKE_CXX_COMPILER=${{ matrix.compiler.cxx }}
-    - name: Build
-      working-directory: build
-      run: make all
-    - name: Run Tests
-      working-directory: build
-      run: make test
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/install-cbindgen-linux
+      - name: CMake Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=${{ matrix.compiler.cc }} -DCMAKE_CXX_COMPILER=${{ matrix.compiler.cxx }}
+      - name: Build
+        working-directory: build
+        run: make all
+      - name: Run Tests
+        working-directory: build
+        run: make test
 
   test-mac:
     name: Test (macOS)
@@ -112,24 +112,24 @@ jobs:
     runs-on: macos-15
 
     steps:
-    - uses: actions/checkout@v5
-    - name: Install cbindgen
-      run: brew install cbindgen
-    - name: CMake Configure
-      run: cmake -B build -DCMAKE_BUILD_TYPE=Debug
-    - name: Build
-      working-directory: build
-      run: make all
-    - name: Run Tests
-      working-directory: build
-      run: make test
+      - uses: actions/checkout@v5
+      - name: Install cbindgen
+        run: brew install cbindgen
+      - name: CMake Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug
+      - name: Build
+        working-directory: build
+        run: make all
+      - name: Run Tests
+        working-directory: build
+        run: make test
 
   test-win:
-      name: Test (Windows)
+    name: Test (Windows)
 
-      runs-on: windows-2022
+    runs-on: windows-2022
 
-      steps:
+    steps:
       - uses: actions/checkout@v5
       - name: CMake Configure
         run: cmake -B build
