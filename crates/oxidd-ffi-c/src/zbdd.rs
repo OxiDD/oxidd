@@ -953,7 +953,6 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_dump_all_dot_path(
 pub unsafe extern "C" fn oxidd_zbdd_manager_dump_all_dot_file(
     manager: zbdd_manager_t,
     path: *const c_char,
-    path_len: usize,
     functions: *const zbdd_t,
     function_names: *const *const c_char,
     num_function_names: usize,
@@ -961,7 +960,7 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_dump_all_dot_file(
     oxidd_zbdd_manager_dump_all_dot_path(
         manager,
         path,
-        path_len,
+        libc::strlen(path),
         functions,
         function_names,
         num_function_names,
