@@ -127,6 +127,7 @@ after_includes = """
   // generating `_Nullable` automatically. Hence, we disable the lint.
   #pragma GCC diagnostic push
   #pragma GCC diagnostic ignored "-Wnullability-completeness"
+  #pragma GCC diagnostic ignored "-Wnullability-extension"
 #else
   #define _OXIDD_NONNULL
 #endif
