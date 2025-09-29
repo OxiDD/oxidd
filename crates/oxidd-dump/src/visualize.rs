@@ -1,7 +1,7 @@
 //! Visualization with [OxiDD-vis](https://oxidd.net/vis)
 
 use std::fmt;
-use std::io::{self, Read, Write};
+use std::io::{self, Read, Write, ErrorKind};
 use std::net::{TcpListener, TcpStream};
 
 use oxidd_core::function::{Function, INodeOfFunc, TermOfFunc};
