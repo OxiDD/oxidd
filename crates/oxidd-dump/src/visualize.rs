@@ -212,17 +212,20 @@ impl Visualizer {
     /// the client requested a path different from `/diagrams`
     fn handle_client(&mut self, mut stream: TcpStream) -> io::Result<bool> {
         // Basic routing: only handle "GET /diagrams"
-        // After the path, there should be "HTTP/1.1" (or something alike),
-        // so expecting the space is fine.
-        const EXPECTED_REQ_START: &[u8] = b"GET /diagrams ";
-        let mut recv_buf = [0; const { EXPECTED_REQ_START.len() }];
-        let matches = match stream.read_exact(&mut recv_buf) {
-            Ok(()) => recv_buf == EXPECTED_REQ_START,
-            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => false,
-            Err(e) => return Err(e),
-        };
+        let request = read_request(&mut stream)?;
+        const EXPECTED_REQ_START: &str = "GET /diagrams";
+        let matches = &request[0..EXPECTED_REQ_START.len()] == EXPECTED_REQ_START;
+
         if !matches {
-            stream.write_all(b"HTTP/1.1 404 NOT FOUND\r\n\r\nNot Found")?;
+            stream.write_all(
+                b"\
+                HTTP/1.1 404 NOT FOUND\r\n\
+                Content-Type: application/json\r\n\
+                Access-Control-Allow-Origin: *\r\n\
+                Content-Length: 9\r\n\
+                \r\n\
+                Not Found",
+            )?;
             return Ok(false);
         }
 
@@ -245,6 +248,27 @@ impl Visualizer {
         println!("Visualization has been sent!");
         Ok(true)
     }
+}
+
+fn read_request(stream: &mut TcpStream) -> std::io::Result<String> {
+    let mut buffer = [0; 4096];
+    let mut request = String::new();
+
+    loop {
+        match stream.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(n) => {
+                request.push_str(&String::from_utf8_lossy(&buffer[..n]));
+                if request.contains("\r\n\r\n") {
+                    break;
+                }
+            }
+            Err(e) if e.kind() == ErrorKind::WouldBlock => break,
+            Err(e) => return Err(e),
+        }
+    }
+
+    Ok(request)
 }
 
 /// A non-blocking [`TcpListener`] for decision diagram visualization
