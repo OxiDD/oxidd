@@ -1,6 +1,6 @@
 [package]
 name = "arcslab"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "Slab, but with reference counted items"
 

@@ -1,6 +1,6 @@
 [package]
 name = "oxidd-manager-index"
-version = "0.10.0"
+version = "0.11.0"
 edition = "2021"
 description = "Index-based manager implementation for OxiDD"
 readme = "../../README.md"
