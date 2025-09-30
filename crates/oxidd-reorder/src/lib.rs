@@ -64,7 +64,7 @@ where
 
         if children
             .iter()
-            .all(|c| manager.get_node(c).unwrap_inner().level() > lower_no)
+            .all(|c| manager.get_node(c).level() > lower_no)
         {
             // All children are below the lower level, we just move the node to
             // the lower level.
