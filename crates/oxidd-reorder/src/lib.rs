@@ -9,8 +9,8 @@ use smallvec::SmallVec;
 use oxidd_core::error::OutOfMemory;
 use oxidd_core::util::{AbortOnDrop, Borrowed, DropWith};
 use oxidd_core::{
-    DiagramRules, Edge, HasLevel, HasWorkers, InnerNode, LevelNo, LevelView, Manager, ReducedOrNew,
-    VarNo, WorkerPool,
+    DiagramRules, Edge, HasLevel, HasWorkers, InnerNode, LevelNo, LevelView, Manager, Node,
+    ReducedOrNew, VarNo, WorkerPool,
 };
 
 mod segtree;
@@ -83,20 +83,23 @@ where
         let grandchildren: SmallVec<[_; 2]> = children
             .iter()
             .map(|c| {
-                let node = manager.get_node(c).unwrap_inner();
                 // A child of a node at the old upper level can only reference
                 // a node at the old lower, i.e., the new upper level, or any
                 // level below `lower_no`.
-                if node.level() == upper_no {
-                    // We have exclusive access to the node
-                    let children: SmallVec<[_; 2]> = M::Rules::cofactors(c.tag(), node).collect();
-                    debug_assert_eq!(children.len(), M::InnerNode::ARITY);
-                    children
-                } else {
-                    debug_assert!(node.level() > lower_no);
-                    // The child is below the lower level, so we always have
-                    // this child
-                    (0..M::InnerNode::ARITY).map(|_| c.borrowed()).collect()
+                match manager.get_node(c) {
+                    Node::Inner(node) if node.level() == upper_no => {
+                        // We have exclusive access to the node
+                        let children: SmallVec<[_; 2]> =
+                            M::Rules::cofactors(c.tag(), node).collect();
+                        debug_assert_eq!(children.len(), M::InnerNode::ARITY);
+                        children
+                    }
+                    node => {
+                        debug_assert!(node.level() > lower_no);
+                        // The child is below the lower level, so we always have
+                        // this child
+                        (0..M::InnerNode::ARITY).map(|_| c.borrowed()).collect()
+                    }
                 }
             })
             .collect();
@@ -134,12 +137,13 @@ where
             // level. (A child might also be at some lower level, in which case
             // the node could also be removed. However we must not access such
             // a node.)
-            let child_node = manager.get_node(&*child).unwrap_inner();
-            if child_node.level() == upper_no && child_node.ref_count() == 1 {
-                // The main reference corresponds to the old node, which is
-                // deleted below. The weak reference is the one in the unique
-                // table. Hence, we can remove the node.
-                upper.remove(child_node);
+            if let Node::Inner(child_node) = manager.get_node(&*child) {
+                if child_node.level() == upper_no && child_node.ref_count() == 1 {
+                    // The main reference corresponds to the old node, which is
+                    // deleted below. The weak reference is the one in the unique
+                    // table. Hence, we can remove the node.
+                    upper.remove(child_node);
+                }
             }
         }
 
