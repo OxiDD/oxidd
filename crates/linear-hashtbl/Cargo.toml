@@ -1,6 +1,6 @@
 [package]
 name = "linear-hashtbl"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 description = "Linear probing hash table"
 categories = ["data-structures"]
@@ -13,7 +13,7 @@ repository.workspace = true
 
 
 [dependencies]
-allocator-api2 = { version = "0.3", default-features = false, features = [
+allocator-api2 = { version = "0.2", default-features = false, features = [
   "alloc",
 ], optional = true }
 
