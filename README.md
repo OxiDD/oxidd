@@ -25,21 +25,26 @@ OxiDD is a highly modular decision diagram framework written in Rust. The most p
 
 ## Getting Started
 
-Constructing a BDD for the formula (x₁ ∧ x₂) ∨ x₃ works as follows:
+Constructing a BDD for the formula (x₀ ∧ x₁) ∨ x₂ works as follows:
 
 ```Rust
 // Create a manager for up to 2048 nodes, up to 1024 apply cache entries, and
 // use 8 threads for the apply algorithms. In practice, you would choose higher
 // capacities depending on the system resources.
 let manager_ref = oxidd::bdd::new_manager(2048, 1024, 8);
-let (x1, x2, x3) = manager_ref.with_manager_exclusive(|manager| {(
-      BDDFunction::new_var(manager).unwrap(),
-      BDDFunction::new_var(manager).unwrap(),
-      BDDFunction::new_var(manager).unwrap(),
-)});
+// First, we create variables. This is done in two steps: `manager.add_vars()`
+// adds levels to the decision diagram, `BDDFunction::var()` creates the DD
+// nodes.
 // The APIs are designed such that out-of-memory situations can be handled
-// gracefully. This is the reason for the `?` operator.
-let res = x1.and(&x2)?.or(&x3)?;
+// gracefully. In principle, every operation creating nodes can fail, including
+// `BDDFunction::var()`. Hence, we call `AllocResult::from_iter()` instead of
+// `Vec::from_iter()` and have the `?` operator at the end of this statement.
+let x: Vec<BDDFunction> = manager_ref.with_manager_exclusive(|manager| {
+    AllocResult::from_iter(manager.add_vars(3).map(|i| BDDFunction::var(manager, i)))
+})?;
+// Now, we actually compute the conjunction (again with `?` for allocation error
+// handling):
+let res = x[0].and(&x[1])?.or(&x[2])?;
 println!("{}", res.satisfiable());
 ```
 
