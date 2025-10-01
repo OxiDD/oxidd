@@ -644,7 +644,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-ffi-c"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "cc",
  "libc",
@@ -657,7 +657,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-ffi-python"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "anyhow",
  "num-bigint",

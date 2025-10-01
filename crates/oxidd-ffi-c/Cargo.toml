@@ -1,6 +1,6 @@
 [package]
 name = "oxidd-ffi-c"
-version = "0.11.0"
+version = "0.11.1"
 edition = "2021"
 description = "Foreign function interface for OxiDD"
 readme = "../../README.md"
