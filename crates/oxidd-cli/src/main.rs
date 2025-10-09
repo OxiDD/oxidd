@@ -196,7 +196,7 @@ impl<'a> Inputs<'a> {
 
             let simplified = problem.simplify().unwrap().0;
 
-            match problem.details {
+            match simplified.details {
                 oxidd_parser::ProblemDetails::Root(literal) => (literal, simplified.circuit),
                 oxidd_parser::ProblemDetails::AIGER(_) => {
                     eprintln!("\nerror: AIGER inputs are not yet supported by oxidd-cli");
