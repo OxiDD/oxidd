@@ -78,19 +78,13 @@ impl ShrAssign<u32> for Saturating<u128> {
 impl ShlAssign<u32> for Saturating<u64> {
     #[inline]
     fn shl_assign(&mut self, rhs: u32) {
-        self.0 = match self.0.checked_shl(rhs) {
-            Some(v) => v,
-            None => u64::MAX,
-        }
+        self.0 = self.0.checked_shl(rhs).unwrap_or(u64::MAX)
     }
 }
 impl ShlAssign<u32> for Saturating<u128> {
     #[inline]
     fn shl_assign(&mut self, rhs: u32) {
-        self.0 = match self.0.checked_shl(rhs) {
-            Some(v) => v,
-            None => u128::MAX,
-        }
+        self.0 = self.0.checked_shl(rhs).unwrap_or(u128::MAX)
     }
 }
 
