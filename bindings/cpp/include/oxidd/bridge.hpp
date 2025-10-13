@@ -6,6 +6,7 @@
 #include <concepts>
 #include <cstdint>
 #include <cstring>
+#include <exception>
 #include <functional>
 #include <iterator>
 #include <optional>
