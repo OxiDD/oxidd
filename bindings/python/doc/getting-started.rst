@@ -1,6 +1,22 @@
 Getting Started
 ===============
 
+Installation
+------------
+
+OxiDD is available on `PyPI <https://pypi.org/project/oxidd/>`_ and can simply be installed using ``pip``:
+
+.. code-block:: bash
+
+   pip install oxidd
+
+For all common platforms, pre-compiled packages are available, so the above command is completely sufficient.
+To build OxiDD from source, you will first need to install a `Rust toolchain <https://rust-lang.org/tools/install/>`_ and `Maturin <https://www.maturin.rs/installation.html>`_.
+
+
+Usage
+-----
+
 The following is a very simple example of using OxiDD's BDDs:
 
 .. code-block:: python
