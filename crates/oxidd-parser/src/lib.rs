@@ -83,6 +83,7 @@ impl Literal {
     /// # use oxidd_parser::Literal;
     /// assert!(Literal::FALSE.is_positive());
     /// assert!(Literal::FALSE < Literal::TRUE);
+    /// assert_eq!(Literal::FALSE.to_string(), "⊥");
     /// ```
     pub const FALSE: Self = Self(0);
     /// Literal representing the constant `⊤`
@@ -94,6 +95,7 @@ impl Literal {
     /// assert!(Literal::TRUE.is_negative());
     /// assert!(Literal::TRUE < Literal::from_input(false, 0));
     /// assert!(Literal::TRUE < Literal::from_gate(false, 0));
+    /// assert_eq!(Literal::TRUE.to_string(), "⊤");
     /// ```
     pub const TRUE: Self = Self(1 << Self::POLARITY_BIT);
 
@@ -282,7 +284,7 @@ impl fmt::Display for Literal {
             ('g', i)
         } else {
             if i == 0 {
-                return f.write_char(if self.is_positive() { '⊤' } else { '⊥' });
+                return f.write_char(if self.is_positive() { '⊥' } else { '⊤' });
             }
             if i == Literal::MAX_INPUT + 2 {
                 return f.write_str(if self.is_positive() { "+U" } else { "-U" });
