@@ -36,7 +36,7 @@ jobs:
             pypy3.9
             pypy3.10
             pypy3.11
-            3.13t
+            3.14t
             3.x
           # last is the default
           cache: pip
@@ -82,8 +82,8 @@ jobs:
           done
 
           # apparently, we cannot cross-compile for free-threaded python
-          maturin build --release --out dist --interpreter python3.13t --compatibility $manylinux --zig --target x86_64-unknown-linux-gnu
-          maturin build --release --out dist --interpreter python3.13t --compatibility $musllinux --zig --target x86_64-unknown-linux-musl
+          maturin build --release --out dist --interpreter python3.14t --compatibility $manylinux --zig --target x86_64-unknown-linux-gnu
+          maturin build --release --out dist --interpreter python3.14t --compatibility $musllinux --zig --target x86_64-unknown-linux-musl
       - name: Test wheels
         run: |
           run_tests() {
@@ -92,7 +92,7 @@ jobs:
             .venv-$1/bin/pytest
           }
           run_tests python dist/oxidd-*-cp*-abi3-manylinux*_x86_64*.whl
-          run_tests python3.13t dist/oxidd-*-cp313-cp313t-manylinux*_x86_64*.whl
+          run_tests python3.14t dist/oxidd-*-cp313-cp313t-manylinux*_x86_64*.whl
           run_tests pypy3.9 dist/oxidd-*-pp39-*-manylinux*_x86_64*.whl
           run_tests pypy3.10 dist/oxidd-*-pp310-*-manylinux*_x86_64*.whl
           run_tests pypy3.11 dist/oxidd-*-pp311-*-manylinux*_x86_64*.whl
@@ -128,7 +128,7 @@ jobs:
             pypy3.9
             pypy3.10
             pypy3.11
-            3.13t
+            3.14t
             3.x
       - name: Install Python build dependencies
         run: python -m pip install maturin[zig] ruff
@@ -149,8 +149,8 @@ jobs:
           done
 
           # apparently, we cannot cross-compile for free-threaded python
-          maturin build --release --out dist --interpreter python3.13t --compatibility $manylinux --zig --target aarch64-unknown-linux-gnu
-          maturin build --release --out dist --interpreter python3.13t --compatibility $musllinux --zig --target aarch64-unknown-linux-musl
+          maturin build --release --out dist --interpreter python3.14t --compatibility $manylinux --zig --target aarch64-unknown-linux-gnu
+          maturin build --release --out dist --interpreter python3.14t --compatibility $musllinux --zig --target aarch64-unknown-linux-musl
 
           for py in pypy3.9 pypy3.10 pypy3.11; do
             for target in aarch64-unknown-linux-gnu; do
@@ -168,7 +168,7 @@ jobs:
             .venv-$1/bin/pytest
           }
           run_tests python dist/oxidd-*-cp*-abi3-manylinux*_aarch64*.whl
-          run_tests python3.13t dist/oxidd-*-cp313-cp313t-manylinux*_aarch64*.whl
+          run_tests python3.14t dist/oxidd-*-cp313-cp313t-manylinux*_aarch64*.whl
           run_tests pypy3.9 dist/oxidd-*-pp39-*-manylinux*_aarch64*.whl
           run_tests pypy3.10 dist/oxidd-*-pp310-*-manylinux*_aarch64*.whl
           run_tests pypy3.11 dist/oxidd-*-pp311-*-manylinux*_aarch64*.whl
@@ -196,14 +196,14 @@ jobs:
             pypy3.9
             pypy3.10
             pypy3.11
-            3.13t
+            3.14t
             3.x
       - name: Install Python build dependencies
         run: python -m pip install maturin ruff
       - name: Build CPython wheel
         run: maturin build --release --out dist
-      - name: Build CPython 3.13t wheel
-        run: maturin build --release --out dist --interpreter python3.13t
+      - name: Build CPython 3.14t wheel
+        run: maturin build --release --out dist --interpreter python3.14t
       - name: Build PyPy 3.9 wheel
         run: maturin build --release --out dist --interpreter pypy3.9
       - name: Build PyPy 3.10 wheel
@@ -218,7 +218,7 @@ jobs:
             .venv-$1/bin/pytest
           }
           run_tests python dist/oxidd-*-cp*-abi3-*.whl
-          run_tests python3.13t dist/oxidd-*-cp313-cp313t-*.whl
+          run_tests python3.14t dist/oxidd-*-cp313-cp313t-*.whl
           run_tests pypy3.9 dist/oxidd-*-pp39-*.whl
           run_tests pypy3.10 dist/oxidd-*-pp310-*.whl
           run_tests pypy3.11 dist/oxidd-*-pp311-*.whl
@@ -240,7 +240,7 @@ jobs:
             pypy3.9
             pypy3.10
             pypy3.11
-            3.13t
+            3.14t
             3.x
       - name: Install Python build dependencies
         run: python -m pip install ruff maturin
@@ -252,8 +252,8 @@ jobs:
         run: python -m pip install ruff
       - name: Build CPython wheel (x86_64)
         run: maturin build --release --out dist
-      - name: Build CPython 3.13t wheel (x86_64)
-        run: maturin build --release --out dist --interpreter "$(where.exe python3.13t)"
+      - name: Build CPython 3.14t wheel (x86_64)
+        run: maturin build --release --out dist --interpreter "$(where.exe python3.14t)"
       - name: Build PyPy 3.9 wheel (x86_64)
         run: maturin build --release --out dist --interpreter "$(where.exe pypy3.9)"
       - name: Build PyPy 3.10 wheel (x86_64)
@@ -265,7 +265,7 @@ jobs:
       - name: Test
         run: |
           python -m venv .venv-abi3
-          python3.13t -m venv .venv-cp313t
+          python3.14t -m venv .venv-cp313t
           pypy3.9 -m venv .venv-pypy39
           pypy3.10 -m venv .venv-pypy310
           pypy3.11 -m venv .venv-pypy311
@@ -294,13 +294,13 @@ jobs:
       - uses: actions/setup-python@v6
         id: cp313t
         with:
-          python-version: 3.13t
+          python-version: 3.14t
           update-environment: false
       - name: Install Python build dependencies
         run: python -m pip install ruff maturin
       - name: Build CPython wheel
         run: maturin build --release --out dist
-      - name: Build CPython 3.13t wheel
+      - name: Build CPython 3.14t wheel
         run: maturin build --release --out dist --interpreter ${{ steps.cp313t.outputs.python-path }}
       - name: Test
         run: |
