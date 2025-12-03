@@ -1,6 +1,19 @@
 Getting Started
 ===============
 
+Installation
+------------
+
+Install OxiDD using pip:
+
+.. code-block:: bash
+
+   pip install oxidd
+```
+
+Usage
+-----
+
 The following is a very simple example of using OxiDD's BDDs:
 
 .. code-block:: python
