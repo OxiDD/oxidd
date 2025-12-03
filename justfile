@@ -38,7 +38,7 @@ lint-py:
     ruff format --check
     mypy
     python3 -m mypy.stubtest oxidd._oxidd
-    pyright
+    basedpyright
 
 # Generate documentation for the Python bindings using Sphinx (output: `target/python/doc`)
 doc-py:
