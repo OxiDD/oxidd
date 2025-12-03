@@ -1,7 +1,7 @@
 name: Python
 
 # spell-checker:ignore armv,autodoc,gnueabihf,musleabihf
-# spell-checker:ignore pkgs,pydata,pyproject,pythonx86,pythonarm64
+# spell-checker:ignore pkgs,pydata,pyproject,pythonarm64
 # spell-checker:ignore sdist,stubtest,xwin
 
 on:
@@ -245,9 +245,7 @@ jobs:
       - name: Install Python build dependencies
         run: python -m pip install ruff maturin
       - name: Install Rust targets
-        run: rustup target add x86_64-pc-windows-msvc i686-pc-windows-msvc
-      - name: Install Python (i686)
-        run: nuget install pythonx86 -OutputDirectory .python
+        run: rustup target add x86_64-pc-windows-msvc
       - name: Install Python build dependencies
         run: python -m pip install ruff
       - name: Build CPython wheel (x86_64)
@@ -260,8 +258,6 @@ jobs:
         run: maturin build --release --out dist --interpreter "$(where.exe pypy3.10)"
       - name: Build PyPy 3.11 wheel (x86_64)
         run: maturin build --release --out dist --interpreter "$(where.exe pypy3.11)"
-      - name: Build CPython wheel (i686)
-        run: maturin build --release --out dist --interpreter "$(get-item .python\pythonx86*\tools\python.exe)" --target i686-pc-windows-msvc
       - name: Test
         run: |
           python -m venv .venv-abi3
@@ -273,12 +269,6 @@ jobs:
             & ".venv-$py\Scripts\pip.exe" install "$(get-item dist\oxidd-*-$py*-*amd64.whl)[test]"
             & ".venv-$py\Scripts\pytest.exe"
           }
-
-        # Somehow the tester (or the Python interpreter?) aborts when running
-        # multiple tests, while running each test on its own is fine.
-        # & "$(get-item .python\pythonx86*\tools\python.exe)" -m venv .venv-cp-i686
-        # .venv-cp-i686\Scripts\pip.exe install "$(get-item dist\oxidd-*-cp*-*win32.whl)[test]"
-        # .venv-cp-i686\Scripts\pytest.exe
       - uses: actions/upload-artifact@v4
         with:
           name: python-wheels-win
