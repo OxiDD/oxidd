@@ -635,11 +635,11 @@ impl BDDSubstitution {
         let mut vars = Vec::with_capacity(len);
         let mut replacements = Vec::with_capacity(len);
         for pair in pairs.try_iter()? {
-            let pair: Bound<PyTuple> = pair?.downcast_into()?;
+            let pair: Bound<PyTuple> = pair?.cast_into()?;
             let v = pair.get_borrowed_item(0)?;
             let r = pair.get_borrowed_item(1)?;
             vars.push(v.extract()?);
-            replacements.push(r.downcast::<BDDFunction>()?.get().0.clone());
+            replacements.push(r.cast::<BDDFunction>()?.get().0.clone());
         }
 
         Ok(Self(Subst::new(vars, replacements)))

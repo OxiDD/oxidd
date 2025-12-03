@@ -286,7 +286,7 @@ pub fn export_dddmp<'py, PYF>(
     diagram_name: &str,
 ) -> PyResult<()>
 where
-    PYF: FromPyObject<'py> + Deref,
+    PYF: FromPyObjectOwned<'py> + Deref,
     PYF::Target: Function,
     for<'id> INodeOfFunc<'id, PYF::Target>: HasLevel,
     for<'id> TermOfFunc<'id, PYF::Target>: oxidd_dump::AsciiDisplay,
@@ -318,7 +318,7 @@ pub fn export_dddmp_with_names<'py, PYF>(
     diagram_name: &str,
 ) -> PyResult<()>
 where
-    PYF: FromPyObject<'py> + Deref,
+    PYF: FromPyObjectOwned<'py> + Deref,
     PYF::Target: Function,
     for<'id> INodeOfFunc<'id, PYF::Target>: HasLevel,
     for<'id> TermOfFunc<'id, PYF::Target>: oxidd_dump::AsciiDisplay,

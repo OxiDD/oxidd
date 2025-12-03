@@ -152,7 +152,7 @@ pub fn add_named_vars<'py, M: ManagerRef>(
             match self
                 .iter
                 .next()?
-                .and_then(|v| Ok(v.downcast_into::<PyString>()?))
+                .and_then(|v| Ok(v.cast_into::<PyString>()?))
             {
                 Err(err) => {
                     self.exc = Err(err);
@@ -243,11 +243,14 @@ impl<'py, T> TryFrom<&Bound<'py, PyAny>> for TryIter<'py, T> {
     }
 }
 
-impl<'py, T: FromPyObject<'py>> Iterator for TryIter<'py, T> {
+impl<'py, T: FromPyObjectOwned<'py>> Iterator for TryIter<'py, T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let res = self.iter.next()?.and_then(|v| v.extract::<T>());
+        let res = self
+            .iter
+            .next()?
+            .and_then(|v| v.extract::<T>().map_err(Into::into));
         if let Err(err) = res {
             self.err = Err(err);
             return None;
@@ -267,9 +270,9 @@ impl<'py, T: FromPyObject<'py>> Iterator for TryIter<'py, T> {
     }
 }
 
-pub fn collect_vec<'py, T: FromPyObject<'py>>(obj: &Bound<'py, PyAny>) -> PyResult<Vec<T>> {
+pub fn collect_vec<'py, T: FromPyObjectOwned<'py>>(obj: &Bound<'py, PyAny>) -> PyResult<Vec<T>> {
     obj.try_iter()?
-        .map(|v| v.and_then(|v| v.extract()))
+        .map(|v| v.and_then(|v| v.extract().map_err(Into::into)))
         .collect()
 }
 
@@ -307,7 +310,7 @@ pub fn dump_all_dot<'py, PYF>(
     functions: Option<&Bound<'py, PyAny>>,
 ) -> PyResult<()>
 where
-    PYF: FromPyObject<'py> + Deref,
+    PYF: FromPyObjectOwned<'py> + Deref,
     PYF::Target: Function + for<'id> DotStyle<ETagOfFunc<'id, PYF::Target>>,
     for<'id> INodeOfFunc<'id, PYF::Target>: HasLevel,
     for<'id> ETagOfFunc<'id, PYF::Target>: fmt::Debug,
@@ -335,7 +338,7 @@ pub fn eval<B: BooleanFunction>(f: &B, args: &Bound<PyAny>) -> PyResult<bool> {
     f.with_manager_shared(|manager, edge| {
         let num_vars = manager.num_vars();
         for pair in args.try_iter()? {
-            let pair: Bound<PyTuple> = pair?.downcast_into()?;
+            let pair: Bound<PyTuple> = pair?.cast_into()?;
             let var = pair.get_borrowed_item(0)?.extract()?;
             if var >= num_vars {
                 var_no_bounds_check(manager, var)?;
