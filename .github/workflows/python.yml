@@ -33,8 +33,6 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: |
-            pypy3.9
-            pypy3.10
             pypy3.11
             3.14t
             3.x
@@ -72,7 +70,7 @@ jobs:
 
           maturin sdist --out dist
 
-          for py in python pypy3.9 pypy3.10 pypy3.11; do
+          for py in python pypy3.11; do
             for target in x86_64-unknown-linux-gnu i686-unknown-linux-gnu; do
               maturin build --release --out dist --interpreter $py --compatibility $manylinux --zig --target $target
             done
@@ -93,8 +91,6 @@ jobs:
           }
           run_tests python dist/oxidd-*-cp*-abi3-manylinux*_x86_64*.whl
           run_tests python3.14t dist/oxidd-*-cp313-cp313t-manylinux*_x86_64*.whl
-          run_tests pypy3.9 dist/oxidd-*-pp39-*-manylinux*_x86_64*.whl
-          run_tests pypy3.10 dist/oxidd-*-pp310-*-manylinux*_x86_64*.whl
           run_tests pypy3.11 dist/oxidd-*-pp311-*-manylinux*_x86_64*.whl
       - name: Upload wheels
         uses: actions/upload-artifact@v4
@@ -125,8 +121,6 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: |
-            pypy3.9
-            pypy3.10
             pypy3.11
             3.14t
             3.x
@@ -152,7 +146,7 @@ jobs:
           maturin build --release --out dist --interpreter python3.14t --compatibility $manylinux --zig --target aarch64-unknown-linux-gnu
           maturin build --release --out dist --interpreter python3.14t --compatibility $musllinux --zig --target aarch64-unknown-linux-musl
 
-          for py in pypy3.9 pypy3.10 pypy3.11; do
+          for py in pypy3.11; do
             for target in aarch64-unknown-linux-gnu; do
               maturin build --release --out dist --interpreter $py --compatibility $manylinux --zig --target $target
             done
@@ -169,8 +163,6 @@ jobs:
           }
           run_tests python dist/oxidd-*-cp*-abi3-manylinux*_aarch64*.whl
           run_tests python3.14t dist/oxidd-*-cp313-cp313t-manylinux*_aarch64*.whl
-          run_tests pypy3.9 dist/oxidd-*-pp39-*-manylinux*_aarch64*.whl
-          run_tests pypy3.10 dist/oxidd-*-pp310-*-manylinux*_aarch64*.whl
           run_tests pypy3.11 dist/oxidd-*-pp311-*-manylinux*_aarch64*.whl
       - name: Upload wheels
         uses: actions/upload-artifact@v4
@@ -193,8 +185,6 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: |
-            pypy3.9
-            pypy3.10
             pypy3.11
             3.14t
             3.x
@@ -204,10 +194,6 @@ jobs:
         run: maturin build --release --out dist
       - name: Build CPython 3.14t wheel
         run: maturin build --release --out dist --interpreter python3.14t
-      - name: Build PyPy 3.9 wheel
-        run: maturin build --release --out dist --interpreter pypy3.9
-      - name: Build PyPy 3.10 wheel
-        run: maturin build --release --out dist --interpreter pypy3.10
       - name: Build PyPy 3.11 wheel
         run: maturin build --release --out dist --interpreter pypy3.11
       - name: Test wheels
@@ -219,8 +205,6 @@ jobs:
           }
           run_tests python dist/oxidd-*-cp*-abi3-*.whl
           run_tests python3.14t dist/oxidd-*-cp313-cp313t-*.whl
-          run_tests pypy3.9 dist/oxidd-*-pp39-*.whl
-          run_tests pypy3.10 dist/oxidd-*-pp310-*.whl
           run_tests pypy3.11 dist/oxidd-*-pp311-*.whl
       - uses: actions/upload-artifact@v4
         with:
@@ -237,8 +221,6 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: |
-            pypy3.9
-            pypy3.10
             pypy3.11
             3.14t
             3.x
@@ -252,20 +234,14 @@ jobs:
         run: maturin build --release --out dist
       - name: Build CPython 3.14t wheel (x86_64)
         run: maturin build --release --out dist --interpreter "$(where.exe python3.14t)"
-      - name: Build PyPy 3.9 wheel (x86_64)
-        run: maturin build --release --out dist --interpreter "$(where.exe pypy3.9)"
-      - name: Build PyPy 3.10 wheel (x86_64)
-        run: maturin build --release --out dist --interpreter "$(where.exe pypy3.10)"
       - name: Build PyPy 3.11 wheel (x86_64)
         run: maturin build --release --out dist --interpreter "$(where.exe pypy3.11)"
       - name: Test
         run: |
           python -m venv .venv-abi3
           python3.14t -m venv .venv-cp313t
-          pypy3.9 -m venv .venv-pypy39
-          pypy3.10 -m venv .venv-pypy310
           pypy3.11 -m venv .venv-pypy311
-          foreach ($py in 'abi3', 'cp313t', 'pypy39', 'pypy310', 'pypy311') {
+          foreach ($py in 'abi3', 'cp313t', 'pypy311') {
             & ".venv-$py\Scripts\pip.exe" install "$(get-item dist\oxidd-*-$py*-*amd64.whl)[test]"
             & ".venv-$py\Scripts\pytest.exe"
           }
