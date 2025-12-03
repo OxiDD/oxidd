@@ -90,7 +90,7 @@ jobs:
             .venv-$1/bin/pytest
           }
           run_tests python dist/oxidd-*-cp*-abi3-manylinux*_x86_64*.whl
-          run_tests python3.14t dist/oxidd-*-cp313-cp313t-manylinux*_x86_64*.whl
+          run_tests python3.14t dist/oxidd-*-cp314-cp314t-manylinux*_x86_64*.whl
           run_tests pypy3.11 dist/oxidd-*-pp311-*-manylinux*_x86_64*.whl
       - name: Upload wheels
         uses: actions/upload-artifact@v4
@@ -162,7 +162,7 @@ jobs:
             .venv-$1/bin/pytest
           }
           run_tests python dist/oxidd-*-cp*-abi3-manylinux*_aarch64*.whl
-          run_tests python3.14t dist/oxidd-*-cp313-cp313t-manylinux*_aarch64*.whl
+          run_tests python3.14t dist/oxidd-*-cp314-cp314t-manylinux*_aarch64*.whl
           run_tests pypy3.11 dist/oxidd-*-pp311-*-manylinux*_aarch64*.whl
       - name: Upload wheels
         uses: actions/upload-artifact@v4
@@ -204,7 +204,7 @@ jobs:
             .venv-$1/bin/pytest
           }
           run_tests python dist/oxidd-*-cp*-abi3-*.whl
-          run_tests python3.14t dist/oxidd-*-cp313-cp313t-*.whl
+          run_tests python3.14t dist/oxidd-*-cp314-cp314t-*.whl
           run_tests pypy3.11 dist/oxidd-*-pp311-*.whl
       - uses: actions/upload-artifact@v4
         with:
@@ -239,9 +239,9 @@ jobs:
       - name: Test
         run: |
           python -m venv .venv-abi3
-          python3.14t -m venv .venv-cp313t
+          python3.14t -m venv .venv-cp314t
           pypy3.11 -m venv .venv-pypy311
-          foreach ($py in 'abi3', 'cp313t', 'pypy311') {
+          foreach ($py in 'abi3', 'cp314t', 'pypy311') {
             & ".venv-$py\Scripts\pip.exe" install "$(get-item dist\oxidd-*-$py*-*amd64.whl)[test]"
             & ".venv-$py\Scripts\pytest.exe"
           }
@@ -258,7 +258,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
-        id: cp313t
+        id: cp314t
         with:
           python-version: 3.14t
           update-environment: false
@@ -267,12 +267,12 @@ jobs:
       - name: Build CPython wheel
         run: maturin build --release --out dist
       - name: Build CPython 3.14t wheel
-        run: maturin build --release --out dist --interpreter ${{ steps.cp313t.outputs.python-path }}
+        run: maturin build --release --out dist --interpreter ${{ steps.cp314t.outputs.python-path }}
       - name: Test
         run: |
           python -m venv .venv-abi3
-          ${{ steps.cp313t.outputs.python-path }} -m venv .venv-cp313t
-          foreach ($py in 'abi3', 'cp313t') {
+          ${{ steps.cp314t.outputs.python-path }} -m venv .venv-cp314t
+          foreach ($py in 'abi3', 'cp314t') {
             & ".venv-$py\Scripts\pip.exe" install "$(get-item dist\oxidd-*-$py*-*arm64.whl)[test]"
             & ".venv-$py\Scripts\pytest.exe"
           }
