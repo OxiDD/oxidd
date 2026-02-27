@@ -60,8 +60,8 @@ include = [
 ]
 exclude = [
   { path = "oxidd/tests/**", format = ["wheel"] },
-  "crates/oxidd-ffi-python/build.rs",
-  "crates/oxidd-ffi-python/stub_gen/**",
+  { path = "crates/oxidd-ffi-python/build.rs", format = ["sdist"] },
+  { path = "crates/oxidd-ffi-python/stub_gen/**", format = ["sdist"] },
   ".gitignore",
 ]
 module-name = "oxidd._oxidd"
