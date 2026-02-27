@@ -56,7 +56,6 @@ python-source = "bindings/python"
 include = [
   { path = "bindings/python/oxidd/_oxidd.pyi", format = ["sdist"] },
   { path = "oxidd/_oxidd.pyi", format = ["wheel"] },
-  { path = "LICENSE-*", format = ["sdist"] },
 ]
 exclude = [
   { path = "oxidd/tests/**", format = ["wheel"] },
@@ -64,6 +63,7 @@ exclude = [
   { path = "crates/oxidd-ffi-python/stub_gen/**", format = ["sdist"] },
   ".gitignore",
 ]
+sdist-generator = "git" # "cargo" does not include all crates leading to build errors
 module-name = "oxidd._oxidd"
 manifest-path = "crates/oxidd-ffi-python/Cargo.toml"
 auditwheel = "check"
