@@ -59,7 +59,7 @@ include = [
   { path = "LICENSE-*", format = ["sdist"] },
 ]
 exclude = [
-  "bindings/python/oxidd/tests/**",
+  { path = "oxidd/tests/**", format = ["wheel"] },
   "crates/oxidd-ffi-python/build.rs",
   "crates/oxidd-ffi-python/stub_gen/**",
 ]
