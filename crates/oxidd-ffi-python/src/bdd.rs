@@ -660,7 +660,7 @@ impl BDDSubstitution {
 /// and not related to logical implications. See the
 /// :meth:`Function <oxidd.protocols.Function.__lt__>` protocol for more
 /// details.
-#[pyclass(frozen, eq, ord, hash, module = "oxidd.bdd")]
+#[pyclass(frozen, from_py_object, eq, ord, hash, module = "oxidd.bdd")]
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BDDFunction(oxidd::bdd::BDDFunction);
 

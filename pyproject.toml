@@ -41,13 +41,13 @@ Issues = "https://github.com/OxiDD/oxidd/issues"
 
 [project.optional-dependencies]
 # spell-checker:ignore pydata
-dev = ["mypy == 1.16.1", "basedpyright ~= 1.31", "ruff ~= 0.13"]
-docs = ["Sphinx ~= 8.0", "pydata-sphinx-theme ~= 0.16"]
-test = ["pytest >= 8.0"]
+dev = ["mypy == 1.16.1", "basedpyright ~= 1.31", "ruff ~= 0.15"]
+docs = ["Sphinx ~= 9.0", "pydata-sphinx-theme ~= 0.16"]
+test = ["pytest >= 9.0"]
 
 
 [build-system]
-requires = ["maturin ~= 1.8"]
+requires = ["maturin ~= 1.9"]
 build-backend = "maturin"
 
 [tool.maturin]
@@ -128,6 +128,6 @@ docstring-code-format = true
 "_oxidd.pyi" = ["E501"] # ignore too long lines
 
 
-[tool.pytest.ini_options]
+[tool.pytest]
 # spell-checker:ignore testpaths
 testpaths = ["bindings/python/oxidd"]

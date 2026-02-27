@@ -27,7 +27,7 @@ is_sorted = "0.1"
 rayon = "1.10"
 
 # mpmc channels
-flume = { version = "0.11", default-features = false }
+flume = { version = "0.12", default-features = false }
 
 [dev-dependencies]
 oxidd-test-utils.workspace = true
