@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.22)
 
 project(OxiDD
     VERSION 0.11.1
@@ -53,7 +53,7 @@ configure_file(
 
 FetchContent_Declare(corrosion
     GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
-    GIT_TAG v0.5.2)
+    GIT_TAG v0.6.1)
 FetchContent_MakeAvailable(corrosion)
 
 find_program(CBINDGEN_EXECUTABLE
