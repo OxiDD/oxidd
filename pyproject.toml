@@ -62,6 +62,7 @@ exclude = [
   { path = "oxidd/tests/**", format = ["wheel"] },
   "crates/oxidd-ffi-python/build.rs",
   "crates/oxidd-ffi-python/stub_gen/**",
+  ".gitignore",
 ]
 module-name = "oxidd._oxidd"
 manifest-path = "crates/oxidd-ffi-python/Cargo.toml"
