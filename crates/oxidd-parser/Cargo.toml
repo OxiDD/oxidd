@@ -6,7 +6,6 @@ description = "Parsers for logic file formats"
 readme = "../../README.md"
 categories = ["parser-implementations", "mathematics", "science"]
 
-authors.workspace = true
 license.workspace = true
 homepage.workspace = true
 repository.workspace = true

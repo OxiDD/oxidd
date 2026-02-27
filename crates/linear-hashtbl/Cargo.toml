@@ -6,7 +6,6 @@ description = "Linear probing hash table"
 categories = ["data-structures"]
 keywords = ["hashmap", "hash"]
 
-authors.workspace = true
 license.workspace = true
 homepage.workspace = true
 repository.workspace = true

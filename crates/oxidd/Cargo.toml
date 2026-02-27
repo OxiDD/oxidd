@@ -7,7 +7,6 @@ readme = "../../README.md"
 keywords = ["decision-diagrams", "bdd", "zbdd", "zdd"]
 categories = ["data-structures", "mathematics", "science"]
 
-authors.workspace = true
 license.workspace = true
 homepage.workspace = true
 repository.workspace = true

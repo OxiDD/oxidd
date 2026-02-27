@@ -7,7 +7,6 @@ readme = "../../README.md"
 categories = ["visualization", "encoding"]
 
 
-authors.workspace = true
 license.workspace = true
 homepage.workspace = true
 repository.workspace = true

@@ -3,7 +3,6 @@ members = ["crates/*"]
 resolver = "2"
 
 [workspace.package]
-authors = ["OxiDD Contributors"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/OxiDD/oxidd"
 homepage = "https://oxidd.net"

@@ -5,7 +5,6 @@ edition = "2021"
 description = "Core traits and types of the OxiDD decision diagram framework"
 readme = "../../README.md"
 
-authors.workspace = true
 license.workspace = true
 homepage.workspace = true
 repository.workspace = true
