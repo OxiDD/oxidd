@@ -53,7 +53,11 @@ build-backend = "maturin"
 [tool.maturin]
 # spell-checker:ignore auditwheel,sdist
 python-source = "bindings/python"
-include = ["bindings/python/oxidd/_oxidd.pyi", { path = "LICENSE-*", format = ["sdist", "wheel"] }]
+include = [
+  { path = "bindings/python/oxidd/_oxidd.pyi", format = ["sdist"] },
+  { path = "oxidd/_oxidd.pyi", format = ["wheel"] },
+  { path = "LICENSE-*", format = ["sdist"] },
+]
 exclude = [
   "bindings/python/oxidd/tests/**",
   "crates/oxidd-ffi-python/build.rs",
