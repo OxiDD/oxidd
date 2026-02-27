@@ -1097,10 +1097,10 @@ impl StubGen {
                         self.process_items(items)?;
                     }
                 }
-                syn::Item::Fn(item_fn) => {
-                    if item_fn.attrs.iter().any(|a| attr_matches(a, "pyfunction")) {
-                        self.process_function(item_fn)?;
-                    }
+                syn::Item::Fn(item_fn)
+                    if item_fn.attrs.iter().any(|a| attr_matches(a, "pyfunction")) =>
+                {
+                    self.process_function(item_fn)?;
                 }
                 syn::Item::Impl(item_impl) => {
                     if !item_impl.attrs.iter().any(|a| attr_matches(a, "pymethods")) {

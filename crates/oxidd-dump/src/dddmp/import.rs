@@ -592,7 +592,6 @@ where
 {
     let mut nodes = EdgeVecDropGuard::new(manager, Vec::with_capacity(header.nnodes));
     let mut line = Vec::new();
-    let mut line_no = header.lines + 1;
     let mut children = Vec::with_capacity(M::InnerNode::ARITY);
     for node_id in 1..=header.nnodes {
         match input.read_until(b'\n', &mut line) {
@@ -603,6 +602,7 @@ where
         while let Some(b'\n' | b'\r') = line.last() {
             line.pop();
         }
+        let line_no = header.lines + node_id;
 
         let (rest, node_id_lineno) = parse_usize(&line, line_no)?;
         if node_id_lineno != node_id {
@@ -700,7 +700,6 @@ where
 
         children.clear();
         line.clear();
-        line_no += 1;
     }
 
     Ok(nodes.into_vec())

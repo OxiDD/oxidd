@@ -1770,16 +1770,12 @@ impl<'id, InnerNode, ET, const PAGE_SIZE: usize, const TAG_BITS: u32>
     fn remove(&mut self, edge: &Edge<'id, InnerNode, ET, TAG_BITS>) -> bool {
         let (page, offset) = Self::page_offset(edge);
         match self.data.get_mut(&page) {
-            Some(page) => {
-                if page.contains(offset) {
-                    page.remove(offset);
-                    self.len -= 1;
-                    true
-                } else {
-                    false
-                }
+            Some(page) if page.contains(offset) => {
+                page.remove(offset);
+                self.len -= 1;
+                true
             }
-            None => false,
+            _ => false,
         }
     }
 }
