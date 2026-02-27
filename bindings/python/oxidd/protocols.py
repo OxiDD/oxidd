@@ -961,8 +961,6 @@ class Manager(Generic[F], Protocol):
 
         Returns:
             None
-
-        .. _`strict mode`: https://docs.rs/oxidd-dump/latest/oxidd_dump/dddmp/struct.Export.html#method.strict
         """
         raise NotImplementedError
 
