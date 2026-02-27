@@ -44,6 +44,8 @@ compile_flags.txt
 .coverage
 # Python cache
 __pycache__/
+# Zed configuration
+.zed
 # VS2017 and VSCode config files
 .vscode
 .vs
