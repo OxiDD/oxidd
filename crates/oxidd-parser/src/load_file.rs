@@ -9,7 +9,7 @@ use codespan_reporting::diagnostic::{Diagnostic, Label};
 use codespan_reporting::files::SimpleFile;
 use codespan_reporting::term::termcolor::ColorChoice;
 use codespan_reporting::term::termcolor::{StandardStream, WriteColor};
-use codespan_reporting::term::{emit, Config};
+use codespan_reporting::term::{emit_to_write_style, Config};
 use nom::error::{ContextError, ErrorKind, FromExternalError, ParseError};
 use nom::Offset;
 
@@ -156,7 +156,7 @@ pub fn parse<S: AsRef<str> + Clone + fmt::Display>(
         .with_labels(labels);
 
     let file = SimpleFile::new(file_id, String::from_utf8_lossy(input));
-    emit(writer, config, &file, &diagnostic).ok();
+    emit_to_write_style(writer, config, &file, &diagnostic).ok();
 
     None
 }
