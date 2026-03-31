@@ -12,7 +12,7 @@
 import oxidd
 
 project = "OxiDD"
-copyright = "2024, OxiDD Contributors"
+copyright = "2024-2026, OxiDD Contributors"
 author = "OxiDD Contributors"
 version = oxidd.__version__
 
