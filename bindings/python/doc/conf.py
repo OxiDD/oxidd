@@ -72,13 +72,14 @@ html_theme_options = {
             "icon": "fa-custom fa-matrix-org",
         },
     ],
+    "search_as_you_type": True,
 }
 html_context = {
     "default_mode": "auto",  # auto dark/light mode
 }
 html_static_path = ["_static"]
 html_css_files = ["custom.css"]
-html_js_files = ["matrix-org-icon.js"]
+html_js_files = [("matrix-org-icon.js", {"defer": "defer"})]
 
 # Disable links to .rst files
 html_show_sourcelink = False
