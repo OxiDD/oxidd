@@ -46,7 +46,7 @@ jobs:
         if: steps.cache-doxygen.outputs.cache-hit != 'true'
         run: |
           mkdir -p ~/.local
-          curl https://www.doxygen.nl/files/doxygen-$doxygen_version.linux.bin.tar.gz | tar -xz -C ~/.local --strip-components=1 doxygen-$doxygen_version/bin/{doxygen,doxyindexer}
+          curl -fsSL https://www.doxygen.nl/files/doxygen-$doxygen_version.linux.bin.tar.gz | tar -xz -C ~/.local --strip-components=1 doxygen-$doxygen_version/bin/{doxygen,doxyindexer}
       - name: Add ~/.local/bin to PATH
         run: echo "$HOME/.local/bin" >> $GITHUB_PATH
       - name: CMake Configure

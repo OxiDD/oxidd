@@ -10,5 +10,5 @@ runs:
         cbindgen_path="$(dirname $(which cargo))/cbindgen"
         url=https://github.com/mozilla/cbindgen/releases/download/0.29.0/cbindgen-ubuntu22.04
         test "$(uname -m)" = "aarch64" && url="${url}-aarch64"
-        curl --output "$cbindgen_path" "$url" --location --silent --show-error --fail --retry 5
+        curl -fsSL --retry 5 --output "$cbindgen_path" "$url"
         chmod +x "$cbindgen_path"
