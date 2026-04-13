@@ -1,10 +1,10 @@
 /* spell-checker:enableCompoundWords */
 
 #projectlogo img {
-  border-radius: 25%;
+  border-radius: 100%;
   box-sizing: border-box;
 }
 
 html.dark-mode #projectlogo img {
-  border: 2px solid var(--header-foreground);
+  border: 3px solid var(--header-foreground);
 }
