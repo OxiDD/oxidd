@@ -8,6 +8,6 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
 
 foreach(example IN ITEMS dump-dot import export visualize)
-  add_executable(${example} ${example}.cpp)
-  target_link_libraries(${example} oxidd)
+    add_executable(${example} ${example}.cpp)
+    target_link_libraries(${example} oxidd)
 endforeach()
