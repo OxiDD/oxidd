@@ -28,6 +28,8 @@ jobs:
 
     runs-on: ubuntu-24.04
 
+    outputs:
+      package-tag: ${{ steps.build.outputs.tag }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -39,7 +41,10 @@ jobs:
           # last is the default
           cache: pip
       - name: Build
-        run: python -m pip install maturin[zig] -e '.[dev,docs,test]'
+        id: build
+        run: |
+          python -m pip install maturin[zig] -e '.[dev,docs,test]'
+          echo "tag=v$(python3 -c 'import oxidd; print(oxidd.__version__)')" >> "$GITHUB_OUTPUT"
       - name: Ruff check
         run: ruff check --output-format=github
       - name: Ruff format check
@@ -98,12 +103,19 @@ jobs:
           name: python-wheels-linux
           path: dist
       - name: Deploy Docs
-        if: ${{ github.repository == 'OxiDD/oxidd' && github.ref == 'refs/heads/main' }}
+        if: >-
+          ${{
+            github.repository == 'OxiDD/oxidd' && (
+              github.ref == 'refs/heads/main'
+              || (startsWith(github.ref, 'refs/tags/') && github.ref_name == steps.build.outputs.tag)
+            )
+          }}
         working-directory: target/python/doc
         run: |
           mkdir -p ~/.ssh
           echo "$KNOWN_HOSTS" >> ~/.ssh/known_hosts
-          ssh-agent sh -c "echo '$KEY' | ssh-add - && tar -cvz . | ssh -l '$USER' -p '$PORT' '$HOST' /extract-api.sh python dev"
+          tag=${{ case(github.ref == 'refs/heads/main', 'dev', steps.build.outputs.tag) }}
+          ssh-agent sh -c "echo '$KEY' | ssh-add - && tar -cvz . | ssh -l '$USER' -p '$PORT' '$HOST' /extract-api.php python $tag"
         env:
           HOST: ${{ secrets.WEBSITE_SSH_HOST }}
           USER: ${{ secrets.WEBSITE_SSH_USER }}
@@ -284,7 +296,12 @@ jobs:
   release:
     name: Release
     needs: [linux, mac, win]
-    if: ${{ github.repository == 'OxiDD/oxidd' && startsWith(github.ref, 'refs/tags/') }}
+    if: >-
+      ${{
+        github.repository == 'OxiDD/oxidd'
+        && startsWith(github.ref, 'refs/tags/')
+        && github.ref_name == needs.linux.outputs.package-tag
+      }}
 
     environment:
       name: release

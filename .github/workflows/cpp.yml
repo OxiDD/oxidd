@@ -52,8 +52,11 @@ jobs:
       - name: CMake Configure
         run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
       - name: Build Docs
+        id: doc
         working-directory: build
-        run: make oxidd-doc
+        run: |
+          make oxidd-doc
+          sed -n '/^PROJECT_NUMBER\s*=/{s/^[^=]*=\s*\(\S*\)\s*$/tag=v\1/p;q}' bindings/cpp/doc/Doxyfile >> "$GITHUB_OUTPUT"
       - uses: cpp-linter/cpp-linter-action@v2
         id: linter
         env:
@@ -70,12 +73,19 @@ jobs:
         if: steps.linter.outputs.checks-failed > 0
         run: exit 1
       - name: Deploy Docs
-        if: ${{ github.repository == 'OxiDD/oxidd' && github.ref == 'refs/heads/main' }}
+        if: >-
+          ${{
+            github.repository == 'OxiDD/oxidd' && (
+              github.ref == 'refs/heads/main'
+              || (startsWith(github.ref, 'refs/tags/') && github.ref_name == steps.doc.outputs.tag)
+            )
+          }}
         working-directory: build/doc/html
         run: |
           mkdir -p ~/.ssh
           echo "$KNOWN_HOSTS" >> ~/.ssh/known_hosts
-          ssh-agent sh -c "echo '$KEY' | ssh-add - && tar -cvz . | ssh -l '$USER' -p '$PORT' '$HOST' /extract-api.sh cpp dev"
+          tag=${{ case(github.ref == 'refs/heads/main', 'dev', steps.doc.outputs.tag) }}
+          ssh-agent sh -c "echo '$KEY' | ssh-add - && tar -cvz . | ssh -l '$USER' -p '$PORT' '$HOST' /extract-api.php cpp $tag"
         env:
           HOST: ${{ secrets.WEBSITE_SSH_HOST }}
           USER: ${{ secrets.WEBSITE_SSH_USER }}

@@ -3,6 +3,8 @@
 # spell-checker:ignore intersphinx,sphinxcontrib,katex,pydata
 # spell-checker:ignore prerender,sourcelink,subclasshook,bysource
 
+import os  # noqa: I001
+
 # For the full list of built-in configuration values, see the documentation:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
@@ -15,6 +17,9 @@ project = "OxiDD"
 copyright = "2024-2026, OxiDD Contributors"
 author = "OxiDD Contributors"
 version = oxidd.__version__
+
+gh_ref = os.environ.get("GITHUB_REF", "")
+release = version if gh_ref == f"refs/tags/v{version}" else f"{version}.dev"
 
 language = "en"
 
@@ -60,6 +65,7 @@ html_theme_options = {
         "link": "https://oxidd.net",
     },
     "navbar_align": "left",
+    "navbar_start": ["navbar-logo", "version-switcher"],
     "icon_links": [
         {
             "name": "GitHub",
@@ -72,6 +78,10 @@ html_theme_options = {
             "icon": "fa-custom fa-matrix-org",
         },
     ],
+    "switcher": {
+        "json_url": "https://oxidd.net/api/python/versions.json",
+        "version_match": "dev" if gh_ref == "refs/heads/main" else f"v{release}",
+    },
     "search_as_you_type": True,
 }
 html_context = {

@@ -8,3 +8,58 @@
 html.dark-mode #projectlogo img {
   border: 3px solid var(--header-foreground);
 }
+
+#projectnumber {
+  position: relative;
+  padding-bottom: 0.5em;
+}
+#projectnumber ul.dropdown {
+  position: absolute;
+  top: 1.5em;
+  left: 0;
+  z-index: 10000;
+  margin: 0;
+  display: none;
+}
+#projectnumber:hover ul.dropdown {
+  display: block;
+}
+
+ul.dropdown {
+  border: 1px solid var(--separator-color);
+  border-radius: var(--border-radius-medium);
+  box-shadow: var(--box-shadow);
+  background: var(--page-background-color);
+  padding: var(--spacing-small) 0;
+  list-style: none;
+}
+ul.dropdown a {
+  display: block;
+  padding: 0 12px 0 6px;
+  margin: 0 var(--spacing-small);
+
+  font-size: var(--navigation-font-size);
+  line-height: var(--content-line-height);
+  border-radius: var(--border-radius-small);
+  color: var(--page-foreground-color) !important;
+  font-weight: normal;
+  text-decoration: none;
+}
+ul.dropdown a:hover {
+  background: var(--menu-focus-background);
+  color: var(--menu-focus-foreground) !important;
+}
+ul.dropdown a::before {
+  margin-right: 4px;
+  font-family:
+    "JetBrains Mono", Consolas, Monaco, "Andale Mono", "Ubuntu Mono", monospace,
+    fixed;
+  content: " ";
+}
+ul.dropdown a.active::before {
+  content: "•";
+}
+.dropdown-indicator {
+  margin-left: 2px;
+  user-select: none;
+}
