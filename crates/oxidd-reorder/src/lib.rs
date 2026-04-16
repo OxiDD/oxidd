@@ -237,12 +237,39 @@ where
 }
 
 /// Transform the `input_order` into a target order suitable for sorting, that
-/// is: If the value at index `i` is greater than the value at index `i + 1`,
-/// then level `i` and `i + 1` need to be swapped.
+/// is: If the value at index `i` of the returned vector is greater than the
+/// value at index `i + 1`, then level `i` and `i + 1` need to be swapped.
 ///
 /// `input_order` describes how the variables should be ordered in the end,
 /// i.e., the variables corresponding to the given levels should be
 /// reordered such that the level numbers would be increasing in that order.
+///
+/// Assuming that there are `m` levels mentioned by `input_order`, the current
+/// implementation has a time complexity of O(`num_levels` + m log m) and a
+/// space complexity of O(`num_levels`).
+///
+/// # Example
+///
+/// ```ignore
+/// assert_eq!(sort_order(3, [2, 0]), vec![1, 0, 0]);
+/// ```
+///
+/// In this example, the current level 2 should be moved above level 0.
+/// The position of level 1 does not matter as it is not mentioned by
+/// `input_order`. To achieve the fewest swaps possible, we could move level 1
+/// either to the very top or to the very bottom. If there are multiple optimal
+/// positions for a level not mentioned by `input_order`, this function
+/// generally picks the top-most position. The return value is to be read as a
+/// mapping from level numbers to position indicators. The first element
+/// describes the position of the current level 0. Among the `m` levels
+/// mentioned by `input_order`, every level receives a distinct position
+/// indicator in range `0..m`. Hence, the current level 0 is mapped to 1 and the
+/// current level 2 is mapped to 0. The levels that can be placed freely receive
+/// position indicators in range `0..=m`. An indicator `i` means that the level
+/// should be placed above the level mentioned by `input_order` that received
+/// indicator `i` (and indicator `m` means a placement at the very bottom). We
+/// can re-use the indicators here because the sorting algorithm will never swap
+/// levels with the same position indicator.
 #[track_caller]
 fn sort_order(num_levels: u32, input_order: impl IntoIterator<Item = LevelNo>) -> Vec<u32> {
     let mut target_order = vec![u32::MAX; num_levels as usize];
@@ -375,6 +402,7 @@ mod test {
         assert_eq!(sort_order(4, [1, 0, 2, 3]), vec![1, 0, 2, 3]);
         assert_eq!(sort_order(4, [0, 2, 3, 1]), vec![0, 3, 1, 2]);
 
+        assert_eq!(sort_order(3, [2, 0]), vec![1, 0, 0]);
         assert_eq!(
             sort_order(10, [6, 3, 0, 4, 1, 9]),
             vec![2, 4, 0, 1, 3, 5, 0, 5, 5, 5]
