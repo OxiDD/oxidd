@@ -33,9 +33,9 @@ jobs:
       pull-requests: write
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/install-cbindgen-linux
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         id: cache-doxygen
         with:
           path: |
@@ -105,7 +105,7 @@ jobs:
           - { cc: "clang", cxx: "clang++" }
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/install-cbindgen-linux
       - name: CMake Configure
         run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=${{ matrix.compiler.cc }} -DCMAKE_CXX_COMPILER=${{ matrix.compiler.cxx }}
@@ -122,7 +122,7 @@ jobs:
     runs-on: macos-15
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Install cbindgen
         run: brew install cbindgen
       - name: CMake Configure
@@ -140,7 +140,7 @@ jobs:
     runs-on: windows-2022
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: CMake Configure
         run: cmake -B build
       - name: Build

@@ -31,7 +31,7 @@ jobs:
     outputs:
       package-tag: ${{ steps.build.outputs.tag }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
           python-version: |
@@ -98,7 +98,7 @@ jobs:
           run_tests python3.14t dist/oxidd-*-cp314-cp314t-manylinux*_x86_64*.whl
           run_tests pypy3.11 dist/oxidd-*-pp311-*-manylinux*_x86_64*.whl
       - name: Upload wheels
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: python-wheels-linux
           path: dist
@@ -129,7 +129,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
           python-version: |
@@ -177,7 +177,7 @@ jobs:
           run_tests python3.14t dist/oxidd-*-cp314-cp314t-manylinux*_aarch64*.whl
           run_tests pypy3.11 dist/oxidd-*-pp311-*-manylinux*_aarch64*.whl
       - name: Upload wheels
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: python-wheels-linux-arm
           path: dist
@@ -193,7 +193,7 @@ jobs:
           - { arch: arm64, image: macos-15 }
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
           python-version: |
@@ -218,7 +218,7 @@ jobs:
           run_tests python dist/oxidd-*-cp*-abi3-*.whl
           run_tests python3.14t dist/oxidd-*-cp314-cp314t-*.whl
           run_tests pypy3.11 dist/oxidd-*-pp311-*.whl
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: python-wheels-mac-${{ matrix.os.arch }}
           path: dist
@@ -229,7 +229,7 @@ jobs:
     runs-on: windows-2022
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
           python-version: |
@@ -257,7 +257,7 @@ jobs:
             & ".venv-$py\Scripts\pip.exe" install "$(get-item dist\oxidd-*-$py*-*amd64.whl)[test]"
             & ".venv-$py\Scripts\pytest.exe"
           }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: python-wheels-win
           path: dist
@@ -268,7 +268,7 @@ jobs:
     runs-on: windows-11-arm
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         id: cp314t
         with:
@@ -288,7 +288,7 @@ jobs:
             & ".venv-$py\Scripts\pip.exe" install "$(get-item dist\oxidd-*-$py*-*arm64.whl)[test]"
             & ".venv-$py\Scripts\pytest.exe"
           }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: python-wheels-win-arm
           path: dist
@@ -312,7 +312,7 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           pattern: python-wheels-*

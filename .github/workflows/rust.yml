@@ -21,13 +21,13 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/install-cbindgen-linux
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly
           components: clippy, rustfmt
-      - uses: extractions/setup-just@v2
+      - uses: extractions/setup-just@v4
       - name: Lint
         run: just lint-rust
 
@@ -42,7 +42,7 @@ jobs:
         flags: ["", "--release"]
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/install-cbindgen-linux
       - uses: dtolnay/rust-toolchain@master
         with:
