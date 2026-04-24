@@ -17,7 +17,7 @@ mod apply_rec;
 /// [`DiagramRules`] for simple binary decision diagrams
 pub struct BDDRules;
 
-impl<E: Edge, N: InnerNode<E>> DiagramRules<E, N, BDDTerminal> for BDDRules {
+impl<E: Edge, N: InnerNode<E, Value = ()>> DiagramRules<E, N, BDDTerminal> for BDDRules {
     type Cofactors<'a>
         = N::ChildrenIter<'a>
     where
@@ -39,7 +39,7 @@ impl<E: Edge, N: InnerNode<E>> DiagramRules<E, N, BDDTerminal> for BDDRules {
             manager.drop_edge(f_else);
             ReducedOrNew::Reduced(f_then)
         } else {
-            ReducedOrNew::New(N::new(level, [f_then, f_else]), Default::default())
+            ReducedOrNew::New(N::new(level, [f_then, f_else], ()), Default::default())
         }
     }
 
@@ -64,7 +64,7 @@ fn reduce<M>(
     op: BDDOp,
 ) -> AllocResult<Own<M::Edge>>
 where
-    M: Manager<Terminal = BDDTerminal>,
+    M: Manager<InnerNodeValue = ()>,
 {
     // We do not use `DiagramRules::reduce()` here, as the iterator is
     // apparently not fully optimized away.
@@ -75,7 +75,7 @@ where
     }
     oxidd_core::LevelView::get_or_insert(
         &mut manager.level(level),
-        M::InnerNode::new(level, [t, e]),
+        M::InnerNode::new(level, [t, e], ()),
     )
 }
 

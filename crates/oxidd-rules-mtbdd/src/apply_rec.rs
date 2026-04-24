@@ -18,22 +18,24 @@ use super::{MTBDDOp, Operation, collect_children, reduce, stat};
 
 // spell-checker:ignore fnode,gnode,hnode,vnode,flevel,glevel,hlevel,vlevel
 
+trait MTBDDManager: Manager<InnerNodeValue = ()> + HasApplyCache<Self, MTBDDOp> {}
+impl<M: Manager<InnerNodeValue = ()> + HasApplyCache<Self, MTBDDOp>> MTBDDManager for M {}
+
 /// Recursively apply the binary operator `OP` to `f` and `g`
 ///
 /// We use a `const` parameter `OP` to have specialized version of this function
 /// for each operator.
-fn apply_bin<M, T, const OP: u8>(
+fn apply_bin<M: MTBDDManager, const OP: u8>(
     manager: &M,
     f: Ref<'_, M::Edge>,
     g: Ref<'_, M::Edge>,
 ) -> AllocResult<Own<M::Edge>>
 where
-    M: Manager<Terminal = T> + HasApplyCache<M, MTBDDOp>,
     M::InnerNode: HasLevel,
-    T: NumberBase,
+    M::Terminal: NumberBase,
 {
     stat!(call OP);
-    let (operator, op1, op2) = match super::terminal_bin::<M, T, OP>(manager, f, g)? {
+    let (operator, op1, op2) = match super::terminal_bin::<M, OP>(manager, f, g)? {
         Operation::Binary(o, op1, op2) => (o, op1, op2),
         Operation::Done(h) => return Ok(h),
     };
@@ -63,8 +65,8 @@ where
         (g, g)
     };
 
-    let t = EdgeDropGuard::new(manager, apply_bin::<M, T, OP>(manager, f0, g0)?);
-    let e = EdgeDropGuard::new(manager, apply_bin::<M, T, OP>(manager, f1, g1)?);
+    let t = EdgeDropGuard::new(manager, apply_bin::<M, OP>(manager, f0, g0)?);
+    let e = EdgeDropGuard::new(manager, apply_bin::<M, OP>(manager, f1, g1)?);
     let h = reduce(manager, level, t.into_edge(), e.into_edge(), operator)?;
 
     // Add to apply cache
@@ -83,7 +85,7 @@ fn restrict<'a, M, T>(
     mut vars: Ref<'a, M::Edge>,
 ) -> AllocResult<Own<M::Edge>>
 where
-    M: Manager<Terminal = T> + HasApplyCache<M, MTBDDOp>,
+    M: Manager<Terminal = T, InnerNodeValue = ()> + HasApplyCache<M, MTBDDOp>,
     M::InnerNode: HasLevel,
     T: NumberBase,
 {
@@ -208,7 +210,7 @@ fn apply_ite<M, T>(
     h: Ref<'_, M::Edge>,
 ) -> AllocResult<Own<M::Edge>>
 where
-    M: Manager<Terminal = T> + HasApplyCache<M, MTBDDOp>,
+    M: Manager<Terminal = T, InnerNodeValue = ()> + HasApplyCache<M, MTBDDOp>,
     M::InnerNode: HasLevel,
     T: NumberBase,
 {
@@ -280,10 +282,6 @@ where
 
 // --- Function Interface ------------------------------------------------------
 
-/// Workaround for https://github.com/rust-lang/rust/issues/49601
-trait HasMTBDDOpApplyCache<M: Manager>: HasApplyCache<M, MTBDDOp> {}
-impl<M: Manager + HasApplyCache<M, MTBDDOp>> HasMTBDDOpApplyCache<M> for M {}
-
 /// Boolean function backed by a binary decision diagram
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Function, Debug)]
 #[repr_id = "MTBDD"]
@@ -307,7 +305,7 @@ impl<F: Function> MTBDDFunction<F> {
 
 impl<F: Function, T: NumberBase> PseudoBooleanFunction for MTBDDFunction<F>
 where
-    for<'id> F::Manager<'id>: Manager<Terminal = T> + HasMTBDDOpApplyCache<F::Manager<'id>>,
+    for<'id> F::Manager<'id>: MTBDDManager + Manager<Terminal = T>,
     for<'id> INodeOfFunc<'id, F>: HasLevel,
 {
     type Number = T;
@@ -330,7 +328,7 @@ where
         let e = EdgeDropGuard::new(manager, manager.get_terminal(T::zero())?);
         oxidd_core::LevelView::get_or_insert(
             &mut manager.level(level),
-            InnerNode::new(level, [t.into_edge(), e.into_edge()]),
+            InnerNode::new(level, [t.into_edge(), e.into_edge()], ()),
         )
     }
 
@@ -340,7 +338,7 @@ where
         lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
         rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
-        apply_bin::<_, T, { MTBDDOp::Add as u8 }>(manager, lhs, rhs)
+    apply_bin::<_, { MTBDDOp::Add as u8 }>(manager, lhs, rhs)
     }
 
     #[inline]
@@ -349,7 +347,7 @@ where
         lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
         rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
-        apply_bin::<_, T, { MTBDDOp::Sub as u8 }>(manager, lhs, rhs)
+    apply_bin::<_, { MTBDDOp::Sub as u8 }>(manager, lhs, rhs)
     }
 
     #[inline]
@@ -358,7 +356,7 @@ where
         lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
         rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
-        apply_bin::<_, T, { MTBDDOp::Mul as u8 }>(manager, lhs, rhs)
+    apply_bin::<_, { MTBDDOp::Mul as u8 }>(manager, lhs, rhs)
     }
 
     #[inline]
@@ -367,7 +365,7 @@ where
         lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
         rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
-        apply_bin::<_, T, { MTBDDOp::Div as u8 }>(manager, lhs, rhs)
+    apply_bin::<_, { MTBDDOp::Div as u8 }>(manager, lhs, rhs)
     }
 
     #[inline]
@@ -376,7 +374,7 @@ where
         lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
         rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
-        apply_bin::<_, T, { MTBDDOp::Min as u8 }>(manager, lhs, rhs)
+    apply_bin::<_, { MTBDDOp::Min as u8 }>(manager, lhs, rhs)
     }
 
     #[inline]
@@ -385,7 +383,7 @@ where
         lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
         rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
-        apply_bin::<_, T, { MTBDDOp::Max as u8 }>(manager, lhs, rhs)
+    apply_bin::<_, { MTBDDOp::Max as u8 }>(manager, lhs, rhs)
     }
 
     #[inline]

@@ -25,7 +25,7 @@ mod apply_rec;
 /// [`DiagramRules`] for (multi-terminal) binary decision diagrams
 pub struct MTBDDRules;
 
-impl<E: Edge, N: InnerNode<E>, T> DiagramRules<E, N, T> for MTBDDRules {
+impl<E: Edge, N: InnerNode<E, Value = ()>, T> DiagramRules<E, N, T> for MTBDDRules {
     type Cofactors<'a>
         = N::ChildrenIter<'a>
     where
@@ -47,7 +47,7 @@ impl<E: Edge, N: InnerNode<E>, T> DiagramRules<E, N, T> for MTBDDRules {
             manager.drop_edge(e);
             ReducedOrNew::Reduced(t)
         } else {
-            ReducedOrNew::New(N::new(level, [t, e]), Default::default())
+            ReducedOrNew::New(N::new(level, [t, e], ()), Default::default())
         }
     }
 
@@ -58,7 +58,7 @@ impl<E: Edge, N: InnerNode<E>, T> DiagramRules<E, N, T> for MTBDDRules {
 }
 
 #[inline(always)]
-fn reduce<M: Manager>(
+fn reduce<M: Manager<InnerNodeValue = ()>>(
     manager: &M,
     level: LevelNo,
     t: Own<M::Edge>,
@@ -112,11 +112,14 @@ enum Operation<'a, E: 'a + Edge> {
 
 /// Terminal case for binary operators
 #[inline]
-fn terminal_bin<'a, M: Manager<Terminal = T>, T: NumberBase, const OP: u8>(
+fn terminal_bin<'a, M: Manager<InnerNodeValue = ()>, const OP: u8>(
     m: &M,
     f: Ref<'a, M::Edge>,
     g: Ref<'a, M::Edge>,
-) -> AllocResult<Operation<'a, M::Edge>> {
+) -> AllocResult<Operation<'a, M::Edge>>
+where
+    M::Terminal: NumberBase,
+{
     use Node::*;
     use Operation::*;
 
@@ -129,7 +132,7 @@ fn terminal_bin<'a, M: Manager<Terminal = T>, T: NumberBase, const OP: u8>(
             (Terminal(t), _) if t.borrow().is_zero() => Done(m.clone_edge(g)),
             (_, Terminal(t)) if t.borrow().is_zero() => Done(m.clone_edge(f)),
             (Terminal(t), _) | (_, Terminal(t)) if t.borrow().is_nan() => {
-                Done(m.get_terminal(T::nan())?)
+                Done(m.get_terminal(M::Terminal::nan())?)
             }
             _ if f > g => Binary(MTBDDOp::Add, g, f),
             _ => Binary(MTBDDOp::Add, f, g),
@@ -143,7 +146,7 @@ fn terminal_bin<'a, M: Manager<Terminal = T>, T: NumberBase, const OP: u8>(
             (Terminal(t), _) if t.borrow().is_zero() => Done(m.clone_edge(g)),
             (_, Terminal(t)) if t.borrow().is_zero() => Done(m.clone_edge(f)),
             (Terminal(t), _) | (_, Terminal(t)) if t.borrow().is_nan() => {
-                Done(m.get_terminal(T::nan())?)
+                Done(m.get_terminal(M::Terminal::nan())?)
             }
             _ => Binary(MTBDDOp::Sub, f, g),
         }
@@ -156,7 +159,7 @@ fn terminal_bin<'a, M: Manager<Terminal = T>, T: NumberBase, const OP: u8>(
             (Terminal(t), _) if t.borrow().is_one() => Done(m.clone_edge(g)),
             (_, Terminal(t)) if t.borrow().is_one() => Done(m.clone_edge(f)),
             (Terminal(t), _) | (_, Terminal(t)) if t.borrow().is_nan() => {
-                Done(m.get_terminal(T::nan())?)
+                Done(m.get_terminal(M::Terminal::nan())?)
             }
             // Don't optimize the case where one of the operands is 0. 0 * NaN
             // is still NaN.
@@ -171,7 +174,7 @@ fn terminal_bin<'a, M: Manager<Terminal = T>, T: NumberBase, const OP: u8>(
             }
             (_, Terminal(t)) if t.borrow().is_one() => Done(m.clone_edge(f)),
             (Terminal(t), _) | (_, Terminal(t)) if t.borrow().is_nan() => {
-                Done(m.get_terminal(T::nan())?)
+                Done(m.get_terminal(M::Terminal::nan())?)
             }
             _ => Binary(MTBDDOp::Div, f, g),
         }
@@ -183,10 +186,10 @@ fn terminal_bin<'a, M: Manager<Terminal = T>, T: NumberBase, const OP: u8>(
             (Terminal(tf), Terminal(tg)) => Done(match tf.borrow().partial_cmp(tg.borrow()) {
                 Some(Ordering::Less | Ordering::Equal) => m.clone_edge(f),
                 Some(Ordering::Greater) => m.clone_edge(g),
-                None => m.get_terminal(T::nan())?,
+                None => m.get_terminal(M::Terminal::nan())?,
             }),
             (Terminal(t), _) | (_, Terminal(t)) if t.borrow().is_nan() => {
-                Done(m.get_terminal(T::nan())?)
+                Done(m.get_terminal(M::Terminal::nan())?)
             }
             _ if f > g => Binary(MTBDDOp::Min, g, f),
             _ => Binary(MTBDDOp::Min, f, g),
@@ -199,10 +202,10 @@ fn terminal_bin<'a, M: Manager<Terminal = T>, T: NumberBase, const OP: u8>(
             (Terminal(tf), Terminal(tg)) => Done(match tf.borrow().partial_cmp(tg.borrow()) {
                 Some(Ordering::Greater | Ordering::Equal) => m.clone_edge(f),
                 Some(Ordering::Less) => m.clone_edge(g),
-                None => m.get_terminal(T::nan())?,
+                None => m.get_terminal(M::Terminal::nan())?,
             }),
             (Terminal(t), _) | (_, Terminal(t)) if t.borrow().is_nan() => {
-                Done(m.get_terminal(T::nan())?)
+                Done(m.get_terminal(M::Terminal::nan())?)
             }
             _ if f > g => Binary(MTBDDOp::Min, g, f),
             _ => Binary(MTBDDOp::Min, f, g),

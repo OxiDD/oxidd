@@ -80,6 +80,7 @@ unsafe impl Manager for DummyManager {
     type Edge = DummyEdge;
     type EdgeTag = ();
     type InnerNode = DummyNode;
+    type InnerNodeValue = ();
     type Terminal = ();
     type TerminalRef<'a> = &'a ();
     type Rules = DummyRules;
@@ -290,12 +291,18 @@ impl DropWith<DummyEdge> for DummyNode {
 impl InnerNode<DummyEdge> for DummyNode {
     const ARITY: usize = 0;
 
+    type Value = ();
+
     type ChildrenIter<'a>
         = std::iter::Empty<Ref<'a, DummyEdge>>
     where
         Self: 'a;
 
-    fn new(_level: LevelNo, _children: impl IntoIterator<Item = Own<DummyEdge>>) -> Self {
+    fn new(
+        _level: LevelNo,
+        _children: impl IntoIterator<Item = Own<DummyEdge>>,
+        _value: (),
+    ) -> Self {
         unimplemented!()
     }
 
@@ -318,6 +325,10 @@ impl InnerNode<DummyEdge> for DummyNode {
 
     fn ref_count(&self) -> usize {
         unimplemented!()
+    }
+
+    fn get_value(&self) -> &() {
+        &()
     }
 }
 

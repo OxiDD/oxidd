@@ -50,7 +50,7 @@ mod index {
     use crate::util::type_cons::DD;
 
     crate::util::dd_index_based!(BCDD {
-        node: NodeWithLevelCons<2>,
+        node: NodeWithLevelCons<(), 2>,
         edge_tag: EdgeTag,
         terminal_manager: StaticTerminalManagerCons<BCDDTerminal>,
         rules: BCDDRulesCons for BCDDRules,
@@ -100,7 +100,7 @@ mod pointer {
     use crate::util::type_cons::DD;
 
     crate::util::dd_pointer_based!(BCDD {
-        node: NodeWithLevelCons<2>,
+        node: NodeWithLevelCons<(), 2>,
         edge_tag: EdgeTag,
         terminal_manager: StaticTerminalManagerCons<BCDDTerminal>,
         rules: BCDDRulesCons for BCDDRules,

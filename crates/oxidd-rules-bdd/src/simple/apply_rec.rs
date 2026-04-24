@@ -28,10 +28,22 @@ use super::{BDDOp, BDDTerminal, Operation, collect_children, reduce};
 
 // spell-checker:ignore fnode,gnode,hnode,vnode,flevel,glevel,hlevel,vlevel
 
+trait BDDManager:
+    Manager<Terminal = BDDTerminal, InnerNodeValue = ()> + HasApplyCache<Self, BDDOp>
+{
+}
+impl<M: Manager<Terminal = BDDTerminal, InnerNodeValue = ()> + HasApplyCache<Self, BDDOp>>
+    BDDManager for M
+{
+}
+
 /// Recursively apply the 'not' operator to `f`
-fn apply_not<M, R: Recursor<M>>(manager: &M, rec: R, f: Ref<M::Edge>) -> AllocResult<Own<M::Edge>>
+fn apply_not<M: BDDManager, R: Recursor<M>>(
+    manager: &M,
+    rec: R,
+    f: Ref<M::Edge>,
+) -> AllocResult<Own<M::Edge>>
 where
-    M: Manager<Terminal = BDDTerminal> + HasApplyCache<M, BDDOp>,
     M::InnerNode: HasLevel,
 {
     if rec.should_switch_to_sequential() {
@@ -69,14 +81,13 @@ where
 ///
 /// We use a `const` parameter `OP` to have specialized version of this function
 /// for each operator.
-fn apply_bin<M, R: Recursor<M>, const OP: u8>(
+fn apply_bin<M: BDDManager, R: Recursor<M>, const OP: u8>(
     manager: &M,
     rec: R,
     f: Ref<M::Edge>,
     g: Ref<M::Edge>,
 ) -> AllocResult<Own<M::Edge>>
 where
-    M: Manager<Terminal = BDDTerminal> + HasApplyCache<M, BDDOp>,
     M::InnerNode: HasLevel,
 {
     if rec.should_switch_to_sequential() {
@@ -129,7 +140,7 @@ where
 }
 
 /// Recursively apply the if-then-else operator (`if f { g } else { h }`)
-fn apply_ite<M, R: Recursor<M>>(
+fn apply_ite<M: BDDManager, R: Recursor<M>>(
     manager: &M,
     rec: R,
     f: Ref<M::Edge>,
@@ -137,7 +148,6 @@ fn apply_ite<M, R: Recursor<M>>(
     h: Ref<M::Edge>,
 ) -> AllocResult<Own<M::Edge>>
 where
-    M: Manager<Terminal = BDDTerminal> + HasApplyCache<M, BDDOp>,
     M::InnerNode: HasLevel,
 {
     use BDDTerminal::*;
@@ -232,12 +242,11 @@ where
 /// not referenced from `vars` are mapped to the function representing the
 /// variable at that level. The latter is the reason why we return the owned
 /// edges.
-fn substitute_prepare<'a, M>(
+fn substitute_prepare<'a, M: BDDManager>(
     manager: &'a M,
     pairs: impl Iterator<Item = (VarNo, Ref<'a, M::Edge>)>,
 ) -> AllocResult<EdgeVecDropGuard<'a, M>>
 where
-    M: Manager<Terminal = BDDTerminal>,
     M::Edge: 'a,
     M::InnerNode: HasLevel,
 {
@@ -269,6 +278,7 @@ where
                 .get_or_insert(InnerNode::new(
                     level as LevelNo,
                     [t.into_edge(), e.into_edge()],
+                    (),
                 ))?
         });
     }
@@ -276,7 +286,7 @@ where
     Ok(res)
 }
 
-fn substitute<M, R: Recursor<M>>(
+fn substitute<M: BDDManager, R: Recursor<M>>(
     manager: &M,
     rec: R,
     f: Ref<M::Edge>,
@@ -284,7 +294,6 @@ fn substitute<M, R: Recursor<M>>(
     cache_id: u32,
 ) -> AllocResult<Own<M::Edge>>
 where
-    M: Manager<Terminal = BDDTerminal> + HasApplyCache<M, BDDOp>,
     M::InnerNode: HasLevel,
 {
     if rec.should_switch_to_sequential() {
@@ -344,7 +353,7 @@ fn restrict<'a, M, R: Recursor<M>>(
     mut vars: Ref<'a, M::Edge>,
 ) -> AllocResult<Own<M::Edge>>
 where
-    M: Manager<Terminal = BDDTerminal> + HasApplyCache<M, BDDOp>,
+    M: BDDManager,
     M::InnerNode: HasLevel,
 {
     use BDDTerminal::*;
@@ -428,7 +437,6 @@ where
             return Ok(manager.clone_edge(f));
         }
     }
-
     // f above top-most restrict variable
 
     // Query apply cache
@@ -464,14 +472,13 @@ where
 /// Note that `Q` is one of `BDDOp::And`, `BDDOp::Or`, or `BDDOp::Xor` as `u8`.
 /// This saves us another case distinction in the code (would not be present at
 /// runtime).
-fn quant<M, R: Recursor<M>, const Q: u8>(
+fn quant<M: BDDManager, R: Recursor<M>, const Q: u8>(
     manager: &M,
     rec: R,
     f: Ref<M::Edge>,
     vars: Ref<M::Edge>,
 ) -> AllocResult<Own<M::Edge>>
 where
-    M: Manager<Terminal = BDDTerminal> + HasApplyCache<M, BDDOp>,
     M::InnerNode: HasLevel,
 {
     if rec.should_switch_to_sequential() {
@@ -562,7 +569,7 @@ where
 /// This saves us another case distinction in the code (would not be present at
 /// runtime). We use a `const` parameter `OP` to have specialized version of
 /// this function for each operator.
-fn apply_quant<M, R: Recursor<M>, const Q: u8, const OP: u8>(
+fn apply_quant<M: BDDManager, R: Recursor<M>, const Q: u8, const OP: u8>(
     manager: &M,
     rec: R,
     f: Ref<M::Edge>,
@@ -570,7 +577,6 @@ fn apply_quant<M, R: Recursor<M>, const Q: u8, const OP: u8>(
     vars: Ref<M::Edge>,
 ) -> AllocResult<Own<M::Edge>>
 where
-    M: Manager<Terminal = BDDTerminal> + HasApplyCache<M, BDDOp>,
     M::InnerNode: HasLevel,
 {
     if rec.should_switch_to_sequential() {
@@ -685,7 +691,7 @@ where
 ///
 /// In contrast to [`apply_quant()`], the operator is not a const but a runtime
 /// parameter.
-fn apply_quant_dispatch<'a, M, R: Recursor<M>, const Q: u8>(
+fn apply_quant_dispatch<'a, M: BDDManager, R: Recursor<M>, const Q: u8>(
     manager: &'a M,
     rec: R,
     op: BooleanOperator,
@@ -694,7 +700,6 @@ fn apply_quant_dispatch<'a, M, R: Recursor<M>, const Q: u8>(
     vars: Ref<M::Edge>,
 ) -> AllocResult<Own<M::Edge>>
 where
-    M: Manager<Terminal = BDDTerminal> + HasApplyCache<M, BDDOp>,
     M::InnerNode: HasLevel,
 {
     use BooleanOperator::*;
@@ -711,10 +716,6 @@ where
 }
 
 // --- Function Interface ------------------------------------------------------
-
-/// Workaround for https://github.com/rust-lang/rust/issues/49601
-trait HasBDDOpApplyCache<M: Manager>: HasApplyCache<M, BDDOp> {}
-impl<M: Manager + HasApplyCache<M, BDDOp>> HasBDDOpApplyCache<M> for M {}
 
 /// Boolean function backed by a binary decision diagram
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Function, Debug)]
@@ -739,7 +740,7 @@ impl<F: Function> BDDFunction<F> {
 
 impl<F: Function> FunctionSubst for BDDFunction<F>
 where
-    for<'id> F::Manager<'id>: Manager<Terminal = BDDTerminal> + HasBDDOpApplyCache<F::Manager<'id>>,
+    for<'id> F::Manager<'id>: BDDManager,
     for<'id> INodeOfFunc<'id, F>: HasLevel,
 {
     fn substitute_edge<'id, 'a>(
@@ -755,7 +756,7 @@ where
 
 impl<F: Function> BooleanFunction for BDDFunction<F>
 where
-    for<'id> F::Manager<'id>: Manager<Terminal = BDDTerminal> + HasBDDOpApplyCache<F::Manager<'id>>,
+    for<'id> F::Manager<'id>: BDDManager,
     for<'id> INodeOfFunc<'id, F>: HasLevel,
 {
     #[inline]
@@ -768,7 +769,7 @@ where
         let fe = manager.get_terminal(BDDTerminal::False).unwrap();
         oxidd_core::LevelView::get_or_insert(
             &mut manager.level(level),
-            InnerNode::new(level, [ft, fe]),
+            InnerNode::new(level, [ft, fe], ()),
         )
     }
 
@@ -782,7 +783,7 @@ where
         let fe = manager.get_terminal(BDDTerminal::True).unwrap();
         oxidd_core::LevelView::get_or_insert(
             &mut manager.level(level),
-            InnerNode::new(level, [ft, fe]),
+            InnerNode::new(level, [ft, fe], ()),
         )
     }
 
@@ -902,7 +903,7 @@ where
         vars: LevelNo,
         cache: &mut SatCountCache<N, S>,
     ) -> N {
-        fn inner<M: Manager<Terminal = BDDTerminal>, N: SatCountNumber, S: BuildHasher>(
+        fn inner<M: BDDManager, N: SatCountNumber, S: BuildHasher>(
             manager: &M,
             e: Ref<M::Edge>,
             terminal_val: &N,
@@ -992,7 +993,7 @@ where
         edge: Ref<'_, EdgeOfFunc<'id, Self>>,
         choice: impl FnMut(&Self::Manager<'id>, Ref<'_, EdgeOfFunc<'id, Self>>, LevelNo) -> bool,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
-        fn inner<M: Manager<Terminal = BDDTerminal>>(
+        fn inner<M: BDDManager>(
             manager: &M,
             edge: Ref<'_, M::Edge>,
             mut choice: impl FnMut(&M, Ref<'_, M::Edge>, LevelNo) -> bool,
@@ -1026,7 +1027,7 @@ where
 
             oxidd_core::LevelView::get_or_insert(
                 &mut manager.level(level),
-                M::InnerNode::new(level, children),
+                M::InnerNode::new(level, children, ()),
             )
         }
 
@@ -1039,13 +1040,13 @@ where
         edge: Ref<'_, EdgeOfFunc<'id, Self>>,
         literal_set: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
-        fn inner<M: Manager<Terminal = BDDTerminal>>(
+        fn inner<M: BDDManager>(
             manager: &M,
             edge: Ref<M::Edge>,
             literal_set: Ref<M::Edge>,
         ) -> AllocResult<Own<M::Edge>>
         where
-            M::InnerNode: HasLevel,
+            M::InnerNode: HasLevel + InnerNode<M::Edge, Value = ()>,
         {
             let Node::Inner(node) = manager.get_node(edge) else {
                 return Ok(manager.clone_edge(edge));
@@ -1087,7 +1088,7 @@ where
 
             oxidd_core::LevelView::get_or_insert(
                 &mut manager.level(level),
-                M::InnerNode::new(level, children),
+                M::InnerNode::new(level, children, ()),
             )
         }
 
@@ -1119,7 +1120,7 @@ where
 
 impl<F: Function> BooleanFunctionQuant for BDDFunction<F>
 where
-    for<'id> F::Manager<'id>: Manager<Terminal = BDDTerminal> + HasBDDOpApplyCache<F::Manager<'id>>,
+    for<'id> F::Manager<'id>: BDDManager,
     for<'id> INodeOfFunc<'id, F>: HasLevel,
 {
     #[inline]
@@ -1222,8 +1223,7 @@ pub mod mt {
 
     impl<F: Function> FunctionSubst for BDDFunctionMT<F>
     where
-        for<'id> F::Manager<'id>:
-            Manager<Terminal = BDDTerminal> + HasBDDOpApplyCache<F::Manager<'id>> + HasWorkers,
+        for<'id> F::Manager<'id>: BDDManager + HasWorkers,
         for<'id> INodeOfFunc<'id, F>: HasLevel,
         for<'id> EdgeOfFunc<'id, F>: Send + Sync,
     {
@@ -1243,8 +1243,7 @@ pub mod mt {
 
     impl<F: Function> BooleanFunction for BDDFunctionMT<F>
     where
-        for<'id> F::Manager<'id>:
-            Manager<Terminal = BDDTerminal> + HasBDDOpApplyCache<F::Manager<'id>> + HasWorkers,
+        for<'id> F::Manager<'id>: BDDManager + HasWorkers,
         for<'id> INodeOfFunc<'id, F>: HasLevel,
         for<'id> EdgeOfFunc<'id, F>: Send + Sync,
     {
@@ -1420,8 +1419,7 @@ pub mod mt {
 
     impl<F: Function> BooleanFunctionQuant for BDDFunctionMT<F>
     where
-        for<'id> F::Manager<'id>:
-            Manager<Terminal = BDDTerminal> + HasBDDOpApplyCache<F::Manager<'id>> + HasWorkers,
+        for<'id> F::Manager<'id>: BDDManager + HasWorkers,
         for<'id> INodeOfFunc<'id, F>: HasLevel,
         for<'id> EdgeOfFunc<'id, F>: Send + Sync,
     {
