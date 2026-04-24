@@ -49,7 +49,7 @@ mod index {
     use crate::util::type_cons::DD;
 
     crate::util::dd_index_based!(TDD {
-        node: NodeWithLevelCons<3>,
+        node: NodeWithLevelCons<(), 3>,
         edge_tag: (),
         terminal_manager: StaticTerminalManagerCons<TDDTerminal>,
         rules: TDDRulesCons for TDDRules,
@@ -102,7 +102,7 @@ mod pointer {
     use crate::util::type_cons::DD;
 
     crate::util::dd_pointer_based!(TDD {
-        node: NodeWithLevelCons<3>,
+        node: NodeWithLevelCons<(), 3>,
         edge_tag: (),
         terminal_manager: StaticTerminalManagerCons<TDDTerminal>,
         rules: TDDRulesCons for TDDRules,

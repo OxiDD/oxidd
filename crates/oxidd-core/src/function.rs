@@ -129,12 +129,15 @@ pub unsafe trait Function: Clone + Ord + Hash {
     /// ```
     /// # use oxidd_core::{*, function::Function, util::AllocResult};
     /// /// Adds a binary node on a new level with children `f` and `g`
-    /// fn foo<F: Function>(f: &F, g: &F) -> AllocResult<F> {
+    /// fn foo<F: Function>(f: &F, g: &F) -> AllocResult<F>
+    /// where
+    ///     for<'id> F::Manager<'id>: Manager<InnerNodeValue = ()>
+    /// {
     ///     f.with_manager_exclusive(|manager, f_edge| {
     ///         let level = manager.add_vars(1).start;
     ///         let fe = manager.clone_edge(f_edge);
     ///         let ge = manager.clone_edge(g.as_edge(manager));
-    ///         let he = manager.level(level).get_or_insert(InnerNode::new(level, [fe, ge]))?;
+    ///         let he = manager.level(level).get_or_insert(InnerNode::new(level, [fe, ge], ()))?;
     ///         Ok(F::from_edge(manager, he))
     ///     })
     /// }

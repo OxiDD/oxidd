@@ -55,7 +55,7 @@ mod index {
     use crate::util::type_cons::DD;
 
     crate::util::dd_index_based!(MTBDD<T> {
-        node: NodeWithLevelCons<2>,
+        node: NodeWithLevelCons<(), 2>,
         edge_tag: (),
         terminal_manager: DynamicTerminalManagerCons<T>,
         rules: MTBDDRulesCons for MTBDDRules,
