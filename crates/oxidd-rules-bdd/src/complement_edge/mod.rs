@@ -74,7 +74,9 @@ fn not<E: Edge<Tag = EdgeTag>>(e: &E) -> Borrowed<'_, E> {
 /// [`DiagramRules`] for complement edge binary decision diagrams
 pub struct BCDDRules;
 
-impl<E: Edge<Tag = EdgeTag>, N: InnerNode<E>> DiagramRules<E, N, BCDDTerminal> for BCDDRules {
+impl<E: Edge<Tag = EdgeTag>, N: InnerNode<E, Value = ()>> DiagramRules<E, N, BCDDTerminal>
+    for BCDDRules
+{
     type Cofactors<'a>
         = Cofactors<'a, E, N::ChildrenIter<'a>>
     where
@@ -103,10 +105,11 @@ impl<E: Edge<Tag = EdgeTag>, N: InnerNode<E>> DiagramRules<E, N, BCDDTerminal> f
             let node = N::new(
                 level,
                 [t.with_tag_owned(EdgeTag::None), e.with_tag_owned(!et)],
+                (),
             );
             ReducedOrNew::New(node, EdgeTag::Complemented)
         } else {
-            let node = N::new(level, [t, e]);
+            let node = N::new(level, [t, e], ());
             ReducedOrNew::New(node, EdgeTag::None)
         }
     }
@@ -187,7 +190,7 @@ fn is_false<M: Manager<EdgeTag = EdgeTag>>(manager: &M, edge: &M::Edge) -> bool 
 /// tagged as `tag`
 #[inline]
 #[must_use]
-fn collect_cofactors<E: Edge<Tag = EdgeTag>, N: InnerNode<E>>(
+fn collect_cofactors<E: Edge<Tag = EdgeTag>, N: InnerNode<E, Value = ()>>(
     tag: EdgeTag,
     node: &N,
 ) -> (Borrowed<'_, E>, Borrowed<'_, E>) {
@@ -209,7 +212,7 @@ fn reduce<M>(
     op: BCDDOp,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag>,
+    M: Manager<EdgeTag = EdgeTag, InnerNodeValue = ()>,
 {
     // We do not use `DiagramRules::reduce()` here, as the iterator is
     // apparently not fully optimized away.
@@ -225,10 +228,11 @@ where
         let node = M::InnerNode::new(
             level,
             [t.with_tag_owned(EdgeTag::None), e.with_tag_owned(!et)],
+            (),
         );
         (node, EdgeTag::Complemented)
     } else {
-        (M::InnerNode::new(level, [t, e]), EdgeTag::None)
+        (M::InnerNode::new(level, [t, e], ()), EdgeTag::None)
     };
 
     Ok(oxidd_core::LevelView::get_or_insert(&mut manager.level(level), node)?.with_tag_owned(tag))
@@ -447,7 +451,7 @@ fn add_literal_to_cube<M>(
     positive: bool,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal>,
+    M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal, InnerNodeValue = ()>,
     M::InnerNode: HasLevel,
 {
     let sub = EdgeDropGuard::new(manager, sub);
@@ -469,7 +473,7 @@ where
 
     let res = oxidd_core::LevelView::get_or_insert(
         &mut manager.level(level),
-        M::InnerNode::new(level, children),
+        M::InnerNode::new(level, children, ()),
     )?;
     Ok(res.with_tag_owned(tag))
 }

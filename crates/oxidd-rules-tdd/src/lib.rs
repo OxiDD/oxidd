@@ -21,7 +21,7 @@ mod apply_rec;
 /// [`DiagramRules`] for ternary decision diagrams
 pub struct TDDRules;
 
-impl<E: Edge, N: InnerNode<E>> DiagramRules<E, N, TDDTerminal> for TDDRules {
+impl<E: Edge, N: InnerNode<E, Value = ()>> DiagramRules<E, N, TDDTerminal> for TDDRules {
     type Cofactors<'a>
         = N::ChildrenIter<'a>
     where
@@ -45,7 +45,7 @@ impl<E: Edge, N: InnerNode<E>> DiagramRules<E, N, TDDTerminal> for TDDRules {
             manager.drop_edge(e);
             ReducedOrNew::Reduced(t)
         } else {
-            ReducedOrNew::New(N::new(level, [t, u, e]), Default::default())
+            ReducedOrNew::New(N::new(level, [t, u, e], ()), Default::default())
         }
     }
 
@@ -56,17 +56,14 @@ impl<E: Edge, N: InnerNode<E>> DiagramRules<E, N, TDDTerminal> for TDDRules {
 }
 
 #[inline(always)]
-fn reduce<M>(
+fn reduce<M: Manager<Terminal = TDDTerminal, InnerNodeValue = ()>>(
     manager: &M,
     level: LevelNo,
     t: M::Edge,
     u: M::Edge,
     e: M::Edge,
     op: TDDOp,
-) -> AllocResult<M::Edge>
-where
-    M: Manager<Terminal = TDDTerminal>,
-{
+) -> AllocResult<M::Edge> {
     let _ = op;
     let tmp = <TDDRules as DiagramRules<_, _, _>>::reduce(manager, level, [t, u, e]);
     if let ReducedOrNew::Reduced(..) = &tmp {

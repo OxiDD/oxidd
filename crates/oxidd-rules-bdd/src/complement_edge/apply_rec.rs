@@ -32,6 +32,17 @@ use super::{
 
 // spell-checker:ignore fnode,gnode,hnode,vnode,flevel,glevel,hlevel,vlevel
 
+trait BCDDManager:
+    Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag, InnerNodeValue = ()>
+    + HasApplyCache<Self, BCDDOp>
+{
+}
+impl<M> BCDDManager for M where
+    M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag, InnerNodeValue = ()>
+        + HasApplyCache<Self, BCDDOp>
+{
+}
+
 /// Recursively apply the binary operator `OP` to `f` and `g`
 ///
 /// We use a `const` parameter `OP` to have specialized version of this function
@@ -39,14 +50,13 @@ use super::{
 ///
 /// Using `Borrowed<M::Edge>` instead of `&M::Edge` means that we actually
 /// pass the edge by value, which saves a few indirections.
-fn apply_bin<M, R: Recursor<M>, const OP: u8>(
+fn apply_bin<M: BCDDManager, R: Recursor<M>, const OP: u8>(
     manager: &M,
     rec: R,
     f: Borrowed<M::Edge>,
     g: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal> + HasApplyCache<M, BCDDOp>,
     M::InnerNode: HasLevel,
 {
     if rec.should_switch_to_sequential() {
@@ -122,21 +132,20 @@ where
 
 /// Shorthand for `apply_bin_rec::<M, R, { BCDDOp::And as u8 }>(manager, f, g)`
 #[inline(always)]
-fn apply_and<M, R: Recursor<M>>(
+fn apply_and<M: BCDDManager, R: Recursor<M>>(
     manager: &M,
     rec: R,
     f: Borrowed<M::Edge>,
     g: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal> + HasApplyCache<M, BCDDOp>,
     M::InnerNode: HasLevel,
 {
     apply_bin::<M, R, { BCDDOp::And as u8 }>(manager, rec, f, g)
 }
 
 /// Recursively apply the if-then-else operator (`if f { g } else { h }`)
-fn apply_ite<M, R: Recursor<M>>(
+fn apply_ite<M: BCDDManager, R: Recursor<M>>(
     manager: &M,
     rec: R,
     f: Borrowed<M::Edge>,
@@ -144,7 +153,6 @@ fn apply_ite<M, R: Recursor<M>>(
     h: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal> + HasApplyCache<M, BCDDOp>,
     M::InnerNode: HasLevel,
 {
     if rec.should_switch_to_sequential() {
@@ -257,12 +265,11 @@ where
 /// not referenced from `vars` are mapped to the function representing the
 /// variable at that level. The latter is the reason why we return the owned
 /// edges.
-fn substitute_prepare<'a, M>(
+fn substitute_prepare<'a, M: BCDDManager>(
     manager: &'a M,
     pairs: impl Iterator<Item = (VarNo, Borrowed<'a, M::Edge>)>,
 ) -> AllocResult<EdgeVecDropGuard<'a, M>>
 where
-    M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag>,
     M::Edge: 'a,
     M::InnerNode: HasLevel,
 {
@@ -294,6 +301,7 @@ where
                 .get_or_insert(InnerNode::new(
                     level as LevelNo,
                     [t.into_edge(), e.into_edge()],
+                    (),
                 ))?
         });
     }
@@ -301,7 +309,7 @@ where
     Ok(res)
 }
 
-fn substitute<M, R: Recursor<M>>(
+fn substitute<M: BCDDManager, R: Recursor<M>>(
     manager: &M,
     rec: R,
     f: Borrowed<M::Edge>,
@@ -309,7 +317,6 @@ fn substitute<M, R: Recursor<M>>(
     cache_id: u32,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal> + HasApplyCache<M, BCDDOp>,
     M::InnerNode: HasLevel,
 {
     if rec.should_switch_to_sequential() {
@@ -383,7 +390,7 @@ enum RestrictInnerResult<'a, M: Manager> {
 /// We expose this, because it can be reused for the multi-threaded version.
 #[inline]
 #[allow(clippy::too_many_arguments)]
-fn restrict_inner<'a, M>(
+fn restrict_inner<'a, M: BCDDManager>(
     manager: &'a M,
     f: Borrowed<'a, M::Edge>,
     f_neg: bool,
@@ -394,7 +401,6 @@ fn restrict_inner<'a, M>(
     vnode: &'a M::InnerNode,
 ) -> RestrictInnerResult<'a, M>
 where
-    M: Manager<EdgeTag = EdgeTag>,
     M::InnerNode: HasLevel,
 {
     debug_assert!(std::ptr::eq(manager.get_node(&f).unwrap_inner(), fnode));
@@ -526,14 +532,13 @@ where
     }))
 }
 
-fn restrict<M, R: Recursor<M>>(
+fn restrict<M: BCDDManager, R: Recursor<M>>(
     manager: &M,
     rec: R,
     f: Borrowed<M::Edge>,
     vars: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag> + HasApplyCache<M, BCDDOp>,
     M::InnerNode: HasLevel,
 {
     if rec.should_switch_to_sequential() {
@@ -612,14 +617,13 @@ where
 ///
 /// `Q` is one of [`BCDDOp::Forall`], [`BCDDOp::Exists`], or [`BCDDOp::Forall`]
 /// as `u8`.
-fn quant<M, R: Recursor<M>, const Q: u8>(
+fn quant<M: BCDDManager, R: Recursor<M>, const Q: u8>(
     manager: &M,
     rec: R,
     f: Borrowed<M::Edge>,
     vars: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag> + HasApplyCache<M, BCDDOp>,
     M::InnerNode: HasLevel,
 {
     if rec.should_switch_to_sequential() {
@@ -727,7 +731,7 @@ where
 /// as `u8`. We use a `const` parameter `OP` to have specialized version of this
 /// function for each operator ([`BCDDOp::And`], [`BCDDOp::Xor`], or
 /// specifically [`BCDDOp::UniqueNand`], each as `u8`).
-fn apply_quant<'a, M, R: Recursor<M>, const Q: u8, const OP: u8>(
+fn apply_quant<'a, M: BCDDManager, R: Recursor<M>, const Q: u8, const OP: u8>(
     manager: &'a M,
     rec: R,
     f: Borrowed<M::Edge>,
@@ -735,7 +739,6 @@ fn apply_quant<'a, M, R: Recursor<M>, const Q: u8, const OP: u8>(
     vars: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag> + HasApplyCache<M, BCDDOp>,
     M::InnerNode: HasLevel,
 {
     if rec.should_switch_to_sequential() {
@@ -870,7 +873,7 @@ where
 /// In contrast to [`apply_quant()`], the operator is not a const but a runtime
 /// parameter. `QN` is the "negated" version of `Q`: If `Q` is
 /// [`BCDDOp::Forall`] (as u8) then, `QN` is [`BCDDOp::Exist`], and vice versa.
-fn apply_quant_dispatch<'a, M, R: Recursor<M>, const Q: u8, const QN: u8>(
+fn apply_quant_dispatch<'a, M: BCDDManager, R: Recursor<M>, const Q: u8, const QN: u8>(
     manager: &'a M,
     rec: R,
     op: BooleanOperator,
@@ -879,7 +882,6 @@ fn apply_quant_dispatch<'a, M, R: Recursor<M>, const Q: u8, const QN: u8>(
     vars: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag> + HasApplyCache<M, BCDDOp>,
     M::InnerNode: HasLevel,
 {
     use BooleanOperator::*;
@@ -921,7 +923,7 @@ where
 ///
 /// In contrast to [`apply_quant()`], the operator is not a const but a runtime
 /// parameter.
-fn apply_quant_unique_dispatch<'a, M, R: Recursor<M>>(
+fn apply_quant_unique_dispatch<'a, M: BCDDManager, R: Recursor<M>>(
     manager: &'a M,
     rec: R,
     op: BooleanOperator,
@@ -930,7 +932,6 @@ fn apply_quant_unique_dispatch<'a, M, R: Recursor<M>>(
     vars: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag> + HasApplyCache<M, BCDDOp>,
     M::InnerNode: HasLevel,
 {
     use BooleanOperator::*;
@@ -952,10 +953,6 @@ where
 }
 
 // --- Function Interface ------------------------------------------------------
-
-/// Workaround for https://github.com/rust-lang/rust/issues/49601
-trait HasBCDDOpApplyCache<M: Manager>: HasApplyCache<M, BCDDOp> {}
-impl<M: Manager + HasApplyCache<M, BCDDOp>> HasBCDDOpApplyCache<M> for M {}
 
 /// Boolean function backed by a complement edge binary decision diagram
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Function, Debug)]
@@ -980,8 +977,7 @@ impl<F: Function> BCDDFunction<F> {
 
 impl<F: Function> FunctionSubst for BCDDFunction<F>
 where
-    for<'id> F::Manager<'id>:
-        Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag> + HasBCDDOpApplyCache<F::Manager<'id>>,
+    for<'id> F::Manager<'id>: BCDDManager,
     for<'id> INodeOfFunc<'id, F>: HasLevel,
 {
     fn substitute_edge<'id, 'a>(
@@ -999,8 +995,7 @@ where
 
 impl<F: Function> BooleanFunction for BCDDFunction<F>
 where
-    for<'id> F::Manager<'id>:
-        Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag> + HasBCDDOpApplyCache<F::Manager<'id>>,
+    for<'id> F::Manager<'id>: BCDDManager,
     for<'id> INodeOfFunc<'id, F>: HasLevel,
 {
     fn var_edge<'id>(
@@ -1012,7 +1007,7 @@ where
         let level = manager.var_to_level(var);
         oxidd_core::LevelView::get_or_insert(
             &mut manager.level(level),
-            InnerNode::new(level, [t, e]),
+            InnerNode::new(level, [t, e], ()),
         )
     }
 
@@ -1138,15 +1133,12 @@ where
         vars: LevelNo,
         cache: &mut SatCountCache<N, S>,
     ) -> N {
-        fn inner<M, N: SatCountNumber, S: BuildHasher>(
+        fn inner<M: BCDDManager, N: SatCountNumber, S: BuildHasher>(
             manager: &M,
             e: Borrowed<M::Edge>,
             terminal_val: &N,
             cache: &mut SatCountCache<N, S>,
-        ) -> N
-        where
-            M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal>,
-        {
+        ) -> N {
             let node = match manager.get_node(&e) {
                 Node::Inner(node) => node,
                 Node::Terminal(_) => return terminal_val.clone(),
@@ -1181,14 +1173,13 @@ where
 
         // This function does not use the identity `|f| = num_vars - |f'|` to
         // avoid rounding issues
-        fn inner_floating<M, N, S>(
+        fn inner_floating<M: BCDDManager, N, S>(
             manager: &M,
             e: Borrowed<M::Edge>,
             terminal_val: &N,
             cache: &mut SatCountCache<N, S>,
         ) -> N
         where
-            M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal>,
             N: SatCountNumber,
             S: BuildHasher,
         {
@@ -1248,7 +1239,7 @@ where
         choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>, LevelNo) -> bool,
     ) -> Option<Vec<OptBool>> {
         #[inline] // this function is tail-recursive
-        fn inner<M: Manager<EdgeTag = EdgeTag>>(
+        fn inner<M: BCDDManager>(
             manager: &M,
             edge: Borrowed<M::Edge>,
             cube: &mut [OptBool],
@@ -1291,7 +1282,7 @@ where
         edge: &EdgeOfFunc<'id, Self>,
         choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>, LevelNo) -> bool,
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        fn inner<M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal>>(
+        fn inner<M: BCDDManager>(
             manager: &M,
             edge: Borrowed<M::Edge>,
             mut choice: impl FnMut(&M, &M::Edge, LevelNo) -> bool,
@@ -1325,7 +1316,7 @@ where
         edge: &EdgeOfFunc<'id, Self>,
         literal_set: &EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        fn inner<M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal>>(
+        fn inner<M: BCDDManager>(
             manager: &M,
             edge: Borrowed<M::Edge>,
             literal_set: Borrowed<M::Edge>,
@@ -1381,14 +1372,13 @@ where
         }
 
         #[inline] // this function is tail-recursive
-        fn inner<M>(
+        fn inner<M: BCDDManager>(
             manager: &M,
             edge: Borrowed<M::Edge>,
             complement: bool,
             choices: &FixedBitSet,
         ) -> bool
         where
-            M: Manager<EdgeTag = EdgeTag>,
             M::InnerNode: HasLevel,
         {
             let complement = complement ^ (edge.tag() == EdgeTag::Complemented);
@@ -1407,8 +1397,7 @@ where
 
 impl<F: Function> BooleanFunctionQuant for BCDDFunction<F>
 where
-    for<'id> F::Manager<'id>:
-        Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag> + HasBCDDOpApplyCache<F::Manager<'id>>,
+    for<'id> F::Manager<'id>: BCDDManager,
     for<'id> INodeOfFunc<'id, F>: HasLevel,
 {
     #[inline]
@@ -1533,9 +1522,7 @@ pub mod mt {
 
     impl<F: Function> FunctionSubst for BCDDFunctionMT<F>
     where
-        for<'id> F::Manager<'id>: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag>
-            + HasBCDDOpApplyCache<F::Manager<'id>>
-            + HasWorkers,
+        for<'id> F::Manager<'id>: BCDDManager + HasWorkers,
         for<'id> INodeOfFunc<'id, F>: HasLevel,
         for<'id> EdgeOfFunc<'id, F>: Send + Sync,
     {
@@ -1556,9 +1543,7 @@ pub mod mt {
 
     impl<F: Function> BooleanFunction for BCDDFunctionMT<F>
     where
-        for<'id> F::Manager<'id>: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag>
-            + HasBCDDOpApplyCache<F::Manager<'id>>
-            + HasWorkers,
+        for<'id> F::Manager<'id>: BCDDManager + HasWorkers,
         for<'id> INodeOfFunc<'id, F>: HasLevel,
         for<'id> EdgeOfFunc<'id, F>: Send + Sync,
     {
@@ -1733,9 +1718,7 @@ pub mod mt {
 
     impl<F: Function> BooleanFunctionQuant for BCDDFunctionMT<F>
     where
-        for<'id> F::Manager<'id>: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag>
-            + HasBCDDOpApplyCache<F::Manager<'id>>
-            + HasWorkers,
+        for<'id> F::Manager<'id>: BCDDManager + HasWorkers,
         for<'id> INodeOfFunc<'id, F>: HasLevel,
         for<'id> EdgeOfFunc<'id, F>: Send + Sync,
     {

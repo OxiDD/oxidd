@@ -1,6 +1,7 @@
 use std::cell::UnsafeCell;
 use std::hash::Hash;
 use std::hash::Hasher;
+use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::sync::atomic;
 use std::sync::atomic::AtomicUsize;
@@ -23,20 +24,21 @@ use crate::manager::InnerNodeCons;
 
 use super::NodeBase;
 
-pub struct NodeWithLevel<'id, ET, const TAG_BITS: u32, const ARITY: usize> {
+pub struct NodeWithLevel<'id, ET, V, const TAG_BITS: u32, const ARITY: usize> {
     rc: AtomicUsize,
     level: AtomicLevelNo,
     children: UnsafeCell<[manager::Edge<'id, Self, ET, TAG_BITS>; ARITY]>,
+    value: V,
 }
 
-impl<'id, ET: Tag, const TAG_BITS: u32, const ARITY: usize>
-    NodeWithLevel<'id, ET, TAG_BITS, ARITY>
+impl<'id, ET: Tag, V, const TAG_BITS: u32, const ARITY: usize>
+    NodeWithLevel<'id, ET, V, TAG_BITS, ARITY>
 {
     const UNINIT_EDGE: MaybeUninit<manager::Edge<'id, Self, ET, TAG_BITS>> = MaybeUninit::uninit();
 }
 
-unsafe impl<ET, const TAG_BITS: u32, const ARITY: usize> AtomicRefCounted
-    for NodeWithLevel<'_, ET, TAG_BITS, ARITY>
+unsafe impl<ET, V, const TAG_BITS: u32, const ARITY: usize> AtomicRefCounted
+    for NodeWithLevel<'_, ET, V, TAG_BITS, ARITY>
 {
     #[inline(always)]
     fn retain(&self) {
@@ -56,34 +58,35 @@ unsafe impl<ET, const TAG_BITS: u32, const ARITY: usize> AtomicRefCounted
     }
 }
 
-impl<ET: Tag, const TAG_BITS: u32, const ARITY: usize> PartialEq
-    for NodeWithLevel<'_, ET, TAG_BITS, ARITY>
+impl<ET: Tag, V: PartialEq, const TAG_BITS: u32, const ARITY: usize> PartialEq
+    for NodeWithLevel<'_, ET, V, TAG_BITS, ARITY>
 {
     #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
         // SAFETY: we have shared access to the node
-        unsafe { *self.children.get() == *other.children.get() }
+        (unsafe { *self.children.get() == *other.children.get() }) && self.value == other.value
     }
 }
-impl<ET: Tag, const TAG_BITS: u32, const ARITY: usize> Eq
-    for NodeWithLevel<'_, ET, TAG_BITS, ARITY>
+impl<ET: Tag, V: Eq, const TAG_BITS: u32, const ARITY: usize> Eq
+    for NodeWithLevel<'_, ET, V, TAG_BITS, ARITY>
 {
 }
 
-impl<ET: Tag, const TAG_BITS: u32, const ARITY: usize> Hash
-    for NodeWithLevel<'_, ET, TAG_BITS, ARITY>
+impl<ET: Tag, V: Hash, const TAG_BITS: u32, const ARITY: usize> Hash
+    for NodeWithLevel<'_, ET, V, TAG_BITS, ARITY>
 {
     #[inline(always)]
     fn hash<H: Hasher>(&self, state: &mut H) {
         // SAFETY: we have shared access to the node
         unsafe { &*self.children.get() }.hash(state);
+        self.value.hash(state);
     }
 }
 
 // SAFETY: The reference counter is initialized to 2, `load_rc` uses the given
 // ordering.
-unsafe impl<ET: Tag, const TAG_BITS: u32, const ARITY: usize> NodeBase
-    for NodeWithLevel<'_, ET, TAG_BITS, ARITY>
+unsafe impl<ET: Tag, V: Eq + Hash, const TAG_BITS: u32, const ARITY: usize> NodeBase
+    for NodeWithLevel<'_, ET, V, TAG_BITS, ARITY>
 {
     #[inline(always)]
     fn needs_drop() -> bool {
@@ -96,8 +99,9 @@ unsafe impl<ET: Tag, const TAG_BITS: u32, const ARITY: usize> NodeBase
     }
 }
 
-impl<'id, ET: Tag, const TAG_BITS: u32, const ARITY: usize>
-    DropWith<manager::Edge<'id, Self, ET, TAG_BITS>> for NodeWithLevel<'id, ET, TAG_BITS, ARITY>
+impl<'id, ET: Tag, V: Eq + Hash, const TAG_BITS: u32, const ARITY: usize>
+    DropWith<manager::Edge<'id, Self, ET, TAG_BITS>>
+    for NodeWithLevel<'id, ET, V, TAG_BITS, ARITY>
 {
     #[inline]
     fn drop_with(self, drop_edge: impl Fn(manager::Edge<'id, Self, ET, TAG_BITS>)) {
@@ -107,10 +111,13 @@ impl<'id, ET: Tag, const TAG_BITS: u32, const ARITY: usize>
     }
 }
 
-impl<'id, ET: Tag, const TAG_BITS: u32, const ARITY: usize>
-    InnerNode<manager::Edge<'id, Self, ET, TAG_BITS>> for NodeWithLevel<'id, ET, TAG_BITS, ARITY>
+impl<'id, ET: Tag, V: Eq + Hash, const TAG_BITS: u32, const ARITY: usize>
+    InnerNode<manager::Edge<'id, Self, ET, TAG_BITS>>
+    for NodeWithLevel<'id, ET, V, TAG_BITS, ARITY>
 {
     const ARITY: usize = 2;
+
+    type Value = V;
 
     type ChildrenIter<'a>
         = BorrowedEdgeIter<
@@ -125,6 +132,7 @@ impl<'id, ET: Tag, const TAG_BITS: u32, const ARITY: usize>
     fn new(
         level: LevelNo,
         children: impl IntoIterator<Item = manager::Edge<'id, Self, ET, TAG_BITS>>,
+        value: V,
     ) -> Self {
         let mut it = children.into_iter();
         let mut children = [Self::UNINIT_EDGE; ARITY];
@@ -150,6 +158,7 @@ impl<'id, ET: Tag, const TAG_BITS: u32, const ARITY: usize>
             rc: AtomicUsize::new(2),
             level: AtomicLevelNo::new(level),
             children: UnsafeCell::new(children),
+            value,
         }
     }
 
@@ -197,10 +206,15 @@ impl<'id, ET: Tag, const TAG_BITS: u32, const ARITY: usize>
         // Subtract 1 for the reference in the unique table
         self.rc.load(Relaxed) - 1
     }
+
+    #[inline(always)]
+    fn get_value(&self) -> &V {
+        &self.value
+    }
 }
 
-unsafe impl<ET, const TAG_BITS: u32, const ARITY: usize> HasLevel
-    for NodeWithLevel<'_, ET, TAG_BITS, ARITY>
+unsafe impl<ET, V, const TAG_BITS: u32, const ARITY: usize> HasLevel
+    for NodeWithLevel<'_, ET, V, TAG_BITS, ARITY>
 {
     #[inline(always)]
     fn level(&self) -> LevelNo {
@@ -213,18 +227,18 @@ unsafe impl<ET, const TAG_BITS: u32, const ARITY: usize> HasLevel
     }
 }
 
-unsafe impl<ET: Send + Sync, const TAG_BITS: u32, const ARITY: usize> Send
-    for NodeWithLevel<'_, ET, TAG_BITS, ARITY>
+unsafe impl<ET: Send + Sync, V: Send + Sync, const TAG_BITS: u32, const ARITY: usize> Send
+    for NodeWithLevel<'_, ET, V, TAG_BITS, ARITY>
 {
 }
-unsafe impl<ET: Send + Sync, const TAG_BITS: u32, const ARITY: usize> Sync
-    for NodeWithLevel<'_, ET, TAG_BITS, ARITY>
+unsafe impl<ET: Send + Sync, V: Send + Sync, const TAG_BITS: u32, const ARITY: usize> Sync
+    for NodeWithLevel<'_, ET, V, TAG_BITS, ARITY>
 {
 }
 
-pub struct NodeWithLevelCons<const ARITY: usize>;
-impl<ET: Tag, const TAG_BITS: u32, const ARITY: usize> InnerNodeCons<ET, TAG_BITS>
-    for NodeWithLevelCons<ARITY>
+pub struct NodeWithLevelCons<V, const ARITY: usize>(PhantomData<V>);
+impl<ET: Tag, V: Eq + Hash + Send + Sync, const TAG_BITS: u32, const ARITY: usize>
+    InnerNodeCons<ET, TAG_BITS> for NodeWithLevelCons<V, ARITY>
 {
-    type T<'id> = NodeWithLevel<'id, ET, TAG_BITS, ARITY>;
+    type T<'id> = NodeWithLevel<'id, ET, V, TAG_BITS, ARITY>;
 }

@@ -652,6 +652,7 @@ where
     type Edge = Edge<'id, N, ET, TAG_BITS>;
     type EdgeTag = ET;
     type InnerNode = N;
+    type InnerNodeValue = N::Value;
     type Terminal = TM::TerminalNode;
     type TerminalRef<'a>
         = TM::TerminalNodeRef<'a>

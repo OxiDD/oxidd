@@ -89,7 +89,7 @@ pub trait DiagramRules<E: Edge, N: InnerNode<E>, T> {
     /// ```
     /// # use oxidd_core::{*, util::BorrowedEdgeIter};
     /// struct BDDRules;
-    /// impl<E: Edge, N: InnerNode<E>, T> DiagramRules<E, N, T> for BDDRules {
+    /// impl<E: Edge, N: InnerNode<E, Value = ()>, T> DiagramRules<E, N, T> for BDDRules {
     ///     type Cofactors<'a> = N::ChildrenIter<'a> where N: 'a, E: 'a;
     ///
     ///     fn reduce<M: Manager<Edge = E, InnerNode = N, Terminal = T>>(
@@ -106,7 +106,7 @@ pub trait DiagramRules<E: Edge, N: InnerNode<E>, T> {
     ///             manager.drop_edge(f1);
     ///             ReducedOrNew::Reduced(f0)
     ///         } else {
-    ///             ReducedOrNew::New(InnerNode::new(level, [f0, f1]), Default::default())
+    ///             ReducedOrNew::New(InnerNode::new(level, [f0, f1], ()), Default::default())
     ///         }
     ///     }
     ///
@@ -194,14 +194,22 @@ impl<E: Edge, N: InnerNode<E>> ReducedOrNew<E, N> {
 
 /// Node in a decision diagram
 ///
-/// [`Eq`] and [`Hash`] should consider the children only, in particular no
-/// level information. This means that if `Self` implements [`HasLevel`],
-/// [`HasLevel::set_level()`] may be called while the node is present in a
-/// [`LevelView`]. This is not the case for [`InnerNode::set_child()`]: The user
-/// must remove the node from the [`LevelView`] before setting the children (and
-/// re-insert it afterwards).
+/// [`Eq`] and [`Hash`] should consider the children and the node value only, in
+/// particular no level information. This means that if `Self` implements
+/// [`HasLevel`], [`HasLevel::set_level()`] may be called while the node is
+/// present in a [`LevelView`]. This is not the case for
+/// [`InnerNode::set_child()`]: The user must remove the node from the
+/// [`LevelView`] before setting the children (and re-insert it afterwards).
 #[must_use]
 pub trait InnerNode<E: Edge>: Sized + Eq + Hash + DropWith<E> {
+    /// Value stored in inner nodes
+    ///
+    /// This type is useful, e.g., as elements of the sets represented by a list
+    /// decision diagram (LDD). The value type is not to be confused with the
+    /// level number, which needs to fulfill certain invariants if stored in the
+    /// node. An ordinary BDD would just use `()` as the node value type.
+    type Value: Eq + Hash;
+
     /// The node's arity (upper bound)
     const ARITY: usize;
 
@@ -221,7 +229,7 @@ pub trait InnerNode<E: Edge>: Sized + Eq + Hash + DropWith<E> {
     /// (typically, the length should be [`Self::ARITY`], but some node types
     /// may deviate from that).
     #[must_use]
-    fn new(level: LevelNo, children: impl IntoIterator<Item = E>) -> Self;
+    fn new(level: LevelNo, children: impl IntoIterator<Item = E>, value: Self::Value) -> Self;
 
     /// Returns the result of `check` applied to the node's level in case this
     /// node type stores levels, otherwise returns `true`.
@@ -270,6 +278,10 @@ pub trait InnerNode<E: Edge>: Sized + Eq + Hash + DropWith<E> {
     /// implementation.
     #[must_use]
     fn ref_count(&self) -> usize;
+
+    /// Get the node's [value][Self::Value]
+    #[must_use]
+    fn get_value(&self) -> &Self::Value;
 }
 
 /// Level number type
@@ -619,10 +631,12 @@ impl<'a, M: Manager> Node<'a, M> {
 pub unsafe trait Manager: Sized {
     /// Type of edge
     type Edge: Edge<Tag = Self::EdgeTag>;
-    /// Type of edge tags
+    /// Type of [edge tags][Edge::Tag]
     type EdgeTag: Tag;
     /// Type of inner nodes
-    type InnerNode: InnerNode<Self::Edge>;
+    type InnerNode: InnerNode<Self::Edge, Value = Self::InnerNodeValue>;
+    /// Type of [inner node values][InnerNode::Value]
+    type InnerNodeValue: Eq + Hash;
     /// Type of terminals
     type Terminal: Eq + Hash;
     /// References to [`Self::Terminal`]s

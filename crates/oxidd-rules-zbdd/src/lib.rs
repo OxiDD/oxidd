@@ -27,7 +27,7 @@ mod recursor;
 /// [`DiagramRules`] for simple binary decision diagrams
 pub struct ZBDDRules;
 
-impl<E: Edge, N: InnerNode<E>> DiagramRules<E, N, ZBDDTerminal> for ZBDDRules {
+impl<E: Edge, N: InnerNode<E, Value = ()>> DiagramRules<E, N, ZBDDTerminal> for ZBDDRules {
     type Cofactors<'a>
         = N::ChildrenIter<'a>
     where
@@ -49,7 +49,7 @@ impl<E: Edge, N: InnerNode<E>> DiagramRules<E, N, ZBDDTerminal> for ZBDDRules {
             manager.drop_edge(hi);
             return ReducedOrNew::Reduced(lo);
         }
-        ReducedOrNew::New(N::new(level, [hi, lo]), Default::default())
+        ReducedOrNew::New(N::new(level, [hi, lo], ()), Default::default())
     }
 
     #[inline]
@@ -67,7 +67,7 @@ fn reduce<M>(
     op: ZBDDOp,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = ZBDDTerminal>,
+    M: Manager<Terminal = ZBDDTerminal, InnerNodeValue = ()>,
 {
     // We do not use `DiagramRules::reduce()` here, as the iterator is
     // apparently not fully optimized away.
@@ -78,7 +78,7 @@ where
     }
     oxidd_core::LevelView::get_or_insert(
         &mut manager.level(level),
-        M::InnerNode::new(level, [hi, lo]),
+        M::InnerNode::new(level, [hi, lo], ()),
     )
 }
 
@@ -91,7 +91,7 @@ fn reduce_borrowed<M>(
     op: ZBDDOp,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = ZBDDTerminal>,
+    M: Manager<Terminal = ZBDDTerminal, InnerNodeValue = ()>,
 {
     let _ = op;
     if manager.get_node(&hi).is_terminal(&ZBDDTerminal::Empty) {
@@ -99,7 +99,7 @@ where
         return Ok(lo);
     }
     ReducedOrNew::New(
-        M::InnerNode::new(level, [manager.clone_edge(&hi), lo]),
+        M::InnerNode::new(level, [manager.clone_edge(&hi), lo], ()),
         Default::default(),
     )
     .then_insert(manager, level)
@@ -154,7 +154,7 @@ pub struct ZBDDCache<E> {
 
 impl<M> ManagerEventSubscriber<M> for ZBDDCache<M::Edge>
 where
-    M: Manager<Terminal = ZBDDTerminal> + HasZBDDCache<M::Edge>,
+    M: Manager<Terminal = ZBDDTerminal, InnerNodeValue = ()> + HasZBDDCache<M::Edge>,
 {
     #[inline(always)]
     fn init_mut(manager: &mut M) {
@@ -188,7 +188,7 @@ where
             let level = view.level_no();
             let hi = manager.clone_edge(tautologies.last().unwrap());
             let lo = manager.clone_edge(&hi);
-            let Ok(edge) = view.get_or_insert(M::InnerNode::new(level, [hi, lo])) else {
+            let Ok(edge) = view.get_or_insert(M::InnerNode::new(level, [hi, lo], ())) else {
                 eprintln!("Out of memory");
                 std::process::abort();
             };
@@ -321,7 +321,7 @@ where
 /// logical equivalent is `lo ∨ (var ∧ hi|ᵥₐᵣ₌₀)`.
 pub fn make_node<M>(manager: &M, var: &M::Edge, hi: M::Edge, lo: M::Edge) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = ZBDDTerminal>,
+    M: Manager<Terminal = ZBDDTerminal, InnerNodeValue = ()>,
     M::InnerNode: HasLevel,
 {
     let level = singleton_level(manager, var);
@@ -334,7 +334,7 @@ where
 #[deprecated = "use `BooleanFunction::var` instead"]
 pub fn var_boolean_function<M>(manager: &M, singleton: &M::Edge) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = ZBDDTerminal> + HasZBDDCache<M::Edge>,
+    M: Manager<Terminal = ZBDDTerminal, InnerNodeValue = ()> + HasZBDDCache<M::Edge>,
     M::InnerNode: HasLevel,
 {
     let level = singleton_level(manager, singleton);
@@ -342,7 +342,7 @@ where
     let lo = manager.get_terminal(ZBDDTerminal::Empty).unwrap();
     let mut edge = oxidd_core::LevelView::get_or_insert(
         &mut manager.level(level),
-        InnerNode::new(level, [hi, lo]),
+        InnerNode::new(level, [hi, lo], ()),
     )?;
 
     // Build the chain bottom up. We need to skip the newly created level.
@@ -354,7 +354,7 @@ where
 
         let level = view.level_no();
         let edge2 = manager.clone_edge(&edge);
-        edge = view.get_or_insert(InnerNode::new(level, [edge, edge2]))?;
+        edge = view.get_or_insert(InnerNode::new(level, [edge, edge2], ()))?;
     }
 
     Ok(edge)

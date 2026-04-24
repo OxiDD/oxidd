@@ -14,10 +14,18 @@ use super::{collect_children, reduce, stat, terminal_bin, Operation, TDDOp, TDDT
 
 // spell-checker:ignore fnode,gnode,hnode,flevel,glevel,hlevel,ghlevel
 
+trait TDDManager:
+    Manager<Terminal = TDDTerminal, InnerNodeValue = ()> + HasApplyCache<Self, TDDOp>
+{
+}
+impl<M: Manager<Terminal = TDDTerminal, InnerNodeValue = ()> + HasApplyCache<Self, TDDOp>>
+    TDDManager for M
+{
+}
+
 /// Recursively apply the 'not' operator to `f`
-fn apply_not<M>(manager: &M, f: Borrowed<M::Edge>) -> AllocResult<M::Edge>
+fn apply_not<M: TDDManager>(manager: &M, f: Borrowed<M::Edge>) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = TDDTerminal> + HasApplyCache<M, TDDOp>,
     M::InnerNode: HasLevel,
 {
     stat!(call TDDOp::Not);
@@ -63,13 +71,12 @@ where
 ///
 /// We use a `const` parameter `OP` to have specialized version of this function
 /// for each operator.
-fn apply_bin<M, const OP: u8>(
+fn apply_bin<M: TDDManager, const OP: u8>(
     manager: &M,
     f: Borrowed<M::Edge>,
     g: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = TDDTerminal> + HasApplyCache<M, TDDOp>,
     M::InnerNode: HasLevel,
 {
     stat!(call OP);
@@ -130,14 +137,13 @@ where
 }
 
 /// Recursively apply the if-then-else operator (`if f { g } else { h }`)
-fn apply_ite_rec<M>(
+fn apply_ite_rec<M: TDDManager>(
     manager: &M,
     f: Borrowed<M::Edge>,
     g: Borrowed<M::Edge>,
     h: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = TDDTerminal> + HasApplyCache<M, TDDOp>,
     M::InnerNode: HasLevel,
 {
     use TDDTerminal::*;
@@ -240,10 +246,6 @@ where
 
 // --- Function Interface ------------------------------------------------------
 
-/// Workaround for https://github.com/rust-lang/rust/issues/49601
-trait HasTDDOpApplyCache<M: Manager>: HasApplyCache<M, TDDOp> {}
-impl<M: Manager + HasApplyCache<M, TDDOp>> HasTDDOpApplyCache<M> for M {}
-
 /// Three value logic function backed by a ternary decision diagram
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Function, Debug)]
 #[repr_id = "TDD"]
@@ -267,7 +269,7 @@ impl<F: Function> TDDFunction<F> {
 
 impl<F: Function> TVLFunction for TDDFunction<F>
 where
-    for<'id> F::Manager<'id>: Manager<Terminal = TDDTerminal> + HasTDDOpApplyCache<F::Manager<'id>>,
+    for<'id> F::Manager<'id>: TDDManager,
     for<'id> INodeOfFunc<'id, F>: HasLevel,
 {
     #[inline]
@@ -281,7 +283,7 @@ where
         let f2 = manager.get_terminal(TDDTerminal::False).unwrap();
         oxidd_core::LevelView::get_or_insert(
             &mut manager.level(level),
-            InnerNode::new(level, [f0, f1, f2]),
+            InnerNode::new(level, [f0, f1, f2], ()),
         )
     }
 
@@ -409,9 +411,12 @@ where
         }
 
         #[inline] // this function is tail-recursive
-        fn inner<M>(manager: &M, edge: Borrowed<M::Edge>, choices: &[u32]) -> Option<bool>
+        fn inner<M: TDDManager>(
+            manager: &M,
+            edge: Borrowed<M::Edge>,
+            choices: &[u32],
+        ) -> Option<bool>
         where
-            M: Manager<Terminal = TDDTerminal>,
             M::InnerNode: HasLevel,
         {
             const ELEMENTS_PER_BLOCK: u32 = u32::BITS / 2;

@@ -145,7 +145,7 @@ mod index {
     use crate::util::type_cons::DD;
 
     crate::util::dd_index_based!(ZBDD {
-        node: NodeWithLevelCons<2>,
+        node: NodeWithLevelCons<(), 2>,
         edge_tag: (),
         terminal_manager: StaticTerminalManagerCons<ZBDDTerminal>,
         rules: ZBDDRulesCons for ZBDDRules,
@@ -193,7 +193,7 @@ mod pointer {
     use crate::util::type_cons::DD;
 
     crate::util::dd_pointer_based!(ZBDD {
-        node: NodeWithLevelCons<2>,
+        node: NodeWithLevelCons<(), 2>,
         edge_tag: (),
         terminal_manager: StaticTerminalManagerCons<ZBDDTerminal>,
         rules: ZBDDRulesCons for ZBDDRules,
