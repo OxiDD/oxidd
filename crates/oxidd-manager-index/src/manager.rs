@@ -2242,13 +2242,14 @@ pub fn new_manager<
     drop(manager);
 
     let store_addr = arc.addr();
-    arc.workers.pool.spawn_broadcast(move |_| {
+    arc.workers.spawn_broadcast(move |_| {
         // The workers are dedicated to this store.
         LOCAL_STORE_STATE.with(|state| state.current_store.set(store_addr))
     });
 
     // spell-checker:ignore mref
     let gc_mref: ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS> = ManagerRef(arc.clone());
+    #[cfg(not(target_arch = "wasm32"))]
     std::thread::Builder::new()
         .name("oxidd mi gc".to_string())
         .spawn(move || {
@@ -2284,6 +2285,8 @@ pub fn new_manager<
             }
         })
         .unwrap();
+    #[cfg(target_arch = "wasm32")]
+    let _ = gc_mref;
 
     // initialize the manager data
     let local_guard = arc.prepare_local_state();
