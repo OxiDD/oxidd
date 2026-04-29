@@ -5,48 +5,6 @@ use crate::Manager;
 
 use crate::util::DropWith;
 
-/// `OnDrop::new(data, f)` executes `f(data)` when dropped
-///
-/// This simplifies writing actions to be executed when unwinding.
-#[derive(Debug)]
-pub struct OnDrop<'a, T, D: FnOnce(&mut T)>(ManuallyDrop<(&'a mut T, D)>);
-
-impl<'a, T, D: FnOnce(&mut T)> OnDrop<'a, T, D> {
-    /// Create a new `OnDrop` handler
-    #[inline(always)]
-    pub fn new(data: &'a mut T, drop_handler: D) -> Self {
-        Self(ManuallyDrop::new((data, drop_handler)))
-    }
-
-    /// Access the data
-    #[inline(always)]
-    pub fn data(&self) -> &T {
-        self.0 .0
-    }
-
-    /// Access the data
-    #[inline(always)]
-    pub fn data_mut(&mut self) -> &mut T {
-        self.0 .0
-    }
-
-    /// Cancel the handler
-    #[inline(always)]
-    pub fn cancel(mut self) -> (&'a mut T, D) {
-        // SAFETY: we destruct/drop `self`, so it cannot be accessed afterwards
-        unsafe { ManuallyDrop::take(&mut self.0) }
-    }
-}
-
-impl<T, D: FnOnce(&mut T)> Drop for OnDrop<'_, T, D> {
-    #[inline(always)]
-    fn drop(&mut self) {
-        // SAFETY: we drop `self`, so it cannot be accessed afterwards
-        let (data, handler) = unsafe { ManuallyDrop::take(&mut self.0) };
-        handler(data)
-    }
-}
-
 /// Zero-sized struct that calls [`std::process::abort()`] if dropped
 ///
 /// This is useful to make code exception safe. If there is a region that must

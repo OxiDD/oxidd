@@ -34,7 +34,7 @@ use rustc_hash::FxHasher;
 
 use oxidd_core::error::DuplicateVarName;
 use oxidd_core::function::EdgeOfFunc;
-use oxidd_core::util::{AbortOnDrop, AllocResult, Borrowed, DropWith, OnDrop, VarNameMap};
+use oxidd_core::util::{AbortOnDrop, AllocResult, Borrowed, DropWith, VarNameMap};
 use oxidd_core::{
     DiagramRules, HasApplyCache, InnerNode, LevelNo, ManagerEventSubscriber, Node, Tag, VarNo,
 };
@@ -813,11 +813,11 @@ where
         MD::pre_reorder_mut(self);
 
         let len = self.var_name_map.len();
-        let mut on_drop = OnDrop::new(self, |this| {
-            // This block is executed whenever `on_drop` gets dropped, i.e.,
-            // even if iterating over `names` or converting a value of type `S`
-            // into a `String` panics. This way, we ensure that the manager's
-            // state remains consistent.
+        let mut guard = scopeguard::guard(self, |this| {
+            // This block is executed whenever `guard` gets dropped, i.e., even
+            // if iterating over `names` or converting a value of type `S` into
+            // a `String` panics. This way, we ensure that the manager's state
+            // remains consistent.
             let new_len = this.var_name_map.len();
             this.unique_table
                 .resize_with(new_len as usize, || Mutex::new(LevelViewSet::default()));
@@ -832,11 +832,11 @@ where
         });
 
         let mut names = names.into_iter();
-        let range = on_drop.data_mut().var_name_map.add_named(names.by_ref())?;
-        drop(on_drop);
+        let range = guard.var_name_map.add_named(names.by_ref())?;
+        drop(guard);
 
         if names.next().is_some() {
-            // important: panic only after dropping `on_drop`
+            // important: panic only after dropping `guard`
             panic!("too many variables");
         }
 

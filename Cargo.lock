@@ -668,6 +668,7 @@ dependencies = [
  "parking_lot",
  "rayon",
  "rustc-hash",
+ "scopeguard",
 ]
 
 [[package]]
@@ -682,6 +683,7 @@ dependencies = [
  "parking_lot",
  "rayon",
  "rustc-hash",
+ "scopeguard",
  "sptr",
 ]
 
