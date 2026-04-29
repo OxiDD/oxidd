@@ -1065,10 +1065,31 @@ pub unsafe trait LevelView<E: Edge, N: InnerNode<E>> {
     /// - `N` implements [`HasLevel`] and `edge` references a node for which
     ///   [`HasLevel::level()`] returns a different level.
     ///
-    /// Furthermore, this function should panic if `edge` is tagged, but the
+    /// Furthermore, this function ideally panics if `edge` is tagged, but the
     /// caller must not rely on that. An implementation may simply remove the
     /// tag for optimization purposes.
     fn insert(&mut self, edge: E) -> bool;
+
+    /// Insert the given edge into the unique table at this level, assuming that
+    /// the referenced node is already stored in the associated manager. Unsafe
+    /// version of [`Self::insert()`].
+    ///
+    /// Returns `true` if the edge was inserted, `false` if it was already
+    /// present.
+    ///
+    /// Panics if `edge` references a node from a different manager.
+    /// Furthermore, this function ideally panics if `edge` is tagged, but the
+    /// caller must not rely on that. An implementation may simply remove the
+    /// tag for optimization purposes.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that edge points to an inner node. Additionally,
+    /// if `N` implements [`HasLevel`], [`HasLevel::level()`] must return the
+    /// level number of this level for the referenced node. During reordering,
+    /// the second requirement does not need to be fulfilled immediately,
+    /// but must hold at the end of the reordering process.
+    unsafe fn insert_unchecked(&mut self, edge: E) -> bool;
 
     /// Get the edge corresponding to `level` and `node` if present, or insert
     /// it.
@@ -1080,6 +1101,21 @@ pub unsafe trait LevelView<E: Edge, N: InnerNode<E>> {
     ///   level.
     #[must_use]
     fn get_or_insert(&mut self, node: N) -> AllocResult<E>;
+
+    /// Get the edge corresponding to `level` and `node` if present, or insert
+    /// it. Unsafe version of [`Self::get_or_insert()`]
+    ///
+    /// Panics if the children of `node` are stored in a different manager.
+    ///
+    /// # Safety
+    ///
+    /// If `N` implements [`HasLevel`], the caller must ensure that
+    /// [`HasLevel::level(node)`][HasLevel::level()] returns the level number of
+    /// this level. During reordering, this requirement does not need to be
+    /// fulfilled immediately, but must hold at the end of the reordering
+    /// process.
+    #[must_use]
+    unsafe fn get_or_insert_unchecked(&mut self, node: N) -> AllocResult<E>;
 
     /// Perform garbage collection on this level
     ///

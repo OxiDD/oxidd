@@ -287,7 +287,15 @@ unsafe impl LevelView<DummyEdge, DummyNode> for DummyLevelView {
         unreachable!()
     }
 
+    unsafe fn insert_unchecked(&mut self, _edge: DummyEdge) -> bool {
+        unreachable!()
+    }
+
     fn get_or_insert(&mut self, _node: DummyNode) -> AllocResult<DummyEdge> {
+        unreachable!()
+    }
+
+    unsafe fn get_or_insert_unchecked(&mut self, _node: DummyNode) -> AllocResult<DummyEdge> {
         unreachable!()
     }
 

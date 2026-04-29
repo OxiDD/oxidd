@@ -1662,9 +1662,29 @@ where
         self.set.insert(nodes, edge)
     }
 
+    #[inline]
+    unsafe fn insert_unchecked(&mut self, edge: Edge<'id, N, ET>) -> bool {
+        debug_assert!(!edge.is_tagged(), "`edge` should not be tagged");
+        // No need to check if the node referenced by `edge` is stored in
+        // `self.store` due to lifetime restrictions.
+        self.set.insert(&self.store.inner_nodes, edge)
+    }
+
     #[inline(always)]
     fn get_or_insert(&mut self, node: N) -> AllocResult<Edge<'id, N, ET>> {
         node.assert_level_matches(self.level);
+        // No need to check if the children of `node` are stored in `self.store`
+        // due to lifetime restrictions.
+        self.set.get_or_insert(
+            &self.store.inner_nodes,
+            node,
+            |node| self.store.add_node(node),
+            |node| node.drop_with(|edge| self.store.drop_edge(edge)),
+        )
+    }
+
+    #[inline(always)]
+    unsafe fn get_or_insert_unchecked(&mut self, node: N) -> AllocResult<Edge<'id, N, ET>> {
         // No need to check if the children of `node` are stored in `self.store`
         // due to lifetime restrictions.
         self.set.get_or_insert(
@@ -1789,9 +1809,29 @@ where
         self.set.insert(nodes, edge)
     }
 
+    #[inline]
+    unsafe fn insert_unchecked(&mut self, edge: Edge<'id, N, ET>) -> bool {
+        debug_assert!(!edge.is_tagged(), "`edge` should not be tagged");
+        // No need to check if the node referenced by `edge` is stored in
+        // `self.store` due to lifetime restrictions.
+        self.set.insert(&self.store.inner_nodes, edge)
+    }
+
     #[inline(always)]
     fn get_or_insert(&mut self, node: N) -> AllocResult<Edge<'id, N, ET>> {
         node.assert_level_matches(self.level);
+        // No need to check if the children of `node` are stored in `self.store`
+        // due to lifetime restrictions.
+        self.set.get_or_insert(
+            &self.store.inner_nodes,
+            node,
+            |node| self.store.add_node(node),
+            |node| node.drop_with(|edge| self.store.drop_edge(edge)),
+        )
+    }
+
+    #[inline(always)]
+    unsafe fn get_or_insert_unchecked(&mut self, node: N) -> AllocResult<Edge<'id, N, ET>> {
         // No need to check if the children of `node` are stored in `self.store`
         // due to lifetime restrictions.
         self.set.get_or_insert(

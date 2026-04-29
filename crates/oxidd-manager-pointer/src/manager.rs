@@ -1470,9 +1470,29 @@ where
         self.set.insert(edge)
     }
 
+    #[inline]
+    unsafe fn insert_unchecked(&mut self, edge: Edge<'id, N, ET, TAG_BITS>) -> bool {
+        assert_eq!(
+            edge.addr() & Edge::<N, ET, TAG_BITS>::ALL_TAG_MASK,
+            0,
+            "can only insert untagged edges pointing to inner nodes"
+        );
+        self.set.insert(edge)
+    }
+
     #[inline(always)]
     fn get_or_insert(&mut self, node: N) -> AllocResult<Edge<'id, N, ET, TAG_BITS>> {
         node.assert_level_matches(self.level);
+        // No need to check if the children of `node` are stored in `self.store`
+        // due to lifetime restrictions.
+        LevelViewSet::get_or_insert(&mut *self.set, node, |node| add_node(self.store, node))
+    }
+
+    #[inline(always)]
+    unsafe fn get_or_insert_unchecked(
+        &mut self,
+        node: N,
+    ) -> AllocResult<Edge<'id, N, ET, TAG_BITS>> {
         // No need to check if the children of `node` are stored in `self.store`
         // due to lifetime restrictions.
         LevelViewSet::get_or_insert(&mut *self.set, node, |node| add_node(self.store, node))
@@ -1595,9 +1615,30 @@ where
         self.set.insert(edge)
     }
 
+    #[inline]
+    unsafe fn insert_unchecked(&mut self, edge: Edge<'id, N, ET, TAG_BITS>) -> bool {
+        assert_eq!(
+            edge.addr() & Edge::<N, ET, TAG_BITS>::ALL_TAG_MASK,
+            0,
+            "can only insert untagged edges pointing to inner nodes"
+        );
+        self.set.insert(edge)
+    }
+
     #[inline(always)]
     fn get_or_insert(&mut self, node: N) -> AllocResult<Edge<'id, N, ET, TAG_BITS>> {
         node.assert_level_matches(self.level);
+        // No need to check if the children of `node` are stored in `self.store`
+        // due to lifetime restrictions.
+        self.set
+            .get_or_insert(node, |node| add_node(self.store, node))
+    }
+
+    #[inline(always)]
+    unsafe fn get_or_insert_unchecked(
+        &mut self,
+        node: N,
+    ) -> AllocResult<Edge<'id, N, ET, TAG_BITS>> {
         // No need to check if the children of `node` are stored in `self.store`
         // due to lifetime restrictions.
         self.set
