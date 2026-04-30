@@ -214,6 +214,10 @@ unsafe impl Manager for DummyManager {
         panic!("out of range")
     }
 
+    unsafe fn level_unchecked(&self, _no: LevelNo) -> Self::LevelView<'_> {
+        panic!("out of range")
+    }
+
     fn levels(&self) -> Self::LevelIterator<'_> {
         std::iter::empty()
     }

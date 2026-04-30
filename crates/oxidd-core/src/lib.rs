@@ -812,6 +812,16 @@ pub unsafe trait Manager: Sized {
     #[must_use]
     fn level(&self, no: LevelNo) -> Self::LevelView<'_>;
 
+    /// Get the level given by `no`. Unsafe version of [`Self::level()`]
+    ///
+    /// Implementations may or may not acquire a lock here.
+    ///
+    /// # Safety
+    ///
+    /// `no < self.num_levels()` must hold.
+    #[must_use]
+    unsafe fn level_unchecked(&self, no: LevelNo) -> Self::LevelView<'_>;
+
     /// Iterate over the levels from top to bottom
     #[must_use]
     fn levels(&self) -> Self::LevelIterator<'_>;

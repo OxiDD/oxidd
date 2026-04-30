@@ -916,6 +916,18 @@ where
         }
     }
 
+    #[inline(always)]
+    unsafe fn level_unchecked(&self, no: LevelNo) -> Self::LevelView<'_> {
+        LevelView {
+            store: self.store(),
+            var_level_map: &self.var_level_map,
+            allow_node_removal: self.reorder_gc_prepared,
+            level: no,
+            // SAFETY: ensured by caller
+            set: unsafe { self.unique_table.get_unchecked(no as usize) }.lock(),
+        }
+    }
+
     #[inline]
     fn levels(&self) -> Self::LevelIterator<'_> {
         LevelIter {
