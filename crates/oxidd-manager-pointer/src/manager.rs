@@ -1546,18 +1546,28 @@ where
     }
 
     #[inline(always)]
-    fn take(&mut self) -> Self::Taken {
-        TakenLevelView {
-            store: self.store,
-            var_level_map: self.var_level_map,
-            allow_node_removal: self.allow_node_removal,
-            level: self.level,
-            set: std::mem::take(&mut self.set),
+    fn take(&mut self) -> Option<Self::Taken> {
+        if self.allow_node_removal {
+            Some(TakenLevelView {
+                store: self.store,
+                var_level_map: self.var_level_map,
+                level: self.level,
+                set: std::mem::take(&mut self.set),
+            })
+        } else {
+            None
         }
     }
 }
 
 /// Owned level view provided by the unique table
+//
+// SAFETY invariant: whenever a TakenLevelView is live, a garbage collection is
+// prepared (i.e., there are no "weak" edges).
+//
+// Note that due to lifetime restrictions there is no way to have a
+// non-empty `TakenLevelView` when the associated `Manager` has
+// `reorder_gc_prepared` set to `false`.
 pub struct TakenLevelView<'a, 'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32>
 where
     N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>>,
@@ -1567,13 +1577,6 @@ where
 {
     store: &'a ArcSlab<N, StoreInner<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>, PAGE_SIZE>,
     var_level_map: &'a VarLevelMap,
-    /// SAFETY invariant: If set to true, a garbage collection is prepared
-    /// (i.e., there are no "weak" edges).
-    ///
-    /// Note that due to lifetime restrictions there is no way to have a
-    /// `TakenLevelView { allow_node_removal: true, .. }` when the associated
-    /// `Manager` has `reorder_gc_prepared` set to `false`.
-    allow_node_removal: bool,
     level: LevelNo,
     set: LevelViewSet<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>,
 }
@@ -1659,17 +1662,12 @@ where
 
     #[inline]
     fn gc(&mut self) {
-        if self.allow_node_removal {
-            // SAFETY: By invariant, node removal is allowed.
-            unsafe { self.set.gc() };
-        }
+        // SAFETY: By invariant, node removal is allowed.
+        unsafe { self.set.gc() };
     }
 
     #[inline]
     fn remove(&mut self, node: &N) -> bool {
-        if !self.allow_node_removal {
-            return false;
-        }
         // SAFETY: Called from inside the closure of `Manager::reorder()`, hence
         // there are no "weak" edges.
         match unsafe { self.set.remove(node) } {
@@ -1694,14 +1692,13 @@ where
     }
 
     #[inline(always)]
-    fn take(&mut self) -> Self::Taken {
-        TakenLevelView {
+    fn take(&mut self) -> Option<Self::Taken> {
+        Some(Self {
             store: self.store,
             var_level_map: self.var_level_map,
-            allow_node_removal: self.allow_node_removal,
             level: self.level,
             set: std::mem::take(&mut self.set),
-        }
+        })
     }
 }
 

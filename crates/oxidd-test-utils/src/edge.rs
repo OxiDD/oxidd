@@ -319,7 +319,7 @@ unsafe impl LevelView<DummyEdge, DummyNode> for DummyLevelView {
         unreachable!()
     }
 
-    fn take(&mut self) -> Self::Taken {
+    fn take(&mut self) -> Option<Self::Taken> {
         unreachable!()
     }
 }

@@ -1156,10 +1156,11 @@ pub unsafe trait LevelView<E: Edge, N: InnerNode<E>> {
     #[must_use]
     fn iter(&self) -> Self::Iterator<'_>;
 
-    /// Clear this level, returning a level view containing all the previous
-    /// edges.
+    /// If a reordering operation is in progress: Clear this level, returning a
+    /// level view containing all the previous edges. Otherwise, this method
+    /// returns `None` and leaves `self` unchanged.
     #[must_use]
-    fn take(&mut self) -> Self::Taken;
+    fn take(&mut self) -> Option<Self::Taken>;
 }
 
 /// Cache for the result of apply operations
