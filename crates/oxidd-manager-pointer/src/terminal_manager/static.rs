@@ -94,8 +94,8 @@ where
     #[inline]
     fn terminal_manager(edge: &Edge<'id, InnerNode, EdgeTag, TAG_BITS>) -> NonNull<Self> {
         assert!(!edge.is_inner());
-        let ptr = sptr::Strict::map_addr(edge.as_ptr().as_ptr(), |p| p & !Self::ALL_BITS_MASK)
-            as *mut Self;
+        let edge_ptr = edge.as_ptr().as_ptr();
+        let ptr = edge_ptr.map_addr(|p| p & !Self::ALL_BITS_MASK) as *mut Self;
         unsafe { NonNull::new_unchecked(ptr) }
     }
 
@@ -129,9 +129,8 @@ where
         this: *const Self,
         terminal: Terminal,
     ) -> AllocResult<Edge<'id, InnerNode, EdgeTag, TAG_BITS>> {
-        let ptr = sptr::Strict::map_addr(this as *mut (), |p| {
-            p | (1 << Self::TERMINAL_BIT) | (terminal.as_usize() << Self::VAL_LSB)
-        });
+        let ptr = (this as *mut ())
+            .map_addr(|p| p | (1 << Self::TERMINAL_BIT) | (terminal.as_usize() << Self::VAL_LSB));
         Ok(unsafe { Edge::from_ptr(NonNull::new_unchecked(ptr)) })
     }
 
@@ -140,7 +139,7 @@ where
     where
         Self: 'a,
     {
-        let first = sptr::Strict::map_addr(this as *mut (), |p| p | (1 << Self::TERMINAL_BIT));
+        let first = (this as *mut ()).map_addr(|p| p | (1 << Self::TERMINAL_BIT));
         StaticTerminalIterator::new(NonNull::new(first).unwrap(), Terminal::MAX_VALUE + 1)
     }
 
@@ -182,7 +181,7 @@ impl<InnerNode, EdgeTag, const TAG_BITS: u32>
     const VAL_LSB: u32 = TAG_BITS + 1;
 
     pub fn new(first_ptr: NonNull<()>, count: usize) -> Self {
-        assert!(sptr::Strict::addr(first_ptr.as_ptr()) & (1 << Self::TERMINAL_BIT) != 0);
+        assert!(first_ptr.as_ptr().addr() & (1 << Self::TERMINAL_BIT) != 0);
         Self {
             ptr: first_ptr,
             count,

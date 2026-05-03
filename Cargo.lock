@@ -392,12 +392,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "is_sorted"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "357376465c37db3372ef6a00585d336ed3d0f11d4345eef77ebcb05865392b21"
-
-[[package]]
 name = "is_terminal_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -619,7 +613,6 @@ version = "0.6.0"
 dependencies = [
  "document-features",
  "fixedbitset",
- "is_sorted",
  "memchr",
  "oxidd-core",
  "oxidd-derive",
@@ -684,7 +677,6 @@ dependencies = [
  "rayon",
  "rustc-hash",
  "scopeguard",
- "sptr",
 ]
 
 [[package]]
@@ -706,7 +698,6 @@ name = "oxidd-reorder"
 version = "0.6.1"
 dependencies = [
  "flume",
- "is_sorted",
  "oxidd-core",
  "oxidd-test-utils",
  "rayon",

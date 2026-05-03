@@ -1,7 +1,5 @@
 use std::io;
 
-use is_sorted::IsSorted;
-
 use oxidd_core::error::OutOfMemory;
 use oxidd_core::function::{ETagOfFunc, EdgeOfFunc, Function, INodeOfFunc, TermOfFunc};
 use oxidd_core::util::{AllocResult, EdgeDropGuard, EdgeVecDropGuard};
@@ -12,11 +10,6 @@ use crate::ParseTagged;
 use super::{Code, VarInfo};
 
 // spell-checker:dictionaries dddmp
-
-/// Compare, mapping `Equal` to `Greater`
-fn cmp_strict<T: Ord>(a: &T, b: &T) -> Option<std::cmp::Ordering> {
-    Some(a.cmp(b).then(std::cmp::Ordering::Greater))
-}
 
 /// Helper function to return a parse error
 fn err<T>(msg: impl Into<Box<dyn std::error::Error + Send + Sync>>) -> io::Result<T> {
@@ -200,7 +193,7 @@ impl DumpHeader {
         }
 
         if !header.ids.is_empty() {
-            if !IsSorted::is_sorted_by(&mut header.ids.iter(), cmp_strict) {
+            if !header.ids.iter().is_sorted_by(|a, b| a < b) {
                 return err("support variables in .ids must be ascending");
             }
             if *header.ids.last().unwrap() >= header.nvars {
@@ -524,7 +517,7 @@ where
         "`support_vars` must provide one target variable per support variable in the DDDMP file",
     );
     assert!(
-        IsSorted::is_sorted_by(&mut suppvar_level_map.iter(), cmp_strict),
+        suppvar_level_map.iter().is_sorted_by(|a, b| a < b),
         "`support_vars` must be sorted by the variables' current level",
     );
 

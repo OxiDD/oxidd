@@ -491,6 +491,12 @@ impl<'id, N: NodeBase, const TERMINALS: usize> SlotSlice<'id, N, TERMINALS> {
 
 // --- Store Impls -------------------------------------------------------------
 
+/// Shorthand for `std::ptr::from_ref(reference).addr()`
+#[inline(always)]
+fn addr<T>(ptr: *const T) -> usize {
+    ptr.addr()
+}
+
 impl<'id, N, ET, TM, R, MD, const TERMINALS: usize> Store<'id, N, ET, TM, R, MD, TERMINALS>
 where
     N: NodeBase + InnerNode<Edge<'id, N, ET>>,
@@ -506,12 +512,6 @@ where
         );
     };
 
-    #[inline(always)]
-    fn addr(&self) -> usize {
-        // TODO: Use `pointer::addr()` once we raise the MSRV to 1.84
-        self as *const Self as usize
-    }
-
     #[inline]
     fn prepare_local_state(
         &self,
@@ -520,7 +520,7 @@ where
             if state.current_store.get() == 0 {
                 state.next_free.set(0);
                 state.initialized.set(0);
-                state.current_store.set(self.addr());
+                state.current_store.set(addr(self));
                 debug_assert_eq!(state.node_count_delta.get(), 0);
                 Some(LocalStoreStateGuard(self))
             } else {
@@ -536,7 +536,7 @@ where
     fn add_node(&self, node: N) -> AllocResult<[Edge<'id, N, ET>; 2]> {
         debug_assert_eq!(node.load_rc(Relaxed), 2);
         let res = LOCAL_STORE_STATE.with(|state| {
-            let node_count_delta = if state.current_store.get() == self.addr() {
+            let node_count_delta = if state.current_store.get() == addr(self) {
                 let delta = state.node_count_delta.get() + 1;
                 let id = state.next_free.get();
                 if id != 0 {
@@ -620,7 +620,7 @@ where
             self.gc_signal.1.notify_one();
         }
 
-        if local.current_store.get() == self.addr() {
+        if local.current_store.get() == addr(self) {
             debug_assert_eq!(local.next_free.get(), 0);
             debug_assert_eq!(local.initialized.get() % CHUNK_SIZE, 0);
 
@@ -710,7 +710,7 @@ where
         unsafe { ManuallyDrop::take(&mut slot.node) }.drop_with(|edge| self.drop_edge(edge));
 
         LOCAL_STORE_STATE.with(|state| {
-            if state.current_store.get() == self.addr() {
+            if state.current_store.get() == addr(self) {
                 slot.next_free = state.next_free.get();
                 state.next_free.set(id);
 
@@ -860,7 +860,7 @@ where
         }
 
         LOCAL_STORE_STATE.with(|local| {
-            if self.0.addr() == local.current_store.get()
+            if addr(self.0) == local.current_store.get()
                 && (local.next_free.get() != 0
                     || local.initialized.get() % CHUNK_SIZE != 0
                     || local.node_count_delta.get() != 0)
@@ -2291,7 +2291,7 @@ pub fn new_manager<
     manager.store = Arc::as_ptr(&arc);
     drop(manager);
 
-    let store_addr = arc.addr();
+    let store_addr = addr(&*arc);
     arc.workers.pool.spawn_broadcast(move |_| {
         // The workers are dedicated to this store.
         LOCAL_STORE_STATE.with(|state| state.current_store.set(store_addr))

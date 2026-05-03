@@ -20,7 +20,7 @@ use std::iter::FusedIterator;
 use std::marker::PhantomData;
 use std::mem::{align_of, ManuallyDrop};
 use std::ops::Range;
-use std::ptr::{addr_of, addr_of_mut, NonNull};
+use std::ptr::NonNull;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering::{Acquire, Relaxed};
 
@@ -287,12 +287,12 @@ where
             reorder_gc_prepared: false,
             phantom: PhantomData,
         });
-        unsafe { std::ptr::write(addr_of_mut!((*slot).manager), data) };
+        unsafe { std::ptr::write(&raw mut ((*slot).manager), data) };
 
-        unsafe { TM::new_in(addr_of_mut!((*slot).terminal_manager)) };
+        unsafe { TM::new_in(&raw mut ((*slot).terminal_manager)) };
 
         let workers = crate::workers::Workers::new(threads);
-        unsafe { std::ptr::write(addr_of_mut!((*slot).workers), workers) };
+        unsafe { std::ptr::write(&raw mut ((*slot).workers), workers) };
     }
 }
 
@@ -386,7 +386,7 @@ where
     #[inline]
     fn terminal_manager(&self) -> *const TM {
         let store_inner = self.store_inner_ptr();
-        unsafe { addr_of!((*store_inner).terminal_manager) }
+        unsafe { &raw const ((*store_inner).terminal_manager) }
     }
 
     /// Drop the given edge
@@ -461,7 +461,7 @@ impl<'id, N: NodeBase, ET: Tag, const TAG_BITS: u32> Edge<'id, N, ET, TAG_BITS> 
     /// Get the address portion of the underlying pointer
     #[inline(always)]
     pub fn addr(&self) -> usize {
-        sptr::Strict::addr(self.0.as_ptr())
+        self.0.as_ptr().addr()
     }
 
     /// Get the inner node referenced by this edge
@@ -602,7 +602,7 @@ impl<'id, N: NodeBase, ET: Tag, const TAG_BITS: u32> Edge<'id, N, ET, TAG_BITS> 
     /// Get the underlying pointer with all tag bits set to 0
     #[inline]
     fn all_untagged_ptr(&self) -> NonNull<()> {
-        let ptr = sptr::Strict::map_addr(self.0.as_ptr(), |p| p & !Self::ALL_TAG_MASK);
+        let ptr = self.0.as_ptr().map_addr(|p| p & !Self::ALL_TAG_MASK);
         // SAFETY: the (tagged) pointer is `>= (1 << ALL_TAG_BITS)`
         unsafe { NonNull::new_unchecked(ptr) }
     }
@@ -610,11 +610,11 @@ impl<'id, N: NodeBase, ET: Tag, const TAG_BITS: u32> Edge<'id, N, ET, TAG_BITS> 
     /// Get the underlying pointer tagged with `tag`
     #[inline]
     fn retag_ptr(&self, tag: ET) -> NonNull<()> {
-        let tag_val = tag.as_usize();
-        debug_assert!(tag_val <= ET::MAX_VALUE);
+        let tv = tag.as_usize();
+        debug_assert!(tv <= ET::MAX_VALUE);
         // Note that we assert `ET::MAX_VALUE <= Self::TAG_MASK` during the computation
         // of `Self::TAG_MASK`
-        let ptr = sptr::Strict::map_addr(self.0.as_ptr(), |p| (p & !Self::TAG_MASK) | tag_val);
+        let ptr = self.0.as_ptr().map_addr(|p| (p & !Self::TAG_MASK) | tv);
         // SAFETY: even an untagged pointer is non-null
         unsafe { NonNull::new_unchecked(ptr) }
     }
@@ -1770,7 +1770,7 @@ impl<const PAGE_SIZE: usize, const TAG_BITS: u32> NodeSet<PAGE_SIZE, TAG_BITS> {
 
     #[inline]
     fn page_offset<InnerNode, ET>(edge: &Edge<'_, InnerNode, ET, TAG_BITS>) -> (usize, usize) {
-        let node_id = sptr::Strict::addr(edge.0.as_ptr()) >> TAG_BITS;
+        let node_id = edge.0.as_ptr().addr() >> TAG_BITS;
         let page = node_id / Self::NODES_PER_PAGE;
         let offset = node_id % Self::NODES_PER_PAGE;
         (page, offset)

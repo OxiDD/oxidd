@@ -142,8 +142,9 @@ impl<'id, ET: Tag, const TAG_BITS: u32, const ARITY: usize>
         // TODO: replace this by `MaybeUninit::transpose()` /
         // `MaybeUninit::array_assume_init()` once stable
         let children = unsafe {
-            std::ptr::read(std::ptr::addr_of!(children)
-                as *const [manager::Edge<'id, Self, ET, TAG_BITS>; ARITY])
+            std::ptr::read(
+                (&raw const children).cast::<[manager::Edge<'id, Self, ET, TAG_BITS>; ARITY]>(),
+            )
         };
 
         Self {

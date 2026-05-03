@@ -6,7 +6,7 @@ resolver = "2"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/OxiDD/oxidd"
 homepage = "https://oxidd.net"
-rust-version = "1.81"
+rust-version = "1.85"
 
 [workspace.dependencies]
 arcslab = { version = "0.1.2", path = "crates/arcslab", default-features = false }

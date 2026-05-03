@@ -1,7 +1,5 @@
 use std::sync::atomic::Ordering::Relaxed;
 
-use is_sorted::IsSorted;
-
 use oxidd_core::{
     AtomicLevelNo, HasLevel, HasWorkers, LevelNo, LevelView, Manager, VarNo, WorkerPool,
 };
@@ -153,9 +151,7 @@ fn set_var_order_common<M: Manager>(
         }
     });
 
-    debug_assert!(IsSorted::is_sorted(
-        &mut order.iter().map(|&v| manager.var_to_level(v))
-    ));
+    debug_assert!(order.iter().is_sorted_by_key(|&v| manager.var_to_level(v)));
 }
 
 /// Translate the relative positioning of levels given by `input_order` into a
@@ -325,7 +321,7 @@ where
                     tasks += 1;
                 }
             }
-            debug_assert!(IsSorted::is_sorted(&mut seq.iter()));
+            debug_assert!(seq.iter().is_sorted());
         });
 
         manager.workers().broadcast(|_| {

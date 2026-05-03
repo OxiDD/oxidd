@@ -19,10 +19,6 @@ oxidd-core.workspace = true
 # stack-allocated vectors
 smallvec = { version = "1", features = ["union", "const_generics"] }
 
-# check whether an iterator is sorted
-# (TODO: remove this once we raise the MSRV to 1.82)
-is_sorted = "0.1"
-
 # thread pools, parallel iterators, etc.
 rayon = "1.10"
 

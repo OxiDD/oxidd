@@ -124,9 +124,7 @@ impl<'id, ET: Tag, const ARITY: usize> InnerNode<manager::Edge<'id, Self, ET>>
         // TODO: replace this by `MaybeUninit::transpose()` /
         // `MaybeUninit::array_assume_init()` once stable
         let children = unsafe {
-            std::ptr::read(
-                std::ptr::addr_of!(children).cast::<[manager::Edge<'id, Self, ET>; ARITY]>(),
-            )
+            std::ptr::read((&raw const children).cast::<[manager::Edge<'id, Self, ET>; ARITY]>())
         };
 
         Self {

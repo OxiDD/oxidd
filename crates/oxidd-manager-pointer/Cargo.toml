@@ -16,10 +16,6 @@ oxidd-core.workspace = true
 
 arcslab.workspace = true
 
-# strict provenance polyfill
-# (TODO: remove this once we raise the MSRV to 1.84)
-sptr = "0.3"
-
 # fast alternative Mutex & RwLock implementation
 parking_lot = "0.12"
 
