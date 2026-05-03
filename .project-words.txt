@@ -201,3 +201,4 @@ XCNF
 ZBDD
 ZDDs
 ZSDDs
+scopeguard

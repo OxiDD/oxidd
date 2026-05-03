@@ -710,6 +710,7 @@ dependencies = [
  "oxidd-core",
  "oxidd-test-utils",
  "rayon",
+ "scopeguard",
  "smallvec",
 ]
 
