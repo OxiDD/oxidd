@@ -40,6 +40,9 @@ document-features = "0.2"
 # standard derive macros but with custom bounds on generics
 derive-where = "1.5"
 
+[dev-dependencies]
+oxidd-reorder.workspace = true
+
 
 [features]
 default = [

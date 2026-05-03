@@ -3,7 +3,7 @@ use std::sync::atomic::Ordering::Relaxed;
 use is_sorted::IsSorted;
 
 use oxidd_core::{
-    AtomicLevelNo, HasLevel, HasWorkers, InnerNode, LevelNo, LevelView, Manager, VarNo, WorkerPool,
+    AtomicLevelNo, HasLevel, HasWorkers, LevelNo, LevelView, Manager, VarNo, WorkerPool,
 };
 
 mod segtree;
@@ -78,29 +78,24 @@ fn set_var_order_common<M: Manager>(
 
     let mut target_order = sort_order(num_levels, order.iter().map(|&v| manager.var_to_level(v)));
 
-    // "dep" here refers to levels that depend on other levels, i.e., have nodes
-    // referring to other inner nodes. In the first step, we focus on these
-    // levels and bring them into the correct order relatively to each other.
+    // "ne" stands for non-empty levels here. In the first step, we focus on
+    // these levels and bring them into the correct relative order.
 
     // Subsequence of `target_order`, including the target positions of
-    // dependent levels only
-    let mut dep_target_order = Vec::with_capacity(num_levels as usize);
-    // Mapping from indices in `dep_target_order` to indices in `target_order`
-    let mut from_dep = Vec::with_capacity(num_levels as usize);
+    // non-empty levels only
+    let mut ne_target_order = Vec::with_capacity(num_levels as usize);
+    // Mapping from indices in `ne_target_order` to indices in `target_order`
+    let mut from_ne = Vec::with_capacity(num_levels as usize);
     let mut sorted = true; // whether all levels are already sorted
-    let mut dep_sorted = true; // whether dependent levels are sorted
-    let mut last_dep_target = 0; // target position of the last dependent level
+    let mut ne_sorted = true; // whether non-empty levels are sorted
+    let mut last_ne_target = 0; // target position of the last non-empty level
     for (level, &target) in manager.levels().zip(&target_order) {
         sorted = sorted && level.level_no() == target;
-        let is_dep = level.iter().any(|e| {
-            let node = manager.get_node(e).unwrap_inner();
-            node.children().any(|e| manager.get_node(&*e).is_inner())
-        });
-        if is_dep {
-            from_dep.push(level.level_no());
-            dep_target_order.push(target);
-            dep_sorted = dep_sorted && target >= last_dep_target;
-            last_dep_target = target;
+        if !level.is_empty() {
+            from_ne.push(level.level_no());
+            ne_target_order.push(target);
+            ne_sorted = ne_sorted && target >= last_ne_target;
+            last_ne_target = target;
         }
     }
 
@@ -116,32 +111,32 @@ fn set_var_order_common<M: Manager>(
             |to_pre| update_levels(manager, to_pre),
         )[..];
 
-        // First step: Bring the dependent levels into the desired order,
+        // First step: Bring the non-empty levels into the desired order,
         // relatively to each other.
-        if !dep_sorted {
+        if !ne_sorted {
             let swap: SwapFn<'_, M> = &|manager, i| {
-                let u = from_dep[i as usize];
-                let l = from_dep[(i + 1) as usize];
+                let u = from_ne[i as usize];
+                let l = from_ne[(i + 1) as usize];
                 let up = to_pre[u as usize].load(Relaxed);
                 let lp = to_pre[l as usize].load(Relaxed);
                 unsafe { crate::level_swap(manager, u, l, up, lp) };
                 to_pre[u as usize].store(lp, Relaxed);
                 to_pre[l as usize].store(up, Relaxed);
             };
-            sort(manager, &mut dep_target_order, swap);
+            sort(manager, &mut ne_target_order, swap);
 
-            if from_dep.len() == target_order.len() {
+            if from_ne.len() == target_order.len() {
                 return;
             }
 
-            for (i, v) in from_dep.into_iter().zip(dep_target_order) {
+            for (i, v) in from_ne.into_iter().zip(ne_target_order) {
                 target_order[i as usize] = v;
             }
         }
 
-        // Second step: Establish the target order, including independent
-        // levels. We do not modify nodes here, the running time is linear in
-        // the number of levels.
+        // Second step: Establish the target order, including empty levels. We
+        // do not modify nodes here, the running time is linear in the number of
+        // levels.
         let mut i = 0;
         while let Some(&j) = target_order.get(i as usize) {
             if j == i {
