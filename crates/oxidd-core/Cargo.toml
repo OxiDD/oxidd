@@ -1,7 +1,7 @@
 [package]
 name = "oxidd-core"
 version = "0.11.0"
-edition = "2021"
+edition = "2024"
 description = "Core traits and types of the OxiDD decision diagram framework"
 readme = "../../README.md"
 

@@ -541,7 +541,7 @@ impl<'a, M: Manager> Node<'a, M> {
     pub fn unwrap_terminal(&self) -> &M::Terminal {
         match self {
             Node::Inner(_) => panic!("expected a terminal node, but this is an inner node"),
-            Node::Terminal(ref t) => t.borrow(),
+            Node::Terminal(t) => t.borrow(),
         }
     }
 
@@ -554,7 +554,7 @@ impl<'a, M: Manager> Node<'a, M> {
     pub fn expect_terminal(&self, msg: &str) -> &M::Terminal {
         match self {
             Node::Inner(_) => panic!("{}", msg),
-            Node::Terminal(ref t) => t.borrow(),
+            Node::Terminal(t) => t.borrow(),
         }
     }
 
@@ -786,7 +786,7 @@ pub unsafe trait Manager: Sized {
     /// Panics if `var` is greater or equal to the number of variables in this
     /// manager.
     fn set_var_name(&mut self, var: VarNo, name: impl Into<String>)
-        -> Result<(), DuplicateVarName>;
+    -> Result<(), DuplicateVarName>;
 
     /// Get the variable number for the given variable name, if present
     ///

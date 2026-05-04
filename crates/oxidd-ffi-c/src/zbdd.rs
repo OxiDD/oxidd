@@ -17,8 +17,8 @@ use oxidd::{
 use oxidd_core::{LevelNo, VarNo};
 
 use crate::util::{
-    assignment_t, dddmp::dddmp_export_settings_t, error_t, op1, op2, op2_var, op3, str_t,
-    var_no_bool_pair_t, CFunction, CManagerRef, FUNC_UNWRAP_MSG,
+    self, CFunction, CManagerRef, FUNC_UNWRAP_MSG, assignment_t, dddmp::dddmp_export_settings_t,
+    error_t, op1, op2, op2_var, op3, str_t, var_no_bool_pair_t,
 };
 
 /// Reference to a manager of a zero-suppressed decision diagram (ZBDD)
@@ -42,7 +42,7 @@ impl CManagerRef for zbdd_manager_t {
     #[inline]
     unsafe fn get(self) -> ManuallyDrop<ZBDDManagerRef> {
         assert!(!self._p.is_null(), "the given manager is invalid");
-        ManuallyDrop::new(ZBDDManagerRef::from_raw(self._p))
+        ManuallyDrop::new(unsafe { ZBDDManagerRef::from_raw(self._p) })
     }
 }
 
@@ -84,7 +84,9 @@ impl CFunction for zbdd_t {
         if self._p.is_null() {
             Err(OutOfMemory)
         } else {
-            Ok(ManuallyDrop::new(ZBDDFunction::from_raw(self._p, self._i)))
+            Ok(ManuallyDrop::new(unsafe {
+                ZBDDFunction::from_raw(self._p, self._i)
+            }))
         }
     }
 }
@@ -142,7 +144,7 @@ pub struct zbdd_pair_t {
 ///                               `0` means automatic selection.
 ///
 /// @returns  The ZBDD manager with reference count 1
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn oxidd_zbdd_manager_new(
     inner_node_capacity: usize,
     apply_cache_capacity: usize,
@@ -158,10 +160,10 @@ pub extern "C" fn oxidd_zbdd_manager_new(
 /// No-op if `manager` is invalid.
 ///
 /// @returns  `manager`
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_manager_ref(manager: zbdd_manager_t) -> zbdd_manager_t {
     if !manager._p.is_null() {
-        std::mem::forget(manager.get().clone());
+        std::mem::forget(unsafe { manager.get() }.clone());
     }
     manager
 }
@@ -169,10 +171,10 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_ref(manager: zbdd_manager_t) -> zbdd
 /// Decrement the manager reference counter
 ///
 /// No-op if `manager` is invalid.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_manager_unref(manager: zbdd_manager_t) {
     if !manager._p.is_null() {
-        drop(ZBDDManagerRef::from_raw(manager._p));
+        drop(unsafe { ZBDDManagerRef::from_raw(manager._p) });
     }
 }
 
@@ -182,9 +184,9 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_unref(manager: zbdd_manager_t) {
 /// No-op if `f` is invalid.
 ///
 /// @returns  `f`
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_ref(f: zbdd_t) -> zbdd_t {
-    std::mem::forget(f.get().clone());
+    std::mem::forget(unsafe { f.get() }.clone());
     f
 }
 
@@ -192,10 +194,10 @@ pub unsafe extern "C" fn oxidd_zbdd_ref(f: zbdd_t) -> zbdd_t {
 /// manager storing the node
 ///
 /// No-op if `f` is invalid.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_unref(f: zbdd_t) {
     if !f._p.is_null() {
-        drop(ZBDDFunction::from_raw(f._p, f._i));
+        drop(unsafe { ZBDDFunction::from_raw(f._p, f._i) });
     }
 }
 
@@ -210,13 +212,13 @@ pub unsafe extern "C" fn oxidd_zbdd_unref(f: zbdd_t) {
 /// This function blocks until `callback(data)` has finished.
 ///
 /// @returns  The result of calling `callback(data)`
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_manager_run_in_worker_pool(
     manager: zbdd_manager_t,
     callback: extern "C" fn(*mut std::ffi::c_void) -> *mut std::ffi::c_void,
     data: *mut std::ffi::c_void,
 ) -> *mut std::ffi::c_void {
-    crate::util::run_in_worker_pool(&*manager.get(), callback, data)
+    util::run_in_worker_pool(&*unsafe { manager.get() }, callback, data)
 }
 
 /// Get the manager that stores `f`
@@ -224,10 +226,11 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_run_in_worker_pool(
 /// @param  f  A *valid* ZBDD function
 ///
 /// @returns  A manager reference with its own reference count
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_containing_manager(f: zbdd_t) -> zbdd_manager_t {
+    let f = unsafe { f.get() }.expect(FUNC_UNWRAP_MSG);
     zbdd_manager_t {
-        _p: f.get().expect(FUNC_UNWRAP_MSG).manager_ref().into_raw(),
+        _p: f.manager_ref().into_raw(),
     }
 }
 
@@ -236,11 +239,10 @@ pub unsafe extern "C" fn oxidd_zbdd_containing_manager(f: zbdd_t) -> zbdd_manage
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The number of inner nodes
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_manager_num_inner_nodes(manager: zbdd_manager_t) -> usize {
-    manager
-        .get()
-        .with_manager_shared(|manager| manager.num_inner_nodes())
+    let manager = unsafe { manager.get() };
+    manager.with_manager_shared(|manager| manager.num_inner_nodes())
 }
 /// Deprecated alias for `oxidd_zbdd_manager_num_inner_nodes()`
 ///
@@ -249,9 +251,9 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_num_inner_nodes(manager: zbdd_manage
     since = "0.11.0",
     note = "use oxidd_zbdd_manager_num_inner_nodes instead"
 )]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_num_inner_nodes(manager: zbdd_manager_t) -> usize {
-    oxidd_zbdd_manager_num_inner_nodes(manager)
+    unsafe { oxidd_zbdd_manager_num_inner_nodes(manager) }
 }
 
 /// Get an approximate count of inner nodes stored in `manager`
@@ -263,13 +265,12 @@ pub unsafe extern "C" fn oxidd_zbdd_num_inner_nodes(manager: zbdd_manager_t) -> 
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  An approximate count of inner nodes
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_manager_approx_num_inner_nodes(
     manager: zbdd_manager_t,
 ) -> usize {
-    manager
-        .get()
-        .with_manager_shared(|manager| manager.approx_num_inner_nodes())
+    let manager = unsafe { manager.get() };
+    manager.with_manager_shared(|manager| manager.approx_num_inner_nodes())
 }
 
 /// Get the number of variables stored in `manager`
@@ -277,11 +278,10 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_approx_num_inner_nodes(
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The number of variables
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_manager_num_vars(manager: zbdd_manager_t) -> VarNo {
-    manager
-        .get()
-        .with_manager_shared(|manager| manager.num_vars())
+    let manager = unsafe { manager.get() };
+    manager.with_manager_shared(|manager| manager.num_vars())
 }
 
 /// Get the number of named variables stored in `manager`
@@ -289,11 +289,10 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_num_vars(manager: zbdd_manager_t) ->
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The number of named variables
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_manager_num_named_vars(manager: zbdd_manager_t) -> VarNo {
-    manager
-        .get()
-        .with_manager_shared(|manager| manager.num_named_vars())
+    let manager = unsafe { manager.get() };
+    manager.with_manager_shared(|manager| manager.num_named_vars())
 }
 
 /// Add `additional` unnamed variables to the decision diagram in `manager`
@@ -314,13 +313,13 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_num_named_vars(manager: zbdd_manager
 ///                     overflow.
 ///
 /// @returns  The range of new variable numbers.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_manager_add_vars(
     manager: zbdd_manager_t,
     additional: VarNo,
-) -> crate::util::var_no_range_t {
+) -> util::var_no_range_t {
+    let manager = unsafe { manager.get() };
     manager
-        .get()
         .with_manager_exclusive(|manager| manager.add_vars(additional))
         .into()
 }
@@ -347,13 +346,13 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_add_vars(
 ///           already in use. The `name` field is either `NULL` or one of the
 ///           pointers of the `names` argument (i.e., it must not be deallocated
 ///           separately).
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_manager_add_named_vars(
     manager: zbdd_manager_t,
     names: *const *const c_char,
     count: VarNo,
-) -> crate::util::duplicate_var_name_result_t {
-    manager.add_named_vars(names, count)
+) -> util::duplicate_var_name_result_t {
+    unsafe { manager.add_named_vars(names, count) }
 }
 /// Add named variables to the decision diagram in `manager`
 ///
@@ -372,12 +371,12 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_add_named_vars(
 ///           already in use. The `name` field is either `NULL` or one of the
 ///           pointers of the `names` argument (i.e., it must not be deallocated
 ///           separately).
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_manager_add_named_vars_iter(
     manager: zbdd_manager_t,
-    iter: crate::util::iter<str_t>,
-) -> crate::util::duplicate_var_name_result_t {
-    manager.get().with_manager_exclusive(|manager| {
+    iter: util::iter<str_t>,
+) -> util::duplicate_var_name_result_t {
+    unsafe { manager.get() }.with_manager_exclusive(|manager| {
         manager
             .add_named_vars(iter.map(str_t::to_string_lossy))
             .into()
@@ -396,18 +395,18 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_add_named_vars_iter(
 /// @returns  The name, or `NULL` for unnamed variables. The caller receives
 ///           ownership of the allocation and should eventually deallocate the
 ///           memory using `free()` (from libc).
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_manager_var_name(
     manager: zbdd_manager_t,
     var: VarNo,
     len: Option<&mut MaybeUninit<usize>>,
 ) -> *const c_char {
-    manager.get().with_manager_shared(|manager| {
+    unsafe { manager.get() }.with_manager_shared(|manager| {
         let name = manager.var_name(var);
         if let Some(len) = len {
             len.write(name.len());
         }
-        crate::util::to_c_str(name)
+        util::to_c_str(name)
     })
 }
 #[cfg(feature = "cpp")]
@@ -421,15 +420,15 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_var_name(
 /// @param  string   Pointer to a C++ `std::string`. The name will be assigned
 ///                  to this string. For unnamed variables, the string will be
 ///                  empty.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_manager_var_name_cpp(
     manager: zbdd_manager_t,
     var: VarNo,
     string: *mut std::ffi::c_void,
 ) {
-    manager.get().with_manager_shared(|manager| {
+    unsafe { manager.get() }.with_manager_shared(|manager| {
         let name = manager.var_name(var);
-        crate::util::cpp::std_string_assign(string, name.as_ptr(), name.len());
+        unsafe { util::cpp::std_string_assign(string, name.as_ptr(), name.len()) };
     })
 }
 
@@ -453,14 +452,14 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_var_name_cpp(
 ///
 /// @returns  `(oxidd_var_no_t) -1` on success, otherwise the variable which
 ///           already uses `name`
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_manager_set_var_name(
     manager: zbdd_manager_t,
     var: VarNo,
     name: *const c_char,
     len: usize,
 ) -> VarNo {
-    manager.set_var_name(var, &crate::util::c_char_array_to_str(name, len))
+    unsafe { manager.set_var_name(var, &util::c_char_array_to_str(name, len)) }
 }
 
 /// Get the variable number for the given variable name, if present
@@ -477,19 +476,18 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_set_var_name(
 ///                  byte)
 ///
 /// @returns  The variable number if found, otherwise `(oxidd_var_no_t) -1`
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_manager_name_to_var(
     manager: zbdd_manager_t,
     name: *const c_char,
     len: usize,
 ) -> VarNo {
-    let name = crate::util::c_char_array_to_str(name, len);
+    let name = unsafe { util::c_char_array_to_str(name, len) };
     if name.is_empty() {
         return VarNo::MAX;
     }
-    manager
-        .get()
-        .with_manager_shared(|manager| manager.name_to_var(name).unwrap_or(VarNo::MAX))
+    let manager = unsafe { manager.get() };
+    manager.with_manager_shared(|manager| manager.name_to_var(name).unwrap_or(VarNo::MAX))
 }
 
 /// Get the level for the given variable
@@ -501,14 +499,13 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_name_to_var(
 ///                  (`oxidd_zbdd_manager_num_vars()`).
 ///
 /// @returns  The corresponding level number
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_manager_var_to_level(
     manager: zbdd_manager_t,
     var: VarNo,
 ) -> LevelNo {
-    manager
-        .get()
-        .with_manager_shared(|manager| manager.var_to_level(var))
+    let manager = unsafe { manager.get() };
+    manager.with_manager_shared(|manager| manager.var_to_level(var))
 }
 
 /// Perform garbage collection
@@ -521,9 +518,9 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_var_to_level(
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The count of nodes removed
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_manager_gc(manager: zbdd_manager_t) -> usize {
-    manager.get().with_manager_shared(|manager| manager.gc())
+    unsafe { manager.get() }.with_manager_shared(|manager| manager.gc())
 }
 
 /// Get the count of garbage collections
@@ -531,11 +528,10 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_gc(manager: zbdd_manager_t) -> usize
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The garbage collection count
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_manager_gc_count(manager: zbdd_manager_t) -> u64 {
-    manager
-        .get()
-        .with_manager_shared(|manager| manager.gc_count())
+    let manager = unsafe { manager.get() };
+    manager.with_manager_shared(|manager| manager.gc_count())
 }
 
 /// Reorder the variables in `manager` according to `order`
@@ -550,7 +546,7 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_gc_count(manager: zbdd_manager_t) ->
 /// @param  manager  The manager
 /// @param  order    The variable order to establish
 /// @param  len      Length of the array referenced by `order`
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_manager_set_var_order(
     manager: zbdd_manager_t,
     order: *const VarNo,
@@ -559,10 +555,9 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_set_var_order(
     if order.is_null() || len < 2 {
         return;
     }
-    let order = std::slice::from_raw_parts(order, len);
-    manager
-        .get()
-        .with_manager_exclusive(|manager| oxidd_reorder::set_var_order(manager, order))
+    let order = unsafe { std::slice::from_raw_parts(order, len) };
+    let manager = unsafe { manager.get() };
+    manager.with_manager_exclusive(|manager| oxidd_reorder::set_var_order(manager, order))
 }
 
 /// Import the decision diagram from the DDDMP `file` into `manager`
@@ -592,15 +587,15 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_set_var_order(
 ///                       on return (if the pointer is non-null).
 ///
 /// @returns  `true` on success
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_manager_import_dddmp(
     manager: zbdd_manager_t,
-    file: &mut crate::util::dddmp::dddmp_file_t,
+    file: &mut util::dddmp::dddmp_file_t,
     support_vars: *const VarNo,
     roots: *mut zbdd_t,
     error: *mut error_t,
 ) -> bool {
-    file.import_into(manager, support_vars, roots, error)
+    unsafe { file.import_into(manager, support_vars, roots, error) }
 }
 
 /// Export the given decision diagram functions as DDDMP file at `path`
@@ -637,7 +632,7 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_import_dddmp(
 ///       `oxidd_zbdd_manager_export_dddmp_with_names_iter()` for versions of
 ///       this function which take the ZBDD functions via an iterator instead of
 ///       an array
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_manager_export_dddmp(
     manager: zbdd_manager_t,
     path: *const c_char,
@@ -648,15 +643,17 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_export_dddmp(
     settings: Option<&dddmp_export_settings_t>,
     error: *mut error_t,
 ) -> bool {
-    crate::util::dddmp::export(
-        manager,
-        crate::util::c_char_array_to_os_str(path, path_len),
-        functions,
-        num_functions,
-        function_names,
-        settings,
-        error,
-    )
+    unsafe {
+        util::dddmp::export(
+            manager,
+            util::c_char_array_to_os_str(path, path_len),
+            functions,
+            num_functions,
+            function_names,
+            settings,
+            error,
+        )
+    }
     .is_some()
 }
 
@@ -688,17 +685,17 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_export_dddmp(
 ///       array, `oxidd_zbdd_manager_export_dddmp_with_names_iter()` for a
 ///       version where the ZBDD functions are given via an iterator but along
 ///       with a name each
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_manager_export_dddmp_iter(
     manager: zbdd_manager_t,
     path: *const c_char,
     path_len: usize,
-    functions: crate::util::iter<zbdd_t>,
+    functions: util::iter<zbdd_t>,
     settings: Option<&dddmp_export_settings_t>,
     error: *mut error_t,
 ) -> bool {
-    let path = crate::util::c_char_array_to_os_str(path, path_len);
-    crate::util::dddmp::export_iter(manager, path, functions, settings, error).is_some()
+    let path = unsafe { util::c_char_array_to_os_str(path, path_len) };
+    unsafe { util::dddmp::export_iter(manager, path, functions, settings, error) }.is_some()
 }
 
 /// Export the given decision diagram functions as DDDMP file at `path`
@@ -729,17 +726,18 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_export_dddmp_iter(
 ///       that allows specifying the ZBDD functions and their names as an array
 ///       each, `oxidd_zbdd_manager_export_dddmp_iter()` for a version where the
 ///       ZBDD functions are given via an iterator but without function names
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_manager_export_dddmp_with_names_iter(
     manager: zbdd_manager_t,
     path: *const c_char,
     path_len: usize,
-    functions: crate::util::iter<crate::util::named<zbdd_t>>,
+    functions: util::iter<util::named<zbdd_t>>,
     settings: Option<&dddmp_export_settings_t>,
     error: *mut error_t,
 ) -> bool {
-    let path = crate::util::c_char_array_to_os_str(path, path_len);
-    crate::util::dddmp::export_with_names_iter(manager, path, functions, settings, error).is_some()
+    let path = unsafe { util::c_char_array_to_os_str(path, path_len) };
+    unsafe { util::dddmp::export_with_names_iter(manager, path, functions, settings, error) }
+        .is_some()
 }
 
 /// Serve the given decision diagram functions for visualization
@@ -776,7 +774,7 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_export_dddmp_with_names_iter(
 ///       `oxidd_zbdd_manager_visualize_with_names_iter()` for versions of this
 ///       function which take the ZBDD functions via an iterator instead of an
 ///       array
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_manager_visualize(
     manager: zbdd_manager_t,
     diagram_name: *const c_char,
@@ -787,15 +785,17 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_visualize(
     port: u16,
     error: *mut error_t,
 ) -> bool {
-    crate::util::dddmp::visualize(
-        manager,
-        &crate::util::c_char_array_to_str(diagram_name, diagram_name_len),
-        functions,
-        num_functions,
-        function_names,
-        port,
-        error,
-    )
+    unsafe {
+        util::dddmp::visualize(
+            manager,
+            &util::c_char_array_to_str(diagram_name, diagram_name_len),
+            functions,
+            num_functions,
+            function_names,
+            port,
+            error,
+        )
+    }
     .is_some()
 }
 
@@ -828,17 +828,17 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_visualize(
 ///       `oxidd_zbdd_manager_visualize_with_names_iter()` for a version where
 ///       the ZBDD functions are given via an iterator but along with a name
 ///       each
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_manager_visualize_iter(
     manager: zbdd_manager_t,
     diagram_name: *const c_char,
     diagram_name_len: usize,
-    functions: crate::util::iter<zbdd_t>,
+    functions: util::iter<zbdd_t>,
     port: u16,
     error: *mut error_t,
 ) -> bool {
-    let diagram_name = crate::util::c_char_array_to_str(diagram_name, diagram_name_len);
-    crate::util::dddmp::visualize_iter(manager, &diagram_name, functions, port, error).is_some()
+    let diagram_name = unsafe { util::c_char_array_to_str(diagram_name, diagram_name_len) };
+    unsafe { util::dddmp::visualize_iter(manager, &diagram_name, functions, port, error) }.is_some()
 }
 
 /// Serve the given decision diagram functions for visualization
@@ -869,18 +869,20 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_visualize_iter(
 ///       allows specifying the ZBDD functions and their names as an array each,
 ///       `oxidd_zbdd_manager_visualize_iter()` for a version where the ZBDD
 ///       functions are given via an iterator but without function names
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_manager_visualize_with_names_iter(
     manager: zbdd_manager_t,
     diagram_name: *const c_char,
     diagram_name_len: usize,
-    functions: crate::util::iter<crate::util::named<zbdd_t>>,
+    functions: util::iter<util::named<zbdd_t>>,
     port: u16,
     error: *mut error_t,
 ) -> bool {
-    let diagram_name = crate::util::c_char_array_to_str(diagram_name, diagram_name_len);
-    crate::util::dddmp::visualize_with_names_iter(manager, &diagram_name, functions, port, error)
-        .is_some()
+    let diagram_name = unsafe { util::c_char_array_to_str(diagram_name, diagram_name_len) };
+    unsafe {
+        util::dddmp::visualize_with_names_iter(manager, &diagram_name, functions, port, error)
+    }
+    .is_some()
 }
 
 /// Dump the entire decision diagram represented by `manager` as Graphviz DOT
@@ -921,7 +923,7 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_visualize_with_names_iter(
 ///                             (if the pointer is non-null).
 ///
 /// @returns  `true` on success
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_manager_dump_all_dot_path(
     manager: zbdd_manager_t,
     path: *const c_char,
@@ -931,15 +933,16 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_dump_all_dot_path(
     num_function_names: usize,
     error: *mut error_t,
 ) -> bool {
-    crate::util::dump_all_dot_path(
-        manager,
-        crate::util::c_char_array_to_os_str(path, path_len),
-        functions,
-        function_names,
-        num_function_names,
-        error,
-    )
-    .is_some()
+    unsafe {
+        util::dump_all_dot_path(
+            manager,
+            util::c_char_array_to_os_str(path, path_len),
+            functions,
+            function_names,
+            num_function_names,
+            error,
+        )
+    }
 }
 /// Dump the entire decision diagram represented by `manager` as Graphviz DOT
 /// code to a file at `path`
@@ -949,7 +952,7 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_dump_all_dot_path(
     since = "0.11.0",
     note = "use oxidd_zbdd_manager_dump_all_dot_path instead"
 )]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_manager_dump_all_dot_file(
     manager: zbdd_manager_t,
     path: *const c_char,
@@ -957,15 +960,17 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_dump_all_dot_file(
     function_names: *const *const c_char,
     num_function_names: usize,
 ) -> bool {
-    oxidd_zbdd_manager_dump_all_dot_path(
-        manager,
-        path,
-        libc::strlen(path),
-        functions,
-        function_names,
-        num_function_names,
-        std::ptr::null_mut(),
-    )
+    unsafe {
+        oxidd_zbdd_manager_dump_all_dot_path(
+            manager,
+            path,
+            libc::strlen(path),
+            functions,
+            function_names,
+            num_function_names,
+            std::ptr::null_mut(),
+        )
+    }
 }
 
 /// Dump the entire decision diagram represented by `manager` as Graphviz DOT
@@ -990,16 +995,16 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_dump_all_dot_file(
 ///                    initialized on return (if the pointer is non-null).
 ///
 /// @returns  `true` on success
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_manager_dump_all_dot_path_iter(
     manager: zbdd_manager_t,
     path: *const c_char,
     path_len: usize,
-    functions: crate::util::iter<crate::util::named<zbdd_t>>,
+    functions: util::iter<util::named<zbdd_t>>,
     error: *mut error_t,
 ) -> bool {
-    let path = crate::util::c_char_array_to_os_str(path, path_len);
-    crate::util::dump_all_dot_path_iter(manager, path, functions, error).is_some()
+    let path = unsafe { util::c_char_array_to_os_str(path, path_len) };
+    unsafe { util::dump_all_dot_path_iter(manager, path, functions, error) }
 }
 
 /// Get the variable for the given level
@@ -1011,14 +1016,13 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_dump_all_dot_path_iter(
 ///                  count (`oxidd_zbdd_manager_num_vars()`).
 ///
 /// @returns  The corresponding variable number
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_manager_level_to_var(
     manager: zbdd_manager_t,
     level: LevelNo,
 ) -> VarNo {
-    manager
-        .get()
-        .with_manager_shared(|manager| manager.level_to_var(level))
+    let manager = unsafe { manager.get() };
+    manager.with_manager_shared(|manager| manager.level_to_var(level))
 }
 
 /// Get the singleton set {var}
@@ -1030,11 +1034,10 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_level_to_var(
 ///                  (`oxidd_zbdd_manager_num_vars()`).
 ///
 /// @returns  The ZBDD function representing the set
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_singleton(manager: zbdd_manager_t, var: VarNo) -> zbdd_t {
-    manager
-        .get()
-        .with_manager_exclusive(|manager| ZBDDFunction::singleton(manager, var).into())
+    let manager = unsafe { manager.get() };
+    manager.with_manager_exclusive(|manager| ZBDDFunction::singleton(manager, var).into())
 }
 
 /// Get the ZBDD Boolean function v for the singleton set {v}
@@ -1049,9 +1052,9 @@ pub unsafe extern "C" fn oxidd_zbdd_singleton(manager: zbdd_manager_t, var: VarN
 ///
 /// @deprecated  Use `oxidd_zbdd_var()` instead
 #[deprecated(since = "0.11.0", note = "use oxidd_zbdd_var instead")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_var_boolean_function(singleton: zbdd_t) -> zbdd_t {
-    let res = singleton.get().and_then(|singleton| {
+    let res = unsafe { singleton.get() }.and_then(|singleton| {
         singleton.with_manager_shared(|manager, edge| {
             Ok(ZBDDFunction::from_edge(
                 manager,
@@ -1073,11 +1076,11 @@ pub unsafe extern "C" fn oxidd_zbdd_var_boolean_function(singleton: zbdd_t) -> z
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD set referencing the new node
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_make_node(var: zbdd_t, hi: zbdd_t, lo: zbdd_t) -> zbdd_t {
-    let res = var.get().and_then(|var| {
-        let hi = ManuallyDrop::into_inner(hi.get()?);
-        let lo = ManuallyDrop::into_inner(lo.get()?);
+    let res = unsafe { var.get() }.and_then(|var| {
+        let hi = ManuallyDrop::into_inner(unsafe { hi.get() }?);
+        let lo = ManuallyDrop::into_inner(unsafe { lo.get() }?);
         var.with_manager_shared(|manager, var| {
             oxidd::zbdd::make_node(manager, var, hi.into_edge(manager), lo.into_edge(manager))
                 .map(|e| ZBDDFunction::from_edge(manager, e))
@@ -1095,11 +1098,10 @@ pub unsafe extern "C" fn oxidd_zbdd_make_node(var: zbdd_t, hi: zbdd_t, lo: zbdd_
 /// Time complexity: O(1)
 ///
 /// @returns  The ZBDD set with its own reference count
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_empty(manager: zbdd_manager_t) -> zbdd_t {
-    manager
-        .get()
-        .with_manager_shared(|manager| ZBDDFunction::empty(manager).into())
+    let manager = unsafe { manager.get() };
+    manager.with_manager_shared(|manager| ZBDDFunction::empty(manager).into())
 }
 
 /// Get the ZBDD set {∅}
@@ -1109,11 +1111,10 @@ pub unsafe extern "C" fn oxidd_zbdd_empty(manager: zbdd_manager_t) -> zbdd_t {
 /// Time complexity: O(1)
 ///
 /// @returns  The ZBDD set with its own reference count
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_base(manager: zbdd_manager_t) -> zbdd_t {
-    manager
-        .get()
-        .with_manager_shared(|manager| ZBDDFunction::base(manager).into())
+    let manager = unsafe { manager.get() };
+    manager.with_manager_shared(|manager| ZBDDFunction::base(manager).into())
 }
 
 /// Get the cofactors `(f_true, f_false)` of `f`
@@ -1137,9 +1138,9 @@ pub unsafe extern "C" fn oxidd_zbdd_base(manager: zbdd_manager_t) -> zbdd_t {
 ///
 /// @returns  The pair `f_true` and `f_false` if `f` is valid and references an
 ///           inner node, otherwise a pair of invalid functions.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_cofactors(f: zbdd_t) -> zbdd_pair_t {
-    if let Ok(f) = f.get() {
+    if let Ok(f) = unsafe { f.get() } {
         if let Some((t, e)) = f.cofactors() {
             return zbdd_pair_t {
                 first: t.into(),
@@ -1165,9 +1166,9 @@ pub unsafe extern "C" fn oxidd_zbdd_cofactors(f: zbdd_t) -> zbdd_pair_t {
 ///
 /// @returns  `f_true` if `f` is valid and references an inner node, otherwise
 ///           an invalid function.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_cofactor_true(f: zbdd_t) -> zbdd_t {
-    if let Ok(f) = f.get() {
+    if let Ok(f) = unsafe { f.get() } {
         f.cofactor_true().into()
     } else {
         zbdd_t::INVALID
@@ -1186,9 +1187,9 @@ pub unsafe extern "C" fn oxidd_zbdd_cofactor_true(f: zbdd_t) -> zbdd_t {
 ///
 /// @returns  `f_false` if `f` is valid and references an inner node, otherwise
 ///           an invalid function.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_cofactor_false(f: zbdd_t) -> zbdd_t {
-    if let Ok(f) = f.get() {
+    if let Ok(f) = unsafe { f.get() } {
         f.cofactor_false().into()
     } else {
         zbdd_t::INVALID
@@ -1201,9 +1202,9 @@ pub unsafe extern "C" fn oxidd_zbdd_cofactor_false(f: zbdd_t) -> zbdd_t {
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD set with its own reference count
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_subset0(set: zbdd_t, var: VarNo) -> zbdd_t {
-    op2_var(set, var, ZBDDFunction::subset0)
+    unsafe { op2_var(set, var, ZBDDFunction::subset0) }
 }
 
 /// Get the subsets of `set` containing `var` with `var` removed afterwards,
@@ -1212,9 +1213,9 @@ pub unsafe extern "C" fn oxidd_zbdd_subset0(set: zbdd_t, var: VarNo) -> zbdd_t {
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD set with its own reference count
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_subset1(set: zbdd_t, var: VarNo) -> zbdd_t {
-    op2_var(set, var, ZBDDFunction::subset1)
+    unsafe { op2_var(set, var, ZBDDFunction::subset1) }
 }
 
 /// Swap `subset0` and `subset1` with respect to `var`, formally
@@ -1223,9 +1224,9 @@ pub unsafe extern "C" fn oxidd_zbdd_subset1(set: zbdd_t, var: VarNo) -> zbdd_t {
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD set with its own reference count
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_change(set: zbdd_t, var: VarNo) -> zbdd_t {
-    op2_var(set, var, ZBDDFunction::change)
+    unsafe { op2_var(set, var, ZBDDFunction::change) }
 }
 
 /// Compute the ZBDD for the union `lhs ∪ rhs`
@@ -1233,9 +1234,9 @@ pub unsafe extern "C" fn oxidd_zbdd_change(set: zbdd_t, var: VarNo) -> zbdd_t {
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD set with its own reference count
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_union(lhs: zbdd_t, rhs: zbdd_t) -> zbdd_t {
-    op2(lhs, rhs, ZBDDFunction::union)
+    unsafe { op2(lhs, rhs, ZBDDFunction::union) }
 }
 
 /// Compute the ZBDD for the intersection `lhs ∩ rhs`
@@ -1243,9 +1244,9 @@ pub unsafe extern "C" fn oxidd_zbdd_union(lhs: zbdd_t, rhs: zbdd_t) -> zbdd_t {
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD set with its own reference count
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_intsec(lhs: zbdd_t, rhs: zbdd_t) -> zbdd_t {
-    op2(lhs, rhs, ZBDDFunction::intsec)
+    unsafe { op2(lhs, rhs, ZBDDFunction::intsec) }
 }
 
 /// Compute the ZBDD for the set difference `lhs ∖ rhs`
@@ -1253,9 +1254,9 @@ pub unsafe extern "C" fn oxidd_zbdd_intsec(lhs: zbdd_t, rhs: zbdd_t) -> zbdd_t {
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD set with its own reference count
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_diff(lhs: zbdd_t, rhs: zbdd_t) -> zbdd_t {
-    op2(lhs, rhs, ZBDDFunction::diff)
+    unsafe { op2(lhs, rhs, ZBDDFunction::diff) }
 }
 
 /// Get the Boolean function that is true if and only if `var` is true
@@ -1267,11 +1268,10 @@ pub unsafe extern "C" fn oxidd_zbdd_diff(lhs: zbdd_t, rhs: zbdd_t) -> zbdd_t {
 ///                  (`oxidd_bdd_manager_num_vars()`).
 ///
 /// @returns  The ZBDD function representing the variable.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_var(manager: zbdd_manager_t, var: VarNo) -> zbdd_t {
-    manager
-        .get()
-        .with_manager_shared(|manager| ZBDDFunction::var(manager, var).into())
+    let manager = unsafe { manager.get() };
+    manager.with_manager_shared(|manager| ZBDDFunction::var(manager, var).into())
 }
 
 /// Get the Boolean function that is true if and only if `var` is false
@@ -1283,11 +1283,10 @@ pub unsafe extern "C" fn oxidd_zbdd_var(manager: zbdd_manager_t, var: VarNo) -> 
 ///                  (`oxidd_bdd_manager_num_vars()`).
 ///
 /// @returns  The ZBDD function representing the negated variable.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_not_var(manager: zbdd_manager_t, var: VarNo) -> zbdd_t {
-    manager
-        .get()
-        .with_manager_shared(|manager| ZBDDFunction::not_var(manager, var).into())
+    let manager = unsafe { manager.get() };
+    manager.with_manager_shared(|manager| ZBDDFunction::not_var(manager, var).into())
 }
 
 /// Get the constant false ZBDD Boolean function `⊥`
@@ -1299,9 +1298,9 @@ pub unsafe extern "C" fn oxidd_zbdd_not_var(manager: zbdd_manager_t, var: VarNo)
 /// Time complexity: O(1)
 ///
 /// @returns  The ZBDD Boolean function with its own reference count
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_false(manager: zbdd_manager_t) -> zbdd_t {
-    oxidd_zbdd_empty(manager)
+    unsafe { oxidd_zbdd_empty(manager) }
 }
 
 /// Get the constant true ZBDD Boolean function `⊤`
@@ -1311,11 +1310,10 @@ pub unsafe extern "C" fn oxidd_zbdd_false(manager: zbdd_manager_t) -> zbdd_t {
 /// Time complexity: O(1)
 ///
 /// @returns  The ZBDD Boolean function with its own reference count
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_true(manager: zbdd_manager_t) -> zbdd_t {
-    manager
-        .get()
-        .with_manager_shared(|manager| ZBDDFunction::t(manager).into())
+    let manager = unsafe { manager.get() };
+    manager.with_manager_shared(|manager| ZBDDFunction::t(manager).into())
 }
 
 /// Get the level of `f`'s underlying node
@@ -1326,9 +1324,9 @@ pub unsafe extern "C" fn oxidd_zbdd_true(manager: zbdd_manager_t) -> zbdd_t {
 ///
 /// @returns  The level of the underlying inner node, or `(oxidd_level_no_t) -1`
 ///           for terminals and invalid functions.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_node_level(f: zbdd_t) -> LevelNo {
-    if let Ok(f) = f.get() {
+    if let Ok(f) = unsafe { f.get() } {
         f.with_manager_shared(|manager, edge| manager.get_node(edge).level())
     } else {
         LevelNo::MAX
@@ -1338,9 +1336,9 @@ pub unsafe extern "C" fn oxidd_zbdd_node_level(f: zbdd_t) -> LevelNo {
 ///
 /// @deprecated  Use `oxidd_zbdd_node_level()` instead
 #[deprecated(since = "0.11.0", note = "use oxidd_zbdd_node_level instead")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_level(f: zbdd_t) -> LevelNo {
-    oxidd_zbdd_node_level(f)
+    unsafe { oxidd_zbdd_node_level(f) }
 }
 /// Get the variable number for `f`'s underlying node
 ///
@@ -1350,9 +1348,9 @@ pub unsafe extern "C" fn oxidd_zbdd_level(f: zbdd_t) -> LevelNo {
 ///
 /// @returns  The variable number of the underlying inner node, or
 ///           `(oxidd_var_no_t) -1` for terminals and invalid functions.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_node_var(f: zbdd_t) -> VarNo {
-    if let Ok(f) = f.get() {
+    if let Ok(f) = unsafe { f.get() } {
         f.with_manager_shared(|manager, edge| match manager.get_node(edge) {
             oxidd::Node::Inner(n) => manager.level_to_var(n.level()),
             oxidd::Node::Terminal(_) => VarNo::MAX,
@@ -1367,9 +1365,9 @@ pub unsafe extern "C" fn oxidd_zbdd_node_var(f: zbdd_t) -> VarNo {
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD Boolean function with its own reference count
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_not(f: zbdd_t) -> zbdd_t {
-    op1(f, ZBDDFunction::not)
+    unsafe { op1(f, ZBDDFunction::not) }
 }
 
 /// Compute the ZBDD for the conjunction `lhs ∧ rhs`
@@ -1377,9 +1375,9 @@ pub unsafe extern "C" fn oxidd_zbdd_not(f: zbdd_t) -> zbdd_t {
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD Boolean function with its own reference count
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_and(lhs: zbdd_t, rhs: zbdd_t) -> zbdd_t {
-    op2(lhs, rhs, ZBDDFunction::and)
+    unsafe { op2(lhs, rhs, ZBDDFunction::and) }
 }
 
 /// Compute the ZBDD for the disjunction `lhs ∨ rhs`
@@ -1387,9 +1385,9 @@ pub unsafe extern "C" fn oxidd_zbdd_and(lhs: zbdd_t, rhs: zbdd_t) -> zbdd_t {
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD Boolean function with its own reference count
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_or(lhs: zbdd_t, rhs: zbdd_t) -> zbdd_t {
-    op2(lhs, rhs, ZBDDFunction::or)
+    unsafe { op2(lhs, rhs, ZBDDFunction::or) }
 }
 
 /// Compute the ZBDD for the negated conjunction `lhs ⊼ rhs`
@@ -1397,9 +1395,9 @@ pub unsafe extern "C" fn oxidd_zbdd_or(lhs: zbdd_t, rhs: zbdd_t) -> zbdd_t {
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD Boolean function with its own reference count
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_nand(lhs: zbdd_t, rhs: zbdd_t) -> zbdd_t {
-    op2(lhs, rhs, ZBDDFunction::nand)
+    unsafe { op2(lhs, rhs, ZBDDFunction::nand) }
 }
 
 /// Compute the ZBDD for the negated disjunction `lhs ⊽ rhs`
@@ -1407,9 +1405,9 @@ pub unsafe extern "C" fn oxidd_zbdd_nand(lhs: zbdd_t, rhs: zbdd_t) -> zbdd_t {
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD Boolean function with its own reference count
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_nor(lhs: zbdd_t, rhs: zbdd_t) -> zbdd_t {
-    op2(lhs, rhs, ZBDDFunction::nor)
+    unsafe { op2(lhs, rhs, ZBDDFunction::nor) }
 }
 
 /// Compute the ZBDD for the exclusive disjunction `lhs ⊕ rhs`
@@ -1417,9 +1415,9 @@ pub unsafe extern "C" fn oxidd_zbdd_nor(lhs: zbdd_t, rhs: zbdd_t) -> zbdd_t {
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD Boolean function with its own reference count
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_xor(lhs: zbdd_t, rhs: zbdd_t) -> zbdd_t {
-    op2(lhs, rhs, ZBDDFunction::xor)
+    unsafe { op2(lhs, rhs, ZBDDFunction::xor) }
 }
 
 /// Compute the ZBDD for the equivalence `lhs ↔ rhs`
@@ -1427,9 +1425,9 @@ pub unsafe extern "C" fn oxidd_zbdd_xor(lhs: zbdd_t, rhs: zbdd_t) -> zbdd_t {
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD Boolean function with its own reference count
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_equiv(lhs: zbdd_t, rhs: zbdd_t) -> zbdd_t {
-    op2(lhs, rhs, ZBDDFunction::equiv)
+    unsafe { op2(lhs, rhs, ZBDDFunction::equiv) }
 }
 
 /// Compute the ZBDD for the implication `lhs → rhs` (or `lhs ≤ rhs`)
@@ -1437,9 +1435,9 @@ pub unsafe extern "C" fn oxidd_zbdd_equiv(lhs: zbdd_t, rhs: zbdd_t) -> zbdd_t {
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD Boolean function with its own reference count
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_imp(lhs: zbdd_t, rhs: zbdd_t) -> zbdd_t {
-    op2(lhs, rhs, ZBDDFunction::imp)
+    unsafe { op2(lhs, rhs, ZBDDFunction::imp) }
 }
 
 /// Compute the ZBDD for the strict implication `lhs < rhs`
@@ -1447,9 +1445,9 @@ pub unsafe extern "C" fn oxidd_zbdd_imp(lhs: zbdd_t, rhs: zbdd_t) -> zbdd_t {
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD Boolean function with its own reference count
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_imp_strict(lhs: zbdd_t, rhs: zbdd_t) -> zbdd_t {
-    op2(lhs, rhs, ZBDDFunction::imp_strict)
+    unsafe { op2(lhs, rhs, ZBDDFunction::imp_strict) }
 }
 
 /// Compute the ZBDD for the conditional “if `cond` then `then_case` else
@@ -1458,13 +1456,13 @@ pub unsafe extern "C" fn oxidd_zbdd_imp_strict(lhs: zbdd_t, rhs: zbdd_t) -> zbdd
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @returns  The ZBDD Boolean function with its own reference count
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_ite(
     cond: zbdd_t,
     then_case: zbdd_t,
     else_case: zbdd_t,
 ) -> zbdd_t {
-    op3(cond, then_case, else_case, ZBDDFunction::ite)
+    unsafe { op3(cond, then_case, else_case, ZBDDFunction::ite) }
 }
 
 /// Count nodes in `f`
@@ -1474,9 +1472,9 @@ pub unsafe extern "C" fn oxidd_zbdd_ite(
 /// @param  f     A *valid* ZBDD function
 ///
 /// @returns  The node count including the two terminal nodes
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_node_count(f: zbdd_t) -> usize {
-    f.get().expect(FUNC_UNWRAP_MSG).node_count()
+    unsafe { f.get() }.expect(FUNC_UNWRAP_MSG).node_count()
 }
 
 /// Check if `f` is satisfiable
@@ -1486,9 +1484,9 @@ pub unsafe extern "C" fn oxidd_zbdd_node_count(f: zbdd_t) -> usize {
 /// @param  f  A *valid* ZBDD function
 ///
 /// @returns  `true` iff there is a satisfying assignment for `f`
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_satisfiable(f: zbdd_t) -> bool {
-    f.get().expect(FUNC_UNWRAP_MSG).satisfiable()
+    unsafe { f.get() }.expect(FUNC_UNWRAP_MSG).satisfiable()
 }
 
 /// Check if `f` is valid
@@ -1498,9 +1496,9 @@ pub unsafe extern "C" fn oxidd_zbdd_satisfiable(f: zbdd_t) -> bool {
 /// @param  f  A *valid* ZBDD function
 ///
 /// @returns  `true` iff there are only satisfying assignments for `f`
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_valid(f: zbdd_t) -> bool {
-    f.get().expect(FUNC_UNWRAP_MSG).valid()
+    unsafe { f.get() }.expect(FUNC_UNWRAP_MSG).valid()
 }
 
 /// Count the number of satisfying assignments, assuming `vars` input variables
@@ -1511,11 +1509,10 @@ pub unsafe extern "C" fn oxidd_zbdd_valid(f: zbdd_t) -> bool {
 /// @param  vars  Number of input variables
 ///
 /// @returns  The number of satisfying assignments
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_sat_count_double(f: zbdd_t, vars: LevelNo) -> f64 {
-    f.get()
-        .expect(FUNC_UNWRAP_MSG)
-        .sat_count::<F64, BuildHasherDefault<FxHasher>>(vars, &mut Default::default())
+    let f = unsafe { f.get() }.expect(FUNC_UNWRAP_MSG);
+    f.sat_count::<F64, BuildHasherDefault<FxHasher>>(vars, &mut Default::default())
         .0
 }
 
@@ -1529,11 +1526,10 @@ pub unsafe extern "C" fn oxidd_zbdd_sat_count_double(f: zbdd_t, vars: LevelNo) -
 ///           unsatisfiable, the data pointer is `NULL` and len is 0. In any
 ///           case, the assignment can be deallocated using
 ///           `oxidd_assignment_free()`.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_pick_cube(f: zbdd_t) -> assignment_t {
-    let f = f.get().expect(FUNC_UNWRAP_MSG);
-    let res = f.pick_cube(|_, _, _| false);
-    match res {
+    let f = unsafe { f.get() }.expect(FUNC_UNWRAP_MSG);
+    match f.pick_cube(|_, _, _| false) {
         Some(mut v) => {
             v.shrink_to_fit();
             let len = v.len();
@@ -1554,9 +1550,11 @@ pub unsafe extern "C" fn oxidd_zbdd_pick_cube(f: zbdd_t) -> assignment_t {
 ///
 /// @returns  A satisfying assignment if there exists one. Otherwise (i.e., if
 ///           `f` is ⊥), ⊥ is returned.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_pick_cube_dd(f: zbdd_t) -> zbdd_t {
-    f.get().and_then(|f| f.pick_cube_dd(|_, _, _| false)).into()
+    unsafe { f.get() }
+        .and_then(|f| f.pick_cube_dd(|_, _, _| false))
+        .into()
 }
 
 /// Pick a satisfying assignment, represented as ZBDD, using the literals in
@@ -1573,9 +1571,9 @@ pub unsafe extern "C" fn oxidd_zbdd_pick_cube_dd(f: zbdd_t) -> zbdd_t {
 ///
 /// @returns  A satisfying assignment if there exists one. Otherwise (i.e., if
 ///           `f` is ⊥), ⊥ is returned.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_pick_cube_dd_set(f: zbdd_t, literal_set: zbdd_t) -> zbdd_t {
-    op2(f, literal_set, ZBDDFunction::pick_cube_dd_set)
+    unsafe { op2(f, literal_set, ZBDDFunction::pick_cube_dd_set) }
 }
 
 /// Evaluate the Boolean function `f` with arguments `args`
@@ -1604,23 +1602,22 @@ pub unsafe extern "C" fn oxidd_zbdd_pick_cube_dd_set(f: zbdd_t, literal_set: zbd
 /// @param  num_args  Length of `args`
 ///
 /// @returns  `f` evaluated with `args`
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_eval(
     f: zbdd_t,
     args: *const var_no_bool_pair_t,
     num_args: usize,
 ) -> bool {
-    let args = crate::util::slice_from_raw_parts(args, num_args);
+    let args = unsafe { util::slice_from_raw_parts(args, num_args) };
 
-    f.get()
-        .expect(FUNC_UNWRAP_MSG)
-        .with_manager_shared(|manager, edge| {
-            ZBDDFunction::eval_edge(manager, edge, args.iter().map(|p| (p.var, p.val)))
-        })
+    let f = unsafe { f.get() }.expect(FUNC_UNWRAP_MSG);
+    f.with_manager_shared(|manager, edge| {
+        ZBDDFunction::eval_edge(manager, edge, args.iter().map(|p| (p.var, p.val)))
+    })
 }
 
 /// Print statistics to stderr
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn oxidd_zbdd_print_stats() {
     oxidd::zbdd::print_stats();
 }

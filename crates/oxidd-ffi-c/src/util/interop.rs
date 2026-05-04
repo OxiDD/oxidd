@@ -1,7 +1,7 @@
 //! Fundamental types for interoperability between C/C++ and Rust
 
 use std::borrow::Cow;
-use std::ffi::{c_char, OsStr};
+use std::ffi::{OsStr, c_char};
 use std::mem::MaybeUninit;
 use std::str;
 
@@ -139,7 +139,7 @@ pub unsafe fn slice_from_raw_parts<'a, T>(ptr: *const T, len: usize) -> &'a [T] 
     if ptr.is_null() {
         &[]
     } else {
-        std::slice::from_raw_parts(ptr, len)
+        unsafe { std::slice::from_raw_parts(ptr, len) }
     }
 }
 
@@ -150,19 +150,19 @@ pub unsafe fn c_char_to_str<'a>(ptr: *const c_char) -> std::borrow::Cow<'a, str>
     if ptr.is_null() {
         std::borrow::Cow::Borrowed("")
     } else {
-        std::ffi::CStr::from_ptr(ptr).to_string_lossy()
+        unsafe { std::ffi::CStr::from_ptr(ptr) }.to_string_lossy()
     }
 }
 
 /// [`slice_from_raw_parts()`] followed by [`String::from_utf8_lossy()`]
 pub unsafe fn c_char_array_to_str<'a>(ptr: *const c_char, len: usize) -> std::borrow::Cow<'a, str> {
     const { assert!(std::mem::size_of::<c_char>() == std::mem::size_of::<u8>()) };
-    String::from_utf8_lossy(slice_from_raw_parts(ptr.cast(), len))
+    String::from_utf8_lossy(unsafe { slice_from_raw_parts(ptr.cast(), len) })
 }
 
 pub unsafe fn c_char_array_to_os_str<'a>(ptr: *const c_char, len: usize) -> &'a OsStr {
     const { assert!(std::mem::size_of::<c_char>() == std::mem::size_of::<u8>()) };
-    OsStr::from_encoded_bytes_unchecked(slice_from_raw_parts(ptr.cast(), len))
+    unsafe { OsStr::from_encoded_bytes_unchecked(slice_from_raw_parts(ptr.cast(), len)) }
 }
 
 pub fn to_c_str(str: &str) -> *const c_char {
@@ -189,7 +189,7 @@ pub fn to_c_str(str: &str) -> *const c_char {
 /// cbindgen:ignore
 #[cfg(feature = "cpp")]
 pub mod cpp {
-    extern "C" {
+    unsafe extern "C" {
         /// C++ `std::string::assign(char *, size_t)`
         ///
         /// `std::ffi::c_void` should be `std::string`, but this is difficult to

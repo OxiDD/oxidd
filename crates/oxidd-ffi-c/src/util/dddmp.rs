@@ -1,12 +1,12 @@
 use std::borrow::Cow;
-use std::ffi::{c_char, OsStr};
+use std::ffi::{OsStr, c_char};
 use std::{fs, io};
 
 use oxidd::{BooleanFunction, HasLevel, LevelNo, ManagerRef, VarNo};
 use oxidd_core::function::{ETagOfFunc, INodeOfFunc, TermOfFunc};
-use oxidd_dump::{dddmp, AsciiDisplay, ParseTagged, Visualizer};
+use oxidd_dump::{AsciiDisplay, ParseTagged, Visualizer, dddmp};
 
-use super::{error_t, handle_err, handle_err_or_init, slice, str_t, CFunction, CManagerRef};
+use super::{CFunction, CManagerRef, error_t, handle_err, handle_err_or_init, slice, str_t};
 
 // spell-checker:dictionaries dddmp
 
@@ -32,9 +32,10 @@ impl dddmp_file_t {
         let support_vars = if support_vars.is_null() {
             self.header.support_var_order()
         } else {
-            std::slice::from_raw_parts(support_vars, self.header.num_support_vars() as usize)
+            let len = self.header.num_support_vars();
+            unsafe { std::slice::from_raw_parts(support_vars, len as usize) }
         };
-        let res = manager.get().with_manager_shared(|manager| {
+        let res = unsafe { manager.get() }.with_manager_shared(|manager| {
             oxidd_dump::dddmp::import::<CF::Function>(
                 &mut self.reader,
                 &self.header,
@@ -43,7 +44,7 @@ impl dddmp_file_t {
                 CF::Function::not_edge_owned,
             )
         });
-        let Some(rs) = handle_err_or_init(res, error) else {
+        let Some(rs) = (unsafe { handle_err_or_init(res, error) }) else {
             return false;
         };
         for root in rs {
@@ -67,22 +68,24 @@ impl dddmp_file_t {
 ///                   non-null).
 ///
 /// @returns  The DDDMP file handle or `NULL` on error
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_dddmp_open(
     path: *const c_char,
     path_len: usize,
     error: *mut error_t,
 ) -> Option<Box<dddmp_file_t>> {
-    let path = std::slice::from_raw_parts(path.cast(), path_len);
-    let path = std::ffi::OsStr::from_encoded_bytes_unchecked(path);
-    let mut reader = io::BufReader::new(handle_err(fs::File::open(path), error)?);
-
-    let header = handle_err(dddmp::DumpHeader::load(&mut reader), error)?;
-    Some(Box::new(dddmp_file_t { reader, header }))
+    let path = unsafe { std::slice::from_raw_parts(path.cast(), path_len) };
+    let path = unsafe { std::ffi::OsStr::from_encoded_bytes_unchecked(path) };
+    let res = fs::File::open(path).and_then(|file| {
+        let mut reader = io::BufReader::new(file);
+        let header = dddmp::DumpHeader::load(&mut reader)?;
+        Ok(Box::new(dddmp_file_t { reader, header }))
+    });
+    unsafe { handle_err_or_init(res, error) }
 }
 
 /// Close the DDDMP file handle and deallocate the imported metadata
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn oxidd_dddmp_close(file: Option<Box<dddmp_file_t>>) {
     drop(file);
 }
@@ -91,7 +94,7 @@ pub extern "C" fn oxidd_dddmp_close(file: Option<Box<dddmp_file_t>>) {
 ///
 /// Corresponds to the DDDMP `.dd` field. If the header does not contain that
 /// field, the returned string will be empty.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn oxidd_dddmp_diagram_name(file: &dddmp_file_t) -> str_t {
     file.header.diagram_name().unwrap_or_default().into()
 }
@@ -99,7 +102,7 @@ pub extern "C" fn oxidd_dddmp_diagram_name(file: &dddmp_file_t) -> str_t {
 /// Get the number of nodes in the dumped decision diagram
 ///
 /// Corresponds to the DDDMP `.nnodes` field.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn oxidd_dddmp_num_nodes(file: &dddmp_file_t) -> usize {
     file.header.num_nodes()
 }
@@ -107,7 +110,7 @@ pub extern "C" fn oxidd_dddmp_num_nodes(file: &dddmp_file_t) -> usize {
 /// Get the number of all variables in the exported decision diagram
 ///
 /// Corresponds to the DDDMP `.nvars` field.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn oxidd_dddmp_num_vars(file: &dddmp_file_t) -> VarNo {
     file.header.num_vars()
 }
@@ -115,7 +118,7 @@ pub extern "C" fn oxidd_dddmp_num_vars(file: &dddmp_file_t) -> VarNo {
 /// Get the number of variables in the true support of the decision diagram
 ///
 /// Corresponds to the DDDMP `.nsuppvars` field.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn oxidd_dddmp_num_support_vars(file: &dddmp_file_t) -> VarNo {
     file.header.num_support_vars()
 }
@@ -132,7 +135,7 @@ pub extern "C" fn oxidd_dddmp_num_support_vars(file: &dddmp_file_t) -> VarNo {
 /// returned slice is `[1, 2]`, regardless of any subsequent reordering.
 ///
 /// Corresponds to the DDDMP `.ids` field.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn oxidd_dddmp_support_vars(file: &dddmp_file_t) -> slice<VarNo> {
     file.header.support_vars().into()
 }
@@ -146,7 +149,7 @@ pub extern "C" fn oxidd_dddmp_support_vars(file: &dddmp_file_t) -> slice<VarNo> 
 /// `x`, `y`, and `z` (`x` is the top-most variable). The variables were
 /// re-ordered to `z`, `x`, `y`. Suppose that only `y` and `z` are used by
 /// the dumped functions. Then, the returned slice is `[2, 1]`.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn oxidd_dddmp_support_var_order(file: &dddmp_file_t) -> slice<VarNo> {
     file.header.support_var_order().into()
 }
@@ -165,13 +168,13 @@ pub extern "C" fn oxidd_dddmp_support_var_order(file: &dddmp_file_t) -> slice<Va
 /// the dumped functions. Then, the returned slice is `[2, 0]`.
 ///
 /// Corresponds to the DDDMP `.permids` field.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn oxidd_dddmp_support_var_to_level(file: &dddmp_file_t) -> slice<LevelNo> {
     file.header.support_var_to_level().into()
 }
 
 /// Get whether the header contains variable names
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn oxidd_dddmp_has_var_names(file: &dddmp_file_t) -> bool {
     file.header.var_names().is_some()
 }
@@ -187,7 +190,7 @@ pub extern "C" fn oxidd_dddmp_has_var_names(file: &dddmp_file_t) -> bool {
 /// support variables are non-empty). The return value is only `None` if neither
 /// of `.varnames`, `.orderedvarnames`, and `.suppvarnames` is present in the
 /// input.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn oxidd_dddmp_var_name(file: &dddmp_file_t, i: VarNo) -> str_t {
     match file.header.var_names() {
         Some(s) => s[i as usize].as_str().into(),
@@ -199,13 +202,13 @@ pub extern "C" fn oxidd_dddmp_var_name(file: &dddmp_file_t, i: VarNo) -> str_t {
 ///
 /// The `*_import_dddmp()` functions return this number of roots on success.
 /// Corresponds to the DDDMP `.nroots` field.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn oxidd_dddmp_num_roots(file: &dddmp_file_t) -> usize {
     file.header.num_roots()
 }
 
 /// Get whether the header contains functions names
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn oxidd_dddmp_has_root_names(file: &dddmp_file_t) -> bool {
     file.header.root_names().is_some()
 }
@@ -215,7 +218,7 @@ pub extern "C" fn oxidd_dddmp_has_root_names(file: &dddmp_file_t) -> bool {
 /// `i` must be less than `oxidd_dddmp_num_roots()`.
 ///
 /// The names are read from the DDDMP `.rootnames` field.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn oxidd_dddmp_root_name(file: &dddmp_file_t, i: usize) -> str_t {
     match file.header.root_names() {
         Some(s) => s[i].as_str().into(),
@@ -318,14 +321,14 @@ where
     for<'id> INodeOfFunc<'id, CF::Function>: HasLevel,
     for<'id> TermOfFunc<'id, CF::Function>: AsciiDisplay,
 {
-    let file = handle_err(std::fs::File::create(path), error)?;
-    let functions = super::slice_from_raw_parts(functions, num_functions);
+    let file = unsafe { handle_err(fs::File::create(path), error) }?;
+    let functions = unsafe { super::slice_from_raw_parts(functions, num_functions) };
     let mut invalid_func = Ok(());
-    let res = manager.get().with_manager_shared(|manager| {
+    let res = unsafe { manager.get() }.with_manager_shared(|manager| {
         with_export_settings(settings, |settings| {
             if function_names.is_null() {
                 let iter = functions.iter().enumerate().filter_map(|(i, f)| {
-                    let res = f.get().ok();
+                    let res = unsafe { f.get() }.ok();
                     if res.is_none() {
                         invalid_func = Err((i, Cow::Borrowed("")));
                     }
@@ -333,11 +336,12 @@ where
                 });
                 settings.export(file, manager, iter)
             } else {
-                let function_names = std::slice::from_raw_parts(function_names, num_functions);
+                let function_names =
+                    unsafe { std::slice::from_raw_parts(function_names, num_functions) };
                 let iter = functions.iter().zip(function_names).enumerate().filter_map(
                     |(i, (f, name))| {
-                        let name = super::c_char_to_str(*name);
-                        match f.get() {
+                        let name = unsafe { super::c_char_to_str(*name) };
+                        match unsafe { f.get() } {
                             Ok(f) => Some((f, name)),
                             Err(_) => {
                                 invalid_func = Err((i, name));
@@ -350,7 +354,7 @@ where
             }
         })
     });
-    handle_err(res, error)?;
+    unsafe { handle_err(res, error) }?;
     let invalid_func = invalid_func.map_err(|(i, name)| {
         if name.is_empty() {
             format!("function {i} is invalid")
@@ -358,7 +362,7 @@ where
             format!("function {i} '{name}' is invalid")
         }
     });
-    handle_err_or_init(invalid_func, error)
+    unsafe { handle_err_or_init(invalid_func, error) }
 }
 
 pub unsafe fn export_iter<CF: CFunction>(
@@ -372,11 +376,11 @@ where
     for<'id> INodeOfFunc<'id, CF::Function>: HasLevel,
     for<'id> TermOfFunc<'id, CF::Function>: AsciiDisplay,
 {
-    let file = crate::util::handle_err(std::fs::File::create(path), error)?;
+    let file = unsafe { crate::util::handle_err(std::fs::File::create(path), error) }?;
     let mut invalid_func = Ok(());
-    let res = manager.get().with_manager_shared(|manager| {
+    let res = unsafe { manager.get() }.with_manager_shared(|manager| {
         let iter = functions.into_iter().enumerate().filter_map(|(i, f)| {
-            let res = f.get().ok();
+            let res = unsafe { f.get() }.ok();
             if res.is_none() {
                 invalid_func = Err(i);
             }
@@ -384,9 +388,9 @@ where
         });
         with_export_settings(settings, |settings| settings.export(file, manager, iter))
     });
-    handle_err(res, error)?;
+    unsafe { handle_err(res, error) }?;
     let invalid_func = invalid_func.map_err(|i| format!("function {i} is invalid"));
-    handle_err_or_init(invalid_func, error)
+    unsafe { handle_err_or_init(invalid_func, error) }
 }
 
 pub unsafe fn export_with_names_iter<CF: CFunction>(
@@ -400,12 +404,12 @@ where
     for<'id> INodeOfFunc<'id, CF::Function>: HasLevel,
     for<'id> TermOfFunc<'id, CF::Function>: AsciiDisplay,
 {
-    let file = handle_err(std::fs::File::create(path), error)?;
+    let file = unsafe { handle_err(std::fs::File::create(path), error) }?;
     let mut invalid_func = Ok(());
-    let res = manager.get().with_manager_shared(|manager| {
+    let res = unsafe { manager.get() }.with_manager_shared(|manager| {
         let iter = functions.into_iter().enumerate().filter_map(|(i, named)| {
             let name = named.name.to_str_lossy();
-            match named.func.get() {
+            match unsafe { named.func.get() } {
                 Ok(f) => Some((f, name)),
                 Err(_) => {
                     invalid_func = Err((i, name));
@@ -417,10 +421,10 @@ where
             settings.export_with_names(file, manager, iter)
         })
     });
-    handle_err(res, error)?;
+    unsafe { handle_err(res, error) }?;
     let invalid_func =
         invalid_func.map_err(|(i, name)| format!("function {i} '{name}' is invalid"));
-    handle_err_or_init(invalid_func, error)
+    unsafe { handle_err_or_init(invalid_func, error) }
 }
 
 pub unsafe fn visualize<CF: CFunction>(
@@ -436,30 +440,30 @@ where
     for<'id> INodeOfFunc<'id, CF::Function>: HasLevel,
     for<'id> TermOfFunc<'id, CF::Function>: AsciiDisplay,
 {
-    let visualizer = manager.get().with_manager_shared(|manager| {
+    let visualizer = unsafe { manager.get() }.with_manager_shared(|manager| {
         if function_names.is_null() {
             Visualizer::new().add(
                 diagram_name,
                 manager,
-                crate::util::slice_from_raw_parts(functions, num_functions)
+                unsafe { crate::util::slice_from_raw_parts(functions, num_functions) }
                     .iter()
-                    .filter_map(|f| f.get().ok()),
+                    .filter_map(|f| unsafe { f.get() }.ok()),
             )
         } else {
             Visualizer::new().add_with_names(
                 diagram_name,
                 manager,
-                crate::util::slice_from_raw_parts(functions, num_functions)
+                unsafe { crate::util::slice_from_raw_parts(functions, num_functions) }
                     .iter()
-                    .zip(std::slice::from_raw_parts(function_names, num_functions))
-                    .filter_map(|(f, name)| match f.get() {
-                        Ok(f) => Some((f, super::c_char_to_str(*name))),
+                    .zip(unsafe { std::slice::from_raw_parts(function_names, num_functions) })
+                    .filter_map(|(f, name)| match unsafe { f.get() } {
+                        Ok(f) => Some((f, unsafe { super::c_char_to_str(*name) })),
                         Err(_) => None,
                     }),
             )
         }
     });
-    visualize_serve(visualizer, port, error)
+    unsafe { visualize_serve(visualizer, port, error) }
 }
 
 pub unsafe fn visualize_iter<CF: CFunction>(
@@ -473,11 +477,13 @@ where
     for<'id> INodeOfFunc<'id, CF::Function>: HasLevel,
     for<'id> TermOfFunc<'id, CF::Function>: AsciiDisplay,
 {
-    let visualizer = manager.get().with_manager_shared(|manager| {
-        let iter = functions.into_iter().filter_map(|f| f.get().ok());
+    let visualizer = unsafe { manager.get() }.with_manager_shared(|manager| {
+        let iter = functions
+            .into_iter()
+            .filter_map(|f| unsafe { f.get() }.ok());
         Visualizer::new().add(diagram_name, manager, iter)
     });
-    visualize_serve(visualizer, port, error)
+    unsafe { visualize_serve(visualizer, port, error) }
 }
 
 pub unsafe fn visualize_with_names_iter<CF: CFunction>(
@@ -491,16 +497,16 @@ where
     for<'id> INodeOfFunc<'id, CF::Function>: HasLevel,
     for<'id> TermOfFunc<'id, CF::Function>: AsciiDisplay,
 {
-    let visualizer = manager.get().with_manager_shared(|manager| {
+    let visualizer = unsafe { manager.get() }.with_manager_shared(|manager| {
         let iter = functions
             .into_iter()
-            .filter_map(|named| match named.func.get() {
+            .filter_map(|named| match unsafe { named.func.get() } {
                 Ok(f) => Some((f, named.name.to_str_lossy())),
                 Err(_) => None,
             });
         Visualizer::new().add_with_names(diagram_name, manager, iter)
     });
-    visualize_serve(visualizer, port, error)
+    unsafe { visualize_serve(visualizer, port, error) }
 }
 
 unsafe fn visualize_serve(
@@ -511,5 +517,5 @@ unsafe fn visualize_serve(
     if port != 0 {
         visualizer = visualizer.port(port);
     }
-    handle_err_or_init(visualizer.serve(), error)
+    unsafe { handle_err_or_init(visualizer.serve(), error) }
 }

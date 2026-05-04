@@ -1,13 +1,14 @@
 [package]
 name = "oxidd-derive"
 version = "0.11.0"
-edition = "2021"
+edition = "2024"
 description = "Derive macros for OxiDD"
 readme = "../../README.md"
 
 license.workspace = true
 homepage.workspace = true
 repository.workspace = true
+rust-version.workspace = true
 
 
 [lib]

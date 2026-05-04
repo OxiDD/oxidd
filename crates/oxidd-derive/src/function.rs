@@ -1,7 +1,7 @@
-use proc_macro2::{Span, TokenStream};
 use proc_macro_error::{abort, emit_error};
-use quote::{quote, ToTokens};
-use syn::{spanned::Spanned, Token};
+use proc_macro2::{Span, TokenStream};
+use quote::{ToTokens, quote};
+use syn::{Token, spanned::Spanned};
 
 struct StructField {
     ident: TokenStream,

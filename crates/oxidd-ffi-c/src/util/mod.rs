@@ -1,5 +1,6 @@
-use std::ffi::{c_char, OsStr};
+use std::ffi::{OsStr, c_char};
 use std::fmt;
+use std::io;
 use std::mem::ManuallyDrop;
 use std::ops::Range;
 
@@ -77,7 +78,7 @@ impl Drop for error_t {
 /// Clone `error`
 ///
 /// The returned `error_t` must be deallocated independently of `error`.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn oxidd_error_clone(error: &error_t) -> error_t {
     if error._msg_cap == 0 {
         error_t {
@@ -100,7 +101,7 @@ pub extern "C" fn oxidd_error_clone(error: &error_t) -> error_t {
 }
 
 /// Deallocate the error
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn oxidd_error_free(error: error_t) {
     drop(error)
 }
@@ -118,7 +119,8 @@ pub unsafe fn handle_err<T, E: Into<error_t>>(
         Ok(v) => Some(v),
         Err(e) => {
             if !target.is_null() {
-                target.write(e.into());
+                let raw = e.into();
+                unsafe { target.write(raw) };
             }
             None
         }
@@ -134,11 +136,12 @@ pub unsafe fn handle_err_or_init<T, E: Into<error_t>>(
     }
     match result {
         Ok(v) => {
-            target.write(error_t::NONE);
+            unsafe { target.write(error_t::NONE) };
             Some(v)
         }
         Err(e) => {
-            target.write(e.into());
+            let raw = e.into();
+            unsafe { target.write(raw) };
             None
         }
     }
@@ -153,11 +156,12 @@ pub trait CManagerRef: Copy {
     unsafe fn get(self) -> ManuallyDrop<Self::ManagerRef>;
 
     unsafe fn set_var_name(self, var: VarNo, name: &str) -> VarNo {
-        self.get()
-            .with_manager_exclusive(|manager| match manager.set_var_name(var, name) {
+        unsafe { self.get() }.with_manager_exclusive(|manager| {
+            match manager.set_var_name(var, name) {
                 Ok(_) => VarNo::MAX,
                 Err(err) => err.present_var,
-            })
+            }
+        })
     }
 
     unsafe fn add_named_vars(
@@ -165,13 +169,13 @@ pub trait CManagerRef: Copy {
         names: *const *const c_char,
         count: VarNo,
     ) -> duplicate_var_name_result_t {
-        self.get().with_manager_exclusive(|manager| {
+        unsafe { self.get() }.with_manager_exclusive(|manager| {
             if names.is_null() {
                 Ok(manager.add_vars(count)).into()
             } else {
-                let names = std::slice::from_raw_parts(names, count as usize);
+                let names = unsafe { std::slice::from_raw_parts(names, count as usize) };
                 manager
-                    .add_named_vars(names.iter().map(|&ptr| c_char_to_str(ptr)))
+                    .add_named_vars(names.iter().map(|&ptr| unsafe { c_char_to_str(ptr) }))
                     .into()
             }
         })
@@ -181,9 +185,11 @@ pub trait CManagerRef: Copy {
 pub trait CFunction: Copy + From<Self::Function> + From<AllocResult<Self::Function>> {
     type CManagerRef: CManagerRef;
     type Function: for<'id> oxidd::Function<
-        ManagerRef = <Self::CManagerRef as CManagerRef>::ManagerRef,
-        Manager<'id> = <<Self::CManagerRef as CManagerRef>::ManagerRef as ManagerRef>::Manager<'id>,
-    >;
+            ManagerRef = <Self::CManagerRef as CManagerRef>::ManagerRef,
+            Manager<'id> = <<Self::CManagerRef as CManagerRef>::ManagerRef as ManagerRef>::Manager<
+                'id,
+            >,
+        >;
 
     const INVALID: Self;
 
@@ -306,7 +312,7 @@ impl From<Vec<oxidd::util::OptBool>> for assignment_t {
 /// must be the values from the creation of the `assignment`.
 ///
 /// In case `assignment.data` is `NULL`, this is a no-op.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_assignment_free(assignment: assignment_t) {
     drop(assignment);
 }
@@ -345,7 +351,7 @@ pub unsafe fn op1<CF: CFunction>(
     f: CF,
     op: impl FnOnce(&CF::Function) -> AllocResult<CF::Function>,
 ) -> CF {
-    f.get().and_then(|f| op(&f)).into()
+    unsafe { f.get() }.and_then(|f| op(&f)).into()
 }
 
 #[inline]
@@ -354,7 +360,9 @@ pub unsafe fn op2<CF: CFunction>(
     rhs: CF,
     op: impl FnOnce(&CF::Function, &CF::Function) -> AllocResult<CF::Function>,
 ) -> CF {
-    lhs.get().and_then(|lhs| op(&lhs, &*rhs.get()?)).into()
+    unsafe { lhs.get() }
+        .and_then(|lhs| op(&lhs, &*unsafe { rhs.get() }?))
+        .into()
 }
 
 #[inline]
@@ -363,7 +371,7 @@ pub unsafe fn op2_var<CF: CFunction>(
     rhs: VarNo,
     op: impl FnOnce(&CF::Function, VarNo) -> AllocResult<CF::Function>,
 ) -> CF {
-    lhs.get().and_then(|lhs| op(&lhs, rhs)).into()
+    unsafe { lhs.get() }.and_then(|lhs| op(&lhs, rhs)).into()
 }
 
 pub fn run_in_worker_pool<M: oxidd::HasWorkers>(
@@ -391,11 +399,25 @@ pub unsafe fn op3<CF: CFunction>(
     f3: CF,
     op: impl FnOnce(&CF::Function, &CF::Function, &CF::Function) -> AllocResult<CF::Function>,
 ) -> CF {
-    f1.get()
-        .and_then(|f1| op(&f1, &*f2.get()?, &*f3.get()?))
+    unsafe { f1.get() }
+        .and_then(|f1| op(&f1, &*unsafe { f2.get() }?, &*unsafe { f3.get() }?))
         .into()
 }
 
+#[inline]
+pub unsafe fn op3_combined<CF: CFunction, T>(
+    x: T,
+    f1: CF,
+    f2: CF,
+    f3: CF,
+    op: impl FnOnce(&CF::Function, T, &CF::Function, &CF::Function) -> AllocResult<CF::Function>,
+) -> CF {
+    unsafe { f1.get() }
+        .and_then(|f1| op(&f1, x, &*unsafe { f2.get() }?, &*unsafe { f3.get() }?))
+        .into()
+}
+
+/// Returns `true` on success
 pub unsafe fn dump_all_dot_path<CF: CFunction>(
     manager: CF::CManagerRef,
     path: &OsStr,
@@ -403,60 +425,62 @@ pub unsafe fn dump_all_dot_path<CF: CFunction>(
     function_names: *const *const c_char,
     num_function_names: usize,
     error: *mut error_t,
-) -> Option<()>
+) -> bool
 where
     CF::Function: for<'id> oxidd_dump::dot::DotStyle<ETagOfFunc<'id, CF::Function>>,
     for<'id> INodeOfFunc<'id, CF::Function>: oxidd_core::HasLevel,
     for<'id> ETagOfFunc<'id, CF::Function>: fmt::Debug,
     for<'id> TermOfFunc<'id, CF::Function>: fmt::Display,
 {
-    let file = handle_err(std::fs::File::create(path), error)?;
+    let result = std::fs::File::create(path).and_then(|file| {
+        let (functions, function_names) =
+            if !functions.is_null() && !function_names.is_null() && num_function_names != 0 {
+                (
+                    unsafe { std::slice::from_raw_parts(functions, num_function_names) },
+                    unsafe { std::slice::from_raw_parts(function_names, num_function_names) },
+                )
+            } else {
+                ([].as_slice(), [].as_slice())
+            };
 
-    let (functions, function_names) =
-        if !functions.is_null() && !function_names.is_null() && num_function_names != 0 {
-            (
-                std::slice::from_raw_parts(functions, num_function_names),
-                std::slice::from_raw_parts(function_names, num_function_names),
-            )
-        } else {
-            ([].as_slice(), [].as_slice())
-        };
-
-    let result = manager.get().with_manager_shared(|manager| {
-        let functions = functions
-            .iter()
-            .zip(function_names)
-            .filter_map(|(f, &name)| match f.get() {
-                Ok(f) => Some((f, c_char_to_str(name))),
-                Err(_) => None,
-            });
-        oxidd_dump::dot::dump_all(file, manager, functions)
+        unsafe { manager.get() }.with_manager_shared(|manager| {
+            let functions = functions
+                .iter()
+                .zip(function_names)
+                .filter_map(|(f, &name)| match unsafe { f.get() } {
+                    Ok(f) => Some((f, unsafe { c_char_to_str(name) })),
+                    Err(_) => None,
+                });
+            oxidd_dump::dot::dump_all(io::BufWriter::new(file), manager, functions)
+        })
     });
-    handle_err_or_init(result, error)
+    unsafe { handle_err_or_init(result, error) }.is_some()
 }
 
+/// Returns `true` on success
 pub unsafe fn dump_all_dot_path_iter<CF: CFunction>(
     manager: CF::CManagerRef,
     path: &OsStr,
     functions: iter<named<CF>>,
     error: *mut error_t,
-) -> Option<()>
+) -> bool
 where
     CF::Function: for<'id> oxidd_dump::dot::DotStyle<ETagOfFunc<'id, CF::Function>>,
     for<'id> INodeOfFunc<'id, CF::Function>: oxidd_core::HasLevel,
     for<'id> ETagOfFunc<'id, CF::Function>: fmt::Debug,
     for<'id> TermOfFunc<'id, CF::Function>: fmt::Display,
 {
-    let file = handle_err(std::fs::File::create(path), error)?;
-
-    let result = manager.get().with_manager_shared(|manager| {
-        let functions = functions
-            .into_iter()
-            .filter_map(|named| match named.func.get() {
-                Ok(f) => Some((f, named.name.to_str_lossy())),
-                Err(_) => None,
-            });
-        oxidd_dump::dot::dump_all(file, manager, functions)
+    let result = std::fs::File::create(path).and_then(|file| {
+        unsafe { manager.get() }.with_manager_shared(|manager| {
+            let functions =
+                functions
+                    .into_iter()
+                    .filter_map(|named| match unsafe { named.func.get() } {
+                        Ok(f) => Some((f, named.name.to_str_lossy())),
+                        Err(_) => None,
+                    });
+            oxidd_dump::dot::dump_all(io::BufWriter::new(file), manager, functions)
+        })
     });
-    handle_err_or_init(result, error)
+    unsafe { handle_err_or_init(result, error) }.is_some()
 }
