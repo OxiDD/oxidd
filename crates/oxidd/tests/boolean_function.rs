@@ -2,7 +2,6 @@
 
 #![cfg_attr(miri, allow(unused))]
 
-mod boolean_prop;
 mod util;
 
 use std::fmt;
@@ -17,9 +16,6 @@ use oxidd::{
     BooleanFunction, BooleanFunctionQuant, BooleanOperator, BooleanVecSet, Function, FunctionSubst,
     HasWorkers, InnerNode, Manager, ManagerRef, VarNo, WorkerPool,
 };
-
-use boolean_prop::Prop;
-use util::progress::Progress;
 
 // spell-checker:ignore nvars,mref
 
@@ -71,7 +67,6 @@ fn bcdd_node_count() {
     assert_eq!(g.node_count(), 3);
 }
 
-// TODO: move this test to its own module?
 #[test]
 fn zbdd_node_count() {
     let mref = oxidd::zbdd::new_manager(1024, 128, 2);
@@ -210,187 +205,6 @@ fn zbdd_cofactors() {
     assert!(gf == g.cofactor_false().unwrap());
     assert!(gt == bb);
     assert!(gf == x1);
-}
-
-fn test_simple_formulas<B: BooleanFunction>(manager: &B::ManagerRef) {
-    use Prop::*;
-
-    for op1 in [false, true] {
-        Prop::from(op1).build_and_check::<B>(manager, &[]).unwrap();
-
-        Not(Box::new(op1.into()))
-            .build_and_check::<B>(manager, &[])
-            .unwrap();
-
-        for op2 in [false, true] {
-            for binop in [And, Or, Xor, Equiv, Nand, Nor, Imp, ImpStrict] {
-                binop(Box::new(op1.into()), Box::new(op2.into()))
-                    .build_and_check::<B>(manager, &[])
-                    .unwrap();
-            }
-
-            for op3 in [false, true] {
-                Ite(
-                    Box::new(op1.into()),
-                    Box::new(op2.into()),
-                    Box::new(op3.into()),
-                )
-                .build_and_check::<B>(manager, &[])
-                .unwrap();
-            }
-        }
-    }
-}
-
-#[test]
-fn bdd_simple_formulas_t1() {
-    let mref = oxidd::bdd::new_manager(65536, 1024, 1);
-    test_simple_formulas::<BDDFunction>(&mref);
-}
-
-#[test]
-fn bdd_simple_formulas_t2() {
-    let mref = oxidd::bdd::new_manager(65536, 1024, 2);
-    test_simple_formulas::<BDDFunction>(&mref);
-}
-
-#[test]
-fn bcdd_simple_formulas_t1() {
-    let mref = oxidd::bcdd::new_manager(65536, 1024, 1);
-    test_simple_formulas::<BCDDFunction>(&mref);
-}
-
-#[test]
-fn bcdd_simple_formulas_t2() {
-    let mref = oxidd::bcdd::new_manager(65536, 1024, 2);
-    test_simple_formulas::<BCDDFunction>(&mref);
-}
-
-#[test]
-fn zbdd_simple_formulas_t1() {
-    let mref = oxidd::zbdd::new_manager(65536, 1024, 1);
-    test_simple_formulas::<ZBDDFunction>(&mref);
-}
-
-#[test]
-fn zbdd_simple_formulas_t2() {
-    let mref = oxidd::zbdd::new_manager(65536, 1024, 2);
-    test_simple_formulas::<ZBDDFunction>(&mref);
-}
-
-fn make_vars<B: BooleanFunction>(mref: &B::ManagerRef, n: VarNo) -> Vec<B> {
-    mref.with_manager_exclusive(|manager| {
-        manager.add_vars(n);
-        (0..n).map(|i| B::var(manager, i).unwrap()).collect()
-    })
-}
-
-#[test]
-fn bcdd_restrict() {
-    let mref = oxidd::bcdd::new_manager(1024, 1024, 2);
-    let vars = make_vars::<BCDDFunction>(&mref, 3);
-    use Prop::*;
-    let formulas = [
-        Restrict(
-            0b010,
-            0b001,
-            Box::new(Or(Box::new(Var(0)), Box::new(Var(1)))),
-        ),
-        Restrict(0b110, 0, Box::new(Var(0))),
-        Restrict(0b110, 0, Box::new(Not(Box::new(Var(0))))),
-        Restrict(0b0, 0b10, Box::new(And(Box::new(Var(0)), Box::new(Var(1))))),
-        Restrict(
-            0b100,
-            0b001,
-            Box::new(And(Box::new(Var(1)), Box::new(Var(2)))),
-        ),
-    ];
-    for formula in formulas {
-        formula.build_and_check_quant(&mref, &vars).unwrap();
-    }
-}
-
-fn test_prop_depth2<B: BooleanFunction>(manager: &B::ManagerRef, vars: &[B]) {
-    assert!(vars.len() < 32);
-    let mut f = Prop::False;
-    let mut progress = Progress::new(38_493_515);
-    loop {
-        f.build_and_check(manager, vars).unwrap();
-        progress.step();
-
-        if !f.next::<false>(2, vars.len() as u32) {
-            break;
-        }
-    }
-    progress.done();
-}
-
-fn test_prop_depth2_quant<B: BooleanFunctionQuant>(manager: &B::ManagerRef, vars: &[B]) {
-    assert!(vars.len() < 32);
-    let mut f = Prop::False;
-    let mut progress = Progress::new(208_194_485);
-    loop {
-        f.build_and_check_quant(manager, vars).unwrap();
-        progress.step();
-
-        if !f.next::<true>(2, vars.len() as u32) {
-            break;
-        }
-    }
-    progress.done();
-}
-
-// The following tests are expensive, hence we use `#[ignore]`, see
-// https://doc.rust-lang.org/book/ch11-02-running-tests.html#ignoring-some-tests-unless-specifically-requested.
-// You can set the `OXIDD_TESTING_PROGRESS` environment variable to get a simple
-// progress indicator.
-
-#[test]
-#[ignore]
-fn bdd_prop_depth2_3vars_t1() {
-    let mref = oxidd::bdd::new_manager(65536, 1024, 1);
-    let vars = make_vars::<BDDFunction>(&mref, 3);
-    test_prop_depth2_quant(&mref, &vars);
-}
-
-#[test]
-#[ignore]
-fn bdd_prop_depth2_3vars_t2() {
-    let mref = oxidd::bdd::new_manager(65536, 1024, 2);
-    let vars = make_vars::<BDDFunction>(&mref, 3);
-    test_prop_depth2_quant(&mref, &vars);
-}
-
-#[test]
-#[ignore]
-fn bcdd_prop_depth2_3vars_t1() {
-    let mref = oxidd::bcdd::new_manager(65536, 1024, 1);
-    let vars = make_vars::<BCDDFunction>(&mref, 3);
-    test_prop_depth2_quant(&mref, &vars);
-}
-
-#[test]
-#[ignore]
-fn bcdd_prop_depth2_3vars_t2() {
-    let mref = oxidd::bcdd::new_manager(65536, 1024, 2);
-    let vars = make_vars::<BCDDFunction>(&mref, 3);
-    test_prop_depth2_quant(&mref, &vars);
-}
-
-#[test]
-#[ignore]
-fn zbdd_prop_depth2_3vars_t1() {
-    let mref = oxidd::zbdd::new_manager(65536, 1024, 1);
-    let vars = make_vars::<ZBDDFunction>(&mref, 3);
-    test_prop_depth2(&mref, &vars);
-}
-
-#[test]
-#[ignore]
-fn zbdd_prop_depth2_3vars_t2() {
-    let mref = oxidd::zbdd::new_manager(65536, 1024, 2);
-    let vars = make_vars::<ZBDDFunction>(&mref, 3);
-    test_prop_depth2(&mref, &vars);
 }
 
 /// Explicit representation of a Boolean function (a column in a truth table)
