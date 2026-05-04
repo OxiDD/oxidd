@@ -947,11 +947,6 @@ pub trait BooleanFunctionQuant: BooleanFunction {
             Ok(Self::from_edge(manager, e))
         })
     }
-    /// Deprecated alias for [`Self::exists()`]
-    #[deprecated]
-    fn exist(&self, vars: &Self) -> AllocResult<Self> {
-        self.exists(vars)
-    }
 
     /// Compute the unique quantification over `vars`
     ///
@@ -1001,7 +996,7 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     /// Combined application of `op` and quantification `∃x. self <op> rhs`,
     /// where `<op>` is any of the operations from [`BooleanOperator`]
     ///
-    /// See also [`Self::exist()`] and the trait [`BooleanFunction`] for more
+    /// See also [`Self::exists()`] and the trait [`BooleanFunction`] for more
     /// details.
     ///
     /// Panics if `self` and `rhs` and `vars` don't belong to the same manager.
@@ -1016,12 +1011,6 @@ pub trait BooleanFunctionQuant: BooleanFunction {
             )?;
             Ok(Self::from_edge(manager, e))
         })
-    }
-    /// Deprecated alias for [`Self::apply_exists()`]
-    #[deprecated]
-    #[must_use]
-    fn apply_exist(&self, op: BooleanOperator, rhs: &Self, vars: &Self) -> AllocResult<Self> {
-        self.apply_exists(op, rhs, vars)
     }
 
     /// Combined application of `op` and quantification `∃!x. self <op> rhs`,
@@ -1075,16 +1064,6 @@ pub trait BooleanFunctionQuant: BooleanFunction {
         root: &EdgeOfFunc<'id, Self>,
         vars: &EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>>;
-    /// Deprecated alias for [`Self::exists_edge()`]
-    #[must_use]
-    #[deprecated]
-    fn exist_edge<'id>(
-        manager: &Self::Manager<'id>,
-        root: &EdgeOfFunc<'id, Self>,
-        vars: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        Self::exists_edge(manager, root, vars)
-    }
 
     /// Compute the unique quantification of `root` over `vars`, edge version
     ///
@@ -1129,7 +1108,7 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     /// Combined application of `op` and existential quantification, edge
     /// version
     ///
-    /// See [`Self::apply_exist()`] for more details.
+    /// See [`Self::apply_exists()`] for more details.
     #[must_use]
     fn apply_exists_edge<'id>(
         manager: &Self::Manager<'id>,
@@ -1155,18 +1134,6 @@ pub trait BooleanFunctionQuant: BooleanFunction {
         );
 
         Self::exists_edge(manager, &inner, vars)
-    }
-    /// Deprecated alias for [`Self::apply_exists_edge()`]
-    #[deprecated]
-    #[must_use]
-    fn apply_exist_edge<'id>(
-        manager: &Self::Manager<'id>,
-        op: BooleanOperator,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-        vars: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        Self::apply_exists_edge(manager, op, lhs, rhs, vars)
     }
 
     /// Combined application of `op` and unique quantification, edge version

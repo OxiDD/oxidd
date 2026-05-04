@@ -248,17 +248,6 @@ pub unsafe extern "C" fn oxidd_bcdd_manager_num_inner_nodes(manager: bcdd_manage
     let manager = unsafe { manager.get() };
     manager.with_manager_shared(|manager| manager.num_inner_nodes())
 }
-/// Deprecated alias for `oxidd_bcdd_manager_num_inner_nodes()`
-///
-/// @deprecated  Use `oxidd_bcdd_manager_num_inner_nodes()` instead
-#[deprecated(
-    since = "0.11.0",
-    note = "use oxidd_bcdd_manager_num_inner_nodes instead"
-)]
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn oxidd_bcdd_num_inner_nodes(manager: bcdd_manager_t) -> usize {
-    unsafe { oxidd_bcdd_manager_num_inner_nodes(manager) }
-}
 
 /// Get an approximate count of inner nodes stored in `manager`
 ///
@@ -966,34 +955,6 @@ pub unsafe extern "C" fn oxidd_bcdd_manager_dump_all_dot_path(
         )
     }
 }
-/// Dump the entire decision diagram represented by `manager` as Graphviz DOT
-/// code to a file at `path`
-///
-/// @deprecated  Use `oxidd_bcdd_manager_dump_all_dot_path()` instead
-#[deprecated(
-    since = "0.11.0",
-    note = "use oxidd_bcdd_manager_dump_all_dot_path instead"
-)]
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn oxidd_bcdd_manager_dump_all_dot_file(
-    manager: bcdd_manager_t,
-    path: *const c_char,
-    functions: *const bcdd_t,
-    function_names: *const *const c_char,
-    num_function_names: usize,
-) -> bool {
-    unsafe {
-        oxidd_bcdd_manager_dump_all_dot_path(
-            manager,
-            path,
-            libc::strlen(path),
-            functions,
-            function_names,
-            num_function_names,
-            std::ptr::null_mut(),
-        )
-    }
-}
 
 /// Dump the entire decision diagram represented by `manager` as Graphviz DOT
 /// code to a file at `path`
@@ -1179,14 +1140,6 @@ pub unsafe extern "C" fn oxidd_bcdd_node_level(f: bcdd_t) -> LevelNo {
     } else {
         LevelNo::MAX
     }
-}
-/// Deprecated alias for `oxidd_bcdd_node_level()`
-///
-/// @deprecated  Use `oxidd_bcdd_node_level()` instead
-#[deprecated(since = "0.11.0", note = "use oxidd_bcdd_node_level instead")]
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn oxidd_bcdd_level(f: bcdd_t) -> LevelNo {
-    unsafe { oxidd_bcdd_node_level(f) }
 }
 /// Get the variable number for `f`'s underlying node
 ///
@@ -1455,14 +1408,6 @@ pub unsafe extern "C" fn oxidd_bcdd_forall(f: bcdd_t, var: bcdd_t) -> bcdd_t {
 pub unsafe extern "C" fn oxidd_bcdd_exists(f: bcdd_t, var: bcdd_t) -> bcdd_t {
     unsafe { op2(f, var, BCDDFunction::exists) }
 }
-/// Deprecated alias for `oxidd_bcdd_exists()`
-///
-/// @deprecated  Use `oxidd_bcdd_exists()` instead
-#[deprecated(since = "0.10.0", note = "use oxidd_bcdd_exists instead")]
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn oxidd_bcdd_exist(f: bcdd_t, var: bcdd_t) -> bcdd_t {
-    unsafe { oxidd_bcdd_exists(f, var) }
-}
 
 /// Compute the BCDD for the unique quantification of `f` over `vars`
 ///
@@ -1521,19 +1466,6 @@ pub unsafe extern "C" fn oxidd_bcdd_apply_exists(
     vars: bcdd_t,
 ) -> bcdd_t {
     unsafe { op3_combined(op, lhs, rhs, vars, BCDDFunction::apply_exists) }
-}
-/// Deprecated alias for `oxidd_bcdd_apply_exists()`
-///
-/// @deprecated  Use `oxidd_bcdd_apply_exists()` instead
-#[deprecated(since = "0.10.0", note = "use oxidd_bcdd_apply_exists instead")]
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn oxidd_bcdd_apply_exist(
-    op: BooleanOperator,
-    lhs: bcdd_t,
-    rhs: bcdd_t,
-    vars: bcdd_t,
-) -> bcdd_t {
-    unsafe { oxidd_bcdd_apply_exists(op, lhs, rhs, vars) }
 }
 
 /// Combined application of `op` and `oxidd_bcdd_unique()`

@@ -1462,21 +1462,6 @@ public:
     const level_no_t level = Derived::_c_node_level(self.to_c_api());
     return level == invalid_level_no ? std::nullopt : std::optional(level);
   }
-  /// Get the level of the underlying node
-  ///
-  /// Locking behavior: acquires the manager's lock for shared access.
-  ///
-  /// Time complexity: O(1)
-  ///
-  /// @returns  The level of the underlying inner node or `std::nullopt` for
-  ///           terminals and invalid functions
-  ///
-  /// @deprecated  use `node_level()` instead
-  [[deprecated("use node_level instead"), nodiscard]] level_no_t
-  level() const noexcept {
-    const Derived &self = *static_cast<const Derived *>(this);
-    return Derived::_c_node_level(self.to_c_api());
-  }
 
   /// Get the variable number for the underlying node
   ///
@@ -2055,13 +2040,6 @@ public:
     const Derived &self = *static_cast<const Derived *>(this);
     return Derived::_c_exists(self.to_c_api(), vars.to_c_api());
   }
-  /// Deprecated alias for `exists()`
-  ///
-  /// @deprecated  use `exists()` instead
-  [[nodiscard, deprecated]]
-  Derived exist(const Derived &vars) const noexcept {
-    return exists(vars);
-  }
   /// Compute the unique quantification over `vars`
   ///
   /// `vars` is a set of variables, which in turn is just the conjunction of the
@@ -2114,14 +2092,6 @@ public:
     return Derived::_c_apply_exists(
         static_cast<capi::oxidd_boolean_operator>(op), self.to_c_api(),
         rhs.to_c_api(), vars.to_c_api());
-  }
-  /// Deprecated alias for `apply_exists()`
-  ///
-  /// @deprecated  use `apply_exists()` instead
-  [[nodiscard, deprecated]]
-  Derived apply_exist(const util::boolean_operator op, const Derived &rhs,
-                      const Derived &vars) const noexcept {
-    return apply_exists(op, rhs, vars);
   }
 
   /// Combined application of `op` and `unique()`

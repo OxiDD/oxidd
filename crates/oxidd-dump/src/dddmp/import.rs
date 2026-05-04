@@ -94,7 +94,7 @@ impl DumpHeader {
                         return err(format!(
                             "unsupported version '{}' (line {line_no})",
                             String::from_utf8_lossy(value)
-                        ))
+                        ));
                     }
                 },
                 b".mode" => {
@@ -105,7 +105,7 @@ impl DumpHeader {
                             return err(format!(
                                 "unknown value '{}' for key '.mode' (line {line_no})",
                                 String::from_utf8_lossy(value),
-                            ))
+                            ));
                         }
                     };
                 }
@@ -120,7 +120,7 @@ impl DumpHeader {
                             return err(format!(
                                 "unknown value '{}' for key '.varinfo' (line {line_no})",
                                 String::from_utf8_lossy(value),
-                            ))
+                            ));
                         }
                     };
                 }
@@ -154,7 +154,7 @@ impl DumpHeader {
                     return err(format!(
                         "unknown key '{}' (line {line_no})",
                         String::from_utf8_lossy(key),
-                    ))
+                    ));
                 }
             }
 
@@ -175,21 +175,21 @@ impl DumpHeader {
 
         if header.ids.len() != nsuppvars as usize {
             return err(format!(
-            "number of support variables in .ids entry ({}) does not match .nsuppvars ({nsuppvars})",
-            header.ids.len(),
-        ));
+                "number of support variables in .ids entry ({}) does not match .nsuppvars ({nsuppvars})",
+                header.ids.len(),
+            ));
         }
         if header.permids.len() != nsuppvars as usize {
             return err(format!(
-            "number of support variables in .permids entry ({}) does not match .nsuppvars ({nsuppvars})",
-            header.permids.len(),
-        ));
+                "number of support variables in .permids entry ({}) does not match .nsuppvars ({nsuppvars})",
+                header.permids.len(),
+            ));
         }
         if !header.auxids.is_empty() && header.auxids.len() != nsuppvars as usize {
             return err(format!(
-            "number of support variables in .auxids entry ({}) does not match .nsuppvars ({nsuppvars})",
-            header.auxids.len(),
-        ));
+                "number of support variables in .auxids entry ({}) does not match .nsuppvars ({nsuppvars})",
+                header.auxids.len(),
+            ));
         }
 
         if !header.ids.is_empty() {
@@ -423,11 +423,6 @@ impl DumpHeader {
     pub fn support_var_to_level(&self) -> &[LevelNo] {
         &self.permids
     }
-    /// Deprecated alias for [`Self::support_var_to_level()`]
-    #[deprecated(since = "0.11.0", note = "use support_var_to_level instead")]
-    pub fn support_var_permutation(&self) -> &[LevelNo] {
-        &self.permids
-    }
 
     /// Auxiliary variable IDs. The returned slice contains
     /// [`DumpHeader::num_support_vars()`] elements.
@@ -612,7 +607,7 @@ where
                 None => {
                     return err(format!(
                         "expected a space after variable extra info (line {line_no})"
-                    ))
+                    ));
                 }
             },
             VarInfo::None => rest,
@@ -624,7 +619,7 @@ where
             None => {
                 return err(format!(
                     "expected a space after variable internal index (line {line_no})"
-                ))
+                ));
             }
         };
 
@@ -783,7 +778,7 @@ where
         let vid = match var_code {
             Code::Terminal => unreachable!(),
             Code::AbsoluteID if vid >= suppvar_level_map.len() => {
-                return err("variable ID out of range")
+                return err("variable ID out of range");
             }
             Code::AbsoluteID => vid,
             Code::RelativeID | Code::Relative1 => {

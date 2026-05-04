@@ -244,17 +244,6 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_num_inner_nodes(manager: zbdd_manage
     let manager = unsafe { manager.get() };
     manager.with_manager_shared(|manager| manager.num_inner_nodes())
 }
-/// Deprecated alias for `oxidd_zbdd_manager_num_inner_nodes()`
-///
-/// @deprecated  Use `oxidd_zbdd_manager_num_inner_nodes()` instead
-#[deprecated(
-    since = "0.11.0",
-    note = "use oxidd_zbdd_manager_num_inner_nodes instead"
-)]
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn oxidd_zbdd_num_inner_nodes(manager: zbdd_manager_t) -> usize {
-    unsafe { oxidd_zbdd_manager_num_inner_nodes(manager) }
-}
 
 /// Get an approximate count of inner nodes stored in `manager`
 ///
@@ -944,34 +933,6 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_dump_all_dot_path(
         )
     }
 }
-/// Dump the entire decision diagram represented by `manager` as Graphviz DOT
-/// code to a file at `path`
-///
-/// @deprecated  Use `oxidd_zbdd_manager_dump_all_dot_path()` instead
-#[deprecated(
-    since = "0.11.0",
-    note = "use oxidd_zbdd_manager_dump_all_dot_path instead"
-)]
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn oxidd_zbdd_manager_dump_all_dot_file(
-    manager: zbdd_manager_t,
-    path: *const c_char,
-    functions: *const zbdd_t,
-    function_names: *const *const c_char,
-    num_function_names: usize,
-) -> bool {
-    unsafe {
-        oxidd_zbdd_manager_dump_all_dot_path(
-            manager,
-            path,
-            libc::strlen(path),
-            functions,
-            function_names,
-            num_function_names,
-            std::ptr::null_mut(),
-        )
-    }
-}
 
 /// Dump the entire decision diagram represented by `manager` as Graphviz DOT
 /// code to a file at `path`
@@ -1038,32 +999,6 @@ pub unsafe extern "C" fn oxidd_zbdd_manager_level_to_var(
 pub unsafe extern "C" fn oxidd_zbdd_singleton(manager: zbdd_manager_t, var: VarNo) -> zbdd_t {
     let manager = unsafe { manager.get() };
     manager.with_manager_exclusive(|manager| ZBDDFunction::singleton(manager, var).into())
-}
-
-/// Get the ZBDD Boolean function v for the singleton set {v}
-///
-/// `var` must be a singleton set.
-///
-/// Locking behavior: acquires the manager's lock for shared access.
-///
-/// @param  singleton  The singleton set {v}
-///
-/// @returns  The ZBDD Boolean function v
-///
-/// @deprecated  Use `oxidd_zbdd_var()` instead
-#[deprecated(since = "0.11.0", note = "use oxidd_zbdd_var instead")]
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn oxidd_zbdd_var_boolean_function(singleton: zbdd_t) -> zbdd_t {
-    let res = unsafe { singleton.get() }.and_then(|singleton| {
-        singleton.with_manager_shared(|manager, edge| {
-            Ok(ZBDDFunction::from_edge(
-                manager,
-                #[allow(deprecated)]
-                oxidd::zbdd::var_boolean_function(manager, edge)?,
-            ))
-        })
-    });
-    res.into()
 }
 
 /// Create a new ZBDD node at the level of `var` with the given `hi` and `lo`
@@ -1331,14 +1266,6 @@ pub unsafe extern "C" fn oxidd_zbdd_node_level(f: zbdd_t) -> LevelNo {
     } else {
         LevelNo::MAX
     }
-}
-/// Deprecated alias for `oxidd_zbdd_node_level()`
-///
-/// @deprecated  Use `oxidd_zbdd_node_level()` instead
-#[deprecated(since = "0.11.0", note = "use oxidd_zbdd_node_level instead")]
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn oxidd_zbdd_level(f: zbdd_t) -> LevelNo {
-    unsafe { oxidd_zbdd_node_level(f) }
 }
 /// Get the variable number for `f`'s underlying node
 ///

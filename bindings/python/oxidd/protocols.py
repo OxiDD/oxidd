@@ -18,7 +18,7 @@ from collections.abc import Iterable
 from os import PathLike
 from typing import Generic, Protocol, TypeVar
 
-from typing_extensions import Self, deprecated
+from typing_extensions import Self
 
 from .util import BooleanOperator, DDDMPFile, DDDMPVersion
 
@@ -130,16 +130,6 @@ class HasLevel(Function, Protocol):
 
         Returns:
             The level number or ``None`` for terminals
-        """
-        raise NotImplementedError
-
-    @deprecated("Use node_level instead")
-    @abstractmethod
-    def level(self, /) -> int | None:
-        """Deprecated alias for :meth:`node_level`.
-
-        .. deprecated:: 0.11
-           Use :meth:`node_level` instead.
         """
         raise NotImplementedError
 
@@ -545,16 +535,6 @@ class BooleanFunctionQuant(BooleanFunction, Protocol):
         raise NotImplementedError
 
     @abstractmethod
-    @deprecated("Use exists instead")
-    def exist(self, /, vars: Self) -> Self:
-        """Deprecated alias for :meth:`exists`.
-
-        .. deprecated:: 0.10
-           Use :meth:`exists` instead
-        """
-        raise NotImplementedError
-
-    @abstractmethod
     def unique(self, /, vars: Self) -> Self:
         """Compute the unique quantification over ``vars``.
 
@@ -615,16 +595,6 @@ class BooleanFunctionQuant(BooleanFunction, Protocol):
 
         Raises:
             DDMemoryError: If the operation runs out of memory
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    @deprecated("Use apply_exists instead")
-    def apply_exist(self, /, op: BooleanOperator, rhs: Self, vars: Self) -> Self:
-        """Deprecated alias for :meth:`apply_exists`.
-
-        .. deprecated:: 0.10
-           Use :meth:`apply_exists` instead
         """
         raise NotImplementedError
 
@@ -1039,21 +1009,6 @@ class Manager(Generic[F], Protocol):
             path: Path of the output file. If a file at ``path`` exists, it will
                 be overwritten, otherwise a new one will be created.
             functions: Optional names for DD functions
-        """
-        raise NotImplementedError
-
-    @deprecated("Use dump_all_dot instead")
-    @abstractmethod
-    def dump_all_dot_file(
-        self,
-        /,
-        path: str | PathLike[str],
-        functions: Iterable[tuple[F, str]] = [],
-    ) -> None:
-        """Deprecated alias for :meth:`dump_all_dot`.
-
-        .. deprecated:: 0.11
-           Use :meth:`dump_all_dot` instead.
         """
         raise NotImplementedError
 

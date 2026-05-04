@@ -8,7 +8,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyList, PyNone, PyRange, PyString, PyTuple, PyType};
 use rustc_hash::FxHasher;
 
-use oxidd::util::{num::F64, AllocResult, OptBool};
+use oxidd::util::{AllocResult, OptBool, num::F64};
 use oxidd::{
     BooleanFunction, BooleanFunctionQuant, Function, FunctionSubst, HasLevel, LevelNo, Manager,
     ManagerRef, Subst, VarNo,
@@ -583,31 +583,6 @@ impl BCDDManager {
     ) -> PyResult<()> {
         crate::util::dump_all_dot::<BCDDFunction>(&self.0, &path, functions)
     }
-    /// Deprecated alias for :meth:`dump_all_dot`.
-    ///
-    /// Args:
-    ///     path (str | PathLike[str]): Path of the output file. If a file at
-    ///         ``path`` exists, it will be overwritten, otherwise a new one
-    ///         will be created.
-    ///     functions (Iterable[tuple[BCDDFunction, str]]): Optional names for
-    ///         BCDD functions
-    ///
-    /// Returns:
-    ///     None
-    ///
-    /// .. deprecated:: 0.11
-    ///    Use :meth:`dump_all_dot` instead
-    #[pyo3(
-        signature = (/, path, functions=None),
-        text_signature = "($self, /, path, functions=[])"
-    )]
-    fn dump_all_dot_file<'py>(
-        &self,
-        path: PathBuf,
-        functions: Option<&Bound<'py, PyAny>>,
-    ) -> PyResult<()> {
-        crate::util::dump_all_dot::<BCDDFunction>(&self.0, &path, functions)
-    }
 }
 
 /// Substitution mapping variables to replacement functions.
@@ -769,16 +744,6 @@ impl BCDDFunction {
                 oxidd::Node::Inner(n) => Some(n.level()),
                 oxidd::Node::Terminal(_) => None,
             })
-    }
-    /// Deprecated alias for :meth:`node_level`.
-    ///
-    /// Returns:
-    ///     int | None: The level, or ``None`` if the node is a terminal
-    ///
-    /// .. deprecated:: 0.11
-    ///    Use :meth:`node_level` instead
-    fn level(&self) -> Option<LevelNo> {
-        self.node_level()
     }
     /// Get the variable number for the underlying node.
     ///
@@ -1046,23 +1011,6 @@ impl BCDDFunction {
     fn exists(&self, py: Python, vars: &Self) -> PyResult<Self> {
         py.detach(move || self.0.exists(&vars.0)).try_into()
     }
-    /// Deprecated alias for :meth:`exists`.
-    ///
-    /// Args:
-    ///     vars (Self): Set of variables represented as conjunction thereof.
-    ///         Must belong to the same manager as ``self``.
-    ///
-    /// Returns:
-    ///     Self: ∃ vars: self
-    ///
-    /// Raises:
-    ///     DDMemoryError: If the operation runs out of memory
-    ///
-    /// .. deprecated:: 0.10
-    ///    Use :meth:`exists` instead
-    fn exist(&self, py: Python, vars: &Self) -> PyResult<Self> {
-        self.exists(py, vars)
-    }
     /// Compute the unique quantification over ``vars``.
     ///
     /// This operation removes all occurrences of variables in ``vars`` by
@@ -1144,34 +1092,6 @@ impl BCDDFunction {
         let op = crate::util::boolean_operator(op)?;
         py.detach(move || self.0.apply_exists(op, &rhs.0, &vars.0))
             .try_into()
-    }
-    /// Deprecated alias for :meth:`apply_exists`.
-    ///
-    /// Args:
-    ///     op (BooleanOperator): Binary Boolean operator to apply to ``self``
-    ///         and ``rhs``
-    ///     rhs (Self): Right-hand side of the operator. Must belong to the same
-    ///         manager as ``self``.
-    ///     vars (Self): Set of variables to quantify over. Represented as
-    ///         conjunction of variables. Must belong to the same manager as
-    ///         ``self``.
-    ///
-    /// Returns:
-    ///     Self: ``∃ vars. self <op> rhs``
-    ///
-    /// Raises:
-    ///     DDMemoryError: If the operation runs out of memory
-    ///
-    /// .. deprecated:: 0.10
-    ///    Use :meth:`apply_exists` instead
-    fn apply_exist(
-        &self,
-        py: Python,
-        op: &Bound<PyAny>,
-        rhs: &Self,
-        vars: &Self,
-    ) -> PyResult<Self> {
-        self.apply_exists(py, op, rhs, vars)
     }
     /// Combined application of ``op`` and :meth:`unique`.
     ///

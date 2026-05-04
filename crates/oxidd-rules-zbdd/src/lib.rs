@@ -328,43 +328,11 @@ where
     reduce(manager, level, hi, lo, ZBDDOp::MkNode)
 }
 
-/// Get the Boolean function v for the singleton set {v} (given by `singleton`)
-///
-/// Panics if `singleton` is not a singleton set
-#[deprecated = "use `BooleanFunction::var` instead"]
-pub fn var_boolean_function<M>(manager: &M, singleton: &M::Edge) -> AllocResult<M::Edge>
-where
-    M: Manager<Terminal = ZBDDTerminal> + HasZBDDCache<M::Edge>,
-    M::InnerNode: HasLevel,
-{
-    let level = singleton_level(manager, singleton);
-    let hi = manager.clone_edge(manager.zbdd_cache().tautology(level + 1));
-    let lo = manager.get_terminal(ZBDDTerminal::Empty).unwrap();
-    let mut edge = oxidd_core::LevelView::get_or_insert(
-        &mut manager.level(level),
-        InnerNode::new(level, [hi, lo]),
-    )?;
-
-    // Build the chain bottom up. We need to skip the newly created level.
-    let levels = manager.levels().rev();
-    // skip -> for level 0, we are already done
-    for mut view in levels.skip((manager.num_levels() - level) as usize) {
-        // only use `oxidd_core::LevelView` here to mitigate confusion of Rust Analyzer
-        use oxidd_core::LevelView;
-
-        let level = view.level_no();
-        let edge2 = manager.clone_edge(&edge);
-        edge = view.get_or_insert(InnerNode::new(level, [edge, edge2]))?;
-    }
-
-    Ok(edge)
-}
-
 // --- Function Interface ------------------------------------------------------
 
+pub use apply_rec::ZBDDFunction;
 #[cfg(feature = "multi-threading")]
 pub use apply_rec::mt::ZBDDFunctionMT;
-pub use apply_rec::ZBDDFunction;
 
 // --- Statistics --------------------------------------------------------------
 
@@ -405,7 +373,9 @@ impl StatCounters {
             let terminal_percent = (calls - cache_queries) as f32 / calls as f32 * 100.0;
             let cache_hit_percent = cache_hits as f32 / cache_queries as f32 * 100.0;
             let op = <ZBDDOp as oxidd_core::Countable>::from_usize(i);
-            eprintln!("  {op:?}: calls: {calls}, cache queries: {cache_queries} ({terminal_percent} % terminal cases), cache hits: {cache_hits} ({cache_hit_percent} %), reduced: {reduced}");
+            eprintln!(
+                "  {op:?}: calls: {calls}, cache queries: {cache_queries} ({terminal_percent} % terminal cases), cache hits: {cache_hits} ({cache_hit_percent} %), reduced: {reduced}"
+            );
         }
     }
 }

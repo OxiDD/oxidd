@@ -243,17 +243,9 @@ pub enum OptBool {
 
 impl From<bool> for OptBool {
     fn from(value: bool) -> Self {
-        if value {
-            Self::True
-        } else {
-            Self::False
-        }
+        if value { Self::True } else { Self::False }
     }
 }
-
-/// Deprecated alias for [`crate::error::OutOfMemory`]
-#[deprecated = "use oxidd_core::error::OutOfMemory instead"]
-pub type OutOfMemory = crate::error::OutOfMemory;
 
 /// Result type with [`OutOfMemory`][crate::error::OutOfMemory] error
 pub type AllocResult<T> = Result<T, crate::error::OutOfMemory>;

@@ -34,7 +34,7 @@ from os import PathLike
 from types import TracebackType
 from typing import final
 
-from typing_extensions import Never, Self, deprecated
+from typing_extensions import Never, Self
 
 class BooleanOperator(enum.Enum):
     """Binary operators on Boolean functions."""

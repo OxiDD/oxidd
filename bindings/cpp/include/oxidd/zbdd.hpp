@@ -196,21 +196,6 @@ public:
   /// Default constructor, yields an invalid ZBDD function
   zbdd_function() noexcept = default;
 
-  /// Get the ZBDD Boolean function v for the singleton set {v}
-  ///
-  /// `this` must be a singleton set.
-  ///
-  /// Locking behavior: acquires the manager's lock for shared access.
-  ///
-  /// @returns  The ZBDD Boolean function v
-  [[deprecated("use zbdd_manager::var instead"), nodiscard]] zbdd_function
-  var_boolean_function() const noexcept {
-    const std::optional<var_no_t> var = node_var();
-    if (!var)
-      return {};
-    return containing_manager().var(*var);
-  }
-
   /// Get the subset of `self` not containing `var`, formally
   /// `{s ∈ self | {var} ∉ s}`
   ///

@@ -8,7 +8,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyList, PyNone, PyRange, PyString, PyTuple};
 use rustc_hash::FxHasher;
 
-use oxidd::util::{num::F64, AllocResult, OptBool};
+use oxidd::util::{AllocResult, OptBool, num::F64};
 use oxidd::{
     BooleanFunction, BooleanVecSet, Function, HasLevel, LevelNo, Manager, ManagerRef, VarNo,
 };
@@ -624,31 +624,6 @@ impl ZBDDManager {
     ) -> PyResult<()> {
         crate::util::dump_all_dot::<ZBDDFunction>(&self.0, &path, functions)
     }
-    /// Deprecated alias for :meth:`dump_all_dot`.
-    ///
-    /// Args:
-    ///     path (str | PathLike[str]): Path of the output file. If a file at
-    ///         ``path`` exists, it will be overwritten, otherwise a new one
-    ///         will be created.
-    ///     functions (Iterable[tuple[ZBDDFunction, str]]): Optional names for
-    ///         BCDD functions
-    ///
-    /// Returns:
-    ///     None
-    ///
-    /// .. deprecated:: 0.11
-    ///    Use :meth:`dump_all_dot` instead
-    #[pyo3(
-        signature = (/, path, functions=None),
-        text_signature = "($self, /, path, functions=[])"
-    )]
-    fn dump_all_dot_file<'py>(
-        &self,
-        path: PathBuf,
-        functions: Option<&Bound<'py, PyAny>>,
-    ) -> PyResult<()> {
-        crate::util::dump_all_dot::<ZBDDFunction>(&self.0, &path, functions)
-    }
 }
 
 /// Boolean function as zero-suppressed binary decision diagram (ZBDD).
@@ -780,16 +755,6 @@ impl ZBDDFunction {
                 oxidd::Node::Terminal(_) => None,
             })
     }
-    /// Deprecated alias for :meth:`node_level`.
-    ///
-    /// Returns:
-    ///     int | None: The level, or ``None`` if the node is a terminal
-    ///
-    /// .. deprecated:: 0.11
-    ///    Use :meth:`node_level` instead
-    fn level(&self) -> Option<LevelNo> {
-        self.node_level()
-    }
     /// Get the variable number for the underlying node.
     ///
     /// Locking behavior: acquires the manager's lock for shared access.
@@ -805,29 +770,6 @@ impl ZBDDFunction {
                 oxidd::Node::Inner(n) => Some(manager.level_to_var(n.level())),
                 oxidd::Node::Terminal(_) => None,
             })
-    }
-
-    /// Get the Boolean function v for the singleton set {v}.
-    ///
-    /// Locking behavior: acquires the manager's lock for shared access.
-    ///
-    /// Returns:
-    ///     Self: The Boolean function ``v`` as ZBDD
-    ///
-    /// Raises:
-    ///     DDMemoryError: If the operation runs out of memory
-    ///
-    /// .. deprecated:: 0.11
-    ///    Use :meth:`ZBDDManager.var` instead
-    fn var_boolean_function(&self, py: Python) -> PyResult<Self> {
-        py.detach(move || {
-            self.0.with_manager_shared(move |manager, singleton| {
-                #[allow(deprecated)]
-                let res = oxidd::zbdd::var_boolean_function(manager, singleton)?;
-                Ok(oxidd::zbdd::ZBDDFunction::from_edge(manager, res))
-            })
-        })
-        .try_into()
     }
 
     /// Get the subset of ``self`` not containing ``var``.
