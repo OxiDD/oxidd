@@ -10,7 +10,7 @@ use oxidd_dump::dot::DotStyle;
 
 #[cfg(feature = "statistics")]
 use super::STAT_COUNTERS;
-use super::{collect_children, reduce, stat, terminal_bin, Operation, TDDOp, TDDTerminal};
+use super::{Operation, TDDOp, TDDTerminal, collect_children, reduce, stat, terminal_bin};
 
 // spell-checker:ignore fnode,gnode,hnode,flevel,glevel,hlevel,ghlevel
 

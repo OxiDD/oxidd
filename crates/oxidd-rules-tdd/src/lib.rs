@@ -344,7 +344,9 @@ impl StatCounters {
             let terminal_percent = (calls - cache_queries) as f32 / calls as f32 * 100.0;
             let cache_hit_percent = cache_hits as f32 / cache_queries as f32 * 100.0;
             let op = <TDDOp as oxidd_core::Countable>::from_usize(i);
-            eprintln!("  {op:?}: calls: {calls}, cache queries: {cache_queries} ({terminal_percent} % terminal cases), cache hits: {cache_hits} ({cache_hit_percent} %), reduced: {reduced}");
+            eprintln!(
+                "  {op:?}: calls: {calls}, cache queries: {cache_queries} ({terminal_percent} % terminal cases), cache hits: {cache_hits} ({cache_hit_percent} %), reduced: {reduced}"
+            );
         }
     }
 }

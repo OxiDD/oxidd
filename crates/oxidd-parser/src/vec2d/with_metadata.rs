@@ -309,8 +309,9 @@ impl<T: fmt::Debug, const METADATA_BITS: u32> fmt::Debug for Vec2d<T, METADATA_B
 }
 
 /// Iterator over the inner vectors of a [`Vec2d`]
-#[derive(Clone)] // although technically possible, we do not implement Copy (just like
-                 // std::slice::Iter) to avoid accidental copying
+// Although technically possible, we do not implement Copy (just like
+// `std::slice::Iter`) to avoid accidental copying.
+#[derive(Clone)]
 pub struct Vec2dIter<'a, T, const METADATA_BITS: u32> {
     /// Remaining `index`
     index: &'a [usize],

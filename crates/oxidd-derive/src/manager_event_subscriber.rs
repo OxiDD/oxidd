@@ -1,6 +1,6 @@
-use proc_macro2::{Literal, Span, TokenStream, TokenTree};
 use proc_macro_error::{abort, emit_warning};
-use quote::{quote, ToTokens};
+use proc_macro2::{Literal, Span, TokenStream, TokenTree};
+use quote::{ToTokens, quote};
 
 pub fn derive_manager_event_subscriber(input: syn::DeriveInput) -> TokenStream {
     let mut manager_ty: Option<syn::Type> = None;

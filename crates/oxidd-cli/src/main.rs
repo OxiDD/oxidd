@@ -18,7 +18,7 @@ use oxidd_core::util::VarNameMap;
 use oxidd_core::{ApplyCache, HasApplyCache};
 use oxidd_dump::{dddmp, dot};
 use oxidd_parser::Literal;
-use oxidd_parser::{load_file, ParseOptionsBuilder};
+use oxidd_parser::{ParseOptionsBuilder, load_file};
 use rustc_hash::{FxHashMap, FxHasher};
 
 mod progress;
@@ -282,7 +282,10 @@ impl<'a> Inputs<'a> {
                     if !found {
                         check_too_many_vars(id, path);
                     } else if id >= previously_defined {
-                        eprintln!("\nerror while loading {}: the variable name '{name}' is used for two variables", path.display());
+                        eprintln!(
+                            "\nerror while loading {}: the variable name '{name}' is used for two variables",
+                            path.display()
+                        );
                     }
                 }
             }

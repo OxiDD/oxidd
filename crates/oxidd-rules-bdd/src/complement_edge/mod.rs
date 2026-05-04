@@ -347,7 +347,7 @@ where
         (Inner(_), Terminal(_)) => (f, gt),
         (Terminal(_), Inner(_)) => (g, ft),
         (Terminal(_), Terminal(_)) => {
-            return Done(EdgeDropGuard::new(manager, get_terminal(manager, ft != gt)))
+            return Done(EdgeDropGuard::new(manager, get_terminal(manager, ft != gt)));
         }
     };
     let h = manager.clone_edge(h);
@@ -476,6 +476,6 @@ where
 
 // --- Function Interface ------------------------------------------------------
 
+pub use apply_rec::BCDDFunction;
 #[cfg(feature = "multi-threading")]
 pub use apply_rec::mt::BCDDFunctionMT;
-pub use apply_rec::BCDDFunction;

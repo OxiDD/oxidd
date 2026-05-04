@@ -2,8 +2,8 @@
 //! necessary management of [`Edge`]s.
 
 use std::borrow::Borrow;
-use std::collections::hash_map;
 use std::collections::HashMap;
+use std::collections::hash_map;
 use std::hash::BuildHasher;
 use std::mem::ManuallyDrop;
 

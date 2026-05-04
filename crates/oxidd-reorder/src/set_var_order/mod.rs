@@ -404,10 +404,11 @@ mod test {
             });
 
             assert_eq!(seq, sorted);
-            assert!(seq2
-                .into_iter()
-                .zip(sorted)
-                .all(|(a, b)| a.into_inner() == b));
+            assert!(
+                seq2.into_iter()
+                    .zip(sorted)
+                    .all(|(a, b)| a.into_inner() == b)
+            );
         }
 
         case(f, []);

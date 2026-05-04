@@ -1,11 +1,11 @@
+use oxidd::ManagerRef;
+use oxidd::PseudoBooleanFunction;
 use oxidd::mtbdd::terminal::I64;
 use oxidd::mtbdd::{MTBDDFunction, MTBDDManagerRef};
 use oxidd::util::AllocResult;
-use oxidd::ManagerRef;
-use oxidd::PseudoBooleanFunction;
 use oxidd_core::Manager;
-use oxidd_dump::dot::dump_all;
 use oxidd_dump::Visualizer;
+use oxidd_dump::dot::dump_all;
 
 fn main() -> AllocResult<()> {
     let manager_ref: MTBDDManagerRef<I64> = oxidd::mtbdd::new_manager(1024, 1024, 1024, 1);

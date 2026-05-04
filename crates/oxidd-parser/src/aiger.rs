@@ -5,13 +5,13 @@
 //! [spec1]: https://github.com/arminbiere/aiger/blob/master/FORMAT
 //! [spec2]: https://fmv.jku.at/papers/BiereHeljankoWieringa-FMV-TR-11-2.pdf
 
+use nom::IResult;
 use nom::branch::alt;
 use nom::bytes::complete::tag;
 use nom::character::complete::space1;
 use nom::combinator::{consumed, eof, map, rest, value};
 use nom::error::{ContextError, FromExternalError, ParseError};
 use nom::sequence::{preceded, terminated};
-use nom::IResult;
 
 use crate::tv_bitvec::TVBitVec;
 use crate::util::{
@@ -119,12 +119,12 @@ where
 }
 
 mod ascii {
+    use nom::IResult;
     use nom::branch::alt;
     use nom::character::complete::{line_ending, not_line_ending, space1, u64};
     use nom::combinator::{consumed, eof, opt};
     use nom::error::{ContextError, ParseError};
     use nom::sequence::preceded;
-    use nom::IResult;
 
     use crate::util::{eol_or_eof, fail, fail_with_contexts, trim_end};
     use crate::{AIGERDetails, VarSet};
@@ -615,7 +615,7 @@ mod tests {
     use crate::util::test::OPTS_NO_ORDER;
     use crate::{Circuit, Literal, Problem, ProblemDetails, VarSet, Vec2d};
 
-    use super::{usize_7bit, AIGERDetails};
+    use super::{AIGERDetails, usize_7bit};
 
     impl Problem {
         fn new_aig(vars: VarSet) -> Self {

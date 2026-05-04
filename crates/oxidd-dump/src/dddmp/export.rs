@@ -511,11 +511,7 @@ where
                 *terminal_map.get(&e.with_tag(Default::default())).unwrap() as isize
             }
         };
-        if is_complemented(e) {
-            -idx
-        } else {
-            idx
-        }
+        if is_complemented(e) { -idx } else { idx }
     };
     let bin_idx = |e: &M::Edge, node_id: usize| {
         let idx = match manager.get_node(e) {

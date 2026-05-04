@@ -4,8 +4,8 @@ use std::fmt;
 use std::io::{self, Read, Write};
 use std::net::{TcpListener, TcpStream};
 
-use oxidd_core::function::{Function, INodeOfFunc, TermOfFunc};
 use oxidd_core::HasLevel;
+use oxidd_core::function::{Function, INodeOfFunc, TermOfFunc};
 
 use crate::AsciiDisplay;
 
@@ -360,11 +360,7 @@ impl VisualizationListener<'_> {
 
 #[inline]
 fn hex_digit(c: u8) -> u8 {
-    if c >= 10 {
-        b'a' + c - 10
-    } else {
-        b'0' + c
-    }
+    if c >= 10 { b'a' + c - 10 } else { b'0' + c }
 }
 
 fn json_escape(target: &mut Vec<u8>, data: &[u8]) {

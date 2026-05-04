@@ -1,5 +1,5 @@
-use oxidd_core::util::{AllocResult, Borrowed, EdgeDropGuard};
 use oxidd_core::Manager;
+use oxidd_core::util::{AllocResult, Borrowed, EdgeDropGuard};
 
 type UnaryOp<M, R> = fn(&M, R, Borrowed<<M as Manager>::Edge>) -> AllocResult<<M as Manager>::Edge>;
 

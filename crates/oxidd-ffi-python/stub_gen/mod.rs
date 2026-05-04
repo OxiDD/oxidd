@@ -7,12 +7,12 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use proc_macro2::TokenStream;
 use quote::ToTokens;
 
 mod util;
-use util::{identifier_to_string, Indent, OrdRc};
+use util::{Indent, OrdRc, identifier_to_string};
 
 // spell-checker:ignore punct
 
@@ -373,7 +373,7 @@ impl TypeEnv {
                 args.push(arg);
                 match t {
                     [Token::RBrack, tokens @ ..] | [Token::Comma, Token::RBrack, tokens @ ..] => {
-                        return Ok((args, tokens))
+                        return Ok((args, tokens));
                     }
                     [Token::Comma, t @ ..] => tokens = t,
                     _ => bail!("expected ',' or ']'"),
@@ -469,7 +469,9 @@ impl TypeEnv {
                             let ty = self.parse_py(ty)?;
                             loop {
                                 let [p, pr @ ..] = params else {
-                                    bail!("Additional parameter '{arg_name}' documented for '{item_name}'")
+                                    bail!(
+                                        "Additional parameter '{arg_name}' documented for '{item_name}'"
+                                    )
                                 };
                                 params = pr;
                                 if arg_name == p.name {
@@ -754,7 +756,9 @@ impl StubGen {
                     } if last.name == *property_name => Some(return_type),
                     _ => None,
                 }) else {
-                    bail!("Expected the respective getter directly before setter '{name}' (Rust identifier '{ident}')")
+                    bail!(
+                        "Expected the respective getter directly before setter '{name}' (Rust identifier '{ident}')"
+                    )
                 };
 
                 let r = env.get_py_type("None", Vec::new())?;

@@ -1,8 +1,8 @@
 // spell-checker:ignore nvars,mref
 
 use oxidd::{
-    bdd::BDDFunction, util::AllocResult, BooleanFunction, InnerNode, LevelNo, Manager, ManagerRef,
-    VarNo,
+    BooleanFunction, InnerNode, LevelNo, Manager, ManagerRef, VarNo, bdd::BDDFunction,
+    util::AllocResult,
 };
 use oxidd_core::LevelView;
 use oxidd_reorder::set_var_order;

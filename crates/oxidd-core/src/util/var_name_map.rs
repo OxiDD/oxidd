@@ -1,12 +1,12 @@
 //! Efficient bi-directional mapping between variables and names
 
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::{HashMap, hash_map::Entry};
 use std::fmt;
 use std::iter::FusedIterator;
 use std::ops::Range;
 
-use crate::error::DuplicateVarName;
 use crate::VarNo;
+use crate::error::DuplicateVarName;
 
 mod unowned {
     use std::{fmt, ptr::NonNull};

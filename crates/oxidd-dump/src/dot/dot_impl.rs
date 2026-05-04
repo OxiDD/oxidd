@@ -69,7 +69,10 @@ where
     }
 
     const TERMINAL_LEVEL: LevelNo = LevelNo::MAX;
-    writeln!(file, "  {{ rank = same; l{TERMINAL_LEVEL:x} [label=\"-\", shape=none, tooltip=\"level {TERMINAL_LEVEL} (terminals)\"];")?;
+    writeln!(
+        file,
+        "  {{ rank = same; l{TERMINAL_LEVEL:x} [label=\"-\", shape=none, tooltip=\"level {TERMINAL_LEVEL} (terminals)\"];"
+    )?;
     for edge in manager.terminals() {
         let edge = EdgeDropGuard::new(manager, edge);
         let id = edge.node_id();

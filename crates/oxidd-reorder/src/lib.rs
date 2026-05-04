@@ -88,9 +88,11 @@ unsafe fn level_swap<M: Manager>(
     // `lower` now refers to the new lower level, `upper` to the new upper
     // level. Note that nodes on the new lower level may refer to the new upper
     // level, which is not allowed. We also fix this below.
-    debug_assert!(upper
-        .iter()
-        .all(|e| manager.get_node(e).level() == lower_no_pre));
+    debug_assert!(
+        upper
+            .iter()
+            .all(|e| manager.get_node(e).level() == lower_no_pre)
+    );
 
     let old_upper = LevelView::take(&mut lower);
     // SAFETY: reordering is in progress

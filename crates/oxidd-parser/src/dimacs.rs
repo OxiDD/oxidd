@@ -23,13 +23,13 @@ use rustc_hash::FxHashSet;
 use nom::bytes::complete::tag;
 use nom::character::complete::{char, line_ending, multispace0, space0, space1, u64};
 use nom::combinator::{consumed, cut, eof, value};
-use nom::error::{context, ContextError, ErrorKind, FromExternalError, ParseError};
+use nom::error::{ContextError, ErrorKind, FromExternalError, ParseError, context};
 use nom::multi::many0_count;
 use nom::sequence::{preceded, terminated};
 use nom::{Err, IResult};
 
 use crate::util::{
-    self, context_loc, eol, fail, fail_with_contexts, line_span, word, word_span, MAX_CAPACITY,
+    self, MAX_CAPACITY, context_loc, eol, fail, fail_with_contexts, line_span, word, word_span,
 };
 use crate::{ParseOptions, Problem, Tree, Var, VarSet};
 
@@ -328,7 +328,7 @@ mod cnf {
     use nom::branch::alt;
     use nom::character::complete::{char, multispace0, one_of, u64};
     use nom::combinator::{consumed, eof, iterator, map, recognize};
-    use nom::error::{context, ContextError, ErrorKind, FromExternalError, ParseError};
+    use nom::error::{ContextError, ErrorKind, FromExternalError, ParseError, context};
     use nom::sequence::preceded;
     use nom::{Err, IResult};
 
@@ -430,7 +430,10 @@ mod cnf {
                     CNFTokenKind::Xor => {
                         if let Some(gate) = circuit.last_gate() {
                             if !gate.inputs.is_empty() {
-                                return fail(token.span, "XOR clauses must be marked as such at the beginning of the clause");
+                                return fail(
+                                    token.span,
+                                    "XOR clauses must be marked as such at the beginning of the clause",
+                                );
                             }
                             circuit.set_last_gate_kind(GateKind::Xor);
                         }
@@ -510,13 +513,13 @@ mod cnf {
 }
 
 mod sat {
+    use nom::Err;
+    use nom::IResult;
     use nom::branch::alt;
     use nom::bytes::complete::tag;
     use nom::character::complete::{char, multispace0, u64};
     use nom::combinator::{consumed, map, recognize, value};
     use nom::error::{ContextError, ErrorKind, ParseError};
-    use nom::Err;
-    use nom::IResult;
 
     use crate::util::{fail, map_res_fail, word};
     use crate::{Circuit, GateKind, Literal, Problem, ProblemDetails, Var, VarSet};

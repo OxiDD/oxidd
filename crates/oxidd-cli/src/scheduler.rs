@@ -1,8 +1,8 @@
 use std::{collections::VecDeque, path::PathBuf};
 
 use oxidd::{
-    util::AllocResult, BooleanFunction, HasLevel, HasWorkers, Manager, ManagerRef, VarNo,
-    WorkerPool,
+    BooleanFunction, HasLevel, HasWorkers, Manager, ManagerRef, VarNo, WorkerPool,
+    util::AllocResult,
 };
 use oxidd_core::function::INodeOfFunc;
 use oxidd_parser::{Circuit, GateKind, Literal, Var, Vec2d};
@@ -10,7 +10,7 @@ use parking_lot::Mutex;
 
 use crate::profiler::Profiler;
 use crate::progress::PROGRESS;
-use crate::util::{handle_oom, HDuration};
+use crate::util::{HDuration, handle_oom};
 use crate::{Cli, GateBuildScheme};
 
 // spell-checker:ignore mref

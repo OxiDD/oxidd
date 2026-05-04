@@ -11,14 +11,14 @@
 use nom::bytes::complete::tag;
 use nom::character::complete::{char, i64, line_ending, multispace0, space0, space1, u64};
 use nom::combinator::{consumed, cut, eof, value};
-use nom::error::{context, ContextError, FromExternalError, ParseError};
+use nom::error::{ContextError, FromExternalError, ParseError, context};
 use nom::multi::many0_count;
 use nom::sequence::{preceded, terminated};
 use nom::{IResult, Offset};
 use rustc_hash::FxHashSet;
 
 use crate::util::{
-    self, context_loc, eol, fail, fail_with_contexts, line_span, usize, word_span, MAX_CAPACITY,
+    self, MAX_CAPACITY, context_loc, eol, fail, fail_with_contexts, line_span, usize, word_span,
 };
 use crate::{Circuit, GateKind, Literal, ParseOptions, Problem, Tree, Var, VarSet};
 
@@ -263,9 +263,12 @@ where
                     let (mut inp, children) = preceded(space1, consumed(u64))(inp)?;
 
                     if conflict.1 != 0 && children.1 != 2 {
+                        let child_msg = "expected 2 children, since a conflict variable is given";
+                        let conflict_msg =
+                            "using 0 in place of the conflict variable here allows arbitrary arity";
                         return fail_with_contexts([
-                            (children.0, "expected 2 children, since a conflict variable is given"),
-                            (conflict.0, "using 0 in place of the conflict variable here allows arbitrary arity"),
+                            (children.0, child_msg),
+                            (conflict.0, conflict_msg),
                         ]);
                     }
 
@@ -304,7 +307,7 @@ where
                     return fail(
                         word_span(inp),
                         "expected a node ('A', 'B', 'O', 'X', or 'L')",
-                    )
+                    );
                 }
             };
             nodes.push(l);
@@ -337,7 +340,7 @@ where
 mod tests {
     use nom::Finish;
 
-    use crate::{util::test::*, Gate};
+    use crate::{Gate, util::test::*};
 
     use super::*;
 

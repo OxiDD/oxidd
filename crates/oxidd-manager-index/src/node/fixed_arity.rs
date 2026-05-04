@@ -5,15 +5,15 @@ use std::mem::MaybeUninit;
 use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering::{self, Relaxed, Release};
 
-use oxidd_core::util::Borrowed;
-use oxidd_core::util::BorrowedEdgeIter;
-use oxidd_core::util::DropWith;
 use oxidd_core::AtomicLevelNo;
 use oxidd_core::Edge;
 use oxidd_core::HasLevel;
 use oxidd_core::InnerNode;
 use oxidd_core::LevelNo;
 use oxidd_core::Tag;
+use oxidd_core::util::Borrowed;
+use oxidd_core::util::BorrowedEdgeIter;
+use oxidd_core::util::DropWith;
 
 use crate::manager;
 use crate::manager::InnerNodeCons;

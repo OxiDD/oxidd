@@ -18,13 +18,13 @@ pub struct IndexDD<
 >(PhantomData<(NC, ET, TMC, RC, MDC)>);
 #[cfg(feature = "manager-index")]
 impl<
-        NC: oxidd_manager_index::manager::InnerNodeCons<ET>,
-        ET: oxidd_core::Tag,
-        TMC: oxidd_manager_index::manager::TerminalManagerCons<NC, ET, TERMINALS>,
-        RC: oxidd_manager_index::manager::DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
-        MDC: oxidd_manager_index::manager::ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
-        const TERMINALS: usize,
-    > DD for IndexDD<NC, ET, TMC, RC, MDC, TERMINALS>
+    NC: oxidd_manager_index::manager::InnerNodeCons<ET>,
+    ET: oxidd_core::Tag,
+    TMC: oxidd_manager_index::manager::TerminalManagerCons<NC, ET, TERMINALS>,
+    RC: oxidd_manager_index::manager::DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
+    MDC: oxidd_manager_index::manager::ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
+    const TERMINALS: usize,
+> DD for IndexDD<NC, ET, TMC, RC, MDC, TERMINALS>
 {
     type Function = oxidd_manager_index::manager::Function<NC, ET, TMC, RC, MDC, TERMINALS>;
     type ManagerRef = oxidd_manager_index::manager::ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS>;
@@ -52,14 +52,14 @@ pub struct PointerDD<
 >(PhantomData<(NC, ET, TMC, RC, MDC)>);
 #[cfg(feature = "manager-pointer")]
 impl<
-        NC: oxidd_manager_pointer::manager::InnerNodeCons<ET, TAG_BITS>,
-        ET: oxidd_core::Tag,
-        TMC: oxidd_manager_pointer::manager::TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
-        RC: oxidd_manager_pointer::manager::DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
-        MDC: oxidd_manager_pointer::manager::ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
-        const PAGE_SIZE: usize,
-        const TAG_BITS: u32,
-    > DD for PointerDD<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
+    NC: oxidd_manager_pointer::manager::InnerNodeCons<ET, TAG_BITS>,
+    ET: oxidd_core::Tag,
+    TMC: oxidd_manager_pointer::manager::TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
+    RC: oxidd_manager_pointer::manager::DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
+    MDC: oxidd_manager_pointer::manager::ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
+    const PAGE_SIZE: usize,
+    const TAG_BITS: u32,
+> DD for PointerDD<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
 {
     type Function =
         oxidd_manager_pointer::manager::Function<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>;

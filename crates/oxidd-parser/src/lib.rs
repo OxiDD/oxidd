@@ -1000,11 +1000,7 @@ impl Circuit {
                 let map = move |l: Literal| {
                     const { assert!(Literal::POLARITY_BIT == 0) };
                     let i = ((l.0 >> Literal::VAR_LSB) << 1) | (l.0 & (1 << Literal::POLARITY_BIT));
-                    if l.is_gate() {
-                        i
-                    } else {
-                        i + no_gate_add
-                    }
+                    if l.is_gate() { i } else { i + no_gate_add }
                 };
 
                 match kind {

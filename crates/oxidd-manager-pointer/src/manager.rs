@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use std::hash::{BuildHasherDefault, Hasher};
 use std::iter::FusedIterator;
 use std::marker::PhantomData;
-use std::mem::{align_of, ManuallyDrop};
+use std::mem::{ManuallyDrop, align_of};
 use std::ops::Range;
 use std::ptr::NonNull;
 use std::sync::atomic::AtomicU64;
@@ -41,7 +41,7 @@ use oxidd_core::{
 
 use crate::node::NodeBase;
 use crate::terminal_manager::TerminalManager;
-use crate::util::{rwlock::RwLock, Invariant, TryLock, VarLevelMap};
+use crate::util::{Invariant, TryLock, VarLevelMap, rwlock::RwLock};
 
 // === Type Constructors =======================================================
 
@@ -62,14 +62,14 @@ pub trait TerminalManagerCons<
 {
     type TerminalNode;
     type T<'id>: TerminalManager<
-        'id,
-        NC::T<'id>,
-        ET,
-        MDC::T<'id>,
-        PAGE_SIZE,
-        TAG_BITS,
-        TerminalNode = Self::TerminalNode,
-    >;
+            'id,
+            NC::T<'id>,
+            ET,
+            MDC::T<'id>,
+            PAGE_SIZE,
+            TAG_BITS,
+            TerminalNode = Self::TerminalNode,
+        >;
 }
 
 /// Diagram rules type constructor
@@ -182,27 +182,27 @@ type M<'id, NC, ET, TMC, RC, MDC, const PAGE_SIZE: usize, const TAG_BITS: u32> =
 >;
 
 unsafe impl<
-        'id,
-        N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>> + Send + Sync,
-        ET: Tag + Send + Sync,
-        TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS> + Send + Sync,
-        R,
-        MD: DropWith<Edge<'id, N, ET, TAG_BITS>> + Send + Sync,
-        const PAGE_SIZE: usize,
-        const TAG_BITS: u32,
-    > Send for Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
+    'id,
+    N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>> + Send + Sync,
+    ET: Tag + Send + Sync,
+    TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS> + Send + Sync,
+    R,
+    MD: DropWith<Edge<'id, N, ET, TAG_BITS>> + Send + Sync,
+    const PAGE_SIZE: usize,
+    const TAG_BITS: u32,
+> Send for Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
 {
 }
 unsafe impl<
-        'id,
-        N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>> + Send + Sync,
-        ET: Tag + Send + Sync,
-        TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS> + Send + Sync,
-        R,
-        MD: DropWith<Edge<'id, N, ET, TAG_BITS>> + Send + Sync,
-        const PAGE_SIZE: usize,
-        const TAG_BITS: u32,
-    > Sync for Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
+    'id,
+    N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>> + Send + Sync,
+    ET: Tag + Send + Sync,
+    TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS> + Send + Sync,
+    R,
+    MD: DropWith<Edge<'id, N, ET, TAG_BITS>> + Send + Sync,
+    const PAGE_SIZE: usize,
+    const TAG_BITS: u32,
+> Sync for Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
 {
 }
 
@@ -1833,14 +1833,14 @@ impl<'id, InnerNode, ET, const PAGE_SIZE: usize, const TAG_BITS: u32>
 // === `ManagerRef` & Creation =================================================
 
 impl<
-        NC: InnerNodeCons<ET, TAG_BITS>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
-        const PAGE_SIZE: usize,
-        const TAG_BITS: u32,
-    > ManagerRef<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
+    NC: InnerNodeCons<ET, TAG_BITS>,
+    ET: Tag,
+    TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
+    RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
+    MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
+    const PAGE_SIZE: usize,
+    const TAG_BITS: u32,
+> ManagerRef<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
 {
     /// Convert `self` into a raw pointer, e.g. for usage in a foreign function
     /// interface.
@@ -1870,16 +1870,16 @@ impl<
 }
 
 impl<
-        'a,
-        'id,
-        NC: InnerNodeCons<ET, TAG_BITS>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
-        const PAGE_SIZE: usize,
-        const TAG_BITS: u32,
-    > From<&'a M<'id, NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>>
+    'a,
+    'id,
+    NC: InnerNodeCons<ET, TAG_BITS>,
+    ET: Tag,
+    TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
+    RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
+    MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
+    const PAGE_SIZE: usize,
+    const TAG_BITS: u32,
+> From<&'a M<'id, NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>>
     for ManagerRef<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
 {
     #[inline]
@@ -1893,14 +1893,14 @@ impl<
 }
 
 impl<
-        NC: InnerNodeCons<ET, TAG_BITS>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
-        const PAGE_SIZE: usize,
-        const TAG_BITS: u32,
-    > oxidd_core::ManagerRef for ManagerRef<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
+    NC: InnerNodeCons<ET, TAG_BITS>,
+    ET: Tag,
+    TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
+    RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
+    MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
+    const PAGE_SIZE: usize,
+    const TAG_BITS: u32,
+> oxidd_core::ManagerRef for ManagerRef<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
 {
     type Manager<'id> = M<'id, NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>;
 
@@ -1922,14 +1922,14 @@ impl<
 }
 
 impl<
-        NC: InnerNodeCons<ET, TAG_BITS>,
-        ET: Tag + Sync + Send,
-        TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
-        const PAGE_SIZE: usize,
-        const TAG_BITS: u32,
-    > oxidd_core::HasWorkers for ManagerRef<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
+    NC: InnerNodeCons<ET, TAG_BITS>,
+    ET: Tag + Sync + Send,
+    TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
+    RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
+    MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
+    const PAGE_SIZE: usize,
+    const TAG_BITS: u32,
+> oxidd_core::HasWorkers for ManagerRef<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
 where
     NC::T<'static>: Send + Sync,
     TMC::T<'static>: Send + Sync,
@@ -1988,14 +1988,14 @@ pub struct Function<
 >(NonNull<()>, PhantomData<(NC, ET, TMC, RC, MDC)>);
 
 unsafe impl<
-        NC: InnerNodeCons<ET, TAG_BITS>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
-        const PAGE_SIZE: usize,
-        const TAG_BITS: u32,
-    > Send for Function<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
+    NC: InnerNodeCons<ET, TAG_BITS>,
+    ET: Tag,
+    TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
+    RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
+    MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
+    const PAGE_SIZE: usize,
+    const TAG_BITS: u32,
+> Send for Function<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
 where
     for<'id> NC::T<'id>: Send + Sync,
     for<'id> TMC::T<'id>: Send + Sync,
@@ -2004,14 +2004,14 @@ where
 }
 
 unsafe impl<
-        NC: InnerNodeCons<ET, TAG_BITS>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
-        const PAGE_SIZE: usize,
-        const TAG_BITS: u32,
-    > Sync for Function<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
+    NC: InnerNodeCons<ET, TAG_BITS>,
+    ET: Tag,
+    TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
+    RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
+    MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
+    const PAGE_SIZE: usize,
+    const TAG_BITS: u32,
+> Sync for Function<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
 where
     for<'id> NC::T<'id>: Send + Sync,
     for<'id> TMC::T<'id>: Send + Sync,
@@ -2020,14 +2020,14 @@ where
 }
 
 impl<
-        NC: InnerNodeCons<ET, TAG_BITS>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
-        const PAGE_SIZE: usize,
-        const TAG_BITS: u32,
-    > Function<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
+    NC: InnerNodeCons<ET, TAG_BITS>,
+    ET: Tag,
+    TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
+    RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
+    MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
+    const PAGE_SIZE: usize,
+    const TAG_BITS: u32,
+> Function<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
 {
     #[inline]
     fn store(
@@ -2091,14 +2091,14 @@ impl<
 }
 
 impl<
-        NC: InnerNodeCons<ET, TAG_BITS>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
-        const PAGE_SIZE: usize,
-        const TAG_BITS: u32,
-    > Clone for Function<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
+    NC: InnerNodeCons<ET, TAG_BITS>,
+    ET: Tag,
+    TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
+    RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
+    MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
+    const PAGE_SIZE: usize,
+    const TAG_BITS: u32,
+> Clone for Function<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
 {
     #[inline]
     fn clone(&self) -> Self {
@@ -2117,14 +2117,14 @@ impl<
 }
 
 impl<
-        NC: InnerNodeCons<ET, TAG_BITS>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
-        const PAGE_SIZE: usize,
-        const TAG_BITS: u32,
-    > Drop for Function<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
+    NC: InnerNodeCons<ET, TAG_BITS>,
+    ET: Tag,
+    TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
+    RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
+    MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
+    const PAGE_SIZE: usize,
+    const TAG_BITS: u32,
+> Drop for Function<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
 {
     fn drop(&mut self) {
         let store = self.store();
@@ -2142,14 +2142,14 @@ impl<
 }
 
 unsafe impl<
-        NC: InnerNodeCons<ET, TAG_BITS>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
-        const PAGE_SIZE: usize,
-        const TAG_BITS: u32,
-    > oxidd_core::function::Function for Function<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
+    NC: InnerNodeCons<ET, TAG_BITS>,
+    ET: Tag,
+    TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
+    RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
+    MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
+    const PAGE_SIZE: usize,
+    const TAG_BITS: u32,
+> oxidd_core::function::Function for Function<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
 {
     const REPR_ID: &str = "<none>";
 
@@ -2216,18 +2216,16 @@ unsafe impl<
 // === Additional Trait Implementations ========================================
 
 impl<
-        'id,
-        N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>>,
-        ET: Tag,
-        TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
-        R: DiagramRules<Edge<'id, N, ET, TAG_BITS>, N, TM::TerminalNode>,
-        MD: HasApplyCache<Self, O>
-            + ManagerEventSubscriber<Self>
-            + DropWith<Edge<'id, N, ET, TAG_BITS>>,
-        O: Copy,
-        const PAGE_SIZE: usize,
-        const TAG_BITS: u32,
-    > HasApplyCache<Self, O> for Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
+    'id,
+    N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>>,
+    ET: Tag,
+    TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
+    R: DiagramRules<Edge<'id, N, ET, TAG_BITS>, N, TM::TerminalNode>,
+    MD: HasApplyCache<Self, O> + ManagerEventSubscriber<Self> + DropWith<Edge<'id, N, ET, TAG_BITS>>,
+    O: Copy,
+    const PAGE_SIZE: usize,
+    const TAG_BITS: u32,
+> HasApplyCache<Self, O> for Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
 {
     type ApplyCache = MD::ApplyCache;
 

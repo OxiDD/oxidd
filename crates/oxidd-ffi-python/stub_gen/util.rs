@@ -53,8 +53,8 @@ impl<T: fmt::Display> fmt::Display for OrdRc<T> {
 }
 
 pub mod parse {
-    use anyhow::{bail, Result};
-    use proc_macro2::{token_stream, Ident, TokenStream, TokenTree};
+    use anyhow::{Result, bail};
+    use proc_macro2::{Ident, TokenStream, TokenTree, token_stream};
     use quote::ToTokens;
 
     pub fn expect_ident(tok: TokenTree, context: impl ToTokens) -> Result<Ident> {

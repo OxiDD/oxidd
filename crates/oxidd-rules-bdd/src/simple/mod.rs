@@ -378,6 +378,6 @@ pub fn print_stats() {
 
 // --- Function Interface ------------------------------------------------------
 
+pub use apply_rec::BDDFunction;
 #[cfg(feature = "multi-threading")]
 pub use apply_rec::mt::BDDFunctionMT;
-pub use apply_rec::BDDFunction;

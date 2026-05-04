@@ -4,9 +4,9 @@ use std::marker::PhantomData;
 use std::mem::align_of;
 use std::ptr::NonNull;
 
-use oxidd_core::util::AllocResult;
 use oxidd_core::Countable;
 use oxidd_core::Tag;
+use oxidd_core::util::AllocResult;
 
 use crate::manager::DiagramRulesCons;
 use crate::manager::Edge;
@@ -29,13 +29,13 @@ pub struct StaticTerminalManager<
 >(PhantomData<(&'id (), Terminal, InnerNode, EdgeTag, ManagerData)>);
 
 impl<
-        Terminal: Countable,
-        InnerNode,
-        EdgeTag: Tag,
-        ManagerData,
-        const PAGE_SIZE: usize,
-        const TAG_BITS: u32,
-    > StaticTerminalManager<'_, Terminal, InnerNode, EdgeTag, ManagerData, PAGE_SIZE, TAG_BITS>
+    Terminal: Countable,
+    InnerNode,
+    EdgeTag: Tag,
+    ManagerData,
+    const PAGE_SIZE: usize,
+    const TAG_BITS: u32,
+> StaticTerminalManager<'_, Terminal, InnerNode, EdgeTag, ManagerData, PAGE_SIZE, TAG_BITS>
 {
     /// All "info" bits of edges: `TAG_BITS` for the `EdgeTag`, one bit for
     /// inner/terminal node, and `bit_width(Terminal::MAX_VALUE)` bits for the
@@ -60,14 +60,14 @@ impl<
 }
 
 unsafe impl<
-        'id,
-        Terminal,
-        InnerNode,
-        EdgeTag,
-        ManagerData,
-        const PAGE_SIZE: usize,
-        const TAG_BITS: u32,
-    > TerminalManager<'id, InnerNode, EdgeTag, ManagerData, PAGE_SIZE, TAG_BITS>
+    'id,
+    Terminal,
+    InnerNode,
+    EdgeTag,
+    ManagerData,
+    const PAGE_SIZE: usize,
+    const TAG_BITS: u32,
+> TerminalManager<'id, InnerNode, EdgeTag, ManagerData, PAGE_SIZE, TAG_BITS>
     for StaticTerminalManager<'id, Terminal, InnerNode, EdgeTag, ManagerData, PAGE_SIZE, TAG_BITS>
 where
     Terminal: Countable + Eq + Hash,
@@ -152,14 +152,14 @@ where
 pub struct StaticTerminalManagerCons<Terminal>(PhantomData<Terminal>);
 
 impl<
-        Terminal: Countable + Hash + Eq,
-        NC: InnerNodeCons<ET, TAG_BITS>,
-        ET: Tag,
-        MDC: ManagerDataCons<NC, ET, Self, RC, PAGE_SIZE, TAG_BITS>,
-        RC: DiagramRulesCons<NC, ET, Self, MDC, PAGE_SIZE, TAG_BITS>,
-        const PAGE_SIZE: usize,
-        const TAG_BITS: u32,
-    > TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>
+    Terminal: Countable + Hash + Eq,
+    NC: InnerNodeCons<ET, TAG_BITS>,
+    ET: Tag,
+    MDC: ManagerDataCons<NC, ET, Self, RC, PAGE_SIZE, TAG_BITS>,
+    RC: DiagramRulesCons<NC, ET, Self, MDC, PAGE_SIZE, TAG_BITS>,
+    const PAGE_SIZE: usize,
+    const TAG_BITS: u32,
+> TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>
     for StaticTerminalManagerCons<Terminal>
 {
     type TerminalNode = Terminal;

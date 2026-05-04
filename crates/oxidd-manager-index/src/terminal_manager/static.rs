@@ -2,9 +2,9 @@ use std::hash::Hash;
 use std::iter::FusedIterator;
 use std::marker::PhantomData;
 
-use oxidd_core::util::AllocResult;
 use oxidd_core::Countable;
 use oxidd_core::Tag;
+use oxidd_core::util::AllocResult;
 
 use crate::manager::Edge;
 use crate::manager::InnerNodeCons;

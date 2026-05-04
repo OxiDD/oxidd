@@ -12,7 +12,7 @@
 // spell-checker:ignore varnames
 
 mod import;
-pub use import::{import, DumpHeader};
+pub use import::{DumpHeader, import};
 mod export;
 pub use export::{DDDMPVersion, ExportSettings};
 

@@ -9,9 +9,9 @@ use codespan_reporting::diagnostic::{Diagnostic, Label};
 use codespan_reporting::files::SimpleFile;
 use codespan_reporting::term::termcolor::ColorChoice;
 use codespan_reporting::term::termcolor::{StandardStream, WriteColor};
-use codespan_reporting::term::{emit_to_write_style, Config};
-use nom::error::{ContextError, ErrorKind, FromExternalError, ParseError};
+use codespan_reporting::term::{Config, emit_to_write_style};
 use nom::Offset;
+use nom::error::{ContextError, ErrorKind, FromExternalError, ParseError};
 
 use crate::ParseOptions;
 use crate::Problem;

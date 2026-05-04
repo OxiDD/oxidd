@@ -1,6 +1,6 @@
 use crate::util::{get_repr, is_repr_u8};
-use proc_macro2::TokenStream;
 use proc_macro_error::{abort, emit_error};
+use proc_macro2::TokenStream;
 use quote::quote;
 use syn::spanned::Spanned;
 

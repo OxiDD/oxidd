@@ -11,9 +11,9 @@ use linear_hashtbl::raw::RawTable;
 use parking_lot::{Mutex, MutexGuard};
 use rustc_hash::FxHasher;
 
+use oxidd_core::Tag;
 use oxidd_core::error::OutOfMemory;
 use oxidd_core::util::AllocResult;
-use oxidd_core::Tag;
 
 use crate::manager::{Edge, InnerNodeCons, TerminalManagerCons};
 use crate::node::NodeBase;
@@ -260,11 +260,11 @@ unsafe impl<T: Send + Sync, N: Send + Sync, ET: Send + Sync, const TERMINALS: us
 pub struct DynamicTerminalManagerCons<T>(PhantomData<T>);
 
 impl<
-        T: Hash + Eq + Send + Sync,
-        NC: InnerNodeCons<ET>,
-        ET: Tag + Send + Sync,
-        const TERMINALS: usize,
-    > TerminalManagerCons<NC, ET, TERMINALS> for DynamicTerminalManagerCons<T>
+    T: Hash + Eq + Send + Sync,
+    NC: InnerNodeCons<ET>,
+    ET: Tag + Send + Sync,
+    const TERMINALS: usize,
+> TerminalManagerCons<NC, ET, TERMINALS> for DynamicTerminalManagerCons<T>
 {
     type TerminalNode = T;
     type T<'id> = DynamicTerminalManager<'id, T, NC::T<'id>, ET, TERMINALS>;

@@ -1,6 +1,6 @@
-use oxidd::tdd::TDDFunction;
 use oxidd::ManagerRef;
 use oxidd::TVLFunction;
+use oxidd::tdd::TDDFunction;
 use oxidd_core::Manager;
 use oxidd_dump::dot::dump_all;
 

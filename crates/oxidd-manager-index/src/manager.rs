@@ -21,9 +21,9 @@ use std::iter::FusedIterator;
 use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
 use std::ops::Range;
+use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering::{Acquire, Relaxed};
-use std::sync::Arc;
 
 use crossbeam_utils::CachePadded;
 use derive_where::derive_where;
@@ -39,7 +39,7 @@ use oxidd_core::{DiagramRules, InnerNode, LevelNo, ManagerEventSubscriber, Tag, 
 
 use crate::node::NodeBase;
 use crate::terminal_manager::TerminalManager;
-use crate::util::{rwlock::RwLock, Invariant, TryLock, VarLevelMap};
+use crate::util::{Invariant, TryLock, VarLevelMap, rwlock::RwLock};
 
 // === Type Constructors =======================================================
 
@@ -299,25 +299,25 @@ type M<'id, NC, ET, TMC, RC, MDC, const TERMINALS: usize> = Manager<
 >;
 
 unsafe impl<
-        'id,
-        N: NodeBase + InnerNode<Edge<'id, N, ET>> + Send + Sync,
-        ET: Tag + Send + Sync,
-        TM: TerminalManager<'id, N, ET, TERMINALS> + Send + Sync,
-        R,
-        MD: DropWith<Edge<'id, N, ET>> + Send + Sync,
-        const TERMINALS: usize,
-    > Send for Manager<'id, N, ET, TM, R, MD, TERMINALS>
+    'id,
+    N: NodeBase + InnerNode<Edge<'id, N, ET>> + Send + Sync,
+    ET: Tag + Send + Sync,
+    TM: TerminalManager<'id, N, ET, TERMINALS> + Send + Sync,
+    R,
+    MD: DropWith<Edge<'id, N, ET>> + Send + Sync,
+    const TERMINALS: usize,
+> Send for Manager<'id, N, ET, TM, R, MD, TERMINALS>
 {
 }
 unsafe impl<
-        'id,
-        N: NodeBase + InnerNode<Edge<'id, N, ET>> + Send + Sync,
-        ET: Tag + Send + Sync,
-        TM: TerminalManager<'id, N, ET, TERMINALS> + Send + Sync,
-        R,
-        MD: DropWith<Edge<'id, N, ET>> + Send + Sync,
-        const TERMINALS: usize,
-    > Sync for Manager<'id, N, ET, TM, R, MD, TERMINALS>
+    'id,
+    N: NodeBase + InnerNode<Edge<'id, N, ET>> + Send + Sync,
+    ET: Tag + Send + Sync,
+    TM: TerminalManager<'id, N, ET, TERMINALS> + Send + Sync,
+    R,
+    MD: DropWith<Edge<'id, N, ET>> + Send + Sync,
+    const TERMINALS: usize,
+> Sync for Manager<'id, N, ET, TM, R, MD, TERMINALS>
 {
 }
 
@@ -1043,11 +1043,7 @@ where
     #[inline]
     fn approx_num_inner_nodes(&self) -> usize {
         let count = self.store().state.lock().node_count;
-        if count < 0 {
-            0
-        } else {
-            count as u64 as usize
-        }
+        if count < 0 { 0 } else { count as u64 as usize }
     }
 
     #[inline(always)]
@@ -2036,13 +2032,13 @@ pub struct ManagerRef<
 );
 
 impl<
-        NC: InnerNodeCons<ET>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, TERMINALS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
-        const TERMINALS: usize,
-    > Drop for ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS>
+    NC: InnerNodeCons<ET>,
+    ET: Tag,
+    TMC: TerminalManagerCons<NC, ET, TERMINALS>,
+    RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
+    MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
+    const TERMINALS: usize,
+> Drop for ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS>
 {
     fn drop(&mut self) {
         if Arc::strong_count(&self.0) == 2 {
@@ -2056,13 +2052,13 @@ impl<
 }
 
 impl<
-        NC: InnerNodeCons<ET>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, TERMINALS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
-        const TERMINALS: usize,
-    > ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS>
+    NC: InnerNodeCons<ET>,
+    ET: Tag,
+    TMC: TerminalManagerCons<NC, ET, TERMINALS>,
+    RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
+    MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
+    const TERMINALS: usize,
+> ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS>
 {
     /// Convert `self` into a raw pointer, e.g., for usage in a foreign function
     /// interface.
@@ -2093,13 +2089,13 @@ impl<
 }
 
 impl<
-        NC: InnerNodeCons<ET>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, TERMINALS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
-        const TERMINALS: usize,
-    > PartialEq for ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS>
+    NC: InnerNodeCons<ET>,
+    ET: Tag,
+    TMC: TerminalManagerCons<NC, ET, TERMINALS>,
+    RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
+    MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
+    const TERMINALS: usize,
+> PartialEq for ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS>
 {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
@@ -2107,23 +2103,23 @@ impl<
     }
 }
 impl<
-        NC: InnerNodeCons<ET>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, TERMINALS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
-        const TERMINALS: usize,
-    > Eq for ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS>
+    NC: InnerNodeCons<ET>,
+    ET: Tag,
+    TMC: TerminalManagerCons<NC, ET, TERMINALS>,
+    RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
+    MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
+    const TERMINALS: usize,
+> Eq for ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS>
 {
 }
 impl<
-        NC: InnerNodeCons<ET>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, TERMINALS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
-        const TERMINALS: usize,
-    > PartialOrd for ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS>
+    NC: InnerNodeCons<ET>,
+    ET: Tag,
+    TMC: TerminalManagerCons<NC, ET, TERMINALS>,
+    RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
+    MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
+    const TERMINALS: usize,
+> PartialOrd for ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS>
 {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
@@ -2131,13 +2127,13 @@ impl<
     }
 }
 impl<
-        NC: InnerNodeCons<ET>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, TERMINALS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
-        const TERMINALS: usize,
-    > Ord for ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS>
+    NC: InnerNodeCons<ET>,
+    ET: Tag,
+    TMC: TerminalManagerCons<NC, ET, TERMINALS>,
+    RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
+    MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
+    const TERMINALS: usize,
+> Ord for ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS>
 {
     #[inline]
     fn cmp(&self, other: &Self) -> Ordering {
@@ -2145,13 +2141,13 @@ impl<
     }
 }
 impl<
-        NC: InnerNodeCons<ET>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, TERMINALS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
-        const TERMINALS: usize,
-    > Hash for ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS>
+    NC: InnerNodeCons<ET>,
+    ET: Tag,
+    TMC: TerminalManagerCons<NC, ET, TERMINALS>,
+    RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
+    MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
+    const TERMINALS: usize,
+> Hash for ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS>
 {
     #[inline]
     fn hash<H: Hasher>(&self, state: &mut H) {
@@ -2160,15 +2156,15 @@ impl<
 }
 
 impl<
-        'a,
-        'id,
-        NC: InnerNodeCons<ET>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, TERMINALS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
-        const TERMINALS: usize,
-    > From<&'a M<'id, NC, ET, TMC, RC, MDC, TERMINALS>>
+    'a,
+    'id,
+    NC: InnerNodeCons<ET>,
+    ET: Tag,
+    TMC: TerminalManagerCons<NC, ET, TERMINALS>,
+    RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
+    MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
+    const TERMINALS: usize,
+> From<&'a M<'id, NC, ET, TMC, RC, MDC, TERMINALS>>
     for ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS>
 {
     fn from(manager: &'a M<'id, NC, ET, TMC, RC, MDC, TERMINALS>) -> Self {
@@ -2187,13 +2183,13 @@ impl<
 }
 
 impl<
-        NC: InnerNodeCons<ET>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, TERMINALS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
-        const TERMINALS: usize,
-    > oxidd_core::ManagerRef for ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS>
+    NC: InnerNodeCons<ET>,
+    ET: Tag,
+    TMC: TerminalManagerCons<NC, ET, TERMINALS>,
+    RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
+    MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
+    const TERMINALS: usize,
+> oxidd_core::ManagerRef for ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS>
 {
     type Manager<'id> = M<'id, NC, ET, TMC, RC, MDC, TERMINALS>;
 
@@ -2344,13 +2340,13 @@ pub fn new_manager<
 }
 
 impl<
-        NC: InnerNodeCons<ET>,
-        ET: Tag + Send + Sync,
-        TMC: TerminalManagerCons<NC, ET, TERMINALS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
-        const TERMINALS: usize,
-    > oxidd_core::HasWorkers for ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS>
+    NC: InnerNodeCons<ET>,
+    ET: Tag + Send + Sync,
+    TMC: TerminalManagerCons<NC, ET, TERMINALS>,
+    RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
+    MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
+    const TERMINALS: usize,
+> oxidd_core::HasWorkers for ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS>
 {
     type WorkerPool = crate::workers::Workers;
 
@@ -2377,13 +2373,13 @@ pub struct Function<
 }
 
 impl<
-        NC: InnerNodeCons<ET>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, TERMINALS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
-        const TERMINALS: usize,
-    > Function<NC, ET, TMC, RC, MDC, TERMINALS>
+    NC: InnerNodeCons<ET>,
+    ET: Tag,
+    TMC: TerminalManagerCons<NC, ET, TERMINALS>,
+    RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
+    MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
+    const TERMINALS: usize,
+> Function<NC, ET, TMC, RC, MDC, TERMINALS>
 {
     /// Convert `self` into a raw pointer and edge value, e.g., for usage in a
     /// foreign function interface.
@@ -2420,13 +2416,13 @@ impl<
 }
 
 impl<
-        NC: InnerNodeCons<ET>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, TERMINALS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
-        const TERMINALS: usize,
-    > Drop for Function<NC, ET, TMC, RC, MDC, TERMINALS>
+    NC: InnerNodeCons<ET>,
+    ET: Tag,
+    TMC: TerminalManagerCons<NC, ET, TERMINALS>,
+    RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
+    MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
+    const TERMINALS: usize,
+> Drop for Function<NC, ET, TMC, RC, MDC, TERMINALS>
 {
     #[inline]
     fn drop(&mut self) {
@@ -2437,13 +2433,13 @@ impl<
 }
 
 impl<
-        NC: InnerNodeCons<ET>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, TERMINALS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
-        const TERMINALS: usize,
-    > Clone for Function<NC, ET, TMC, RC, MDC, TERMINALS>
+    NC: InnerNodeCons<ET>,
+    ET: Tag,
+    TMC: TerminalManagerCons<NC, ET, TERMINALS>,
+    RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
+    MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
+    const TERMINALS: usize,
+> Clone for Function<NC, ET, TMC, RC, MDC, TERMINALS>
 {
     #[inline]
     fn clone(&self) -> Self {
@@ -2455,13 +2451,13 @@ impl<
 }
 
 unsafe impl<
-        NC: InnerNodeCons<ET>,
-        ET: Tag,
-        TMC: TerminalManagerCons<NC, ET, TERMINALS>,
-        RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
-        MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
-        const TERMINALS: usize,
-    > oxidd_core::function::Function for Function<NC, ET, TMC, RC, MDC, TERMINALS>
+    NC: InnerNodeCons<ET>,
+    ET: Tag,
+    TMC: TerminalManagerCons<NC, ET, TERMINALS>,
+    RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
+    MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
+    const TERMINALS: usize,
+> oxidd_core::function::Function for Function<NC, ET, TMC, RC, MDC, TERMINALS>
 {
     const REPR_ID: &str = "<none>";
 
@@ -2599,17 +2595,15 @@ impl<'id, N: NodeBase, ET: Tag> oxidd_core::util::NodeSet<Edge<'id, N, ET>> for 
 // === Additional Trait Implementations ========================================
 
 impl<
-        'id,
-        N: NodeBase + InnerNode<Edge<'id, N, ET>>,
-        ET: Tag,
-        TM: TerminalManager<'id, N, ET, TERMINALS>,
-        R: DiagramRules<Edge<'id, N, ET>, N, TM::TerminalNode>,
-        MD: oxidd_core::HasApplyCache<Self, O>
-            + ManagerEventSubscriber<Self>
-            + DropWith<Edge<'id, N, ET>>,
-        O: Copy,
-        const TERMINALS: usize,
-    > oxidd_core::HasApplyCache<Self, O> for Manager<'id, N, ET, TM, R, MD, TERMINALS>
+    'id,
+    N: NodeBase + InnerNode<Edge<'id, N, ET>>,
+    ET: Tag,
+    TM: TerminalManager<'id, N, ET, TERMINALS>,
+    R: DiagramRules<Edge<'id, N, ET>, N, TM::TerminalNode>,
+    MD: oxidd_core::HasApplyCache<Self, O> + ManagerEventSubscriber<Self> + DropWith<Edge<'id, N, ET>>,
+    O: Copy,
+    const TERMINALS: usize,
+> oxidd_core::HasApplyCache<Self, O> for Manager<'id, N, ET, TM, R, MD, TERMINALS>
 {
     type ApplyCache = MD::ApplyCache;
 

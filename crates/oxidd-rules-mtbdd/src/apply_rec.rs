@@ -12,7 +12,7 @@ use oxidd_dump::dot::DotStyle;
 
 #[cfg(feature = "statistics")]
 use super::STAT_COUNTERS;
-use super::{collect_children, reduce, stat, MTBDDOp, Operation};
+use super::{MTBDDOp, Operation, collect_children, reduce, stat};
 
 // spell-checker:ignore fnode,gnode,flevel,glevel
 
