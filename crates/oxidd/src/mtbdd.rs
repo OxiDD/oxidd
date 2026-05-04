@@ -63,7 +63,7 @@ mod index {
         terminals: 0x2000000, // up to 0.78125 % terminal nodes
     } where T: Eq + Hash + Send + Sync);
 
-    crate::util::manager_data!(MTBDDManagerData<T> for MTBDD<T>, operator: MTBDDOp, cache_max_arity: 2, where T: Eq + Hash + Send + Sync);
+    crate::util::manager_data!(MTBDDManagerData<T> for MTBDD<T>, operator: MTBDDOp, cache_entry_capacity: 3, where T: Eq + Hash + Send + Sync);
 
     crate::util::manager_ref_index_based!(pub struct MTBDDManagerRef<T>(<MTBDD<T> as DD>::ManagerRef) with MTBDDManagerData<T> where T: 'static + Eq + Hash + Send + Sync);
 

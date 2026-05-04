@@ -57,7 +57,7 @@ mod index {
         terminals: 2,
     });
 
-    crate::util::manager_data!(BDDManagerData for BDD, operator: BDDOp, cache_max_arity: 3);
+    crate::util::manager_data!(BDDManagerData for BDD, operator: BDDOp, cache_entry_capacity: 4);
 
     crate::util::manager_ref_index_based!(pub struct BDDManagerRef(<BDD as DD>::ManagerRef) with BDDManagerData);
 
@@ -106,7 +106,7 @@ mod pointer {
         tag_bits: 2,
     });
 
-    crate::util::manager_data!(BDDManagerData for BDD, operator: BDDOp, cache_max_arity: 3);
+    crate::util::manager_data!(BDDManagerData for BDD, operator: BDDOp, cache_entry_capacity: 4);
 
     crate::util::manager_ref_pointer_based!(pub struct BDDManagerRef(<BDD as DD>::ManagerRef) with BDDManagerData);
 

@@ -5,6 +5,8 @@ use std::hash::BuildHasher;
 use fixedbitset::FixedBitSet;
 
 use oxidd_core::{
+    ApplyCache, Edge, HasApplyCache, HasLevel, InnerNode, LevelNo, Manager, Node, NodeID, Tag,
+    VarNo,
     function::{
         BooleanFunction, BooleanFunctionQuant, BooleanOperator, EdgeOfFunc, Function,
         FunctionSubst, INodeOfFunc,
@@ -13,8 +15,6 @@ use oxidd_core::{
         AllocResult, Borrowed, EdgeDropGuard, EdgeVecDropGuard, OptBool, SatCountCache,
         SatCountNumber,
     },
-    ApplyCache, Edge, HasApplyCache, HasLevel, InnerNode, LevelNo, Manager, Node, NodeID, Tag,
-    VarNo,
 };
 use oxidd_derive::Function;
 use oxidd_dump::dot::DotStyle;
@@ -26,8 +26,8 @@ use crate::stat;
 #[cfg(feature = "statistics")]
 use super::STAT_COUNTERS;
 use super::{
-    collect_cofactors, get_terminal, not, not_owned, reduce, BCDDOp, BCDDTerminal, EdgeTag,
-    NodesOrDone,
+    BCDDOp, BCDDTerminal, EdgeTag, NodesOrDone, collect_cofactors, get_terminal, not, not_owned,
+    reduce,
 };
 
 // spell-checker:ignore fnode,gnode,hnode,vnode,flevel,glevel,hlevel,vlevel
@@ -183,7 +183,7 @@ where
     let fnode = match manager.get_node(&f) {
         Node::Inner(n) => n,
         Node::Terminal(_) => {
-            return Ok(manager.clone_edge(&*if f.tag() == EdgeTag::None { g } else { h }))
+            return Ok(manager.clone_edge(&*if f.tag() == EdgeTag::None { g } else { h }));
         }
     };
     let (gnode, hnode) = match (manager.get_node(&g), manager.get_node(&h)) {
@@ -327,7 +327,7 @@ where
 
     // Query apply cache
     stat!(cache_query BCDDOp::Substitute);
-    if let Some(h) = manager.apply_cache().get_with_numeric(
+    if let Some(([h], [])) = manager.apply_cache().get_with_numeric(
         manager,
         BCDDOp::Substitute,
         &[f.borrowed()],
@@ -358,7 +358,8 @@ where
         BCDDOp::Substitute,
         &[f.borrowed()],
         &[cache_id],
-        res.borrowed(),
+        &[res.borrowed()],
+        &[],
     );
 
     Ok(res)
@@ -754,7 +755,7 @@ where
             // `{f, g}`.
             NodesOrDone::Nodes(fnode, gnode) => (g.borrowed(), gnode, f.borrowed(), fnode),
             NodesOrDone::Done(h) if OP == BCDDOp::UniqueNand as u8 => {
-                return quant::<M, R, Q>(manager, rec, not(&h), vars)
+                return quant::<M, R, Q>(manager, rec, not(&h), vars);
             }
             NodesOrDone::Done(h) => return quant::<M, R, Q>(manager, rec, h.borrowed(), vars),
         }
@@ -787,7 +788,7 @@ where
         Node::Inner(n) => n,
         // Empty variable set: just apply operation
         Node::Terminal(_) if OP == BCDDOp::UniqueNand as u8 => {
-            return Ok(not_owned(apply_and(manager, rec, f, g)?))
+            return Ok(not_owned(apply_and(manager, rec, f, g)?));
         }
         Node::Terminal(_) => return apply_bin::<M, R, OP>(manager, rec, f, g),
     };

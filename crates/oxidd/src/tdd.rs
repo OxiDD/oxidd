@@ -57,7 +57,7 @@ mod index {
         terminals: 3,
     });
 
-    crate::util::manager_data!(TDDManagerData for TDD, operator: TDDOp, cache_max_arity: 2);
+    crate::util::manager_data!(TDDManagerData for TDD, operator: TDDOp, cache_entry_capacity: 4);
 
     crate::util::manager_ref_index_based!(pub struct TDDManagerRef(<TDD as DD>::ManagerRef) with TDDManagerData);
 
@@ -110,7 +110,7 @@ mod pointer {
         tag_bits: 2,
     });
 
-    crate::util::manager_data!(TDDManagerData for TDD, operator: TDDOp, cache_max_arity: 2);
+    crate::util::manager_data!(TDDManagerData for TDD, operator: TDDOp, cache_entry_capacity: 4);
 
     crate::util::manager_ref_pointer_based!(pub struct TDDManagerRef(<TDD as DD>::ManagerRef) with TDDManagerData);
 

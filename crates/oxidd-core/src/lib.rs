@@ -1171,13 +1171,13 @@ pub unsafe trait LevelView<E: Edge, N: InnerNode<E>> {
 pub trait ApplyCache<M: Manager, O: Copy>: DropWith<M::Edge> {
     /// Get the result of `operation`, if cached
     #[must_use]
-    fn get_with_numeric(
+    fn get_with_numeric<const E: usize, const N: usize>(
         &self,
         manager: &M,
         operator: O,
         operands: &[Borrowed<M::Edge>],
         numeric_operands: &[u32],
-    ) -> Option<M::Edge>;
+    ) -> Option<([M::Edge; E], [u32; N])>;
 
     /// Add the result of `operation` to this cache
     ///
@@ -1192,14 +1192,16 @@ pub trait ApplyCache<M: Manager, O: Copy>: DropWith<M::Edge> {
         operator: O,
         operands: &[Borrowed<M::Edge>],
         numeric_operands: &[u32],
-        value: Borrowed<M::Edge>,
+        values: &[Borrowed<M::Edge>],
+        numeric_values: &[u32],
     );
 
     /// Shorthand for [`Self::get_with_numeric()`] without numeric operands
     #[inline(always)]
     #[must_use]
     fn get(&self, manager: &M, operator: O, operands: &[Borrowed<M::Edge>]) -> Option<M::Edge> {
-        self.get_with_numeric(manager, operator, operands, &[])
+        let ([e], []) = self.get_with_numeric::<1, 0>(manager, operator, operands, &[])?;
+        Some(e)
     }
 
     /// Shorthand for [`Self::add_with_numeric()`] without numeric operands
@@ -1211,7 +1213,7 @@ pub trait ApplyCache<M: Manager, O: Copy>: DropWith<M::Edge> {
         operands: &[Borrowed<M::Edge>],
         value: Borrowed<M::Edge>,
     ) {
-        self.add_with_numeric(manager, operator, operands, &[], value)
+        self.add_with_numeric(manager, operator, operands, &[], &[value], &[])
     }
 
     /// Remove all entries from the cache

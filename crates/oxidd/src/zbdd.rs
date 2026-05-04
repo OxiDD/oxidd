@@ -2,7 +2,7 @@
 
 #[allow(unused)] // unused in case no manager impl is selected
 macro_rules! manager_data {
-    ($name:ident for $dd:ident, operator: $op:ty, cache_max_arity: $arity:expr) => {
+    ($name:ident for $dd:ident, operator: $op:ty, cache_entry_capacity: $arity:expr) => {
         #[derive(::oxidd_derive::ManagerEventSubscriber)]
         #[subscribe(manager = <$dd as $crate::util::type_cons::DD>::Manager<'id>, no_trait_bounds)]
         pub struct $name<'id> {
@@ -149,7 +149,7 @@ mod index {
         terminals: 2,
     });
 
-    manager_data!(ZBDDManagerData for ZBDD, operator: ZBDDOp, cache_max_arity: 3);
+    manager_data!(ZBDDManagerData for ZBDD, operator: ZBDDOp, cache_entry_capacity: 4);
 
     crate::util::manager_ref_index_based!(pub struct ZBDDManagerRef(<ZBDD as DD>::ManagerRef) with ZBDDManagerData);
 
@@ -197,7 +197,7 @@ mod pointer {
         tag_bits: 2,
     });
 
-    manager_data!(ZBDDManagerData for ZBDD, operator: ZBDDOp, cache_max_arity: 3);
+    manager_data!(ZBDDManagerData for ZBDD, operator: ZBDDOp, cache_entry_capacity: 4);
 
     crate::util::manager_ref_pointer_based!(pub struct ZBDDManagerRef(<ZBDD as DD>::ManagerRef) with ZBDDManagerData);
 

@@ -6,6 +6,7 @@ use std::hash::BuildHasher;
 use fixedbitset::FixedBitSet;
 
 use oxidd_core::{
+    ApplyCache, Edge, HasApplyCache, HasLevel, InnerNode, LevelNo, Manager, Node, Tag, VarNo,
     function::{
         BooleanFunction, BooleanFunctionQuant, BooleanOperator, EdgeOfFunc, Function,
         FunctionSubst, INodeOfFunc,
@@ -14,7 +15,6 @@ use oxidd_core::{
         AllocResult, Borrowed, EdgeDropGuard, EdgeVecDropGuard, OptBool, SatCountCache,
         SatCountNumber,
     },
-    ApplyCache, Edge, HasApplyCache, HasLevel, InnerNode, LevelNo, Manager, Node, Tag, VarNo,
 };
 use oxidd_derive::Function;
 use oxidd_dump::dot::DotStyle;
@@ -24,7 +24,7 @@ use crate::stat;
 
 #[cfg(feature = "statistics")]
 use super::STAT_COUNTERS;
-use super::{collect_children, reduce, BDDOp, BDDTerminal, Operation};
+use super::{BDDOp, BDDTerminal, Operation, collect_children, reduce};
 
 // spell-checker:ignore fnode,gnode,hnode,vnode,flevel,glevel,hlevel,vlevel
 
@@ -165,7 +165,7 @@ where
     let fnode = match manager.get_node(&f) {
         Node::Inner(n) => n,
         Node::Terminal(t) => {
-            return Ok(manager.clone_edge(&*if *t.borrow() == True { g } else { h }))
+            return Ok(manager.clone_edge(&*if *t.borrow() == True { g } else { h }));
         }
     };
     let (gnode, hnode) = match (manager.get_node(&g), manager.get_node(&h)) {
@@ -312,7 +312,7 @@ where
 
     // Query apply cache
     stat!(cache_query BDDOp::Substitute);
-    if let Some(h) = manager.apply_cache().get_with_numeric(
+    if let Some(([h], [])) = manager.apply_cache().get_with_numeric(
         manager,
         BDDOp::Substitute,
         &[f.borrowed()],
@@ -343,7 +343,8 @@ where
         BDDOp::Substitute,
         &[f.borrowed()],
         &[cache_id],
-        res.borrowed(),
+        &[res.borrowed()],
+        &[],
     );
 
     Ok(res)
@@ -1042,7 +1043,7 @@ where
                 return match *t.borrow() {
                     BDDTerminal::False => None,
                     BDDTerminal::True => Some(vec![OptBool::None; manager.num_levels() as usize]),
-                }
+                };
             }
         }
 

@@ -7,9 +7,9 @@ use std::hash::{BuildHasher, Hash};
 use fixedbitset::FixedBitSet;
 
 use oxidd_core::{
+    ApplyCache, Edge, HasApplyCache, HasLevel, InnerNode, LevelNo, Manager, Node, Tag, VarNo,
     function::{BooleanFunction, BooleanVecSet, EdgeOfFunc, Function, INodeOfFunc},
     util::{AllocResult, Borrowed, EdgeDropGuard, OptBool, SatCountCache, SatCountNumber},
-    ApplyCache, Edge, HasApplyCache, HasLevel, InnerNode, LevelNo, Manager, Node, Tag, VarNo,
 };
 use oxidd_derive::Function;
 use oxidd_dump::dot::DotStyle;
@@ -18,7 +18,7 @@ use crate::recursor::{Recursor, SequentialRecursor};
 
 #[cfg(feature = "statistics")]
 use super::STAT_COUNTERS;
-use super::{collect_children, reduce, reduce_borrowed, stat, HasZBDDCache, ZBDDOp, ZBDDTerminal};
+use super::{HasZBDDCache, ZBDDOp, ZBDDTerminal, collect_children, reduce, reduce_borrowed, stat};
 
 // spell-checker:ignore fnode,gnode,hnode,flevel,glevel,hlevel,ghlevel
 // spell-checker:ignore symm
@@ -78,9 +78,10 @@ where
 
     // Query apply cache
     stat!(cache_query op);
-    if let Some(h) = manager
-        .apply_cache()
-        .get_with_numeric(manager, op, &[f.borrowed()], &[var])
+    if let Some(([h], [])) =
+        manager
+            .apply_cache()
+            .get_with_numeric(manager, op, &[f.borrowed()], &[var])
     {
         stat!(cache_hit op);
         return Ok(h);
@@ -98,7 +99,7 @@ where
     // Add to apply cache
     manager
         .apply_cache()
-        .add_with_numeric(manager, op, &[f], &[var], h.borrowed());
+        .add_with_numeric(manager, op, &[f], &[var], &[h.borrowed()], &[]);
 
     Ok(h)
 }
@@ -847,7 +848,7 @@ where
                 return match *t.borrow() {
                     ZBDDTerminal::Empty => None,
                     ZBDDTerminal::Base => Some(vec![OptBool::False; manager.num_levels() as usize]),
-                }
+                };
             }
         }
 

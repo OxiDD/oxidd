@@ -17,12 +17,13 @@ type Box<T> = allocator_api2::boxed::Box<T, hugealloc::HugeAlloc>;
 type Vec<T> = allocator_api2::vec::Vec<T, hugealloc::HugeAlloc>;
 
 /// Fixed-size direct mapped apply cache
-pub struct DMApplyCache<M: Manager, O, H, const ARITY: usize = 2>(
-    Box<[Entry<M, O, ARITY>]>,
+pub struct DMApplyCache<M: Manager, O, H, const ENTRY_CAP: usize = 3>(
+    Box<[Entry<M, O, ENTRY_CAP>]>,
     PhantomData<H>,
 );
 
-impl<M: Manager, O, H, const ARITY: usize> DropWith<M::Edge> for DMApplyCache<M, O, H, ARITY>
+impl<M: Manager, O, H, const ENTRY_CAP: usize> DropWith<M::Edge>
+    for DMApplyCache<M, O, H, ENTRY_CAP>
 where
     O: Copy + Eq + Hash,
 {
@@ -31,13 +32,13 @@ where
     }
 }
 
-union Operand<E> {
+union Datum<E> {
     edge: ManuallyDrop<E>,
     numeric: u32,
     uninit: (),
 }
 
-impl<E> Operand<E> {
+impl<E> Datum<E> {
     const UNINIT: Self = Self { uninit: () };
 
     /// SAFETY: `self` must be initialized as `edge`
@@ -64,50 +65,78 @@ impl<E> Operand<E> {
     }
 }
 
-/// Entry containing key and value
-struct Entry<M: Manager, O, const ARITY: usize> {
-    /// Mutex for all the `UnsafeCell`s in here
-    mutex: crate::util::RawMutex,
-    /// Count of edge operands. If 0, this entry is not occupied.
-    edge_operands: UnsafeCell<u8>,
-    /// Count of numeric operands
-    numeric_operands: UnsafeCell<u8>,
-    /// Operator of the key. Initialized if `edge_operands != 0`.
-    operator: UnsafeCell<MaybeUninit<O>>,
-    /// Operands of the key. The first `edge_operands` elements are edges, the
-    /// following `numeric_operands` are numeric.
-    operands: UnsafeCell<[Operand<M::Edge>; ARITY]>,
-    /// Initialized if `edge_operands != 0`
-    value: UnsafeCell<MaybeUninit<M::Edge>>,
+const KIND_BITS: u32 = 4;
+const KIND_COUNT: usize = 1 << KIND_BITS;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+struct CountPair(u8);
+
+impl CountPair {
+    const NULL: Self = CountPair(0);
+
+    const fn new(edge: usize, numeric: usize) -> Self {
+        debug_assert!(edge < KIND_COUNT);
+        debug_assert!(numeric < KIND_COUNT);
+        Self((numeric << 4 | edge) as u8)
+    }
+
+    const fn edge(self) -> usize {
+        self.0 as usize & (KIND_COUNT - 1)
+    }
+
+    const fn numeric(self) -> usize {
+        (self.0 >> KIND_BITS) as usize
+    }
 }
 
-struct EntryGuard<'a, M: Manager, O, const ARITY: usize>(&'a Entry<M, O, ARITY>);
+/// Entry containing key and value
+struct Entry<M: Manager, O, const ENTRY_CAP: usize> {
+    /// Mutex for all the `UnsafeCell`s in here
+    mutex: crate::util::RawMutex,
+    /// Count of operands. If 0, this entry is not occupied.
+    operands: UnsafeCell<CountPair>,
+    /// Count of values
+    values: UnsafeCell<CountPair>,
+    /// Operator of the key. Initialized if `operands != 0`.
+    operator: UnsafeCell<MaybeUninit<O>>,
+    /// Operands and values. The first `operands.edge()` elements are edges, the
+    /// following `operands.numeric()` elements are numeric. Then follow
+    /// `values.edge()` edges and `values.numeric()` numeric elements.
+    data: UnsafeCell<[Datum<M::Edge>; ENTRY_CAP]>,
+}
+
+struct EntryGuard<'a, M: Manager, O, const ENTRY_CAP: usize>(&'a Entry<M, O, ENTRY_CAP>);
 
 // SAFETY: `Entry` is like a `Mutex`
-unsafe impl<M: Manager, O: Send, const ARITY: usize> Send for Entry<M, O, ARITY> where M::Edge: Send {}
-unsafe impl<M: Manager, O: Send, const ARITY: usize> Sync for Entry<M, O, ARITY> where M::Edge: Send {}
+unsafe impl<M: Manager, O: Send, const ENTRY_CAP: usize> Send for Entry<M, O, ENTRY_CAP> where
+    M::Edge: Send
+{
+}
+unsafe impl<M: Manager, O: Send, const ENTRY_CAP: usize> Sync for Entry<M, O, ENTRY_CAP> where
+    M::Edge: Send
+{
+}
 
-impl<M: Manager, O: Copy + Eq, const ARITY: usize> Entry<M, O, ARITY> {
+impl<M: Manager, O: Copy + Eq, const ENTRY_CAP: usize> Entry<M, O, ENTRY_CAP> {
     // Regarding the lint: the intent here is not to modify the `AtomicBool` in
     // a const context but to create the `RawMutex` in a const context.
     #[allow(clippy::declare_interior_mutable_const)]
     const INIT: Self = Self {
         mutex: crate::util::RawMutex::INIT,
+        operands: UnsafeCell::new(CountPair::NULL),
+        values: UnsafeCell::new(CountPair::NULL),
         operator: UnsafeCell::new(MaybeUninit::uninit()),
-        edge_operands: UnsafeCell::new(0),
-        numeric_operands: UnsafeCell::new(0),
-        operands: UnsafeCell::new([Operand::UNINIT; ARITY]),
-        value: UnsafeCell::new(MaybeUninit::uninit()),
+        data: UnsafeCell::new([Datum::UNINIT; ENTRY_CAP]),
     };
 
     #[inline]
-    fn lock(&self) -> EntryGuard<'_, M, O, ARITY> {
+    fn lock(&self) -> EntryGuard<'_, M, O, ENTRY_CAP> {
         self.mutex.lock();
         EntryGuard(self)
     }
 
     #[inline]
-    fn try_lock(&self) -> Option<EntryGuard<'_, M, O, ARITY>> {
+    fn try_lock(&self) -> Option<EntryGuard<'_, M, O, ENTRY_CAP>> {
         if self.mutex.try_lock() {
             Some(EntryGuard(self))
         } else {
@@ -116,7 +145,7 @@ impl<M: Manager, O: Copy + Eq, const ARITY: usize> Entry<M, O, ARITY> {
     }
 }
 
-impl<M: Manager, O, const ARITY: usize> Drop for EntryGuard<'_, M, O, ARITY> {
+impl<M: Manager, O, const ENTRY_CAP: usize> Drop for EntryGuard<'_, M, O, ENTRY_CAP> {
     #[inline]
     fn drop(&mut self) {
         // SAFETY: The entry is locked.
@@ -124,7 +153,7 @@ impl<M: Manager, O, const ARITY: usize> Drop for EntryGuard<'_, M, O, ARITY> {
     }
 }
 
-impl<M: Manager, O, const ARITY: usize> EntryGuard<'_, M, O, ARITY>
+impl<M: Manager, O, const ENTRY_CAP: usize> EntryGuard<'_, M, O, ENTRY_CAP>
 where
     O: Copy + Eq,
 {
@@ -132,62 +161,72 @@ where
     #[inline]
     fn is_occupied(&self) -> bool {
         // SAFETY: The entry is locked.
-        unsafe { *self.0.edge_operands.get() != 0 }
+        unsafe { *self.0.operands.get() != CountPair::NULL }
     }
 
     /// Get the value of this entry if it is occupied and the key (`operator`
     /// and `operands`) matches
     #[inline]
-    fn get(
+    fn get<const E: usize, const N: usize>(
         &self,
         manager: &M,
         operator: O,
         operands: &[Borrowed<M::Edge>],
         numeric_operands: &[u32],
-    ) -> Option<M::Edge> {
-        debug_assert_ne!(operands.len(), 0);
+    ) -> Option<([M::Edge; E], [u32; N])> {
+        // These conditions are ensured when called by
+        // `DMApplyCache::get_with_numeric()`
+        debug_assert_ne!(operands.len() + numeric_operands.len(), 0);
+        debug_assert!(operands.len() <= KIND_COUNT);
+        debug_assert!(numeric_operands.len() <= KIND_COUNT);
+        debug_assert!(E <= KIND_COUNT);
+        debug_assert!(N <= KIND_COUNT);
+        debug_assert!(operands.len() + numeric_operands.len() + E + N <= ENTRY_CAP);
 
         #[cfg(feature = "statistics")]
         STAT_ACCESSES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        let num_edge_operands = operands.len();
-        let num_numeric_operands = numeric_operands.len();
-
+        let num_operands = CountPair::new(operands.len(), numeric_operands.len());
         // SAFETY: The entry is locked.
-        if num_edge_operands != unsafe { *self.0.edge_operands.get() } as usize
-            || numeric_operands.len() != unsafe { *self.0.numeric_operands.get() } as usize
-        {
+        if unsafe { *self.0.operands.get() } != num_operands {
             return None;
         }
-        // SAFETY: The entry is locked and occupied.
-        if operator != unsafe { (*self.0.operator.get()).assume_init() } {
-            return None;
-        }
-        // SAFETY: The entry is locked.
-        let (entry_operands, remaining) =
-            unsafe { &*self.0.operands.get() }.split_at(num_edge_operands);
-        let entry_numeric_operands = &remaining[..num_numeric_operands];
 
-        for (o1, o2) in operands.iter().zip(entry_operands) {
-            // SAFETY: The first `num_edge_operands` operands are edges
+        // SAFETY: The entry is locked.
+        let mut data = unsafe { &*self.0.data.get() }.iter();
+        for (o1, o2) in operands.iter().zip(data.by_ref()) {
+            // SAFETY: The first `operands.len()` operands are edges
             if &**o1 != unsafe { o2.assume_edge_ref() } {
                 return None;
             }
         }
-        for (o1, o2) in numeric_operands.iter().zip(entry_numeric_operands) {
-            // SAFETY: The operands in range
-            // `num_edge_operands..num_edge_operands + num_numeric_operands`
-            // operands are numeric
+        for (o1, o2) in numeric_operands.iter().zip(data.by_ref()) {
+            // SAFETY: The next `num_numeric_operands` operands are numeric
             if *o1 != unsafe { o2.assume_numeric() } {
                 return None;
             }
         }
 
+        // SAFETY: The entry is (1,2) locked and (2) occupied.
+        if unsafe { (*self.0.operator.get()).assume_init() } != operator
+            || unsafe { *self.0.values.get() } != const { CountPair::new(E, N) }
+        {
+            return None;
+        }
+
         #[cfg(feature = "statistics")]
         STAT_HITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        // SAFETY: The entry is locked and occupied.
-        Some(manager.clone_edge(unsafe { (*self.0.value.get()).assume_init_ref() }))
+        let (edge_values, remaining) = data.as_slice().split_at(E);
+        let numeric_values = &remaining[..N];
+        Some((
+            // SAFETY: The next `E` values in `data` are edges
+            std::array::from_fn(|i| unsafe {
+                manager.clone_edge(edge_values[i].assume_edge_ref())
+            }),
+            // SAFETY: The final `N` values in `data` are numeric
+            std::array::from_fn(|i| unsafe { numeric_values[i].assume_numeric() }),
+        ))
     }
 
     /// Set the key/value of this entry
@@ -197,70 +236,72 @@ where
     ///
     /// Assumes that
     /// - `!operands.is_empty()`
-    /// - `operands.len() + numeric_operands.len() <= ARITY`
+    /// - `operands.len() + numeric_operands.len() <= ENTRY_CAP`
     #[inline]
     fn set(
         &mut self,
-        _manager: &M,
         operator: O,
         operands: &[Borrowed<M::Edge>],
         numeric_operands: &[u32],
-        value: Borrowed<M::Edge>,
+        values: &[Borrowed<M::Edge>],
+        numeric_values: &[u32],
     ) {
-        debug_assert_ne!(operands.len(), 0);
-        debug_assert!(operands.len() + numeric_operands.len() <= ARITY);
+        debug_assert_ne!(operands.len() + numeric_operands.len(), 0);
+        debug_assert!(operands.len() <= KIND_COUNT);
+        debug_assert!(numeric_operands.len() <= KIND_COUNT);
+        debug_assert!(values.len() <= KIND_COUNT);
+        debug_assert!(numeric_values.len() <= KIND_COUNT);
+        debug_assert!(
+            operands.len() + numeric_operands.len() + values.len() + numeric_values.len()
+                <= ENTRY_CAP
+        );
+
         self.clear();
 
         #[cfg(feature = "statistics")]
         STAT_INSERTIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        let num_edge_operands = operands.len();
-        let num_numeric_operands = numeric_operands.len();
-
-        // SAFETY (next 2 `.get()` calls): The entry is locked.
+        // SAFETY (next 2 dereference ops): The entry is locked.
         unsafe { &mut *self.0.operator.get() }.write(operator);
-        let (entry_operands, remaining) =
-            unsafe { &mut *self.0.operands.get() }.split_at_mut(num_edge_operands);
-        let entry_numeric_operands = &mut remaining[..num_numeric_operands];
-
-        for (src, dst) in operands.iter().zip(entry_operands) {
+        let mut data = unsafe { &mut *self.0.data.get() }.iter_mut();
+        for (src, dst) in operands.iter().zip(data.by_ref()) {
             dst.write_edge(src.borrowed());
         }
-        for (src, dst) in numeric_operands.iter().zip(entry_numeric_operands) {
+        for (src, dst) in numeric_operands.iter().zip(data.by_ref()) {
+            dst.write_numeric(*src);
+        }
+        for (src, dst) in values.iter().zip(data.by_ref()) {
+            dst.write_edge(src.borrowed());
+        }
+        for (src, dst) in numeric_values.iter().zip(data) {
             dst.write_numeric(*src);
         }
 
-        // SAFETY: The referenced node lives at least until the next garbage
-        // collection / reordering. Before this operation garbage
-        // collection, we clear the entire cache.
-        let value = unsafe { Borrowed::into_inner(value) };
-        // SAFETY (next 3 `.get()` calls): The entry is locked.
-        unsafe { &mut *self.0.value.get() }.write(ManuallyDrop::into_inner(value));
-        // Important: Set the arity last for exception safety (the functions above might
-        // panic).
-        unsafe { *self.0.edge_operands.get() = num_edge_operands as u8 };
-        unsafe { *self.0.numeric_operands.get() = num_numeric_operands as u8 };
+        // Important: Set the counts last for exception safety (the functions above
+        // might panic).
+        unsafe { *self.0.values.get() = CountPair::new(values.len(), numeric_values.len()) };
+        unsafe { *self.0.operands.get() = CountPair::new(operands.len(), numeric_operands.len()) };
     }
 
     /// Clear this entry
     #[inline(always)]
     fn clear(&mut self) {
         // SAFETY: The entry is locked.
-        unsafe { *self.0.edge_operands.get() = 0 };
+        unsafe { *self.0.operands.get() = CountPair::NULL };
         // `Edge`s are just borrowed, so nothing else to do.
     }
 }
 
-impl<M, O, H, const ARITY: usize> DMApplyCache<M, O, H, ARITY>
+impl<M, O, H, const ENTRY_CAP: usize> DMApplyCache<M, O, H, ENTRY_CAP>
 where
     M: Manager,
     O: Copy + Eq + Hash,
     H: Hasher + Default,
 {
-    const CHECK_ARITY: () = {
+    const CHECK_ENTRY_CAP: () = {
         assert!(
-            0 < ARITY && ARITY <= u8::MAX as usize,
-            "ARITY must be in range [1, 255]"
+            0 < ENTRY_CAP && ENTRY_CAP <= KIND_COUNT * 4,
+            "ENTRY_CAP must be in range [1, 64]"
         );
     };
 
@@ -273,7 +314,7 @@ where
     /// [`ManagerEventSubscriber::pre_gc()`] /
     /// [`ManagerEventSubscriber::post_gc()`] pair.
     pub unsafe fn with_capacity(capacity: usize) -> Self {
-        let () = Self::CHECK_ARITY;
+        let () = Self::CHECK_ENTRY_CAP;
         let buckets = capacity
             .checked_next_power_of_two()
             .expect("capacity is too large");
@@ -288,7 +329,7 @@ where
 
     /// Get the bucket for the given operator and operands
     #[inline]
-    fn bucket(&self, operator: O, operands: &[Borrowed<M::Edge>]) -> &Entry<M, O, ARITY> {
+    fn bucket(&self, operator: O, operands: &[Borrowed<M::Edge>]) -> &Entry<M, O, ENTRY_CAP> {
         let mut hasher = H::default();
         operator.hash(&mut hasher);
         for o in operands {
@@ -311,7 +352,8 @@ static STAT_HITS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::n
 #[cfg(feature = "statistics")]
 static STAT_INSERTIONS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-impl<M, O, H, const ARITY: usize> crate::StatisticsGenerator for DMApplyCache<M, O, H, ARITY>
+impl<M, O, H, const ENTRY_CAP: usize> crate::StatisticsGenerator
+    for DMApplyCache<M, O, H, ENTRY_CAP>
 where
     M: Manager,
     O: Copy + Eq,
@@ -322,7 +364,7 @@ where
     #[cfg(feature = "statistics")]
     fn print_stats(&self) {
         let count = self.0.len();
-        debug_assert!(count > 0);
+        debug_assert_ne!(count, 0);
         let occupied = self.0.iter().filter(|e| e.lock().is_occupied()).count();
 
         let accesses = STAT_ACCESSES.swap(0, std::sync::atomic::Ordering::Relaxed);
@@ -336,21 +378,28 @@ where
     }
 }
 
-impl<M, O, H, const ARITY: usize> ApplyCache<M, O> for DMApplyCache<M, O, H, ARITY>
+impl<M, O, H, const ENTRY_CAP: usize> ApplyCache<M, O> for DMApplyCache<M, O, H, ENTRY_CAP>
 where
     M: Manager,
     O: Copy + Hash + Ord,
     H: Hasher + Default,
 {
     #[inline(always)]
-    fn get_with_numeric(
+    fn get_with_numeric<const E: usize, const N: usize>(
         &self,
         manager: &M,
         operator: O,
         operands: &[Borrowed<M::Edge>],
         numeric_operands: &[u32],
-    ) -> Option<M::Edge> {
-        if operands.is_empty() || operands.len() + numeric_operands.len() > ARITY {
+    ) -> Option<([M::Edge; E], [u32; N])> {
+        let total_operands = operands.len() + numeric_operands.len();
+        if total_operands == 0
+            || total_operands + (N + E) > ENTRY_CAP
+            || operands.len() > KIND_COUNT
+            || numeric_operands.len() > KIND_COUNT
+            || N > KIND_COUNT
+            || E > KIND_COUNT
+        {
             return None;
         }
         self.bucket(operator, operands).try_lock()?.get(
@@ -364,17 +413,25 @@ where
     #[inline(always)]
     fn add_with_numeric(
         &self,
-        manager: &M,
+        _manager: &M,
         operator: O,
         operands: &[Borrowed<M::Edge>],
         numeric_operands: &[u32],
-        value: Borrowed<M::Edge>,
+        values: &[Borrowed<M::Edge>],
+        numeric_values: &[u32],
     ) {
-        if operands.is_empty() || operands.len() + numeric_operands.len() > ARITY {
+        let total_operands = operands.len() + numeric_operands.len();
+        if total_operands == 0
+            || total_operands + (values.len() + numeric_values.len()) > ENTRY_CAP
+            || operands.len() > KIND_COUNT
+            || numeric_operands.len() > KIND_COUNT
+            || values.len() > KIND_COUNT
+            || numeric_values.len() > KIND_COUNT
+        {
             return;
         }
         if let Some(mut entry) = self.bucket(operator, operands).try_lock() {
-            entry.set(manager, operator, operands, numeric_operands, value);
+            entry.set(operator, operands, numeric_operands, values, numeric_values);
         }
     }
 
@@ -385,7 +442,7 @@ where
     }
 }
 
-impl<M, O, H, const ARITY: usize> ManagerEventSubscriber<M> for DMApplyCache<M, O, H, ARITY>
+impl<M, O, H, const ENTRY_CAP: usize> ManagerEventSubscriber<M> for DMApplyCache<M, O, H, ENTRY_CAP>
 where
     M: Manager,
     O: Copy + Hash + Ord,
@@ -412,7 +469,7 @@ where
     }
 }
 
-impl<M, O, H, const ARITY: usize> fmt::Debug for DMApplyCache<M, O, H, ARITY>
+impl<M, O, H, const ENTRY_CAP: usize> fmt::Debug for DMApplyCache<M, O, H, ENTRY_CAP>
 where
     M: Manager,
     M::Edge: fmt::Debug,
@@ -431,7 +488,7 @@ where
     }
 }
 
-impl<M, O, const ARITY: usize> fmt::Debug for EntryGuard<'_, M, O, ARITY>
+impl<M, O, const ENTRY_CAP: usize> fmt::Debug for EntryGuard<'_, M, O, ENTRY_CAP>
 where
     M: Manager,
     M::Edge: fmt::Debug,
@@ -439,25 +496,39 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // SAFETY: The entry is locked.
-        let edge_operands = unsafe { *self.0.edge_operands.get() } as usize;
-        if edge_operands == 0 {
-            write!(f, "None")
-        } else {
-            // SAFETY: The entry is locked and occupied.
-            let operator = unsafe { (*self.0.operator.get()).assume_init() };
-            // SAFETY: The entry is locked.
-            let operands = unsafe { &(&*self.0.operands.get())[..edge_operands] };
-            // SAFETY: The first `arity` (> 0) operands are initialized.
-            write!(f, "{{{{ {operator:?}({:?}", unsafe {
-                operands[0].assume_edge_ref()
-            })?;
-            for operand in &operands[1..] {
-                // SAFETY: The first `arity` operands are initialized.
-                write!(f, ", {:?}", unsafe { operand.assume_edge_ref() })?;
-            }
-            // SAFETY: The entry is locked and occupied.
-            let value = unsafe { (*self.0.value.get()).assume_init_ref() };
-            write!(f, ") = {value:?} }}}}")
+        let operands = unsafe { *self.0.operands.get() };
+        if operands == CountPair::NULL {
+            return f.write_str("None");
         }
+
+        // SAFETY: The entry is (1-3) locked and (1) occupied.
+        let operator = unsafe { (*self.0.operator.get()).assume_init() };
+        let values = unsafe { *self.0.operands.get() };
+        let mut data = unsafe { &*self.0.data.get() }.iter();
+
+        f.write_str("{{ ")?;
+        operator.fmt(f)?;
+
+        let mut tuple = f.debug_tuple("");
+        for operand in data.by_ref().take(operands.edge()) {
+            tuple.field(unsafe { operand.assume_edge_ref() });
+        }
+        for operand in data.by_ref().take(operands.numeric()) {
+            tuple.field(&unsafe { operand.assume_numeric() });
+        }
+        tuple.finish()?;
+
+        f.write_str(" = ")?;
+
+        let mut tuple = f.debug_tuple("");
+        for value in data.by_ref().take(values.edge()) {
+            tuple.field(unsafe { value.assume_edge_ref() });
+        }
+        for value in data.by_ref().take(values.numeric()) {
+            tuple.field(&unsafe { value.assume_numeric() });
+        }
+        tuple.finish()?;
+
+        f.write_str(" }}")
     }
 }

@@ -7,7 +7,7 @@ pub use rustc_hash::FxHasher;
 
 pub use oxidd_core::error::OutOfMemory;
 pub use oxidd_core::util::{
-    num, AllocResult, Borrowed, IsFloatingPoint, OptBool, Rng, SatCountCache, SatCountNumber,
+    AllocResult, Borrowed, IsFloatingPoint, OptBool, Rng, SatCountCache, SatCountNumber, num,
 };
 
 // We have a few `allow(unused)` attributes here to not spam the user with
@@ -15,7 +15,12 @@ pub use oxidd_core::util::{
 
 #[allow(unused)]
 macro_rules! manager_data {
-    ($name:ident$(<$($gen:ident),*>)? for $dd:ident$(<$($dd_gen:ident),*>)?, operator: $op:ty, cache_max_arity: $arity:expr $(, where $($where:tt)*)?) => {
+    (
+        $name:ident$(<$($gen:ident),*>)? for $dd:ident$(<$($dd_gen:ident),*>)?,
+        operator: $op:ty,
+        cache_entry_capacity: $arity:expr
+        $(, where $($where:tt)*)?
+    ) => {
         #[derive(::oxidd_derive::ManagerEventSubscriber)]
         #[subscribe(manager = <$dd$(<$($dd_gen),*>)? as $crate::util::type_cons::DD>::Manager<'id>, no_trait_bounds)]
         pub struct $name<'id, $($($gen),*)?> $(where $($where)*)? {
