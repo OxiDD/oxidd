@@ -11,3 +11,8 @@ foreach(example IN ITEMS dump-dot import export visualize)
     add_executable(${example} ${example}.cpp)
     target_link_libraries(${example} oxidd)
 endforeach()
+
+foreach(example IN ITEMS capi)
+    add_executable(${example} ${example}.c)
+    target_link_libraries(${example} oxidd)
+endforeach()

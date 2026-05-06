@@ -4,7 +4,7 @@ project(OxiDD
     VERSION 0.11.1
     DESCRIPTION "Concurrent Decision Diagram Library"
     HOMEPAGE_URL "https://oxidd.net"
-    LANGUAGES CXX)
+    LANGUAGES C CXX)
 
 # spell-checker:ignore CTEST,INCLUDEDIR,STREQUAL,LIBDIR
 
