@@ -1,4 +1,4 @@
-use std::ffi::c_char;
+use std::ffi::{c_char, c_void};
 use std::hash::BuildHasherDefault;
 use std::mem::{ManuallyDrop, MaybeUninit};
 
@@ -34,7 +34,7 @@ use crate::util::{
 #[repr(C)]
 pub struct bdd_manager_t {
     /// Internal pointer value, `NULL` iff this reference is invalid
-    _p: *const std::ffi::c_void,
+    _p: *const c_void,
 }
 
 impl CManagerRef for bdd_manager_t {
@@ -65,7 +65,7 @@ impl CManagerRef for bdd_manager_t {
 #[repr(C)]
 pub struct bdd_t {
     /// Internal pointer value, `NULL` iff this function is invalid
-    _p: *const std::ffi::c_void,
+    _p: *const c_void,
     /// Internal index value
     _i: usize,
 }
@@ -216,10 +216,10 @@ pub unsafe extern "C" fn oxidd_bdd_unref(f: bdd_t) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_bdd_manager_run_in_worker_pool(
     manager: bdd_manager_t,
-    callback: extern "C" fn(*mut std::ffi::c_void) -> *mut std::ffi::c_void,
-    data: *mut std::ffi::c_void,
-) -> *mut std::ffi::c_void {
-    util::run_in_worker_pool(&*unsafe { manager.get() }, callback, data)
+    callback: extern "C" fn(*mut c_void) -> *mut c_void,
+    data: *mut c_void,
+) -> *mut c_void {
+    crate::util::run_in_worker_pool(&*unsafe { manager.get() }, callback, data)
 }
 
 /// Get the manager that stores `f`
@@ -397,26 +397,33 @@ pub unsafe extern "C" fn oxidd_bdd_manager_var_name(
         util::to_c_str(name)
     })
 }
-#[cfg(feature = "cpp")]
-/// Get `var`'s name
+/// Call `callback` with `var`'s name
+///
+/// To avoid data races, one can only view the variable names while holding
+/// the manager's lock. If the variable name is needed longer, one needs to copy
+/// it. When the desired string type is a C string,
+/// `oxidd_bdd_manager_var_name()` works fine. In other cases, one can use this
+/// method to avoid multiple copy operations.
 ///
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
-/// @param  manager  The manager
-/// @param  var      The variable number. Must be less than the variable count
-///                  (`oxidd_bdd_manager_num_vars()`).
-/// @param  string   Pointer to a C++ `std::string`. The name will be assigned
-///                  to this string. For unnamed variables, the string will be
-///                  empty.
+/// @param  manager   The manager
+/// @param  var       The variable number. Must be less than the variable count
+///                   (`oxidd_bdd_manager_num_vars()`).
+/// @param  callback  Callback function
+/// @param  data      Data passed as the first argument to `callback`
+///
+/// @returns  The value returned by `callback(data, var_name, var_name_len)`
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn oxidd_bdd_manager_var_name_cpp(
+pub unsafe extern "C" fn oxidd_bdd_manager_with_var_name(
     manager: bdd_manager_t,
     var: VarNo,
-    string: *mut std::ffi::c_void,
-) {
+    callback: extern "C" fn(*mut c_void, *const c_char, usize) -> *mut c_void,
+    data: *mut c_void,
+) -> *mut c_void {
     unsafe { manager.get() }.with_manager_shared(|manager| {
         let name = manager.var_name(var);
-        unsafe { util::cpp::std_string_assign(string, name.as_ptr(), name.len()) };
+        callback(data, name.as_ptr().cast(), name.len())
     })
 }
 

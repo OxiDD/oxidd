@@ -19,10 +19,6 @@
 #include <oxidd/compat.hpp>
 #include <oxidd/util.hpp>
 
-#ifndef OXIDD_ENABLE_CXX
-#error "OxiDD must be built with the `cpp` feature to use the C++ bindings"
-#endif
-
 /// Bridge between OxiDD's C and C++ APIs
 ///
 /// This names contains multiple class templates as building blocks for an
@@ -322,6 +318,13 @@ public:
 extern "C" inline void *oxidd_callback_helper(void *data) {
   auto *ctx = static_cast<c_callback_vtable *>(data);
   return ctx->func_wrapper(ctx);
+}
+
+extern "C" inline void *
+oxidd_std_string_assign_callback(void *data, const char *str, size_t len) {
+  auto *string = static_cast<std::string *>(data);
+  string->assign(str, len);
+  return data;
 }
 
 /// Cast a `const std::pair<var_no_t, bool> *` into a
@@ -666,7 +669,8 @@ public:
   [[nodiscard]] std::string var_name(var_no_t var) const noexcept {
     assert(!is_invalid());
     std::string name;
-    Derived::_c_var_name_cpp(_manager, var, &name);
+    Derived::_c_with_var_name(_manager, var,
+                              detail::oxidd_std_string_assign_callback, &name);
     return name;
   }
 

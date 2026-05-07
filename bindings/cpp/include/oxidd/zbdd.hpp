@@ -43,7 +43,7 @@ class OXIDD_EBO zbdd_manager
   OXIDD_LINK_C(add_vars)
   OXIDD_LINK_C(add_named_vars)
   OXIDD_LINK_C(add_named_vars_iter)
-  OXIDD_LINK_C(var_name_cpp)
+  OXIDD_LINK_C(with_var_name)
   OXIDD_LINK_C(set_var_name)
   OXIDD_LINK_C(name_to_var)
   OXIDD_LINK_C(var_to_level)

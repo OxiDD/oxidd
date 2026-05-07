@@ -1,2 +1,1 @@
-#cmakedefine OXIDD_ENABLE_CXX
 #cmakedefine OXIDD_COMPAT_ENABLE_TL_EXPECTED

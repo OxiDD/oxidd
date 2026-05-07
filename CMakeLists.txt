@@ -24,8 +24,6 @@ set(OXIDD_CARGO_PROFILE "release" CACHE STRING
 set_property(CACHE OXIDD_CARGO_PROFILE PROPERTY STRINGS
     "dev" "release" "release-with-debug")
 
-option(OXIDD_ENABLE_CXX "Enable C++ bindings" ON)
-
 option(OXIDD_COMPAT_ENABLE_TL_EXPECTED
     "Enable the tl-expected library for compatibility purposes. `std::expected` was introduced in C++23. When using an older C++ standard or standard library, the tl-expected library will be used as a fallback."
     ON)
@@ -101,7 +99,6 @@ corrosion_import_crate(
     MANIFEST_PATH Cargo.toml
     PROFILE ${OXIDD_CARGO_PROFILE}
     CRATES oxidd-ffi-c
-    FEATURES $<$<BOOL:${OXIDD_ENABLE_CXX}>:cpp>
     CRATE_TYPES cdylib staticlib)
 add_dependencies(oxidd_ffi_c oxidd-capi-header)
 if(OXIDD_COMPAT_ENABLE_TL_EXPECTED)

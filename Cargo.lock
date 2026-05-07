@@ -623,7 +623,6 @@ dependencies = [
 name = "oxidd-ffi-c"
 version = "0.11.1"
 dependencies = [
- "cc",
  "libc",
  "oxidd",
  "oxidd-core",
