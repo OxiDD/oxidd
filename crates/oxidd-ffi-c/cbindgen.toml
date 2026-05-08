@@ -1,5 +1,5 @@
-# spell-checker:ignore autogen,elif,STDC,GNUC,declspec,nodiscard,myvariant
-# spell-checker:ignore Wnullability,Zunpretty
+# spell-checker:ignore autogen,declspec,elif,ifndef,myvariant,nodiscard
+# spell-checker:ignore GNUC,STDC,Wnullability,Zunpretty
 
 # The language to output bindings in
 #
