@@ -342,7 +342,7 @@ where
                 state.blocked.remove(i + 1);
 
                 let seq = &mut state.seq[..];
-                seq.swap(i as usize, (i + 1) as usize);
+                seq.swap(i, i + 1);
 
                 let swap_before = i > 0 && seq[i - 1] > seq[i] && !state.blocked.contains(i - 1);
                 if swap_before {
@@ -400,10 +400,8 @@ where
 {
     let mut tasks = Vec::with_capacity(manager.num_levels() as usize);
     for (level, p) in manager.levels().zip(to_pre) {
-        if level.level_no() != p.into_inner() {
-            if !level.is_empty() {
-                tasks.push(level.level_no());
-            }
+        if level.level_no() != p.into_inner() && !level.is_empty() {
+            tasks.push(level.level_no());
         }
     }
     manager.workers().slice_for_each(&tasks, |&l| {
