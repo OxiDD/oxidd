@@ -36,7 +36,7 @@ int main(int argc, char **argv) {
   // compile. In principle, there are two more variants allowing to pass the
   // begin and end iterator as two arguments rather than as a range. The range
   // versions call them internally.)
-  switch (args.size() >= 3 ? std::atoi(args[2]) : 0) {
+  switch (args.size() >= 3 ? std::strtoul(args[2], nullptr, 0) : 0) {
   case 1:
     // Export functions without giving them a name (I)
     //

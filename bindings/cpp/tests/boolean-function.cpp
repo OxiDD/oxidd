@@ -586,7 +586,7 @@ public:
 template <boolean_function_manager M> void test_cofactors(const M &mgr) {
   constexpr bool zbdd = std::is_base_of_v<zbdd_manager, M>;
 
-  typename M::function t0, t1;
+  typename M::function t0, t1; // NOLINT(*-confusable-identifiers)
   if constexpr (zbdd) {
     t0 = mgr.empty();
     assert(t0 == mgr.f());
@@ -766,7 +766,7 @@ void test_all_boolean_functions_2vars_t1() {
     constexpr int expected = 1337;
     int got = 0;
     try {
-      mgr.run_in_worker_pool([]() { throw int(expected); });
+      mgr.run_in_worker_pool([]() { throw int{expected}; });
     } catch (int i) {
       got = i;
     }

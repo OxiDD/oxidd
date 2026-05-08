@@ -1,7 +1,8 @@
 /// @file   zbdd.hpp
 /// @brief  Zero-suppressed binary decision diagrams
 
-#pragma once
+#ifndef OXIDD_ZBDD_HPP
+#define OXIDD_ZBDD_HPP
 
 #include <oxidd/bridge.hpp>
 
@@ -308,3 +309,5 @@ oxidd_iter_named_zbdd_callback_helper(void *data) {
 /// @endcond
 
 } // namespace oxidd
+
+#endif // OXIDD_ZBDD_HPP

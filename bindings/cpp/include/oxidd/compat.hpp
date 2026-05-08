@@ -1,7 +1,8 @@
 /// @file   compat.hpp
 /// @brief  Definitions for compatibility with older C++ standards
 
-#pragma once
+#ifndef OXIDD_COMPAT_HPP
+#define OXIDD_COMPAT_HPP
 
 #include <oxidd/config.h>
 #if defined(__cpp_lib_expected) && !defined(OXIDD_COMPAT_ENFORCE_TL_EXPECTED)
@@ -34,3 +35,5 @@ using tl::unexpected;
 #endif
 
 } // namespace oxidd::compat
+
+#endif // OXIDD_COMPAT_HPP

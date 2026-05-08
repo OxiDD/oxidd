@@ -23,7 +23,9 @@ header = """
  * @namespace oxidd::capi
  * @brief Namespace of OxiDD's C API
  */
-"""
+
+#ifndef OXIDD_CAPI_H
+#define OXIDD_CAPI_H"""
 
 # An optional string of text to output at the end of the generated file
 # default: doesn't emit anything
@@ -31,15 +33,17 @@ trailer = """
 #ifdef __clang__
   #pragma GCC diagnostic pop
 #endif
+
+#endif /* OXIDD_CAPI_H */
 """
 
 # An optional name to use as an include guard
 # default: doesn't emit an include guard
-#include_guard = "__OXIDD_CAPI_H__"
+#include_guard = "OXIDD_CAPI_H"
 
 # Whether to add a `#pragma once` guard
 # default: doesn't emit a `#pragma once`
-pragma_once = true
+#pragma_once = true
 
 # An optional string of text to output between major sections of the generated
 # file as a warning against manual editing
@@ -102,6 +106,7 @@ cpp_compat = true
 
 # A list of lines to add verbatim after the includes block
 after_includes = """
+
 /** @cond */
 #if defined(__cplusplus) || (__STDC_VERSION__ >= 202311L)
   #define _OXIDD_ATTR(...) [[__VA_ARGS__]]

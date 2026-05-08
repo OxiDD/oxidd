@@ -1,7 +1,8 @@
 /// @file   bdd.hpp
 /// @brief  Reduced ordered binary decision diagrams (without complement edges)
 
-#pragma once
+#ifndef OXIDD_BDD_HPP
+#define OXIDD_BDD_HPP
 
 #include <oxidd/bridge.hpp>
 
@@ -237,3 +238,5 @@ oxidd_iter_named_bdd_callback_helper(void *data) {
 /// @endcond
 
 } // namespace oxidd
+
+#endif // OXIDD_BDD_HPP

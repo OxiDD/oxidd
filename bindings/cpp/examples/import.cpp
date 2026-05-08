@@ -17,7 +17,8 @@ namespace {
 
 template <oxidd::concepts::boolean_function_manager M>
   requires(oxidd::concepts::reordering_manager<M>)
-int import(M &manager, oxidd::util::dddmp_file &f) {
+// NOLINTNEXTLINE(*-exception-escape)
+int import(M &manager, oxidd::util::dddmp_file &f) noexcept {
   if (f.has_var_names()) {
     auto result = manager.add_named_vars(f.var_names());
     if (!result.has_value()) {

@@ -1,7 +1,8 @@
 /// @file   util.hpp
 /// @brief  Primitives and utilities
 
-#pragma once
+#ifndef OXIDD_UTIL_HPP
+#define OXIDD_UTIL_HPP
 
 #include <cassert>
 #include <concepts>
@@ -343,7 +344,7 @@ class dddmp_file {
     using reference = std::string_view;
 
     reference operator*() const {
-      capi::oxidd_str_t s(Fn(_file, _i));
+      const capi::oxidd_str_t s(Fn(_file, _i));
       return {s.ptr, s.len};
     }
 
@@ -723,7 +724,7 @@ struct dddmp_export_settings {
 //            non-negative, otherwise 0
 template <std::input_iterator I, std::sentinel_for<I> E>
 inline std::size_t size_hint(I begin, E end) {
-  using diff_ty = typename std::iter_difference_t<I>;
+  using diff_ty = std::iter_difference_t<I>;
 
   if constexpr (std::sized_sentinel_for<E, I> &&
                 std::is_convertible_v<diff_ty, std::ptrdiff_t>) {
@@ -764,3 +765,5 @@ concept pair_like =
 } // namespace util
 
 } // namespace oxidd
+
+#endif // OXIDD_UTIL_HPP

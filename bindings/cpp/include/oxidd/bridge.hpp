@@ -1,7 +1,8 @@
 /// @file   bridge.hpp
 /// @brief  Bridge between the C and the C++ APIs
 
-#pragma once
+#ifndef OXIDD_BRIDGE_HPP
+#define OXIDD_BRIDGE_HPP
 
 #include <concepts>
 #include <cstdint>
@@ -86,7 +87,7 @@ class c_iter : c_iter_vtable<T> {
     try {
       if (ctx->_current.has_value()) {
         ctx->_current.reset();
-        ++(ctx->_begin);
+        ++(ctx->_begin); // NOLINT(*-pointer-arithmetic)
       }
       if (ctx->_begin != ctx->_end) {
         ctx->_current.emplace(*ctx->_begin);
@@ -107,7 +108,7 @@ class c_iter : c_iter_vtable<T> {
 
   constexpr static decltype(c_iter_vtable_base::size_hint)
   _make_size_hint_fn() {
-    using diff_ty = typename std::iter_difference_t<I>;
+    using diff_ty = std::iter_difference_t<I>;
     if constexpr (std::sized_sentinel_for<E, I> &&
                   std::is_convertible_v<diff_ty, std::ptrdiff_t>) {
       return
@@ -163,7 +164,7 @@ public:
   use_in_invoke(F &&f, Args &&...args)
     requires std::invocable<F, Args..., typename adapter::c_iter_t>
   {
-    typename adapter::c_iter_t c_iter{
+    const typename adapter::c_iter_t c_iter{
         .next = adapter::helper,
         .size_hint = c_iter_vtable_base::size_hint == nullptr
                          ? nullptr
@@ -190,7 +191,9 @@ public:
   /// Get the element that has been returned by the most recent *next* operation
   ///
   /// Undefined behavior if `has_current()` is `false`.
-  const std::remove_cvref_t<iter_t> &current() noexcept { return *_current; }
+  const std::remove_cvref_t<iter_t> &current() noexcept {
+    return *_current; // NOLINT(*-unchecked-optional-access)
+  }
 };
 
 extern "C" inline capi::oxidd_opt_str_t
@@ -291,6 +294,7 @@ public:
     requires std::is_invocable_r_v<void *, F, Args..., callback_helper_t,
                                    void *>
   {
+    // NOLINTNEXTLINE(*-const-correctness) // cannot be a `const void *`
     void *result_ptr =
         std::invoke(std::forward<F>(f), std::forward<Args>(args)...,
                     oxidd_callback_helper, this);
@@ -558,7 +562,7 @@ public:
   /// @returns  The range of new variable numbers
   var_no_range_t add_vars(var_no_t additional) noexcept {
     assert(!is_invalid());
-    capi::oxidd_var_no_range_t range =
+    const capi::oxidd_var_no_range_t range =
         Derived::_c_add_vars(_manager, additional);
     // The standard specifies that the constructor is `explicit`, with an
     // initializer list it does not compile on Windows/MSVC.
@@ -843,7 +847,7 @@ public:
         support_vars.empty() ? nullptr : support_vars.data(),
         // `DDFunc` contains precisely one member of type `DDFunc::c_api_t`
         // NOLINTNEXTLINE(*-cast)
-        reinterpret_cast<typename DDFunc::c_api_t *>(result.data()), &err);
+        reinterpret_cast<DDFunc::c_api_t *>(result.data()), &err);
     if (success)
       return result;
     return compat::unexpected(util::error::from_c_api(err));
@@ -2120,7 +2124,7 @@ template <class Derived>
       oxidd::bridge::function<Derived, typename Derived::manager,
                               typename Derived::c_api_t>,
       Derived>
-struct std::hash<Derived> {
+struct std::hash<Derived> { // NOLINT(*-std-namespace-modification)
   [[nodiscard]] std::size_t operator()(const Derived &f) const noexcept {
     const typename Derived::c_api_t c = f.to_c_api();
     return std::hash<const void *>{}(c._p) ^ c._i;
@@ -2128,3 +2132,5 @@ struct std::hash<Derived> {
 };
 
 /// @endcond
+
+#endif // OXIDD_BRIDGE_HPP

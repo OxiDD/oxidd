@@ -27,7 +27,7 @@ int main(int argc, char **argv) {
   // they actually compile. In principle, there are two more variants allowing
   // to pass the begin and end iterator as two arguments rather than as a range.
   // The range versions call them internally.)
-  switch (args.size() >= 2 ? std::atoi(args[1]) : 0) {
+  switch (args.size() >= 2 ? std::strtoul(args[1], nullptr, 0) : 0) {
   case 1:
     // Visualize functions without giving them a name (I)
     //

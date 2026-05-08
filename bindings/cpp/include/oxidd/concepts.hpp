@@ -1,7 +1,8 @@
 /// @file   concepts.hpp
 /// @brief  C++20 concepts
 
-#pragma once
+#ifndef OXIDD_CONCEPTS_HPP
+#define OXIDD_CONCEPTS_HPP
 
 #include <concepts>
 
@@ -150,3 +151,5 @@ concept boolean_function_quant =
     std::derived_from<F, bridge::boolean_function_quant<F>>;
 
 } // namespace oxidd::concepts
+
+#endif // OXIDD_CONCEPTS_HPP
