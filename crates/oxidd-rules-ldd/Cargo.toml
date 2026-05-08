@@ -1,0 +1,16 @@
+[package]
+name = "oxidd-rules-ldd"
+version = "0.11.0"
+edition = "2021"
+description = "List decision diagrams (LDDs) for OxiDD"
+readme = "../../README.md"
+
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+
+[dependencies]
+oxidd-core.workspace = true
+oxidd-derive.workspace = true
