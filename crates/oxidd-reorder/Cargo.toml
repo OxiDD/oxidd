@@ -19,11 +19,14 @@ oxidd-core.workspace = true
 # stack-allocated vectors
 smallvec = { version = "1", features = ["union", "const_generics"] }
 
+# fast alternative Mutex & RwLock implementation
+parking_lot = "0.12"
+
 # thread pools, parallel iterators, etc.
 rayon = "1.10"
 
-# mpmc channels
-flume = { version = "0.12", default-features = false }
+# bit sets
+fixedbitset = "0.5.7"
 
 # run actions when unwinding
 scopeguard = { version = "1.2", default-features = false }

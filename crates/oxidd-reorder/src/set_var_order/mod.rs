@@ -1,5 +1,7 @@
 use std::sync::atomic::Ordering::Relaxed;
 
+use fixedbitset::FixedBitSet;
+
 use oxidd_core::{
     AtomicLevelNo, HasLevel, HasWorkers, LevelNo, LevelView, Manager, VarNo, WorkerPool,
 };
@@ -282,54 +284,102 @@ fn concurrent_bubble_sort<M>(manager: &M, seq: &mut [u32], swap: SwapFn<'_, M>)
 where
     M: HasWorkers,
 {
-    let (task_sender, task_receiver) = flume::unbounded::<u32>();
-    let (done_sender, done_receiver) = flume::unbounded::<u32>();
+    struct State<'a> {
+        seq: &'a mut [u32],
+        blocked: FixedBitSet,
+        tasks: Vec<u32>,
+        in_progress: u32,
+    }
 
-    std::thread::scope(|scope| {
-        scope.spawn(move || {
-            let swap = |seq: &mut [u32], blocked: &mut [bool], upper: usize| {
-                let lower = upper + 1;
-                seq.swap(upper, lower);
-                blocked[upper] = true;
-                blocked[lower] = true;
-                task_sender.send(upper as u32).unwrap();
+    let n = seq.len();
+    let mut state = State {
+        seq,
+        blocked: FixedBitSet::with_capacity(n),
+        tasks: Vec::with_capacity(n),
+        in_progress: 0,
+    };
+
+    let mut i = 0;
+    while i + 1 < n {
+        if state.seq[i] > state.seq[i + 1] {
+            state.blocked.insert(i);
+            state.blocked.insert(i + 1);
+            state.tasks.push(i as u32);
+            i += 2;
+        } else {
+            i += 1;
+        }
+    }
+
+    if state.tasks.is_empty() {
+        return;
+    }
+
+    let state = parking_lot::Mutex::new(state);
+    let cond = parking_lot::Condvar::new(); // task available or done
+
+    manager.workers().broadcast(|_| {
+        loop {
+            // wait for a new task
+            let mut guard = state.lock();
+            let mut i = loop {
+                let state = &mut *guard;
+                if let Some(i) = state.tasks.pop() {
+                    state.in_progress += 1;
+                    break i as usize;
+                }
+                if state.in_progress == 0 {
+                    return; // done, other threads have been notified
+                }
+                cond.wait(&mut guard);
             };
+            drop(guard);
 
-            let mut blocked = vec![false; seq.len()];
-            let mut i = 0;
-            let mut tasks = 0u32;
-            while i + 1 < seq.len() {
-                if seq[i] > seq[i + 1] {
-                    swap(seq, &mut blocked, i);
-                    tasks += 1;
-                    i += 2;
+            loop {
+                swap(manager, i as u32);
+
+                let state = &mut *state.lock();
+                state.blocked.remove(i + 1);
+
+                let seq = &mut state.seq[..];
+                seq.swap(i as usize, (i + 1) as usize);
+
+                let swap_before = i > 0 && seq[i - 1] > seq[i] && !state.blocked.contains(i - 1);
+                if swap_before {
+                    state.blocked.insert(i - 1);
                 } else {
-                    i += 1;
+                    state.blocked.remove(i);
                 }
-            }
-            while tasks != 0 {
-                let i = done_receiver.recv().unwrap() as usize;
-                tasks -= 1;
-                blocked[i] = false;
-                blocked[i + 1] = false;
-                if i > 0 && seq[i - 1] > seq[i] && !blocked[i - 1] {
-                    swap(seq, &mut blocked, i - 1);
-                    tasks += 1;
-                }
-                if i + 2 < seq.len() && seq[i + 1] > seq[i + 2] && !blocked[i + 2] {
-                    swap(seq, &mut blocked, i + 1);
-                    tasks += 1;
-                }
-            }
-            debug_assert!(seq.iter().is_sorted());
-        });
 
-        manager.workers().broadcast(|_| {
-            while let Ok(upper) = task_receiver.recv() {
-                swap(manager, upper);
-                done_sender.send(upper).unwrap();
+                if i + 2 < seq.len() && seq[i + 1] > seq[i + 2] && !state.blocked.contains(i + 2) {
+                    state.blocked.insert(i + 2);
+                    if !swap_before {
+                        i += 1;
+                        continue;
+                    }
+                    state.tasks.push((i + 1) as u32);
+                    cond.notify_one();
+                } else {
+                    state.blocked.remove(i + 1);
+                    if !swap_before {
+                        if let Some(new_i) = state.tasks.pop() {
+                            i = new_i as usize;
+                            continue;
+                        }
+
+                        state.in_progress -= 1;
+                        if state.in_progress != 0 {
+                            break; // wait for a new task
+                        }
+
+                        cond.notify_all(); // done
+                        return;
+                    }
+                }
+
+                i -= 1;
             }
-        });
+        }
     });
 }
 
