@@ -348,22 +348,17 @@ fn update_levels<M: Manager + HasWorkers>(manager: &M, to_pre: Vec<AtomicLevelNo
 where
     M::InnerNode: HasLevel,
 {
-    let (sender, receiver) = flume::unbounded();
+    let mut tasks = Vec::with_capacity(manager.num_levels() as usize);
     for (level, p) in manager.levels().zip(to_pre) {
         if level.level_no() != p.into_inner() {
-            if level.len() >= 1024 {
-                sender.send(level.level_no()).unwrap();
-            } else {
-                crate::update_level_no(manager, &level);
+            if !level.is_empty() {
+                tasks.push(level.level_no());
             }
         }
     }
-    drop(sender);
-    manager.workers().broadcast(|_| {
-        while let Ok(l) = receiver.recv() {
-            let level = unsafe { manager.level_unchecked(l) };
-            crate::update_level_no(manager, &level);
-        }
+    manager.workers().slice_for_each(&tasks, |&l| {
+        let level = unsafe { manager.level_unchecked(l) };
+        crate::update_level_no(manager, &level);
     });
 }
 

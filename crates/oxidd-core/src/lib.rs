@@ -1279,6 +1279,26 @@ pub trait WorkerPool: Sync {
 
     /// Execute `op` on every worker in the thread pool
     fn broadcast<R: Send>(&self, op: impl Fn(BroadcastContext) -> R + Sync) -> Vec<R>;
+
+    /// Execute `op` concurrently for every element of `slice`
+    fn slice_for_each<T: Sync>(&self, slice: &[T], op: impl Fn(&T) + Sync) {
+        match slice {
+            [] => {}
+            [x] => op(x),
+            _ => {
+                let done = std::sync::atomic::AtomicU64::new(0);
+                self.broadcast(|_| {
+                    loop {
+                        let i = done.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        if i >= slice.len() as u64 {
+                            return;
+                        }
+                        op(&slice[i as usize])
+                    }
+                });
+            }
+        }
+    }
 }
 
 /// Context provided to workers by [`WorkerPool::broadcast()`]
