@@ -522,6 +522,7 @@ dependencies = [
  "oxidd-manager-pointer",
  "oxidd-reorder",
  "oxidd-rules-bdd",
+ "oxidd-rules-ldd",
  "oxidd-rules-mtbdd",
  "oxidd-rules-tdd",
  "oxidd-rules-zbdd",
@@ -691,6 +692,14 @@ dependencies = [
  "oxidd-core",
  "oxidd-derive",
  "oxidd-dump",
+]
+
+[[package]]
+name = "oxidd-rules-ldd"
+version = "0.11.0"
+dependencies = [
+ "oxidd-core",
+ "oxidd-derive",
 ]
 
 [[package]]

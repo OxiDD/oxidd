@@ -29,6 +29,8 @@ pub mod util;
 pub mod bcdd;
 #[cfg(feature = "bdd")]
 pub mod bdd;
+#[cfg(feature = "ldd")]
+pub mod ldd;
 #[cfg(feature = "mtbdd")]
 pub mod mtbdd;
 #[cfg(feature = "tdd")]
