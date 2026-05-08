@@ -4,7 +4,7 @@ version = "0.12.0"
 edition = "2024"
 description = "A safe, concurrent, modular, and performant decision diagram framework."
 readme = "../../README.md"
-keywords = ["decision-diagrams", "bdd", "zbdd", "zdd"]
+keywords = ["decision-diagrams", "bdd", "ldd", "zbdd", "zdd"]
 categories = ["data-structures", "mathematics", "science"]
 
 license.workspace = true
@@ -22,6 +22,7 @@ oxidd-derive.workspace = true
 oxidd-dump.workspace = true
 oxidd-reorder.workspace = true
 oxidd-rules-bdd = { workspace = true, optional = true }
+oxidd-rules-ldd = { workspace = true, optional = true }
 oxidd-rules-mtbdd = { workspace = true, optional = true }
 oxidd-rules-tdd = { workspace = true, optional = true }
 oxidd-rules-zbdd = { workspace = true, optional = true }
@@ -49,6 +50,7 @@ default = [
   "manager-index",
   "bdd",
   "bcdd",
+  "ldd",
   "mtbdd",
   "zbdd",
   "multi-threading",
@@ -63,6 +65,9 @@ bdd = ["dep:oxidd-rules-bdd", "oxidd-rules-bdd/simple"]
 
 ## Enable the complement edge BDD implementation
 bcdd = ["dep:oxidd-rules-bdd", "oxidd-rules-bdd/complement-edge"]
+
+# Enable the LDD implementation
+ldd = ["dep:oxidd-rules-ldd"]
 
 ## Enable the MTBDD implementation
 mtbdd = ["dep:oxidd-rules-mtbdd"]
