@@ -166,27 +166,31 @@ where
 
     /// Get the value of this entry if it is occupied and the key (`operator`
     /// and `operands`) matches
+    ///
+    /// Assumes that
+    /// - there is at least one operand,
+    /// - there are at most `KIND_COUNT` operands and values of each kind, and
+    /// - the count of operands and values is at most `ENTRY_CAP`.
     #[inline]
     fn get<const E: usize, const N: usize>(
         &self,
         manager: &M,
         operator: O,
-        operands: &[Borrowed<M::Edge>],
-        numeric_operands: &[u32],
+        operands: (&[Borrowed<M::Edge>], &[u32]),
     ) -> Option<([M::Edge; E], [u32; N])> {
         // These conditions are ensured when called by
         // `DMApplyCache::get_with_numeric()`
-        debug_assert_ne!(operands.len() + numeric_operands.len(), 0);
-        debug_assert!(operands.len() <= KIND_COUNT);
-        debug_assert!(numeric_operands.len() <= KIND_COUNT);
+        debug_assert_ne!(operands.0.len() + operands.1.len(), 0);
+        debug_assert!(operands.0.len() <= KIND_COUNT);
+        debug_assert!(operands.1.len() <= KIND_COUNT);
         debug_assert!(E <= KIND_COUNT);
         debug_assert!(N <= KIND_COUNT);
-        debug_assert!(operands.len() + numeric_operands.len() + E + N <= ENTRY_CAP);
+        debug_assert!(operands.0.len() + operands.1.len() + E + N <= ENTRY_CAP);
 
         #[cfg(feature = "statistics")]
         STAT_ACCESSES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        let num_operands = CountPair::new(operands.len(), numeric_operands.len());
+        let num_operands = CountPair::new(operands.0.len(), operands.1.len());
         // SAFETY: The entry is locked.
         if unsafe { *self.0.operands.get() } != num_operands {
             return None;
@@ -194,15 +198,15 @@ where
 
         // SAFETY: The entry is locked.
         let mut data = unsafe { &*self.0.data.get() }.iter();
-        for (o1, o2) in operands.iter().zip(data.by_ref()) {
+        for (o1, o2) in operands.0.iter().zip(data.by_ref()) {
             // SAFETY: The first `operands.len()` operands are edges
             if &**o1 != unsafe { o2.assume_edge_ref() } {
                 return None;
             }
         }
-        for (o1, o2) in numeric_operands.iter().zip(data.by_ref()) {
+        for (&o1, o2) in operands.1.iter().zip(data.by_ref()) {
             // SAFETY: The next `num_numeric_operands` operands are numeric
-            if *o1 != unsafe { o2.assume_numeric() } {
+            if o1 != unsafe { o2.assume_numeric() } {
                 return None;
             }
         }
@@ -235,25 +239,23 @@ where
     /// updated (`operands` and `value` are not cloned).
     ///
     /// Assumes that
-    /// - `!operands.is_empty()`
-    /// - `operands.len() + numeric_operands.len() <= ENTRY_CAP`
+    /// - there is at least one operand,
+    /// - there are at most `KIND_COUNT` operands and values of each kind, and
+    /// - the count of operands and values is at most `ENTRY_CAP`.
     #[inline]
     fn set(
         &mut self,
         operator: O,
-        operands: &[Borrowed<M::Edge>],
-        numeric_operands: &[u32],
-        values: &[Borrowed<M::Edge>],
-        numeric_values: &[u32],
+        operands: (&[Borrowed<M::Edge>], &[u32]),
+        values: (&[Borrowed<M::Edge>], &[u32]),
     ) {
-        debug_assert_ne!(operands.len() + numeric_operands.len(), 0);
-        debug_assert!(operands.len() <= KIND_COUNT);
-        debug_assert!(numeric_operands.len() <= KIND_COUNT);
-        debug_assert!(values.len() <= KIND_COUNT);
-        debug_assert!(numeric_values.len() <= KIND_COUNT);
+        debug_assert_ne!(operands.0.len() + operands.1.len(), 0);
+        debug_assert!(operands.0.len() <= KIND_COUNT);
+        debug_assert!(operands.1.len() <= KIND_COUNT);
+        debug_assert!(values.0.len() <= KIND_COUNT);
+        debug_assert!(values.1.len() <= KIND_COUNT);
         debug_assert!(
-            operands.len() + numeric_operands.len() + values.len() + numeric_values.len()
-                <= ENTRY_CAP
+            operands.0.len() + operands.1.len() + values.0.len() + values.1.len() <= ENTRY_CAP
         );
 
         self.clear();
@@ -264,23 +266,23 @@ where
         // SAFETY (next 2 dereference ops): The entry is locked.
         unsafe { &mut *self.0.operator.get() }.write(operator);
         let mut data = unsafe { &mut *self.0.data.get() }.iter_mut();
-        for (src, dst) in operands.iter().zip(data.by_ref()) {
+        for (src, dst) in operands.0.iter().zip(data.by_ref()) {
             dst.write_edge(src.borrowed());
         }
-        for (src, dst) in numeric_operands.iter().zip(data.by_ref()) {
-            dst.write_numeric(*src);
+        for (&src, dst) in operands.1.iter().zip(data.by_ref()) {
+            dst.write_numeric(src);
         }
-        for (src, dst) in values.iter().zip(data.by_ref()) {
+        for (src, dst) in values.0.iter().zip(data.by_ref()) {
             dst.write_edge(src.borrowed());
         }
-        for (src, dst) in numeric_values.iter().zip(data) {
-            dst.write_numeric(*src);
+        for (&src, dst) in values.1.iter().zip(data) {
+            dst.write_numeric(src);
         }
 
-        // Important: Set the counts last for exception safety (the functions above
-        // might panic).
-        unsafe { *self.0.values.get() = CountPair::new(values.len(), numeric_values.len()) };
-        unsafe { *self.0.operands.get() = CountPair::new(operands.len(), numeric_operands.len()) };
+        // Important: Set the counts last for exception safety (the functions
+        // above might panic).
+        unsafe { *self.0.values.get() = CountPair::new(values.0.len(), values.1.len()) };
+        unsafe { *self.0.operands.get() = CountPair::new(operands.0.len(), operands.1.len()) };
     }
 
     /// Clear this entry
@@ -329,10 +331,17 @@ where
 
     /// Get the bucket for the given operator and operands
     #[inline]
-    fn bucket(&self, operator: O, operands: &[Borrowed<M::Edge>]) -> &Entry<M, O, ENTRY_CAP> {
+    fn bucket(
+        &self,
+        operator: O,
+        operands: (&[Borrowed<M::Edge>], &[u32]),
+    ) -> &Entry<M, O, ENTRY_CAP> {
         let mut hasher = H::default();
         operator.hash(&mut hasher);
-        for o in operands {
+        for o in operands.0 {
+            o.hash(&mut hasher);
+        }
+        for o in operands.1 {
             o.hash(&mut hasher);
         }
         let mask = (self.0.len() - 1) as u64; // bucket count is a power of two
@@ -385,53 +394,47 @@ where
     H: Hasher + Default,
 {
     #[inline(always)]
-    fn get_with_numeric<const E: usize, const N: usize>(
+    fn get_extended<const E: usize, const N: usize>(
         &self,
         manager: &M,
         operator: O,
-        operands: &[Borrowed<M::Edge>],
-        numeric_operands: &[u32],
+        operands: (&[Borrowed<M::Edge>], &[u32]),
     ) -> Option<([M::Edge; E], [u32; N])> {
-        let total_operands = operands.len() + numeric_operands.len();
+        let total_operands = operands.0.len() + operands.1.len();
         if total_operands == 0
             || total_operands + (N + E) > ENTRY_CAP
-            || operands.len() > KIND_COUNT
-            || numeric_operands.len() > KIND_COUNT
+            || operands.0.len() > KIND_COUNT
+            || operands.1.len() > KIND_COUNT
             || N > KIND_COUNT
             || E > KIND_COUNT
         {
             return None;
         }
-        self.bucket(operator, operands).try_lock()?.get(
-            manager,
-            operator,
-            operands,
-            numeric_operands,
-        )
+        self.bucket(operator, operands)
+            .try_lock()?
+            .get(manager, operator, operands)
     }
 
     #[inline(always)]
-    fn add_with_numeric(
+    fn add_extended(
         &self,
         _manager: &M,
         operator: O,
-        operands: &[Borrowed<M::Edge>],
-        numeric_operands: &[u32],
-        values: &[Borrowed<M::Edge>],
-        numeric_values: &[u32],
+        operands: (&[Borrowed<M::Edge>], &[u32]),
+        values: (&[Borrowed<M::Edge>], &[u32]),
     ) {
-        let total_operands = operands.len() + numeric_operands.len();
+        let total_operands = operands.0.len() + operands.1.len();
         if total_operands == 0
-            || total_operands + (values.len() + numeric_values.len()) > ENTRY_CAP
-            || operands.len() > KIND_COUNT
-            || numeric_operands.len() > KIND_COUNT
-            || values.len() > KIND_COUNT
-            || numeric_values.len() > KIND_COUNT
+            || total_operands + (values.0.len() + values.1.len()) > ENTRY_CAP
+            || operands.0.len() > KIND_COUNT
+            || operands.1.len() > KIND_COUNT
+            || values.0.len() > KIND_COUNT
+            || values.1.len() > KIND_COUNT
         {
             return;
         }
         if let Some(mut entry) = self.bucket(operator, operands).try_lock() {
-            entry.set(operator, operands, numeric_operands, values, numeric_values);
+            entry.set(operator, operands, values);
         }
     }
 

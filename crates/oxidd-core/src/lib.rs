@@ -1169,42 +1169,47 @@ pub unsafe trait LevelView<E: Edge, N: InnerNode<E>> {
 /// and to query the cache for these results. Just as every cache, the
 /// implementation may decide to evict results from the cache.
 pub trait ApplyCache<M: Manager, O: Copy>: DropWith<M::Edge> {
-    /// Get the result of `operation`, if cached
+    /// Get the result for the key consisting of `operand` and `operator`, if
+    /// cached
+    ///
+    /// This is the extended version of [`Self::get()`], allowing for numeric
+    /// operands and multiple, possibly numeric values. The constants `E` and
+    /// `N` indicate the number of expected edge values and numeric values,
+    /// respectively.
     #[must_use]
-    fn get_with_numeric<const E: usize, const N: usize>(
+    fn get_extended<const E: usize, const N: usize>(
         &self,
         manager: &M,
         operator: O,
-        operands: &[Borrowed<M::Edge>],
-        numeric_operands: &[u32],
+        operands: (&[Borrowed<M::Edge>], &[u32]),
     ) -> Option<([M::Edge; E], [u32; N])>;
 
     /// Add the result of `operation` to this cache
     ///
     /// An implementation is free to not cache any result. (This is why we use
     /// `Borrowed<M::Edge>`, which in this case elides a few clone and drop
-    /// operations.) If the cache already contains a key equal to `operation`,
-    /// there is no need to update its value. (Again, we can elide clone and
-    /// drop operations.)
-    fn add_with_numeric(
+    /// operations.) If the cache already contains the key consisting of
+    /// `operator` and `operands`, there is no need to update its value. (Again,
+    /// an implementation could elide clone and drop operations.)
+    fn add_extended(
         &self,
         manager: &M,
         operator: O,
-        operands: &[Borrowed<M::Edge>],
-        numeric_operands: &[u32],
-        values: &[Borrowed<M::Edge>],
-        numeric_values: &[u32],
+        operands: (&[Borrowed<M::Edge>], &[u32]),
+        values: (&[Borrowed<M::Edge>], &[u32]),
     );
 
-    /// Shorthand for [`Self::get_with_numeric()`] without numeric operands
+    /// Shorthand for [`Self::get_extended()`] without numeric operands and just
+    /// a single edge value
     #[inline(always)]
     #[must_use]
     fn get(&self, manager: &M, operator: O, operands: &[Borrowed<M::Edge>]) -> Option<M::Edge> {
-        let ([e], []) = self.get_with_numeric::<1, 0>(manager, operator, operands, &[])?;
+        let ([e], []) = self.get_extended::<1, 0>(manager, operator, (operands, &[]))?;
         Some(e)
     }
 
-    /// Shorthand for [`Self::add_with_numeric()`] without numeric operands
+    /// Shorthand for [`Self::add_extended()`] without numeric operands and just
+    /// a single edge value
     #[inline(always)]
     fn add(
         &self,
@@ -1213,7 +1218,7 @@ pub trait ApplyCache<M: Manager, O: Copy>: DropWith<M::Edge> {
         operands: &[Borrowed<M::Edge>],
         value: Borrowed<M::Edge>,
     ) {
-        self.add_with_numeric(manager, operator, operands, &[], &[value], &[])
+        self.add_extended(manager, operator, (operands, &[]), (&[value], &[]))
     }
 
     /// Remove all entries from the cache

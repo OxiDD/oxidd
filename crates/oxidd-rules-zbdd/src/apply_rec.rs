@@ -81,7 +81,7 @@ where
     if let Some(([h], [])) =
         manager
             .apply_cache()
-            .get_with_numeric(manager, op, &[f.borrowed()], &[var])
+            .get_extended(manager, op, (&[f.borrowed()], &[var]))
     {
         stat!(cache_hit op);
         return Ok(h);
@@ -99,7 +99,7 @@ where
     // Add to apply cache
     manager
         .apply_cache()
-        .add_with_numeric(manager, op, &[f], &[var], &[h.borrowed()], &[]);
+        .add_extended(manager, op, (&[f], &[var]), (&[h.borrowed()], &[]));
 
     Ok(h)
 }

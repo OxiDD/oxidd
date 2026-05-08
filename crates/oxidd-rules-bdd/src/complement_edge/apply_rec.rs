@@ -327,11 +327,10 @@ where
 
     // Query apply cache
     stat!(cache_query BCDDOp::Substitute);
-    if let Some(([h], [])) = manager.apply_cache().get_with_numeric(
+    if let Some(([h], [])) = manager.apply_cache().get_extended(
         manager,
         BCDDOp::Substitute,
-        &[f.borrowed()],
-        &[cache_id],
+        (&[f.borrowed()], &[cache_id]),
     ) {
         stat!(cache_hit BCDDOp::Substitute);
         return Ok(h);
@@ -353,13 +352,11 @@ where
     )?;
 
     // Insert into apply cache
-    manager.apply_cache().add_with_numeric(
+    manager.apply_cache().add_extended(
         manager,
         BCDDOp::Substitute,
-        &[f.borrowed()],
-        &[cache_id],
-        &[res.borrowed()],
-        &[],
+        (&[f.borrowed()], &[cache_id]),
+        (&[res.borrowed()], &[]),
     );
 
     Ok(res)

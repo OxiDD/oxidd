@@ -58,25 +58,22 @@ impl<M: Manager, O: Copy, const ARITY: usize> oxidd_core::ApplyCache<M, O>
     for NoApplyCache<M, O, ARITY>
 {
     #[inline(always)]
-    fn get_with_numeric<const E: usize, const N: usize>(
+    fn get_extended<const E: usize, const N: usize>(
         &self,
         _manager: &M,
         _operator: O,
-        _operands: &[Borrowed<M::Edge>],
-        _numeric_operands: &[u32],
+        _operands: (&[Borrowed<M::Edge>], &[u32]),
     ) -> Option<([M::Edge; E], [u32; N])> {
         None
     }
 
     #[inline(always)]
-    fn add_with_numeric(
+    fn add_extended(
         &self,
         _manager: &M,
         _operator: O,
-        _operands: &[Borrowed<M::Edge>],
-        _numeric_operands: &[u32],
-        _values: &[Borrowed<M::Edge>],
-        _numeric_values: &[u32],
+        _operands: (&[Borrowed<M::Edge>], &[u32]),
+        _values: (&[Borrowed<M::Edge>], &[u32]),
     ) {
         // Just forget about it
     }
