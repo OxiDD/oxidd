@@ -4,7 +4,7 @@ version = "0.13.0"
 edition = "2024"
 description = "A safe, concurrent, modular, and performant decision diagram framework."
 readme = "../../README.md"
-keywords = ["decision-diagrams", "bdd", "zbdd", "zdd"]
+keywords = ["decision-diagrams", "bdd", "ldd", "zbdd", "zdd"]
 categories = ["data-structures", "mathematics", "science"]
 
 license.workspace = true
@@ -21,6 +21,7 @@ oxidd-cache = { workspace = true, features = ["hugealloc"], optional = true }
 oxidd-derive.workspace = true
 oxidd-dump.workspace = true
 oxidd-rules-bdd = { workspace = true, optional = true }
+oxidd-rules-ldd = { workspace = true, optional = true }
 oxidd-rules-mtbdd = { workspace = true, optional = true }
 oxidd-rules-tdd = { workspace = true, optional = true }
 oxidd-rules-zbdd = { workspace = true, optional = true }
@@ -48,6 +49,7 @@ default = [
   "manager-index",
   "bdd",
   "bcdd",
+  "ldd",
   "mtbdd",
   "zbdd",
   "multi-threading",
@@ -63,6 +65,9 @@ bdd = ["dep:oxidd-rules-bdd", "oxidd-rules-bdd/simple"]
 ## Enable the complement edge BDD implementation
 bcdd = ["dep:oxidd-rules-bdd", "oxidd-rules-bdd/complement-edge"]
 
+# Enable the LDD implementation
+ldd = ["dep:oxidd-rules-ldd"]
+
 ## Enable the MTBDD implementation
 mtbdd = ["dep:oxidd-rules-mtbdd"]
 
@@ -75,6 +80,7 @@ zbdd = ["dep:oxidd-rules-zbdd"]
 ## Use multi-threaded implementations of the apply algorithm
 multi-threading = [
   "oxidd-rules-bdd?/multi-threading",
+  "oxidd-rules-ldd?/multi-threading",
   "oxidd-rules-mtbdd?/multi-threading",
   "oxidd-rules-tdd?/multi-threading",
   "oxidd-rules-zbdd?/multi-threading",
@@ -101,6 +107,7 @@ apply-cache-direct-mapped = ["dep:oxidd-cache", "oxidd-cache/direct"]
 ## Enable statistics (will harm performance)
 statistics = [
   "oxidd-rules-bdd?/statistics",
+  "oxidd-rules-ldd?/statistics",
   "oxidd-rules-mtbdd?/statistics",
   "oxidd-rules-tdd?/statistics",
   "oxidd-rules-zbdd?/statistics",
