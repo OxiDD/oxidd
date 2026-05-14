@@ -755,6 +755,10 @@ pub trait BooleanFunction: Function {
     /// cares" with a probability that is 2<sup>n</sup> as high as the
     /// probability of any total valuation.)
     ///
+    /// When sampling cubes repeatedly for the same Boolean function, it is
+    /// recommended to set [`cache.cache_all`][SatCountCache::cache_all] to
+    /// `true`.
+    ///
     /// Locking behavior: acquires the manager's lock for shared access.
     fn pick_cube_uniform<S: BuildHasher>(
         &self,

@@ -1152,8 +1152,11 @@ where
 
             // query cache
             let node_id = e.node_id();
-            if let Some(n) = cache.map.get(&node_id) {
-                return n.clone();
+            let do_cache = cache.cache_all || node.ref_count() > 1;
+            if do_cache {
+                if let Some(n) = cache.map.get(&node_id) {
+                    return n.clone();
+                }
             }
 
             // recursive case
@@ -1173,7 +1176,9 @@ where
             n += &iter.next().unwrap();
             debug_assert!(iter.next().is_none());
             n >>= 1u32;
-            cache.map.insert(node_id, n.clone());
+            if do_cache {
+                cache.map.insert(node_id, n.clone());
+            }
             n
         }
 

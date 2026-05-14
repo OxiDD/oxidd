@@ -975,14 +975,19 @@ where
                 }
             };
             let node_id = e.node_id();
-            if let Some(n) = cache.map.get(&node_id) {
-                return n.clone();
+            let do_cache = cache.cache_all || node.ref_count() > 1;
+            if do_cache {
+                if let Some(n) = cache.map.get(&node_id) {
+                    return n.clone();
+                }
             }
             let (e0, e1) = collect_children(node);
             let mut n = inner(manager, e0, terminal_val, cache);
             n += &inner(manager, e1, terminal_val, cache);
             n >>= 1u32;
-            cache.map.insert(node_id, n.clone());
+            if do_cache {
+                cache.map.insert(node_id, n.clone());
+            }
             n
         }
 

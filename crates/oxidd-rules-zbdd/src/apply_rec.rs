@@ -785,13 +785,18 @@ where
             match manager.get_node(&e) {
                 Node::Inner(node) => {
                     let node_id = e.node_id();
-                    if let Some(n) = cache.map.get(&node_id) {
-                        return n.clone();
+                    let do_cache = cache.cache_all || node.ref_count() > 1;
+                    if do_cache {
+                        if let Some(n) = cache.map.get(&node_id) {
+                            return n.clone();
+                        }
                     }
                     let (e0, e1) = collect_children(node);
                     let mut n = inner(manager, e0, cache);
                     n += &inner(manager, e1, cache);
-                    cache.map.insert(node_id, n.clone());
+                    if do_cache {
+                        cache.map.insert(node_id, n.clone());
+                    }
                     n
                 }
                 Node::Terminal(t) => N::from(if *t.borrow() == ZBDDTerminal::Empty {

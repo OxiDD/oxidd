@@ -305,6 +305,10 @@ pub struct SatCountCache<N: SatCountNumber, S: BuildHasher> {
     /// have been re-used for semantically different functions. The `map` should
     /// only be considered valid if `epoch` is [`Manager::gc_count()`].
     epoch: u64,
+
+    /// Whether to cache the SAT counts even for all nodes, including those that
+    /// have only a single incoming edge.
+    pub cache_all: bool,
 }
 
 impl<N: SatCountNumber, S: BuildHasher + Default> Default for SatCountCache<N, S> {
@@ -313,6 +317,7 @@ impl<N: SatCountNumber, S: BuildHasher + Default> Default for SatCountCache<N, S
             map: HashMap::default(),
             vars: 0,
             epoch: 0,
+            cache_all: false,
         }
     }
 }
@@ -324,6 +329,7 @@ impl<N: SatCountNumber, S: BuildHasher> SatCountCache<N, S> {
             map: HashMap::with_hasher(hash_builder),
             vars: 0,
             epoch: 0,
+            cache_all: false,
         }
     }
 
