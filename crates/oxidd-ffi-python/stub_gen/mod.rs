@@ -159,12 +159,11 @@ impl Parameter {
                         let syn::Pat::Ident(pat_ident) = &*pat_type.pat else {
                             bail!("expected Rust parameters to be given an identifier")
                         };
-                        if let syn::Type::Path(path) = &*pat_type.ty {
-                            if let Some(last) = path.path.segments.last() {
-                                if last.ident == "Python" {
-                                    continue;
-                                }
-                            }
+                        if let syn::Type::Path(path) = &*pat_type.ty
+                            && let Some(last) = path.path.segments.last()
+                            && last.ident == "Python"
+                        {
+                            continue;
                         }
                         let name = if is_self {
                             "self".into()
@@ -464,23 +463,23 @@ impl TypeEnv {
                 }
                 if let Some((arg_name, after)) = line.split_once('(') {
                     let arg_name = arg_name.trim_ascii_end();
-                    if !arg_name.is_empty() {
-                        if let Some((ty, _)) = after.split_once(')') {
-                            let ty = self.parse_py(ty)?;
-                            loop {
-                                let [p, pr @ ..] = params else {
-                                    bail!(
-                                        "Additional parameter '{arg_name}' documented for '{item_name}'"
-                                    )
-                                };
-                                params = pr;
-                                if arg_name == p.name {
-                                    p.ty = Some(ty);
-                                    break;
-                                }
+                    if !arg_name.is_empty()
+                        && let Some((ty, _)) = after.split_once(')')
+                    {
+                        let ty = self.parse_py(ty)?;
+                        loop {
+                            let [p, pr @ ..] = params else {
+                                bail!(
+                                    "Additional parameter '{arg_name}' documented for '{item_name}'"
+                                )
+                            };
+                            params = pr;
+                            if arg_name == p.name {
+                                p.ty = Some(ty);
+                                break;
                             }
-                            continue;
                         }
+                        continue;
                     }
                 }
                 bail!("Failed to parse arguments in docstring for '{item_name}'");
@@ -546,12 +545,7 @@ impl fmt::Display for Type {
 }
 
 fn attr_matches(attribute: &syn::Attribute, name: &str) -> bool {
-    if let Some(segment) = attribute.meta.path().segments.last() {
-        if segment.ident == name {
-            return true;
-        }
-    }
-    false
+    matches!(attribute.meta.path().segments.last(), Some(segment) if segment.ident == name)
 }
 
 fn get_doc(attributes: &[syn::Attribute]) -> String {
@@ -1084,10 +1078,10 @@ impl StubGen {
                     // (radius=1.0))]`
                 }
                 syn::Item::Macro(mac) => {
-                    if let Some(last) = mac.mac.path.segments.last() {
-                        if last.ident == "create_exception" {
-                            self.process_exception(&mac.mac.tokens)?;
-                        }
+                    if let Some(last) = mac.mac.path.segments.last()
+                        && last.ident == "create_exception"
+                    {
+                        self.process_exception(&mac.mac.tokens)?;
                     };
                 }
                 _ => {}
@@ -1111,15 +1105,15 @@ impl StubGen {
                         continue;
                     }
 
-                    if let syn::Type::Path(path) = &*item_impl.self_ty {
-                        if let Some(ident) = path.path.get_ident() {
-                            if let Some(id) = self.class_to_item.get(ident) {
-                                self.process_class_items(*id, &item_impl.items)?;
-                                continue;
-                            }
-
-                            bail!("Did not find a #[pyclass] '{ident}'")
+                    if let syn::Type::Path(path) = &*item_impl.self_ty
+                        && let Some(ident) = path.path.get_ident()
+                    {
+                        if let Some(id) = self.class_to_item.get(ident) {
+                            self.process_class_items(*id, &item_impl.items)?;
+                            continue;
                         }
+
+                        bail!("Did not find a #[pyclass] '{ident}'")
                     }
 
                     bail!(

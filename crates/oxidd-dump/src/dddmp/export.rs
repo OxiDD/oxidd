@@ -436,11 +436,11 @@ where
             let mut replaced_set: HashSet<&str, FxBuildHasher> =
                 HashSet::with_capacity_and_hasher(replaced, FxBuildHasher::default());
             for name in var_names.iter() {
-                if let Cow::Owned(name) = &name {
-                    if manager.name_to_var(name).is_some() || !replaced_set.insert(name) {
-                        prefix_all_owned = true;
-                        break;
-                    }
+                if let Cow::Owned(name) = &name
+                    && (manager.name_to_var(name).is_some() || !replaced_set.insert(name))
+                {
+                    prefix_all_owned = true;
+                    break;
                 }
             }
 

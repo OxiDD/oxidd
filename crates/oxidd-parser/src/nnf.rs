@@ -319,13 +319,11 @@ where
         for l in circuit.gates.all_elements_mut() {
             *l = nodes[l.0];
         }
-        if check_acyclic {
-            if let Some(l) = circuit.find_cycle() {
-                return fail(
-                    gate_spans[l.get_gate_no().unwrap()],
-                    "node depends on itself",
-                );
-            }
+        if check_acyclic && let Some(l) = circuit.find_cycle() {
+            return fail(
+                gate_spans[l.get_gate_no().unwrap()],
+                "node depends on itself",
+            );
         }
 
         let problem = Problem {

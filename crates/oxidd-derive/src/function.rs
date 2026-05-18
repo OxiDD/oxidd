@@ -136,13 +136,12 @@ pub fn derive_function(input: syn::DeriveInput) -> TokenStream {
                     "the `repr_id` attribute may only be given once per item"
                 );
             }
-            if let syn::Meta::NameValue(val) = &meta {
-                if let syn::Expr::Lit(lit) = &val.value {
-                    if let syn::Lit::Str(s) = &lit.lit {
-                        repr_id = Some(s.to_token_stream());
-                        continue;
-                    }
-                }
+            if let syn::Meta::NameValue(val) = &meta
+                && let syn::Expr::Lit(lit) = &val.value
+                && let syn::Lit::Str(s) = &lit.lit
+            {
+                repr_id = Some(s.to_token_stream());
+                continue;
             }
             emit_error!(meta.span(), "expected `#[repr_id = \"MY_BDD\"]`");
         }

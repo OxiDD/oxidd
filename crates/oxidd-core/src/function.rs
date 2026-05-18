@@ -148,11 +148,11 @@ pub unsafe trait Function: Clone + Ord + Hash {
     /// Locking behavior: acquires the manager's lock for shared access.
     fn node_count(&self) -> usize {
         fn inner<M: Manager>(manager: &M, e: &M::Edge, set: &mut M::NodeSet) {
-            if set.insert(e) {
-                if let Node::Inner(node) = manager.get_node(e) {
-                    for e in node.children() {
-                        inner(manager, &*e, set)
-                    }
+            if set.insert(e)
+                && let Node::Inner(node) = manager.get_node(e)
+            {
+                for e in node.children() {
+                    inner(manager, &*e, set)
                 }
             }
         }

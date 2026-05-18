@@ -78,12 +78,7 @@ pub mod parse {
     }
 
     pub fn is_punct(punct: char, tok: &TokenTree) -> bool {
-        if let TokenTree::Punct(p) = tok {
-            if p.as_char() == punct {
-                return true;
-            }
-        }
-        false
+        matches!(tok, TokenTree::Punct(p) if p.as_char() == punct)
     }
 
     pub fn expect_punct_opt(

@@ -36,7 +36,7 @@ impl MinSegTree {
     }
     #[inline]
     fn is_left_child(i: usize) -> bool {
-        i % 2 == 0
+        i.is_multiple_of(2)
     }
 
     pub fn new(data: impl ExactSizeIterator<Item = i32>) -> Self {

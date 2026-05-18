@@ -1076,13 +1076,13 @@ pub unsafe extern "C" fn oxidd_bcdd_true(manager: bcdd_manager_t) -> bcdd_t {
 ///           inner node, otherwise a pair of invalid functions.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_bcdd_cofactors(f: bcdd_t) -> bcdd_pair_t {
-    if let Ok(f) = unsafe { f.get() } {
-        if let Some((t, e)) = f.cofactors() {
-            return bcdd_pair_t {
-                first: t.into(),
-                second: e.into(),
-            };
-        }
+    if let Ok(f) = unsafe { f.get() }
+        && let Some((t, e)) = f.cofactors()
+    {
+        return bcdd_pair_t {
+            first: t.into(),
+            second: e.into(),
+        };
     }
     bcdd_pair_t {
         first: bcdd_t::INVALID,

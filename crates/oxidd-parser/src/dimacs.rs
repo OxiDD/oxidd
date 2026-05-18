@@ -706,7 +706,7 @@ mod sat {
 
                         circuit.push_gate_inputs(children.iter().copied());
 
-                        if tok.kind == TokenKind::Eq && children.len() % 2 == 0 {
+                        if tok.kind == TokenKind::Eq && children.len().is_multiple_of(2) {
                             !l
                         } else {
                             l

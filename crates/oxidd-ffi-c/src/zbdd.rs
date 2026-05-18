@@ -1082,13 +1082,13 @@ pub unsafe extern "C" fn oxidd_zbdd_base(manager: zbdd_manager_t) -> zbdd_t {
 ///           inner node, otherwise a pair of invalid functions.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_cofactors(f: zbdd_t) -> zbdd_pair_t {
-    if let Ok(f) = unsafe { f.get() } {
-        if let Some((t, e)) = f.cofactors() {
-            return zbdd_pair_t {
-                first: t.into(),
-                second: e.into(),
-            };
-        }
+    if let Ok(f) = unsafe { f.get() }
+        && let Some((t, e)) = f.cofactors()
+    {
+        return zbdd_pair_t {
+            first: t.into(),
+            second: e.into(),
+        };
     }
     zbdd_pair_t {
         first: zbdd_t::INVALID,

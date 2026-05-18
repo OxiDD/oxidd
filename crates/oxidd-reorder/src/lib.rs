@@ -188,12 +188,13 @@ unsafe fn level_swap<M: Manager>(
             // (A child might also be at some lower level, in which case the
             // node could also be removed. However we must not access such a
             // node.)
-            if let Node::Inner(child_node) = manager.get_node(&*child) {
-                if child_node.level() == lower_no_pre && child_node.ref_count() == 1 {
-                    // The reference stems from the old `node`, whose children
-                    // we replace below. Hence, we can remove child node.
-                    upper.remove(child_node);
-                }
+            if let Node::Inner(child_node) = manager.get_node(&*child)
+                && child_node.level() == lower_no_pre
+                && child_node.ref_count() == 1
+            {
+                // The reference stems from the old `node`, whose children
+                // we replace below. Hence, we can remove child node.
+                upper.remove(child_node);
             }
         }
 

@@ -1153,10 +1153,8 @@ where
             // query cache
             let node_id = e.node_id();
             let do_cache = cache.cache_all || node.ref_count() > 1;
-            if do_cache {
-                if let Some(n) = cache.map.get(&node_id) {
-                    return n.clone();
-                }
+            if do_cache && let Some(n) = cache.map.get(&node_id) {
+                return n.clone();
             }
 
             // recursive case
@@ -1198,10 +1196,8 @@ where
             // MSB of NodeIDs is reserved [for us :)]
             let node_id = e.node_id() | ((tag as NodeID) << (NodeID::BITS - 1));
             let do_cache = cache.cache_all || node.ref_count() > 1;
-            if do_cache {
-                if let Some(n) = cache.map.get(&node_id) {
-                    return n.clone();
-                }
+            if do_cache && let Some(n) = cache.map.get(&node_id) {
+                return n.clone();
             }
             let (e0, e1) = collect_cofactors(tag, node);
             let n = (inner_floating(manager, e0, terminal_val, cache)

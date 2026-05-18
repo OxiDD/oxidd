@@ -786,10 +786,8 @@ where
                 Node::Inner(node) => {
                     let node_id = e.node_id();
                     let do_cache = cache.cache_all || node.ref_count() > 1;
-                    if do_cache {
-                        if let Some(n) = cache.map.get(&node_id) {
-                            return n.clone();
-                        }
+                    if do_cache && let Some(n) = cache.map.get(&node_id) {
+                        return n.clone();
                     }
                     let (e0, e1) = collect_children(node);
                     let n = inner(manager, e0, cache) + inner(manager, e1, cache);
