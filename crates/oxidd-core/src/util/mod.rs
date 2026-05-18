@@ -271,10 +271,10 @@ impl<T: std::ops::ShlAssign<i32>> IsFloatingPoint for T {
 pub trait SatCountNumber:
     Clone
     + From<u32>
-    + for<'a> std::ops::AddAssign<&'a Self>
-    + for<'a> std::ops::SubAssign<&'a Self>
-    + std::ops::ShlAssign<u32>
-    + std::ops::ShrAssign<u32>
+    + std::ops::Add<Self, Output = Self>
+    + std::ops::Sub<Self, Output = Self>
+    + std::ops::Shl<u32, Output = Self>
+    + std::ops::Shr<u32, Output = Self>
     + IsFloatingPoint
 {
 }
@@ -282,10 +282,10 @@ pub trait SatCountNumber:
 impl<T> SatCountNumber for T where
     T: Clone
         + From<u32>
-        + for<'a> std::ops::AddAssign<&'a T>
-        + for<'a> std::ops::SubAssign<&'a T>
-        + std::ops::ShlAssign<u32>
-        + std::ops::ShrAssign<u32>
+        + std::ops::Add<Self, Output = Self>
+        + std::ops::Sub<Self, Output = Self>
+        + std::ops::Shl<u32, Output = Self>
+        + std::ops::Shr<u32, Output = Self>
         + IsFloatingPoint
 {
 }

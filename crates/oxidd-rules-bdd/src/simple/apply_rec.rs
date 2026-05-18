@@ -982,9 +982,9 @@ where
                 }
             }
             let (e0, e1) = collect_children(node);
-            let mut n = inner(manager, e0, terminal_val, cache);
-            n += &inner(manager, e1, terminal_val, cache);
-            n >>= 1u32;
+            let n = (inner(manager, e0, terminal_val, cache)
+                + inner(manager, e1, terminal_val, cache))
+                >> 1u32;
             if do_cache {
                 cache.map.insert(node_id, n.clone());
             }
@@ -993,20 +993,21 @@ where
 
         cache.clear_if_invalid(manager, vars);
 
-        let mut terminal_val = N::from(1u32);
         let scale_exp = (-N::MIN_EXP) as u32;
-        terminal_val <<= if scale_exp != 0 && vars >= scale_exp {
-            // scale down to increase the precision if we use floating point
-            // numbers and have many variables
-            vars - scale_exp
-        } else {
-            vars
-        };
-        let mut res = inner(manager, edge.borrowed(), &terminal_val, cache);
+        let terminal_val = N::from(1u32)
+            << if scale_exp != 0 && vars >= scale_exp {
+                // scale down to increase the precision if we use floating point
+                // numbers and have many variables
+                vars - scale_exp
+            } else {
+                vars
+            };
+        let res = inner(manager, edge.borrowed(), &terminal_val, cache);
         if scale_exp != 0 && vars >= scale_exp {
-            res <<= scale_exp; // scale up again
+            res << scale_exp // scale up again
+        } else {
+            res
         }
-        res
     }
 
     fn pick_cube_edge<'id>(

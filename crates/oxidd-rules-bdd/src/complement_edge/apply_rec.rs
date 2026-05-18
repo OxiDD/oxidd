@@ -1164,18 +1164,12 @@ where
                 let n = inner(manager, c.borrowed(), terminal_val, cache);
                 match c.tag() {
                     EdgeTag::None => n,
-                    EdgeTag::Complemented => {
-                        let mut res = terminal_val.clone();
-                        res -= &n;
-                        res
-                    }
+                    EdgeTag::Complemented => terminal_val.clone() - n,
                 }
             });
 
-            let mut n = iter.next().unwrap();
-            n += &iter.next().unwrap();
+            let n = (iter.next().unwrap() + iter.next().unwrap()) >> 1u32;
             debug_assert!(iter.next().is_none());
-            n >>= 1u32;
             if do_cache {
                 cache.map.insert(node_id, n.clone());
             }
@@ -1210,9 +1204,9 @@ where
                 }
             }
             let (e0, e1) = collect_cofactors(tag, node);
-            let mut n = inner_floating(manager, e0, terminal_val, cache);
-            n += &inner_floating(manager, e1, terminal_val, cache);
-            n >>= 1u32;
+            let n = (inner_floating(manager, e0, terminal_val, cache)
+                + inner_floating(manager, e1, terminal_val, cache))
+                >> 1u32;
             if do_cache {
                 cache.map.insert(node_id, n.clone());
             }
@@ -1222,29 +1216,26 @@ where
         cache.clear_if_invalid(manager, vars);
 
         if N::FLOATING_POINT {
-            let mut terminal_val = N::from(1u32);
             let scale_exp = (-N::MIN_EXP) as u32;
-            terminal_val <<= if vars >= scale_exp {
-                // scale down to increase the precision if we have many variables
-                vars - scale_exp
-            } else {
-                vars
-            };
-            let mut res = inner_floating(manager, edge.borrowed(), &terminal_val, cache);
+            let terminal_val = N::from(1u32)
+                << if vars >= scale_exp {
+                    // scale down to increase the precision if we have many variables
+                    vars - scale_exp
+                } else {
+                    vars
+                };
+            let res = inner_floating(manager, edge.borrowed(), &terminal_val, cache);
             if vars >= scale_exp {
-                res <<= scale_exp; // scale up again
+                res << scale_exp // scale up again
+            } else {
+                res
             }
-            res
         } else {
-            let mut terminal_val = N::from(1u32);
-            terminal_val <<= vars;
+            let terminal_val = N::from(1u32) << vars;
             let n = inner(manager, edge.borrowed(), &terminal_val, cache);
             match edge.tag() {
                 EdgeTag::None => n,
-                EdgeTag::Complemented => {
-                    terminal_val -= &n;
-                    terminal_val
-                }
+                EdgeTag::Complemented => terminal_val - n,
             }
         }
     }

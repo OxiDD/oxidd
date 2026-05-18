@@ -792,8 +792,7 @@ where
                         }
                     }
                     let (e0, e1) = collect_children(node);
-                    let mut n = inner(manager, e0, cache);
-                    n += &inner(manager, e1, cache);
+                    let n = inner(manager, e0, cache) + inner(manager, e1, cache);
                     if do_cache {
                         cache.map.insert(node_id, n.clone());
                     }
@@ -809,9 +808,7 @@ where
 
         cache.clear_if_invalid(manager, vars);
 
-        let mut n = inner(manager, edge.borrowed(), cache);
-        n >>= manager.num_levels() - vars;
-        n
+        inner(manager, edge.borrowed(), cache) >> (manager.num_levels() - vars)
     }
 
     fn pick_cube_edge<'id, 'a>(
