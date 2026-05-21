@@ -1136,47 +1136,34 @@ where
         vars: LevelNo,
         cache: &mut SatCountCache<N, S>,
     ) -> N {
-        fn inner<M, N: SatCountNumber, S: BuildHasher>(
-            manager: &M,
-            e: Borrowed<M::Edge>,
-            terminal_val: &N,
-            cache: &mut SatCountCache<N, S>,
-        ) -> N
-        where
-            M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal>,
-        {
-            let node = match manager.get_node(&e) {
-                Node::Inner(node) => node,
-                Node::Terminal(_) => return terminal_val.clone(),
-            };
-
-            // query cache
-            let node_id = e.node_id();
-            let do_cache = cache.cache_all || node.ref_count() > 1;
-            if do_cache && let Some(n) = cache.map.get(&node_id) {
-                return n.clone();
-            }
-
-            // recursive case
-            let mut iter = node.children().map(|c| {
-                let n = inner(manager, c.borrowed(), terminal_val, cache);
-                match c.tag() {
-                    EdgeTag::None => n,
-                    EdgeTag::Complemented => terminal_val.clone() - n,
-                }
-            });
-
-            let n = (iter.next().unwrap() + iter.next().unwrap()) >> 1u32;
-            debug_assert!(iter.next().is_none());
-            if do_cache {
-                cache.map.insert(node_id, n.clone());
-            }
-            n
-        }
-
-        // This function does not use the identity `|f| = num_vars - |f'|` to
-        // avoid rounding issues
-        fn inner_floating<M, N, S>(
+        // In principle, one could exploit the identity
+        // `#SAT(f) = 2^{#vars} - #SAT(f')` to only traverse the BCDD once.
+        // However, experiments showed that this can be detrimental for
+        // performance: Using num-bigint's `BigUint` (crate version 0.4.6) as
+        // the number representation, computing SAT counts by applying the above
+        // identity needs 1557 s, while counting without subtractions
+        // `2^{#vars} - x` needs only 207 s (sum across 49 BCDDs from
+        // https://doi.org/10.5281/zenodo.13954564 with 4,997,764 to 64,708,513
+        // nodes, 9,685 to 192,958 variables, and 5,090 to 192,958 support
+        // variables each).
+        //
+        // Apparently, the case where the number of satisfying assignments is
+        // way less than the number of unsatisfying assignments is very common.
+        // In all BCDDs of the collection, we further found that the function
+        // references the root node via a complement edge. Apart from that,
+        // there are only < 10 complement edges each, all of them at the lowest
+        // levels. So effectively, we compute the entire SAT count in the
+        // complement "domain," where the numbers have lots of leading ones (in
+        // binary representation). Consequently, the numbers grow very large
+        // when represented as big integers or become very imprecise when
+        // encoded as floating point numbers with fixed-width mantissa.
+        //
+        // By exploiting the identity naively, we appear to be getting the worst
+        // out of two worlds in many cases. For now, we thus refrain from using
+        // the identity entirely. In future, we might look into number
+        // representations where leading ones are just counted and not stored
+        // explicitly.
+        fn inner<M, N, S>(
             manager: &M,
             e: Borrowed<M::Edge>,
             terminal_val: &N,
@@ -1200,8 +1187,8 @@ where
                 return n.clone();
             }
             let (e0, e1) = collect_cofactors(tag, node);
-            let n = (inner_floating(manager, e0, terminal_val, cache)
-                + inner_floating(manager, e1, terminal_val, cache))
+            let n = (inner(manager, e0, terminal_val, cache)
+                + inner(manager, e1, terminal_val, cache))
                 >> 1u32;
             if do_cache {
                 cache.map.insert(node_id, n.clone());
@@ -1211,28 +1198,19 @@ where
 
         cache.clear_if_invalid(manager, vars);
 
-        if N::FLOATING_POINT {
-            let scale_exp = (-N::MIN_EXP) as u32;
-            let terminal_val = N::from(1u32)
-                << if vars >= scale_exp {
-                    // scale down to increase the precision if we have many variables
-                    vars - scale_exp
-                } else {
-                    vars
-                };
-            let res = inner_floating(manager, edge.borrowed(), &terminal_val, cache);
-            if vars >= scale_exp {
-                res << scale_exp // scale up again
+        let scale_exp = (-N::MIN_EXP) as u32;
+        let terminal_val = N::from(1u32)
+            << if vars >= scale_exp {
+                // scale down to increase the precision if we have many variables
+                vars - scale_exp
             } else {
-                res
-            }
+                vars
+            };
+        let res = inner(manager, edge.borrowed(), &terminal_val, cache);
+        if vars >= scale_exp {
+            res << scale_exp // scale up again
         } else {
-            let terminal_val = N::from(1u32) << vars;
-            let n = inner(manager, edge.borrowed(), &terminal_val, cache);
-            match edge.tag() {
-                EdgeTag::None => n,
-                EdgeTag::Complemented => terminal_val - n,
-            }
+            res
         }
     }
 
