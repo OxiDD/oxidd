@@ -244,13 +244,10 @@ fn sort_order(num_levels: u32, input_order: impl IntoIterator<Item = LevelNo>) -
 
 /// Check if `slice` is a permutation of the numbers in range `0..slice.len()`
 fn is_permutation(slice: &[u32]) -> bool {
-    // This is not optimized, but we currently use the function in debug
-    // assertions only.
-    let mut found = vec![false; slice.len()];
+    let mut found = FixedBitSet::with_capacity(slice.len());
     for &v in slice {
-        match found.get_mut(v as usize) {
-            Some(f) if !*f => *f = true,
-            _ => return false,
+        if found.put(v as usize) {
+            return false;
         }
     }
     true
@@ -339,8 +336,6 @@ where
                 swap(manager, i as u32);
 
                 let state = &mut *state.lock();
-                state.blocked.remove(i + 1);
-
                 let seq = &mut state.seq[..];
                 seq.swap(i, i + 1);
 
