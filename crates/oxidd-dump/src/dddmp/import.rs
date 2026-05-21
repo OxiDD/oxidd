@@ -703,22 +703,18 @@ fn import_bin<M: Manager>(
 ) -> io::Result<Vec<M::Edge>>
 where
     M::InnerNode: HasLevel,
+    M::Terminal: ParseTagged<M::EdgeTag>,
 {
-    assert_eq!(
-        M::InnerNode::ARITY,
-        2,
-        "binary mode is (currently) only supported for binary nodes"
-    );
-    let terminal = {
-        let msg = "binary mode is (currently) only supported for diagrams with a single terminal";
-        let mut it = manager.terminals();
-        let t = EdgeDropGuard::new(manager, it.next().expect(msg));
-        if let Some(t) = it.next() {
-            manager.drop_edge(t);
-            panic!("{msg}");
-        }
-        t
+    const {
+        assert!(
+            M::InnerNode::ARITY == 2,
+            "binary mode is (currently) only supported for binary nodes"
+        );
+    }
+    let Some((terminal, tag)) = M::Terminal::parse("T") else {
+        panic!("could not find the T terminal")
     };
+    let terminal = EdgeDropGuard::new(manager, manager.get_terminal(terminal)?.with_tag_owned(tag));
 
     fn idx(input: impl io::BufRead, node_id: usize, code: Code) -> io::Result<usize> {
         debug_assert!(node_id >= 1);
