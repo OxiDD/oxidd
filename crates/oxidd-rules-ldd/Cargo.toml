@@ -10,6 +10,8 @@ homepage.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+[features]
+statistics = []
 
 [dependencies]
 oxidd-core.workspace = true

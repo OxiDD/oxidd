@@ -64,15 +64,7 @@ mod index {
     type FunctionInner = oxidd_rules_ldd::LDDFunction<<LDD as DD>::Function>;
 
     /// Boolean function represented as BDD
-    #[derive(
-        Clone,
-        PartialEq,
-        Eq,
-        PartialOrd,
-        Ord,
-        Hash,
-        oxidd_derive::Function,
-    )]
+    #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, oxidd_derive::Function)]
     #[use_manager_ref(LDDManagerRef, LDDManagerRef(inner))]
     pub struct LDDFunction(FunctionInner);
     crate::util::derive_raw_function_index_based!(for: LDDFunction, inner: FunctionInner);
@@ -104,28 +96,37 @@ mod pointer {
 
     crate::util::manager_ref_pointer_based!(pub struct LDDManagerRef(<LDD as DD>::ManagerRef) with LDDManagerData);
 
-    #[cfg(not(feature = "multi-threading"))]
-    type FunctionInner = oxidd_rules_ldd::simple::LDDFunction<<LDD as DD>::Function>;
-    #[cfg(feature = "multi-threading")]
-    type FunctionInner = oxidd_rules_ldd::simple::LDDFunctionMT<<LDD as DD>::Function>;
+    type FunctionInner = oxidd_rules_ldd::LDDFunction<<LDD as DD>::Function>;
 
     /// Boolean function represented as BDD
-    #[derive(
-        Clone,
-        PartialEq,
-        Eq,
-        PartialOrd,
-        Ord,
-        Hash,
-        oxidd_derive::Function,
-        oxidd_derive::FunctionSubst,
-        oxidd_derive::BooleanFunction,
-        oxidd_derive::BooleanFunctionQuant,
-    )]
+    #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, oxidd_derive::Function)]
     #[use_manager_ref(LDDManagerRef, LDDManagerRef(inner))]
     pub struct LDDFunction(FunctionInner);
     crate::util::derive_raw_function_pointer_based!(for: LDDFunction, inner: FunctionInner);
 
     // Default implementation suffices
     impl oxidd_dump::dot::DotStyle<()> for LDDFunction {}
+}
+
+impl LDDFunction {
+    /// Get the always false function `⊥`
+    pub fn empty_set<'id>(manager: &Self::Manager<'id>) -> Self {
+        Self::from_edge(manager, Self::f_edge(manager))
+    }
+    /// Get the always true function `⊤`
+    pub fn empty_list<'id>(manager: &Self::Manager<'id>) -> Self {
+        Self::from_edge(manager, Self::t_edge(manager))
+    }
+
+    pub fn union(&self, other: &Self) -> Self {
+        Self::union_edge(self.manager(), self.edge(), other.edge())
+    }
+
+    pub fn union_edge<'id>(
+        manager: &Self::Manager<'id>,
+        f: Borrowed<'id, Self::Manager<'id>::Edge>,
+        g: Borrowed<'id, Self::Manager<'id>::Edge>,
+    ) -> Self {
+        Self::from_edge(manager, union_edge(manager, var, down, right))
+    }
 }
