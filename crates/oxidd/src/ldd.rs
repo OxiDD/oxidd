@@ -38,6 +38,9 @@ pub fn print_stats() {
     oxidd_rules_bdd::simple::print_stats();
 }
 
+/// We only expose a hard coded u32 valued LDDManager.
+pub type Value = u32;
+
 #[cfg(all(feature = "manager-index", not(feature = "manager-pointer")))]
 mod index {
     use oxidd_manager_index::node::fixed_arity::NodeWithLevelCons;
@@ -46,10 +49,11 @@ mod index {
     use oxidd_rules_ldd::LDDRules;
     use oxidd_rules_ldd::LDDTerminal;
 
+    use crate::ldd::Value;
     use crate::util::type_cons::DD;
 
     crate::util::dd_index_based!(LDD {
-        node: NodeWithLevelCons<(), 2>,
+        node: NodeWithLevelCons<Value, 2>,
         edge_tag: (),
         terminal_manager: StaticTerminalManagerCons<LDDTerminal>,
         rules: LDDRulesCons for LDDRules,
@@ -77,14 +81,15 @@ mod index {
 mod pointer {
     use oxidd_manager_pointer::node::fixed_arity::NodeWithLevelCons;
     use oxidd_manager_pointer::terminal_manager::StaticTerminalManagerCons;
-    use oxidd_rules_bdd::simple::LDDOp;
-    use oxidd_rules_bdd::simple::LDDRules;
-    use oxidd_rules_bdd::simple::LDDTerminal;
+    use oxidd_rules_ldd::LDDOp;
+    use oxidd_rules_ldd::LDDRules;
+    use oxidd_rules_ldd::LDDTerminal;
 
+    use crate::ldd::Value;
     use crate::util::type_cons::DD;
 
     crate::util::dd_pointer_based!(LDD {
-        node: NodeWithLevelCons<(), 2>,
+        node: NodeWithLevelCons<Value, 2>,
         edge_tag: (),
         terminal_manager: StaticTerminalManagerCons<LDDTerminal>,
         rules: LDDRulesCons for LDDRules,
@@ -106,27 +111,4 @@ mod pointer {
 
     // Default implementation suffices
     impl oxidd_dump::dot::DotStyle<()> for LDDFunction {}
-}
-
-impl LDDFunction {
-    /// Get the always false function `⊥`
-    pub fn empty_set<'id>(manager: &Self::Manager<'id>) -> Self {
-        Self::from_edge(manager, Self::f_edge(manager))
-    }
-    /// Get the always true function `⊤`
-    pub fn empty_list<'id>(manager: &Self::Manager<'id>) -> Self {
-        Self::from_edge(manager, Self::t_edge(manager))
-    }
-
-    pub fn union(&self, other: &Self) -> Self {
-        Self::union_edge(self.manager(), self.edge(), other.edge())
-    }
-
-    pub fn union_edge<'id>(
-        manager: &Self::Manager<'id>,
-        f: Borrowed<'id, Self::Manager<'id>::Edge>,
-        g: Borrowed<'id, Self::Manager<'id>::Edge>,
-    ) -> Self {
-        Self::from_edge(manager, union_edge(manager, var, down, right))
-    }
 }
