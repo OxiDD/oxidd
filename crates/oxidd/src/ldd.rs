@@ -11,7 +11,7 @@ cfg_if::cfg_if! {
     }
 }
 
-/// Create a new manager for a simple binary decision diagram
+/// Create a new manager for a list decision diagram
 #[allow(unused_variables)]
 pub fn new_manager(
     inner_node_capacity: usize,
@@ -169,6 +169,70 @@ macro_rules! ldd_function_methods {
             /// vectors.
             pub fn is_empty(&self) -> bool {
                 self.0.is_empty()
+            }
+
+            /// Returns `true` if `self` is the set containing only the empty
+            /// vector, i.e. the `true` terminal.
+            pub fn is_empty_vector(&self) -> bool {
+                use ::oxidd_core::{function::Function, Manager, ManagerRef};
+                self.manager_ref().with_manager_shared(|manager| {
+                    manager
+                        .get_node(self.as_edge(manager))
+                        .is_terminal(&::oxidd_rules_ldd::LDDTerminal::True)
+                })
+            }
+
+            /// Returns the `(value, down, right)` triple of the root node, or
+            /// `None` if `self` is a terminal (the empty set or empty vector).
+            pub fn node(&self) -> Option<(Value, Self, Self)> {
+                use ::oxidd_core::{function::Function, InnerNode, Manager, ManagerRef, Node};
+                self.manager_ref().with_manager_shared(|manager| {
+                    match manager.get_node(self.as_edge(manager)) {
+                        Node::Terminal(_) => None,
+                        Node::Inner(node) => {
+                            let value = *node.get_value();
+                            let mut children = node.children();
+                            let down = children.next().unwrap();
+                            let right = children.next().unwrap();
+                            Some((
+                                value,
+                                Self::from_edge(manager, manager.clone_edge(&down)),
+                                Self::from_edge(manager, manager.clone_edge(&right)),
+                            ))
+                        }
+                    }
+                })
+            }
+
+            /// Creates the LDD node `(value, down, right)`.
+            pub fn make_node(
+                manager: &LDDManagerRef,
+                value: Value,
+                down: &Self,
+                right: &Self,
+            ) -> ::oxidd_core::util::AllocResult<Self> {
+                use ::oxidd_core::{function::Function, InnerNode, LevelView, Manager, ManagerRef};
+                manager.with_manager_shared(|manager| {
+                    let t = manager.clone_edge(down.as_edge(manager));
+                    let e = manager.clone_edge(right.as_edge(manager));
+                    let edge = LevelView::get_or_insert(
+                        &mut manager.level(0),
+                        <<Self as Function>::Manager<'_> as Manager>::InnerNode::new(
+                            0,
+                            [t, e],
+                            value,
+                        ),
+                    )?;
+                    Ok(Self::from_edge(manager, edge))
+                })
+            }
+
+            /// Returns a stable identifier for the root node of `self`, suitable
+            /// for distinguishing nodes (e.g. when emitting DOT output).
+            pub fn id(&self) -> ::oxidd_core::NodeID {
+                use ::oxidd_core::{function::Function, Edge, ManagerRef};
+                self.manager_ref()
+                    .with_manager_shared(|manager| self.as_edge(manager).node_id())
             }
         }
     };
