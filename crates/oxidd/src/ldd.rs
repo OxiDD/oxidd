@@ -41,6 +41,123 @@ pub fn print_stats() {
 /// We only expose a hard coded u32 valued LDDManager.
 pub type Value = u32;
 
+/// Generates the inherent methods of the public `LDDFunction` wrapper by
+/// delegating to the inner [`oxidd_rules_ldd::LDDFunction`].
+///
+/// This is a macro because the concrete inner function type (`FunctionInner`)
+/// differs between the index- and pointer-based managers and is only nameable
+/// inside their respective modules.
+macro_rules! ldd_function_methods {
+    () => {
+        impl LDDFunction {
+            /// Returns the empty set `∅` (the `false` terminal).
+            pub fn empty_set(
+                manager: &LDDManagerRef,
+            ) -> ::oxidd_core::util::AllocResult<Self> {
+                use ::oxidd_core::ManagerRef;
+                manager.with_manager_shared(|manager| {
+                    Ok(Self(FunctionInner::empty_set(manager)?))
+                })
+            }
+
+            /// Returns the set containing only the empty vector (the `true`
+            /// terminal).
+            pub fn empty_vector(
+                manager: &LDDManagerRef,
+            ) -> ::oxidd_core::util::AllocResult<Self> {
+                use ::oxidd_core::ManagerRef;
+                manager.with_manager_shared(|manager| {
+                    Ok(Self(FunctionInner::empty_vector(manager)?))
+                })
+            }
+
+            /// Returns the LDD containing only `vector`, i.e. `{ vector }`.
+            pub fn singleton(
+                manager: &LDDManagerRef,
+                vector: &[Value],
+            ) -> ::oxidd_core::util::AllocResult<Self> {
+                use ::oxidd_core::ManagerRef;
+                manager.with_manager_shared(|manager| {
+                    Ok(Self(FunctionInner::singleton(manager, vector)?))
+                })
+            }
+
+            /// Computes a meta-LDD encoding the projection onto the indices in
+            /// `proj`, suitable as the argument of [`project`][Self::project].
+            pub fn projection_meta(
+                manager: &LDDManagerRef,
+                proj: &[Value],
+            ) -> ::oxidd_core::util::AllocResult<Self> {
+                use ::oxidd_core::{function::Function, ManagerRef};
+                manager.with_manager_shared(|manager| {
+                    Ok(Self(FunctionInner::from_edge(
+                        manager,
+                        FunctionInner::projection_meta(manager, proj)?,
+                    )))
+                })
+            }
+
+            /// Computes a meta-LDD for [`relational_product`][Self::relational_product]
+            /// from the `read` and `write` projection indices, together with the
+            /// resulting read and write positions.
+            pub fn relation_product_meta(
+                manager: &LDDManagerRef,
+                read: &[Value],
+                write: &[Value],
+            ) -> ::oxidd_core::util::AllocResult<(Self, Vec<usize>, Vec<usize>)> {
+                use ::oxidd_core::{function::Function, ManagerRef};
+                manager.with_manager_shared(|manager| {
+                    let (edge, read_positions, write_positions) =
+                        FunctionInner::relation_product_meta(manager, read, write)?;
+                    Ok((
+                        Self(FunctionInner::from_edge(manager, edge)),
+                        read_positions,
+                        write_positions,
+                    ))
+                })
+            }
+
+            /// Computes the union `self ∪ other`.
+            pub fn union(&self, other: &Self) -> ::oxidd_core::util::AllocResult<Self> {
+                Ok(Self(self.0.union(&other.0)?))
+            }
+
+            /// Computes the set difference `self \ other`.
+            pub fn minus(&self, other: &Self) -> ::oxidd_core::util::AllocResult<Self> {
+                Ok(Self(self.0.minus(&other.0)?))
+            }
+
+            /// Computes the set of vectors reachable in one step from `self` via
+            /// the sparse relation `rel`, guided by `meta` (produced by
+            /// [`relation_product_meta`][Self::relation_product_meta]).
+            pub fn relational_product(
+                &self,
+                rel: &Self,
+                meta: &Self,
+            ) -> ::oxidd_core::util::AllocResult<Self> {
+                Ok(Self(self.0.relational_product(&rel.0, &meta.0)?))
+            }
+
+            /// Projects the vectors in `self` onto the indices encoded by `proj`
+            /// (produced by [`projection_meta`][Self::projection_meta]).
+            pub fn project(&self, proj: &Self) -> ::oxidd_core::util::AllocResult<Self> {
+                Ok(Self(self.0.project(&proj.0)?))
+            }
+
+            /// Returns the number of vectors (lists) contained in `self`.
+            pub fn len(&self) -> usize {
+                self.0.len()
+            }
+
+            /// Returns `true` if `self` is the empty set `∅`, i.e. contains no
+            /// vectors.
+            pub fn is_empty(&self) -> bool {
+                self.0.is_empty()
+            }
+        }
+    };
+}
+
 #[cfg(all(feature = "manager-index", not(feature = "manager-pointer")))]
 mod index {
     use oxidd_manager_index::node::fixed_arity::NodeWithLevelCons;
@@ -75,6 +192,8 @@ mod index {
 
     // Default implementation suffices
     impl oxidd_dump::dot::DotStyle<()> for LDDFunction {}
+
+    ldd_function_methods!();
 }
 
 #[cfg(feature = "manager-pointer")]
@@ -111,4 +230,6 @@ mod pointer {
 
     // Default implementation suffices
     impl oxidd_dump::dot::DotStyle<()> for LDDFunction {}
+
+    ldd_function_methods!();
 }
