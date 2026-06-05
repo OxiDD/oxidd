@@ -860,8 +860,8 @@ fn apply_relational_product<M: LDDManager>(
 
         // Collect union of all down-branches at this set level.
         let combined = {
-            let mut acc = manager.get_terminal(LDDTerminal::Empty)?;
-            let mut cur = manager.clone_edge(&set);
+            let mut acc = EdgeDropGuard::new(manager, manager.get_terminal(LDDTerminal::Empty)?);
+            let mut cur = EdgeDropGuard::new(manager, manager.clone_edge(&set));
             loop {
                 let (down_owned, right_owned, right_empty) = {
                     let cur_node = match manager.get_node(&cur) {
@@ -873,25 +873,27 @@ fn apply_relational_product<M: LDDManager>(
                         .get_node(&cur_right)
                         .is_terminal(&LDDTerminal::Empty);
                     (
-                        manager.clone_edge(&cur_down),
-                        manager.clone_edge(&cur_right),
+                        EdgeDropGuard::new(manager, manager.clone_edge(&cur_down)),
+                        EdgeDropGuard::new(manager, manager.clone_edge(&cur_right)),
                         empty,
                     )
                 };
-                let new_acc = apply_union(manager, acc.borrowed(), down_owned.borrowed())?;
-                // drop both after the union completes
+                let new_acc = EdgeDropGuard::new(
+                    manager,
+                    apply_union(manager, acc.borrowed(), down_owned.borrowed())?,
+                );
+                // down_owned and acc are dropped via EdgeDropGuard
                 drop(down_owned);
-                drop(acc);
                 acc = new_acc;
                 if right_empty {
-                    drop(right_owned);
+                    // right_owned is dropped via EdgeDropGuard
                     break;
                 }
-                drop(cur);
+                // old cur is dropped via EdgeDropGuard, replaced by right_owned
                 cur = right_owned;
             }
-            drop(cur);
-            acc
+            // cur is dropped via EdgeDropGuard at end of block
+            acc.into_edge()
         };
 
         let combined_guard = EdgeDropGuard::new(manager, combined);
