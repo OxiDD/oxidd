@@ -134,7 +134,6 @@ impl<F: Function> LDDFunction<F>
 where
     for<'id> F::Manager<'id>: LDDManager,
 {
-
     pub fn relation_product_meta<'id>(
         manager: &<LDDFunction<F> as Function>::Manager<'id>,
         read_proj: &[u32],
@@ -678,10 +677,8 @@ fn apply_minus<M: LDDManager>(
         }
         Ordering::Equal => {
             // Subtract b_down from a_down; subtract b_right from a_right.
-            let down_result =
-                EdgeDropGuard::new(manager, apply_minus(manager, a_down, b_down)?);
-            let right_result =
-                EdgeDropGuard::new(manager, apply_minus(manager, a_right, b_right)?);
+            let down_result = EdgeDropGuard::new(manager, apply_minus(manager, a_down, b_down)?);
+            let right_result = EdgeDropGuard::new(manager, apply_minus(manager, a_right, b_right)?);
             if manager
                 .get_node(&down_result)
                 .is_terminal(&LDDTerminal::Empty)
@@ -739,16 +736,10 @@ fn apply_relational_product<M: LDDManager>(
     }
 
     // Empty set or empty relation → empty result.
-    if manager
-        .get_node(&set)
-        .is_terminal(&LDDTerminal::Empty)
-    {
+    if manager.get_node(&set).is_terminal(&LDDTerminal::Empty) {
         return manager.get_terminal(LDDTerminal::Empty);
     }
-    if manager
-        .get_node(&rel)
-        .is_terminal(&LDDTerminal::Empty)
-    {
+    if manager.get_node(&rel).is_terminal(&LDDTerminal::Empty) {
         return manager.get_terminal(LDDTerminal::Empty);
     }
 
@@ -1015,7 +1006,11 @@ fn len<M: LDDManager>(
 ) -> usize {
     match manager.get_node(&set) {
         Node::Terminal(t) => {
-            return if *t.borrow() == LDDTerminal::True { 1 } else { 0 };
+            return if *t.borrow() == LDDTerminal::True {
+                1
+            } else {
+                0
+            };
         }
         Node::Inner(_) => {}
     }
