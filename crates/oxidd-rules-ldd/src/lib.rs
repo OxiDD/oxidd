@@ -232,6 +232,8 @@ where
         f: EdgeOfFunc<'id, Self>,
         g: EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        let f = EdgeDropGuard::new(manager, f);
+        let g = EdgeDropGuard::new(manager, g);
         apply_union(manager, f.borrowed(), g.borrowed())
     }
 
@@ -243,6 +245,8 @@ where
         a: EdgeOfFunc<'id, Self>,
         b: EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        let a = EdgeDropGuard::new(manager, a);
+        let b = EdgeDropGuard::new(manager, b);
         apply_minus(manager, a.borrowed(), b.borrowed())
     }
 
@@ -256,6 +260,9 @@ where
         rel: EdgeOfFunc<'id, Self>,
         meta: EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        let set = EdgeDropGuard::new(manager, set);
+        let rel = EdgeDropGuard::new(manager, rel);
+        let meta = EdgeDropGuard::new(manager, meta);
         apply_relational_product(manager, set.borrowed(), rel.borrowed(), meta.borrowed())
     }
 
@@ -266,6 +273,7 @@ where
         manager: &<LDDFunction<F> as Function>::Manager<'id>,
         set: EdgeOfFunc<'id, Self>,
     ) -> usize {
+        let set = EdgeDropGuard::new(manager, set);
         len(manager, set.borrowed(), &mut HashMap::new())
     }
 
@@ -287,6 +295,8 @@ where
         set: EdgeOfFunc<'id, Self>,
         proj: EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        let set = EdgeDropGuard::new(manager, set);
+        let proj = EdgeDropGuard::new(manager, proj);
         project(manager, set.borrowed(), proj.borrowed())
     }
 
