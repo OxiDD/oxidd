@@ -18,15 +18,31 @@ pub fn new_manager(
     apply_cache_capacity: usize,
     threads: u32,
 ) -> LDDManagerRef {
-    cfg_if::cfg_if! {
-        if #[cfg(feature = "manager-pointer")] {
-            pointer::LDDManagerRef::new_manager(inner_node_capacity, apply_cache_capacity, threads)
-        } else if #[cfg(feature = "manager-index")] {
-            index::LDDManagerRef::new_manager(inner_node_capacity, 2, apply_cache_capacity, threads)
-        } else {
-            unreachable!()
+    let manager_ref = {
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "manager-pointer")] {
+                pointer::LDDManagerRef::new_manager(inner_node_capacity, apply_cache_capacity, threads)
+            } else if #[cfg(feature = "manager-index")] {
+                index::LDDManagerRef::new_manager(inner_node_capacity, 2, apply_cache_capacity, threads)
+            } else {
+                unreachable!()
+            }
         }
+    };
+
+    // All LDD nodes reside on a single level (level 0); ensure it exists so that
+    // node creation via `Manager::level(0)` is valid.
+    #[cfg(any(feature = "manager-pointer", feature = "manager-index"))]
+    {
+        use ::oxidd_core::{Manager, ManagerRef};
+        manager_ref.with_manager_exclusive(|manager| {
+            if manager.num_levels() == 0 {
+                manager.add_vars(1);
+            }
+        });
     }
+
+    manager_ref
 }
 
 /// Print statistics to stderr
