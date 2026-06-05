@@ -67,24 +67,17 @@ macro_rules! ldd_function_methods {
     () => {
         impl LDDFunction {
             /// Returns the empty set `∅` (the `false` terminal).
-            pub fn empty_set(
-                manager: &LDDManagerRef,
-            ) -> ::oxidd_core::util::AllocResult<Self> {
+            pub fn empty_set(manager: &LDDManagerRef) -> ::oxidd_core::util::AllocResult<Self> {
                 use ::oxidd_core::ManagerRef;
-                manager.with_manager_shared(|manager| {
-                    Ok(Self(FunctionInner::empty_set(manager)?))
-                })
+                manager.with_manager_shared(|manager| Ok(Self(FunctionInner::empty_set(manager)?)))
             }
 
             /// Returns the set containing only the empty vector (the `true`
             /// terminal).
-            pub fn empty_vector(
-                manager: &LDDManagerRef,
-            ) -> ::oxidd_core::util::AllocResult<Self> {
+            pub fn empty_vector(manager: &LDDManagerRef) -> ::oxidd_core::util::AllocResult<Self> {
                 use ::oxidd_core::ManagerRef;
-                manager.with_manager_shared(|manager| {
-                    Ok(Self(FunctionInner::empty_vector(manager)?))
-                })
+                manager
+                    .with_manager_shared(|manager| Ok(Self(FunctionInner::empty_vector(manager)?)))
             }
 
             /// Returns the LDD containing only `vector`, i.e. `{ vector }`.
