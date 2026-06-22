@@ -66,64 +66,64 @@ pub type Value = u32;
 macro_rules! ldd_function_methods {
     () => {
         impl LDDFunction {
-            /// Returns the empty set `∅` (the `false` terminal).
-            pub fn empty_set(manager: &LDDManagerRef) -> ::oxidd_core::util::AllocResult<Self> {
-                use ::oxidd_core::ManagerRef;
-                manager.with_manager_shared(|manager| Ok(Self(FunctionInner::empty_set(manager)?)))
+            /// Returns the empty set `∅`.
+            pub fn empty_set(
+                manager: &<Self as ::oxidd_core::function::Function>::Manager<'_>,
+            ) -> ::oxidd_core::util::AllocResult<Self> {
+                Ok(Self(FunctionInner::empty_set(manager)?))
             }
 
-            /// Returns the set containing only the empty vector (the `true`
-            /// terminal).
-            pub fn empty_vector(manager: &LDDManagerRef) -> ::oxidd_core::util::AllocResult<Self> {
-                use ::oxidd_core::ManagerRef;
-                manager
-                    .with_manager_shared(|manager| Ok(Self(FunctionInner::empty_vector(manager)?)))
+            /// Returns the empty set `∅` as an edge.
+            pub fn empty_set_edge(
+                manager: &<Self as ::oxidd_core::function::Function>::Manager<'_>,
+            ) -> ::oxidd_core::util::AllocResult<Self> {
+                Ok(Self(FunctionInner::empty_set(manager)?))
+            }
+
+            /// Returns the set containing only the empty vector.
+            pub fn empty_vector(
+                manager: &<Self as ::oxidd_core::function::Function>::Manager<'_>,
+            ) -> ::oxidd_core::util::AllocResult<Self> {
+                Ok(Self(FunctionInner::empty_vector(manager)?))
             }
 
             /// Returns the LDD containing only `vector`, i.e. `{ vector }`.
             pub fn singleton(
-                manager: &LDDManagerRef,
+                manager: &<Self as ::oxidd_core::function::Function>::Manager<'_>,
                 vector: &[Value],
             ) -> ::oxidd_core::util::AllocResult<Self> {
-                use ::oxidd_core::ManagerRef;
-                manager.with_manager_shared(|manager| {
-                    Ok(Self(FunctionInner::singleton(manager, vector)?))
-                })
+                Ok(Self(FunctionInner::singleton(manager, vector)?))
             }
 
             /// Computes a meta-LDD encoding the projection onto the indices in
             /// `proj`, suitable as the argument of [`project`][Self::project].
             pub fn projection_meta(
-                manager: &LDDManagerRef,
+                manager: &<Self as ::oxidd_core::function::Function>::Manager<'_>,
                 proj: &[Value],
             ) -> ::oxidd_core::util::AllocResult<Self> {
-                use ::oxidd_core::{function::Function, ManagerRef};
-                manager.with_manager_shared(|manager| {
-                    Ok(Self(FunctionInner::from_edge(
-                        manager,
-                        FunctionInner::projection_meta(manager, proj)?,
-                    )))
-                })
+                use ::oxidd_core::function::Function;
+                Ok(Self(FunctionInner::from_edge(
+                    manager,
+                    FunctionInner::projection_meta(manager, proj)?,
+                )))
             }
 
             /// Computes a meta-LDD for [`relational_product`][Self::relational_product]
             /// from the `read` and `write` projection indices, together with the
             /// resulting read and write positions.
             pub fn relation_product_meta(
-                manager: &LDDManagerRef,
+                manager: &<Self as ::oxidd_core::function::Function>::Manager<'_>,
                 read: &[Value],
                 write: &[Value],
             ) -> ::oxidd_core::util::AllocResult<(Self, Vec<usize>, Vec<usize>)> {
-                use ::oxidd_core::{function::Function, ManagerRef};
-                manager.with_manager_shared(|manager| {
-                    let (edge, read_positions, write_positions) =
-                        FunctionInner::relation_product_meta(manager, read, write)?;
-                    Ok((
-                        Self(FunctionInner::from_edge(manager, edge)),
-                        read_positions,
-                        write_positions,
-                    ))
-                })
+                use ::oxidd_core::function::Function;
+                let (edge, read_positions, write_positions) =
+                    FunctionInner::relation_product_meta(manager, read, write)?;
+                Ok((
+                    Self(FunctionInner::from_edge(manager, edge)),
+                    read_positions,
+                    write_positions,
+                ))
             }
 
             /// Computes the union `self ∪ other`.
@@ -199,25 +199,19 @@ macro_rules! ldd_function_methods {
 
             /// Creates the LDD node `(value, down, right)`.
             pub fn make_node(
-                manager: &LDDManagerRef,
+                manager: &<Self as ::oxidd_core::function::Function>::Manager<'_>,
                 value: Value,
                 down: &Self,
                 right: &Self,
             ) -> ::oxidd_core::util::AllocResult<Self> {
-                use ::oxidd_core::{function::Function, InnerNode, LevelView, Manager, ManagerRef};
-                manager.with_manager_shared(|manager| {
-                    let t = manager.clone_edge(down.as_edge(manager));
-                    let e = manager.clone_edge(right.as_edge(manager));
-                    let edge = LevelView::get_or_insert(
-                        &mut manager.level(0),
-                        <<Self as Function>::Manager<'_> as Manager>::InnerNode::new(
-                            0,
-                            [t, e],
-                            value,
-                        ),
-                    )?;
-                    Ok(Self::from_edge(manager, edge))
-                })
+                use ::oxidd_core::{function::Function, InnerNode, LevelView, Manager};
+                let t = manager.clone_edge(down.as_edge(manager));
+                let e = manager.clone_edge(right.as_edge(manager));
+                let edge = LevelView::get_or_insert(
+                    &mut manager.level(0),
+                    <<Self as Function>::Manager<'_> as Manager>::InnerNode::new(0, [t, e], value),
+                )?;
+                Ok(Self::from_edge(manager, edge))
             }
 
             /// Returns a stable identifier for the root node of `self`, suitable
