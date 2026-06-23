@@ -131,9 +131,47 @@ macro_rules! ldd_function_methods {
                 Ok(Self(self.0.union(&other.0)?))
             }
 
+            /// Computes the union `f ∪ g` using the already-borrowed `manager`.
+            ///
+            /// Unlike [`union`][Self::union], this does not acquire the manager
+            /// lock itself, so it can be called from within a
+            /// [`with_manager_shared`][::oxidd_core::ManagerRef::with_manager_shared]
+            /// block (e.g. to build many nodes under a single lock).
+            pub fn union_edge(
+                manager: &<Self as ::oxidd_core::function::Function>::Manager<'_>,
+                f: &Self,
+                g: &Self,
+            ) -> ::oxidd_core::util::AllocResult<Self> {
+                use ::oxidd_core::function::Function;
+                use ::oxidd_core::Manager;
+                let f = manager.clone_edge(f.as_edge(manager));
+                let g = manager.clone_edge(g.as_edge(manager));
+                Ok(Self(FunctionInner::from_edge(
+                    manager,
+                    FunctionInner::union_edge(manager, f, g)?,
+                )))
+            }
+
             /// Computes the set difference `self \ other`.
             pub fn minus(&self, other: &Self) -> ::oxidd_core::util::AllocResult<Self> {
                 Ok(Self(self.0.minus(&other.0)?))
+            }
+
+            /// Computes the set difference `a \ b` using the already-borrowed
+            /// `manager`; the lock-free counterpart of [`minus`][Self::minus].
+            pub fn minus_edge(
+                manager: &<Self as ::oxidd_core::function::Function>::Manager<'_>,
+                a: &Self,
+                b: &Self,
+            ) -> ::oxidd_core::util::AllocResult<Self> {
+                use ::oxidd_core::function::Function;
+                use ::oxidd_core::Manager;
+                let a = manager.clone_edge(a.as_edge(manager));
+                let b = manager.clone_edge(b.as_edge(manager));
+                Ok(Self(FunctionInner::from_edge(
+                    manager,
+                    FunctionInner::minus_edge(manager, a, b)?,
+                )))
             }
 
             /// Computes the set of vectors reachable in one step from `self` via
@@ -145,6 +183,26 @@ macro_rules! ldd_function_methods {
                 meta: &Self,
             ) -> ::oxidd_core::util::AllocResult<Self> {
                 Ok(Self(self.0.relational_product(&rel.0, &meta.0)?))
+            }
+
+            /// Computes the relational product using the already-borrowed
+            /// `manager`; the lock-free counterpart of
+            /// [`relational_product`][Self::relational_product].
+            pub fn relational_product_edge(
+                manager: &<Self as ::oxidd_core::function::Function>::Manager<'_>,
+                set: &Self,
+                rel: &Self,
+                meta: &Self,
+            ) -> ::oxidd_core::util::AllocResult<Self> {
+                use ::oxidd_core::function::Function;
+                use ::oxidd_core::Manager;
+                let set = manager.clone_edge(set.as_edge(manager));
+                let rel = manager.clone_edge(rel.as_edge(manager));
+                let meta = manager.clone_edge(meta.as_edge(manager));
+                Ok(Self(FunctionInner::from_edge(
+                    manager,
+                    FunctionInner::relational_product_edge(manager, set, rel, meta)?,
+                )))
             }
 
             /// Computes the set of source vectors in `universe` from which a
@@ -167,10 +225,50 @@ macro_rules! ldd_function_methods {
                 )?))
             }
 
+            /// Computes the relational predecessor using the already-borrowed
+            /// `manager`; the lock-free counterpart of
+            /// [`relational_predecessor`][Self::relational_predecessor].
+            pub fn relational_predecessor_edge(
+                manager: &<Self as ::oxidd_core::function::Function>::Manager<'_>,
+                set: &Self,
+                rel: &Self,
+                meta: &Self,
+                universe: &Self,
+            ) -> ::oxidd_core::util::AllocResult<Self> {
+                use ::oxidd_core::function::Function;
+                use ::oxidd_core::Manager;
+                let set = manager.clone_edge(set.as_edge(manager));
+                let rel = manager.clone_edge(rel.as_edge(manager));
+                let meta = manager.clone_edge(meta.as_edge(manager));
+                let universe = manager.clone_edge(universe.as_edge(manager));
+                Ok(Self(FunctionInner::from_edge(
+                    manager,
+                    FunctionInner::relational_predecessor_edge(manager, set, rel, meta, universe)?,
+                )))
+            }
+
             /// Projects the vectors in `self` onto the indices encoded by `proj`
             /// (produced by [`projection_meta`][Self::projection_meta]).
             pub fn project(&self, proj: &Self) -> ::oxidd_core::util::AllocResult<Self> {
                 Ok(Self(self.0.project(&proj.0)?))
+            }
+
+            /// Projects the vectors in `set` onto the indices encoded by `proj`
+            /// using the already-borrowed `manager`; the lock-free counterpart
+            /// of [`project`][Self::project].
+            pub fn project_edge(
+                manager: &<Self as ::oxidd_core::function::Function>::Manager<'_>,
+                set: &Self,
+                proj: &Self,
+            ) -> ::oxidd_core::util::AllocResult<Self> {
+                use ::oxidd_core::function::Function;
+                use ::oxidd_core::Manager;
+                let set = manager.clone_edge(set.as_edge(manager));
+                let proj = manager.clone_edge(proj.as_edge(manager));
+                Ok(Self(FunctionInner::from_edge(
+                    manager,
+                    FunctionInner::project_edge(manager, set, proj)?,
+                )))
             }
 
             /// Returns the number of vectors (lists) contained in `self`.
