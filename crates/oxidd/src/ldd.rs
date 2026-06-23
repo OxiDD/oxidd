@@ -57,6 +57,19 @@ pub fn print_stats() {
 /// We only expose a hard coded u32 valued LDDManager.
 pub type Value = u32;
 
+/// Result of [`LDDFunction::relation_product_meta`].
+///
+/// Bundles the meta-LDD encoding the read/write projection together with the
+/// positions of the read and write variables in that encoding.
+pub struct RelationProductMeta {
+    /// The meta-LDD encoding the read/write projection.
+    pub meta: LDDFunction,
+    /// The positions of the read variables in the meta encoding.
+    pub read_positions: Vec<usize>,
+    /// The positions of the write variables in the meta encoding.
+    pub write_positions: Vec<usize>,
+}
+
 /// Generates the inherent methods of the public `LDDFunction` wrapper by
 /// delegating to the inner [`oxidd_rules_ldd::LDDFunction`].
 ///
@@ -115,15 +128,18 @@ macro_rules! ldd_function_methods {
                 manager: &<Self as ::oxidd_core::function::Function>::Manager<'_>,
                 read: &[Value],
                 write: &[Value],
-            ) -> ::oxidd_core::util::AllocResult<(Self, Vec<usize>, Vec<usize>)> {
+            ) -> ::oxidd_core::util::AllocResult<$crate::ldd::RelationProductMeta> {
                 use ::oxidd_core::function::Function;
-                let (edge, read_positions, write_positions) =
-                    FunctionInner::relation_product_meta(manager, read, write)?;
-                Ok((
-                    Self(FunctionInner::from_edge(manager, edge)),
+                let ::oxidd_rules_ldd::RelationProductMeta {
+                    meta,
                     read_positions,
                     write_positions,
-                ))
+                } = FunctionInner::relation_product_meta(manager, read, write)?;
+                Ok($crate::ldd::RelationProductMeta {
+                    meta: Self(FunctionInner::from_edge(manager, meta)),
+                    read_positions,
+                    write_positions,
+                })
             }
 
             /// Computes the union `self ∪ other`.
