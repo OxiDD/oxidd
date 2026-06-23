@@ -1,5 +1,4 @@
 //! List decision diagrams (LDDs) for OxiDD.
-//!
 
 use std::{borrow::Borrow, cmp::Ordering, collections::HashMap, hash::Hash};
 
@@ -40,7 +39,7 @@ pub enum LDDOp {
     Minus,
 }
 
-/// For LDDs it is essential that values are ordered and cloneable.
+/// For LDDs it is essential that values are ordered and can be cloned.
 trait LDDValue: Clone + Ord + Eq + Hash {
     /// The value used to indicate "included" in a projection meta-LDD.
     fn true_value() -> Self;
@@ -112,6 +111,19 @@ where
 
 // --- Function Interface ------------------------------------------------------
 
+/// Result of [`LDDFunction::relation_product_meta`].
+///
+/// Bundles the meta-LDD encoding the read/write projection together with the
+/// positions of the read and write variables in that encoding.
+pub struct RelationProductMeta<E> {
+    /// The meta-LDD encoding the read/write projection.
+    pub meta: E,
+    /// The positions of the read variables in the meta encoding.
+    pub read_positions: Vec<usize>,
+    /// The positions of the write variables in the meta encoding.
+    pub write_positions: Vec<usize>,
+}
+
 /// Boolean function backed by a list decision diagram
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Function, Debug)]
 #[repr_id = "LDD"]
@@ -142,11 +154,9 @@ where
         manager: &<LDDFunction<F> as Function>::Manager<'id>,
         read_proj: &[u32],
         write_proj: &[u32],
-    ) -> AllocResult<(
-        <<LDDFunction<F> as Function>::Manager<'id> as Manager>::Edge,
-        Vec<usize>,
-        Vec<usize>,
-    )> {
+    ) -> AllocResult<
+        RelationProductMeta<<<LDDFunction<F> as Function>::Manager<'id> as Manager>::Edge>,
+    > {
         // Compute length of meta.
         let length = std::cmp::max(
             match read_proj.iter().max() {
@@ -189,7 +199,11 @@ where
             }
         }
 
-        Ok((singleton(manager, &meta)?, read_positions, write_positions))
+        Ok(RelationProductMeta {
+            meta: singleton(manager, &meta)?,
+            read_positions,
+            write_positions,
+        })
     }
 
     #[inline]
@@ -556,9 +570,8 @@ fn project<M: LDDManager>(
     let (set_down, set_right) = collect_children(set_node);
 
     let result = if *proj_value == M::InnerNodeValue::false_value() {
-        // This position is not in the projection: skip it by unioning the
-        // projected right branch (same proj level) with the projected down
-        // branch (advance proj level).
+        // This position is not in the projection: skip it and compute the union of the
+        // right and down branches.
         let right_result =
             EdgeDropGuard::new(manager, project(manager, set_right, proj.borrowed())?);
         let down_result = EdgeDropGuard::new(manager, project(manager, set_down, proj_down)?);
