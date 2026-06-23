@@ -1,6 +1,5 @@
 //! List decision diagrams (LDDs) for OxiDD.
 //!
-//!
 
 use std::{borrow::Borrow, cmp::Ordering, collections::HashMap, hash::Hash};
 
@@ -18,7 +17,8 @@ use oxidd_derive::{Countable, Function};
 pub enum LDDTerminal {
     /// This represents the empty set, also denoted by `false`.
     Empty,
-    /// This represents the set containing only the empty list, also denoted by `true`.
+    /// This represents the set containing only the empty list, also denoted by
+    /// `true`.
     True,
 }
 
@@ -32,6 +32,10 @@ pub enum LDDOp {
     Project,
 
     RelationalProduct,
+
+    RelationalPredecessor,
+
+    Intersect,
 
     Minus,
 }
@@ -265,6 +269,33 @@ where
         apply_relational_product(manager, set.borrowed(), rel.borrowed(), meta.borrowed())
     }
 
+    /// Computes the set of source vectors in `universe` that can reach a vector
+    /// in `set` in one step via the sparse relation `rel`.  `meta` must be
+    /// produced by [`relation_product_meta`][Self::relation_product_meta].
+    ///
+    /// This is the inverse of
+    /// [`relational_product_edge`][Self::relational_product_edge].
+    #[inline]
+    pub fn relational_predecessor_edge<'id>(
+        manager: &<LDDFunction<F> as Function>::Manager<'id>,
+        set: EdgeOfFunc<'id, Self>,
+        rel: EdgeOfFunc<'id, Self>,
+        meta: EdgeOfFunc<'id, Self>,
+        universe: EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        let set = EdgeDropGuard::new(manager, set);
+        let rel = EdgeDropGuard::new(manager, rel);
+        let meta = EdgeDropGuard::new(manager, meta);
+        let universe = EdgeDropGuard::new(manager, universe);
+        apply_relational_predecessor(
+            manager,
+            set.borrowed(),
+            rel.borrowed(),
+            meta.borrowed(),
+            universe.borrowed(),
+        )
+    }
+
     /// Returns the number of vectors (lists) contained in the set rooted at
     /// `set`.
     #[inline]
@@ -333,6 +364,31 @@ where
                 manager.clone_edge(self.as_edge(manager)),
                 manager.clone_edge(rel.as_edge(manager)),
                 manager.clone_edge(meta.as_edge(manager)),
+            )?;
+            Ok(Self::from_edge(manager, edge))
+        })
+    }
+
+    /// Computes the set of source vectors in `universe` from which a vector in
+    /// `self` is reachable in one step via the sparse relation `rel`, guided by
+    /// `meta` (produced by
+    /// [`relation_product_meta`][Self::relation_product_meta]).
+    ///
+    /// This is the inverse of
+    /// [`relational_product`][Self::relational_product].
+    pub fn relational_predecessor(
+        &self,
+        rel: &Self,
+        meta: &Self,
+        universe: &Self,
+    ) -> AllocResult<Self> {
+        self.manager_ref().with_manager_shared(|manager| {
+            let edge = Self::relational_predecessor_edge(
+                manager,
+                manager.clone_edge(self.as_edge(manager)),
+                manager.clone_edge(rel.as_edge(manager)),
+                manager.clone_edge(meta.as_edge(manager)),
+                manager.clone_edge(universe.as_edge(manager)),
             )?;
             Ok(Self::from_edge(manager, edge))
         })
@@ -441,11 +497,13 @@ fn compute_proj<M: LDDManager>(manager: &M, proj: &[u32]) -> AllocResult<M::Edge
     singleton(manager, &result)
 }
 
-/// Computes the set of vectors projected onto the given indices, where proj is equal to compute_proj([i_0, ..., i_k]).
+/// Computes the set of vectors projected onto the given indices, where proj is
+/// equal to compute_proj([i_0, ..., i_k]).
 ///
 /// Formally, for a single vector <x_0, ..., x_n> we have that:
 ///     - project(<x_0, ..., x_n>, i_0 < ... < i_k) = <x_(i_0), ..., x_(i_k)>
-///     - project(X, i_0 < ... < i_k) = { project(x, i_0 < ... < i_k) | x in X }.
+///     - project(X, i_0 < ... < i_k) = { project(x, i_0 < ... < i_k) | x in X
+///       }.
 ///
 /// Note that the indices are sorted in the definition, but compute_proj
 /// can take any array and ignores both duplicates and order. Also, it
@@ -714,7 +772,8 @@ fn apply_minus<M: LDDManager>(
 /// - 0 – position not in the relation: keep set values, advance meta only.
 /// - 1 – read-only: match set and rel values; keep matched values in output.
 /// - 2 – write-only: union all set values, then write each rel value.
-/// - 3 – read half of a read+write pair: match values (not emitted); meta_down is 4.
+/// - 3 – read half of a read+write pair: match values (not emitted); meta_down
+///   is 4.
 /// - 4 – write half of a read+write pair: write rel values.
 fn apply_relational_product<M: LDDManager>(
     manager: &M,
@@ -991,6 +1050,601 @@ fn apply_relational_product<M: LDDManager>(
     );
 
     Ok(result)
+}
+
+/// Computes the intersection `a ∩ b` of the two sets of vectors.
+fn apply_intersect<M: LDDManager>(
+    manager: &M,
+    a: Borrowed<M::Edge>,
+    b: Borrowed<M::Edge>,
+) -> AllocResult<M::Edge> {
+    // a ∩ a == a
+    if a == b {
+        return Ok(manager.clone_edge(&a));
+    }
+    // ∅ ∩ b == ∅  and  a ∩ ∅ == ∅
+    if manager.get_node(&a).is_terminal(&LDDTerminal::Empty)
+        || manager.get_node(&b).is_terminal(&LDDTerminal::Empty)
+    {
+        return manager.get_terminal(LDDTerminal::Empty);
+    }
+
+    stat!(cache_query LDDOp::Intersect);
+    if let Some(res) =
+        manager
+            .apply_cache()
+            .get(manager, LDDOp::Intersect, &[a.borrowed(), b.borrowed()])
+    {
+        stat!(cache_hit LDDOp::Intersect);
+        return Ok(res);
+    }
+
+    // Both are non-empty and unequal. The `True` terminal is unique, so it is
+    // handled by the `a == b` case above; hence both must be inner nodes (the
+    // two operands always reside on the same level).
+    let a_node = match manager.get_node(&a) {
+        Node::Inner(n) => n.borrow(),
+        _ => unreachable!("a and b reside on the same level"),
+    };
+    let b_node = match manager.get_node(&b) {
+        Node::Inner(n) => n.borrow(),
+        _ => unreachable!("a and b reside on the same level"),
+    };
+    let a_value = a_node.get_value();
+    let (a_down, a_right) = collect_children(a_node);
+    let b_value = b_node.get_value();
+    let (b_down, b_right) = collect_children(b_node);
+
+    let result = match a_value.cmp(b_value) {
+        Ordering::Less => {
+            // a's value is not in b; skip it.
+            apply_intersect(manager, a_right, b.borrowed())?
+        }
+        Ordering::Greater => {
+            // b's value is not in a; skip it.
+            apply_intersect(manager, a.borrowed(), b_right)?
+        }
+        Ordering::Equal => {
+            let down_result =
+                EdgeDropGuard::new(manager, apply_intersect(manager, a_down, b_down)?);
+            let right_result =
+                EdgeDropGuard::new(manager, apply_intersect(manager, a_right, b_right)?);
+            if manager
+                .get_node(&down_result)
+                .is_terminal(&LDDTerminal::Empty)
+            {
+                right_result.into_edge()
+            } else {
+                make_node(
+                    manager,
+                    a_value,
+                    down_result.into_edge(),
+                    right_result.into_edge(),
+                )?
+            }
+        }
+    };
+
+    manager
+        .apply_cache()
+        .add(manager, LDDOp::Intersect, &[a, b], result.borrowed());
+
+    Ok(result)
+}
+
+/// Computes the set of source vectors in `universe` that can reach a vector in
+/// `set` in one step via the sparse relation `rel`, guided by `meta` (produced
+/// by [`LDDFunction::relation_product_meta`]).
+///
+/// This is the inverse of [`apply_relational_product`]: where the relational
+/// product computes successors, this computes predecessors restricted to
+/// `universe`.
+///
+/// Meta values at each level (see [`apply_relational_product`]):
+/// - 0 – position not in the relation: keep values present in both `set` and
+///   `universe`, advance meta only.
+/// - 1 – read-only: the source value equals the target value; keep values that
+///   appear in `set`, `rel`, and `universe`.
+/// - 2 – write-only: the source value is unconstrained, ranging over all of
+///   `universe`; the target value must appear in `set` and `rel`.
+/// - 3 – read half of a read+write pair: emit the source value taken from
+///   `universe` (matched against `rel`).
+/// - 4 – write half of a read+write pair: consume the target value (matched
+///   against `set` and `rel`); no value is emitted.
+fn apply_relational_predecessor<M: LDDManager>(
+    manager: &M,
+    set: Borrowed<M::Edge>,
+    rel: Borrowed<M::Edge>,
+    meta: Borrowed<M::Edge>,
+    universe: Borrowed<M::Edge>,
+) -> AllocResult<M::Edge> {
+    // An empty set, relation, or universe yields the empty set.
+    if manager.get_node(&set).is_terminal(&LDDTerminal::Empty)
+        || manager.get_node(&rel).is_terminal(&LDDTerminal::Empty)
+        || manager.get_node(&universe).is_terminal(&LDDTerminal::Empty)
+    {
+        return manager.get_terminal(LDDTerminal::Empty);
+    }
+
+    // meta == True means all meta levels are consumed; the remaining source
+    // vectors are exactly those in both `set` and `universe`.
+    match manager.get_node(&meta) {
+        Node::Terminal(t) => {
+            debug_assert_eq!(
+                *t.borrow(),
+                LDDTerminal::True,
+                "meta should never reach the Empty terminal"
+            );
+            return apply_intersect(manager, set.borrowed(), universe.borrowed());
+        }
+        Node::Inner(_) => {}
+    }
+
+    stat!(cache_query LDDOp::RelationalPredecessor);
+    if let Some(res) = manager.apply_cache().get(
+        manager,
+        LDDOp::RelationalPredecessor,
+        &[
+            set.borrowed(),
+            rel.borrowed(),
+            meta.borrowed(),
+            universe.borrowed(),
+        ],
+    ) {
+        stat!(cache_hit LDDOp::RelationalPredecessor);
+        return Ok(res);
+    }
+
+    let meta_node = match manager.get_node(&meta) {
+        Node::Inner(n) => n.borrow(),
+        _ => unreachable!(),
+    };
+    let meta_value = meta_node.get_value();
+    let (meta_down, _meta_right) = collect_children(meta_node);
+
+    let result = if *meta_value == M::InnerNodeValue::false_value() {
+        // 0: not in relation — keep values present in both set and universe.
+        let set_node = match manager.get_node(&set) {
+            Node::Inner(n) => n.borrow(),
+            _ => unreachable!("set must have as many levels as meta"),
+        };
+        let universe_node = match manager.get_node(&universe) {
+            Node::Inner(n) => n.borrow(),
+            _ => unreachable!("universe must have as many levels as meta"),
+        };
+        let set_value = set_node.get_value();
+        let (set_down, set_right) = collect_children(set_node);
+        let universe_value = universe_node.get_value();
+        let (universe_down, universe_right) = collect_children(universe_node);
+
+        match set_value.cmp(universe_value) {
+            Ordering::Less => {
+                // This set value is not in the universe; skip it.
+                apply_relational_predecessor(
+                    manager,
+                    set_right,
+                    rel.borrowed(),
+                    meta.borrowed(),
+                    universe.borrowed(),
+                )?
+            }
+            Ordering::Greater => {
+                // This universe value is not in the set; skip it.
+                apply_relational_predecessor(
+                    manager,
+                    set.borrowed(),
+                    rel.borrowed(),
+                    meta.borrowed(),
+                    universe_right,
+                )?
+            }
+            Ordering::Equal => {
+                let down_result = EdgeDropGuard::new(
+                    manager,
+                    apply_relational_predecessor(
+                        manager,
+                        set_down,
+                        rel.borrowed(),
+                        meta_down,
+                        universe_down,
+                    )?,
+                );
+                let right_result = EdgeDropGuard::new(
+                    manager,
+                    apply_relational_predecessor(
+                        manager,
+                        set_right,
+                        rel.borrowed(),
+                        meta.borrowed(),
+                        universe_right,
+                    )?,
+                );
+                if manager
+                    .get_node(&down_result)
+                    .is_terminal(&LDDTerminal::Empty)
+                {
+                    right_result.into_edge()
+                } else {
+                    make_node(
+                        manager,
+                        set_value,
+                        down_result.into_edge(),
+                        right_result.into_edge(),
+                    )?
+                }
+            }
+        }
+    } else if *meta_value == M::InnerNodeValue::read_only_value() {
+        // 1: read only — the source value equals the target value, so emit
+        // values that appear in set, rel, and universe simultaneously.
+        let set_node = match manager.get_node(&set) {
+            Node::Inner(n) => n.borrow(),
+            _ => unreachable!("set must have as many levels as meta"),
+        };
+        let rel_node = match manager.get_node(&rel) {
+            Node::Inner(n) => n.borrow(),
+            _ => unreachable!("rel must have as many levels as meta"),
+        };
+        let universe_node = match manager.get_node(&universe) {
+            Node::Inner(n) => n.borrow(),
+            _ => unreachable!("universe must have as many levels as meta"),
+        };
+        let set_value = set_node.get_value();
+        let (set_down, set_right) = collect_children(set_node);
+        let rel_value = rel_node.get_value();
+        let (rel_down, rel_right) = collect_children(rel_node);
+        let universe_value = universe_node.get_value();
+        let (universe_down, universe_right) = collect_children(universe_node);
+
+        if set_value == rel_value && rel_value == universe_value {
+            // All three agree on the value: emit it and recurse downwards on
+            // all of set, rel, and universe; the right siblings are explored by
+            // advancing the relation.
+            let down_result = EdgeDropGuard::new(
+                manager,
+                apply_relational_predecessor(
+                    manager,
+                    set_down,
+                    rel_down,
+                    meta_down,
+                    universe_down,
+                )?,
+            );
+            let node = EdgeDropGuard::new(
+                manager,
+                if manager
+                    .get_node(&down_result)
+                    .is_terminal(&LDDTerminal::Empty)
+                {
+                    manager.get_terminal(LDDTerminal::Empty)?
+                } else {
+                    make_node(
+                        manager,
+                        universe_value,
+                        manager.clone_edge(&down_result),
+                        manager.get_terminal(LDDTerminal::Empty)?,
+                    )?
+                },
+            );
+            let rest = EdgeDropGuard::new(
+                manager,
+                apply_relational_predecessor(
+                    manager,
+                    set.borrowed(),
+                    rel_right,
+                    meta.borrowed(),
+                    universe.borrowed(),
+                )?,
+            );
+            apply_union(manager, node.borrowed(), rest.borrowed())?
+        } else {
+            // Advance whichever operands are below the maximum value so that
+            // all three line up on a common value.
+            let max = set_value.max(rel_value).max(universe_value);
+            if set_value < max {
+                apply_relational_predecessor(
+                    manager,
+                    set_right,
+                    rel.borrowed(),
+                    meta.borrowed(),
+                    universe.borrowed(),
+                )?
+            } else if universe_value < max {
+                apply_relational_predecessor(
+                    manager,
+                    set.borrowed(),
+                    rel.borrowed(),
+                    meta.borrowed(),
+                    universe_right,
+                )?
+            } else {
+                // rel_value < max
+                apply_relational_predecessor(
+                    manager,
+                    set.borrowed(),
+                    rel_right,
+                    meta.borrowed(),
+                    universe.borrowed(),
+                )?
+            }
+        }
+    } else if *meta_value == M::InnerNodeValue::write_only_value() {
+        // 2: write only — the target value must appear in both set and rel; the
+        // source value is unconstrained and ranges over the whole universe.
+        let set_node = match manager.get_node(&set) {
+            Node::Inner(n) => n.borrow(),
+            _ => unreachable!("set must have as many levels as meta"),
+        };
+        let rel_node = match manager.get_node(&rel) {
+            Node::Inner(n) => n.borrow(),
+            _ => unreachable!("rel must have as many levels as meta"),
+        };
+        let set_value = set_node.get_value();
+        let (set_down, set_right) = collect_children(set_node);
+        let rel_value = rel_node.get_value();
+        let (rel_down, rel_right) = collect_children(rel_node);
+
+        match set_value.cmp(rel_value) {
+            Ordering::Less => {
+                // This set value is not written by the relation; skip it.
+                apply_relational_predecessor(
+                    manager,
+                    set_right,
+                    rel.borrowed(),
+                    meta.borrowed(),
+                    universe.borrowed(),
+                )?
+            }
+            Ordering::Greater => {
+                // This relation value is not in the set; skip it.
+                apply_relational_predecessor(
+                    manager,
+                    set.borrowed(),
+                    rel_right,
+                    meta.borrowed(),
+                    universe.borrowed(),
+                )?
+            }
+            Ordering::Equal => {
+                // Emit a source node for every value in the universe, all
+                // sharing the matched continuation.
+                let down_result = EdgeDropGuard::new(
+                    manager,
+                    relational_predecessor_universe(
+                        manager,
+                        set_down,
+                        rel_down,
+                        meta_down,
+                        universe.borrowed(),
+                    )?,
+                );
+                let right_result = EdgeDropGuard::new(
+                    manager,
+                    apply_relational_predecessor(
+                        manager,
+                        set.borrowed(),
+                        rel_right,
+                        meta.borrowed(),
+                        universe.borrowed(),
+                    )?,
+                );
+                apply_union(manager, down_result.borrowed(), right_result.borrowed())?
+            }
+        }
+    } else if *meta_value == M::InnerNodeValue::read_of_pair_value() {
+        // 3: read half of a read+write pair — emit the source value, taken from
+        // the universe and matched against the relation. The set and universe
+        // are not descended here; the universe is descended at the paired write
+        // level.
+        let rel_node = match manager.get_node(&rel) {
+            Node::Inner(n) => n.borrow(),
+            _ => unreachable!("rel must have as many levels as meta"),
+        };
+        let universe_node = match manager.get_node(&universe) {
+            Node::Inner(n) => n.borrow(),
+            _ => unreachable!("universe must have as many levels as meta"),
+        };
+        let rel_value = rel_node.get_value();
+        let (rel_down, rel_right) = collect_children(rel_node);
+        let universe_value = universe_node.get_value();
+        let (_universe_down, universe_right) = collect_children(universe_node);
+
+        match universe_value.cmp(rel_value) {
+            Ordering::Less => {
+                // This universe value cannot be read; skip it.
+                apply_relational_predecessor(
+                    manager,
+                    set.borrowed(),
+                    rel.borrowed(),
+                    meta.borrowed(),
+                    universe_right,
+                )?
+            }
+            Ordering::Greater => {
+                // This relation value is not in the universe; skip it.
+                apply_relational_predecessor(
+                    manager,
+                    set.borrowed(),
+                    rel_right,
+                    meta.borrowed(),
+                    universe.borrowed(),
+                )?
+            }
+            Ordering::Equal => {
+                // meta_down is the paired write level (4); the universe is kept
+                // so that its down-branch is descended there.
+                let down_result = EdgeDropGuard::new(
+                    manager,
+                    apply_relational_predecessor(
+                        manager,
+                        set.borrowed(),
+                        rel_down,
+                        meta_down,
+                        universe.borrowed(),
+                    )?,
+                );
+                let node = EdgeDropGuard::new(
+                    manager,
+                    if manager
+                        .get_node(&down_result)
+                        .is_terminal(&LDDTerminal::Empty)
+                    {
+                        manager.get_terminal(LDDTerminal::Empty)?
+                    } else {
+                        make_node(
+                            manager,
+                            universe_value,
+                            manager.clone_edge(&down_result),
+                            manager.get_terminal(LDDTerminal::Empty)?,
+                        )?
+                    },
+                );
+                let rest = EdgeDropGuard::new(
+                    manager,
+                    apply_relational_predecessor(
+                        manager,
+                        set.borrowed(),
+                        rel_right,
+                        meta.borrowed(),
+                        universe.borrowed(),
+                    )?,
+                );
+                apply_union(manager, node.borrowed(), rest.borrowed())?
+            }
+        }
+    } else if *meta_value == M::InnerNodeValue::write_of_pair_value() {
+        // 4: write half of a read+write pair — consume the target value, which
+        // must appear in both set and rel; nothing is emitted. The source value
+        // was already produced at the paired read level, so descend the
+        // universe here.
+        let set_node = match manager.get_node(&set) {
+            Node::Inner(n) => n.borrow(),
+            _ => unreachable!("set must have as many levels as meta"),
+        };
+        let rel_node = match manager.get_node(&rel) {
+            Node::Inner(n) => n.borrow(),
+            _ => unreachable!("rel must have as many levels as meta"),
+        };
+        let set_value = set_node.get_value();
+        let (set_down, set_right) = collect_children(set_node);
+        let rel_value = rel_node.get_value();
+        let (rel_down, rel_right) = collect_children(rel_node);
+
+        match set_value.cmp(rel_value) {
+            Ordering::Less => {
+                // This target value is not written by the relation; skip it.
+                apply_relational_predecessor(
+                    manager,
+                    set_right,
+                    rel.borrowed(),
+                    meta.borrowed(),
+                    universe.borrowed(),
+                )?
+            }
+            Ordering::Greater => {
+                // This relation value is not in the set; skip it.
+                apply_relational_predecessor(
+                    manager,
+                    set.borrowed(),
+                    rel_right,
+                    meta.borrowed(),
+                    universe.borrowed(),
+                )?
+            }
+            Ordering::Equal => {
+                let universe_node = match manager.get_node(&universe) {
+                    Node::Inner(n) => n.borrow(),
+                    _ => unreachable!("universe must have as many levels as meta"),
+                };
+                let (universe_down, _universe_right) = collect_children(universe_node);
+                let down_result = EdgeDropGuard::new(
+                    manager,
+                    apply_relational_predecessor(
+                        manager,
+                        set_down,
+                        rel_down,
+                        meta_down,
+                        universe_down,
+                    )?,
+                );
+                let right_result = EdgeDropGuard::new(
+                    manager,
+                    apply_relational_predecessor(
+                        manager,
+                        set.borrowed(),
+                        rel_right,
+                        meta.borrowed(),
+                        universe.borrowed(),
+                    )?,
+                );
+                apply_union(manager, down_result.borrowed(), right_result.borrowed())?
+            }
+        }
+    } else {
+        panic!("meta has unexpected value");
+    };
+
+    manager.apply_cache().add(
+        manager,
+        LDDOp::RelationalPredecessor,
+        &[set, rel, meta, universe],
+        result.borrowed(),
+    );
+
+    Ok(result)
+}
+
+/// Helper for the write-only ([`write_only_value`][LDDValue::write_only_value])
+/// case of [`apply_relational_predecessor`].
+///
+/// Builds the union over every value `v` in `universe` of the source node
+/// `(v, apply_relational_predecessor(set, rel, meta, universe_v_down))`, where
+/// `universe_v_down` is the down-branch of the universe node carrying value
+/// `v`. The `set`, `rel`, and `meta` arguments are already descended past the
+/// write level.
+fn relational_predecessor_universe<M: LDDManager>(
+    manager: &M,
+    set: Borrowed<M::Edge>,
+    rel: Borrowed<M::Edge>,
+    meta: Borrowed<M::Edge>,
+    universe: Borrowed<M::Edge>,
+) -> AllocResult<M::Edge> {
+    let universe_node = match manager.get_node(&universe) {
+        // The right spine of the universe ends at the Empty terminal.
+        Node::Terminal(_) => return manager.get_terminal(LDDTerminal::Empty),
+        Node::Inner(n) => n.borrow(),
+    };
+    let universe_value = universe_node.get_value();
+    let (universe_down, universe_right) = collect_children(universe_node);
+
+    let down_result = EdgeDropGuard::new(
+        manager,
+        apply_relational_predecessor(
+            manager,
+            set.borrowed(),
+            rel.borrowed(),
+            meta.borrowed(),
+            universe_down,
+        )?,
+    );
+    let right_result = EdgeDropGuard::new(
+        manager,
+        relational_predecessor_universe(manager, set, rel, meta, universe_right)?,
+    );
+
+    if manager
+        .get_node(&down_result)
+        .is_terminal(&LDDTerminal::Empty)
+    {
+        Ok(right_result.into_edge())
+    } else {
+        make_node(
+            manager,
+            universe_value,
+            down_result.into_edge(),
+            right_result.into_edge(),
+        )
+    }
 }
 
 /// Returns the number of vectors (lists) contained in the set `set`.
