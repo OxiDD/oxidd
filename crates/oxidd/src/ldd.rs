@@ -147,6 +147,26 @@ macro_rules! ldd_function_methods {
                 Ok(Self(self.0.relational_product(&rel.0, &meta.0)?))
             }
 
+            /// Computes the set of source vectors in `universe` from which a
+            /// vector in `self` is reachable in one step via the sparse relation
+            /// `rel`, guided by `meta` (produced by
+            /// [`relation_product_meta`][Self::relation_product_meta]).
+            ///
+            /// This is the inverse of
+            /// [`relational_product`][Self::relational_product].
+            pub fn relational_predecessor(
+                &self,
+                rel: &Self,
+                meta: &Self,
+                universe: &Self,
+            ) -> ::oxidd_core::util::AllocResult<Self> {
+                Ok(Self(self.0.relational_predecessor(
+                    &rel.0,
+                    &meta.0,
+                    &universe.0,
+                )?))
+            }
+
             /// Projects the vectors in `self` onto the indices encoded by `proj`
             /// (produced by [`projection_meta`][Self::projection_meta]).
             pub fn project(&self, proj: &Self) -> ::oxidd_core::util::AllocResult<Self> {
@@ -245,7 +265,7 @@ mod index {
         terminals: 2,
     });
 
-    crate::util::manager_data!(LDDManagerData for LDD, operator: LDDOp, cache_max_arity: 3);
+    crate::util::manager_data!(LDDManagerData for LDD, operator: LDDOp, cache_max_arity: 4);
 
     crate::util::manager_ref_index_based!(pub struct LDDManagerRef(<LDD as DD>::ManagerRef) with LDDManagerData);
 
@@ -283,7 +303,7 @@ mod pointer {
         tag_bits: 2,
     });
 
-    crate::util::manager_data!(LDDManagerData for LDD, operator: LDDOp, cache_max_arity: 3);
+    crate::util::manager_data!(LDDManagerData for LDD, operator: LDDOp, cache_max_arity: 4);
 
     crate::util::manager_ref_pointer_based!(pub struct LDDManagerRef(<LDD as DD>::ManagerRef) with LDDManagerData);
 
