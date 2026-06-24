@@ -253,26 +253,22 @@ pub(crate) fn apply_union<M: LDDManager, R: Recursor<M>>(
         return Ok(res);
     }
 
-    let f_node = match manager.get_node(&f) {
-        Node::Terminal(t) => {
-            if *t.borrow() == LDDTerminal::Empty {
-                return Ok(manager.clone_edge(&g));
-            }
+    // The Empty terminal is the identity for union.
+    if manager.get_node(&f).is_terminal(&LDDTerminal::Empty) {
+        return Ok(manager.clone_edge(&g));
+    }
+    if manager.get_node(&g).is_terminal(&LDDTerminal::Empty) {
+        return Ok(manager.clone_edge(&f));
+    }
 
-            unreachable!("Invalid terminal");
-        }
+    let f_node = match manager.get_node(&f) {
         Node::Inner(f_node) => f_node.borrow(),
+        Node::Terminal(_) => unreachable!("Invalid terminal"),
     };
 
     let g_node = match manager.get_node(&g) {
-        Node::Terminal(t) => {
-            if *t.borrow() == LDDTerminal::Empty {
-                return Ok(manager.clone_edge(&f));
-            }
-
-            unreachable!("Invalid terminal");
-        }
         Node::Inner(g_node) => g_node.borrow(),
+        Node::Terminal(_) => unreachable!("Invalid terminal"),
     };
 
     let result = match f_node.get_value().cmp(g_node.get_value()) {
