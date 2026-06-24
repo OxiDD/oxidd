@@ -690,7 +690,6 @@ pub mod mt {
     }
 }
 
-
 /// [`DiagramRules`] for list decision diagrams
 pub struct LDDRules;
 
