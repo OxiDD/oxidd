@@ -81,6 +81,7 @@ zbdd = ["dep:oxidd-rules-zbdd"]
 ## Use multi-threaded implementations of the apply algorithm
 multi-threading = [
   "oxidd-rules-bdd?/multi-threading",
+  "oxidd-rules-ldd?/multi-threading",
   "oxidd-rules-mtbdd?/multi-threading",
   "oxidd-rules-tdd?/multi-threading",
   "oxidd-rules-zbdd?/multi-threading",
