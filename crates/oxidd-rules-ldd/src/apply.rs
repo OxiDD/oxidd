@@ -69,7 +69,10 @@ pub(crate) fn relation_product_meta<M: LDDManager>(
 }
 
 /// Return a singleton LDD that contains only the list represented by `vector`.
-pub(crate) fn singleton<M: LDDManager>(manager: &M, vector: &[M::InnerNodeValue]) -> AllocResult<M::Edge> {
+pub(crate) fn singleton<M: LDDManager>(
+    manager: &M,
+    vector: &[M::InnerNodeValue],
+) -> AllocResult<M::Edge> {
     let mut root = manager.get_terminal(LDDTerminal::True)?;
 
     for val in vector.iter().rev() {
@@ -183,7 +186,12 @@ pub(crate) fn project<M: LDDManager, R: Recursor<M>>(
             (set_right, proj.borrowed()),
             (set_down, proj_down),
         )?;
-        apply_union(manager, rec, right_result.borrowed(), down_result.borrowed())
+        apply_union(
+            manager,
+            rec,
+            right_result.borrowed(),
+            down_result.borrowed(),
+        )
     } else if *proj_value == M::InnerNodeValue::true_value() {
         // This position is in the projection: keep the current value and
         // recurse on both branches.
@@ -298,13 +306,14 @@ pub(crate) fn apply_union<M: LDDManager, R: Recursor<M>>(
             let (f_down, f_right) = collect_children(f_node);
             let (g_down, g_right) = collect_children(g_node);
 
-            let (low, high) = rec.binary(
-                apply_union,
+            let (low, high) =
+                rec.binary(apply_union, manager, (f_down, g_down), (f_right, g_right))?;
+            make_node(
                 manager,
-                (f_down, g_down),
-                (f_right, g_right),
-            )?;
-            make_node(manager, g_node.get_value(), low.into_edge(), high.into_edge())
+                g_node.get_value(),
+                low.into_edge(),
+                high.into_edge(),
+            )
         }
     }?;
 
@@ -373,12 +382,8 @@ pub(crate) fn apply_minus<M: LDDManager, R: Recursor<M>>(
         }
         Ordering::Equal => {
             // Subtract b_down from a_down; subtract b_right from a_right.
-            let (down_result, right_result) = rec.binary(
-                apply_minus,
-                manager,
-                (a_down, b_down),
-                (a_right, b_right),
-            )?;
+            let (down_result, right_result) =
+                rec.binary(apply_minus, manager, (a_down, b_down), (a_right, b_right))?;
             if manager
                 .get_node(&down_result)
                 .is_terminal(&LDDTerminal::Empty)
@@ -640,7 +645,12 @@ pub(crate) fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
                     (set_down, rel_down, meta_down),
                     (set_right, rel_right, meta.borrowed()),
                 )?;
-                apply_union(manager, rec, down_result.borrowed(), right_result.borrowed())?
+                apply_union(
+                    manager,
+                    rec,
+                    down_result.borrowed(),
+                    right_result.borrowed(),
+                )?
             }
             Ordering::Greater => {
                 apply_relational_product(manager, rec, set.borrowed(), rel_right, meta.borrowed())?
@@ -941,7 +951,12 @@ pub(crate) fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
                 apply_relational_predecessor,
                 manager,
                 (set_down, rel_down, meta_down, universe_down),
-                (set.borrowed(), rel_right, meta.borrowed(), universe.borrowed()),
+                (
+                    set.borrowed(),
+                    rel_right,
+                    meta.borrowed(),
+                    universe.borrowed(),
+                ),
             )?;
             let node = EdgeDropGuard::new(
                 manager,
@@ -1058,7 +1073,12 @@ pub(crate) fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
                         universe.borrowed(),
                     )?,
                 );
-                apply_union(manager, rec, down_result.borrowed(), right_result.borrowed())?
+                apply_union(
+                    manager,
+                    rec,
+                    down_result.borrowed(),
+                    right_result.borrowed(),
+                )?
             }
         }
     } else if *meta_value == M::InnerNodeValue::read_of_pair_value() {
@@ -1109,7 +1129,12 @@ pub(crate) fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
                     apply_relational_predecessor,
                     manager,
                     (set.borrowed(), rel_down, meta_down, universe.borrowed()),
-                    (set.borrowed(), rel_right, meta.borrowed(), universe.borrowed()),
+                    (
+                        set.borrowed(),
+                        rel_right,
+                        meta.borrowed(),
+                        universe.borrowed(),
+                    ),
                 )?;
                 let node = EdgeDropGuard::new(
                     manager,
@@ -1181,9 +1206,19 @@ pub(crate) fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
                     apply_relational_predecessor,
                     manager,
                     (set_down, rel_down, meta_down, universe_down),
-                    (set.borrowed(), rel_right, meta.borrowed(), universe.borrowed()),
+                    (
+                        set.borrowed(),
+                        rel_right,
+                        meta.borrowed(),
+                        universe.borrowed(),
+                    ),
                 )?;
-                apply_union(manager, rec, down_result.borrowed(), right_result.borrowed())?
+                apply_union(
+                    manager,
+                    rec,
+                    down_result.borrowed(),
+                    right_result.borrowed(),
+                )?
             }
         }
     } else {
