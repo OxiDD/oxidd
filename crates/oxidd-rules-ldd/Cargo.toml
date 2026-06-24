@@ -11,6 +11,10 @@ repository.workspace = true
 rust-version.workspace = true
 
 [features]
+## Enable multi-threaded apply implementations
+multi-threading = []
+
+## Enable statistics generation
 statistics = []
 
 [dependencies]
