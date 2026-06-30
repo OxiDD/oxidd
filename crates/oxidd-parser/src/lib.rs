@@ -221,7 +221,7 @@ impl Literal {
         self.0 & (1 << Self::GATE_BIT) != 0
     }
 
-    /// Get the input number (if this literal refers to an input)
+    /// Get the input number (if this literal refers to a gate)
     ///
     /// ```
     /// # use oxidd_parser::Literal;
@@ -1139,6 +1139,9 @@ impl fmt::Debug for Circuit {
 /// modeled as a Boolean function, concretely a [`Literal`]. In the current
 /// implementation, the input numbers for latches are in range
 /// `(self.inputs() + 1)..(self.inputs() + self.latches().len())`.
+///
+/// The associated [`VarSet`] contains a variable for each input and latch,
+/// i.e., `self.inputs() + self.latches().len()` many.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct AIGERDetails {
     /// Number of input variables
