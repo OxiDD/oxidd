@@ -4,6 +4,7 @@
 #ifndef OXIDD_BRIDGE_HPP
 #define OXIDD_BRIDGE_HPP
 
+#include <compare>
 #include <concepts>
 #include <cstdint>
 #include <cstring>
@@ -1390,6 +1391,19 @@ public:
   /// Same as `!(lhs < rhs)` (see `operator<()`)
   friend bool operator>=(const function &lhs, const function &rhs) noexcept {
     return !(lhs < rhs);
+  }
+  /// Compares `lhs` and `rhs` according to an arbitrary total order
+  ///
+  /// Time complexity: O(1)
+  ///
+  /// @param  lhs  Left hand side operand
+  /// @param  rhs  Right hand side operand
+  ///
+  /// @returns  The comparison result
+  friend std::strong_ordering operator<=>(const function &lhs,
+                                          const function &rhs) noexcept {
+    return std::tie(lhs._func._p, lhs._func._i) <=>
+           std::tie(rhs._func._p, rhs._func._i);
   }
 
   /// @name C API Bridging

@@ -5,6 +5,7 @@
 #define OXIDD_UTIL_HPP
 
 #include <cassert>
+#include <compare>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -414,6 +415,11 @@ class dddmp_file {
     friend bool operator>(const str_iter &lhs, const str_iter &rhs) {
       assert(lhs._file == rhs._file);
       return lhs._i > rhs._i;
+    }
+    friend std::strong_ordering operator<=>(const str_iter &lhs,
+                                            const str_iter &rhs) {
+      assert(lhs._file == rhs._file);
+      return lhs._i <=> rhs._i;
     }
   };
 
