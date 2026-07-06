@@ -18,19 +18,20 @@ namespace {
 template <oxidd::concepts::boolean_function_manager M>
   requires(oxidd::concepts::reordering_manager<M>)
 // NOLINTNEXTLINE(*-exception-escape)
-int import(M &manager, oxidd::util::dddmp_file &f) noexcept {
-  if (f.has_var_names()) {
-    auto result = manager.add_named_vars(f.var_names());
+int import(M &manager, oxidd::util::dddmp_file &file) noexcept {
+  const oxidd::var_no_t num_vars = file.num_vars();
+  if (file.has_var_names()) {
+    auto result = manager.add_named_vars(file.var_names());
     if (!result.has_value()) {
       std::cerr << result.error() << '\n';
       return 1;
     }
   } else {
-    manager.add_vars(f.num_vars());
+    manager.add_vars(num_vars);
   }
 
-  manager.set_var_order(f.support_var_order());
-  auto result = manager.import_dddmp(f);
+  manager.set_var_order(file.support_var_order());
+  auto result = manager.import_dddmp(file);
   if (!result.has_value()) {
     std::cerr << "error during import: " << result.error() << '\n';
     return 1;
@@ -38,8 +39,10 @@ int import(M &manager, oxidd::util::dddmp_file &f) noexcept {
   const std::vector<typename M::function> functions(std::move(result).value());
 
   for (std::ptrdiff_t i = 0; i < functions.size(); ++i) {
-    std::cout << "function " << i << " '" << f.root_names()[i] << "' has "
-              << f.num_nodes() << " nodes\n";
+    const typename M::function &f = functions[i];
+    std::cout << "function " << i << " '" << file.root_names()[i] << "' has "
+              << f.node_count() << " nodes and " << f.sat_count(num_vars)
+              << " satisfying assignments\n";
   }
 
   return 0;

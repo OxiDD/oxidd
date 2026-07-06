@@ -182,6 +182,7 @@ class OXIDD_EBO zbdd_function
 
   OXIDD_LINK_C(satisfiable)
   OXIDD_LINK_C(valid)
+  OXIDD_LINK_C(sat_count)
   OXIDD_LINK_C(sat_count_double)
   OXIDD_LINK_C(pick_cube)
   OXIDD_LINK_C(pick_cube_dd)

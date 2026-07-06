@@ -4,7 +4,7 @@ use std::mem::{ManuallyDrop, MaybeUninit};
 
 use rustc_hash::FxHasher;
 
-use oxidd::util::num::F64;
+use oxidd::util::num::{F64, Natural};
 use oxidd::util::{AllocResult, OutOfMemory};
 use oxidd::zbdd::{ZBDDFunction, ZBDDManagerRef};
 use oxidd::{
@@ -1435,14 +1435,29 @@ pub unsafe extern "C" fn oxidd_zbdd_valid(f: zbdd_t) -> bool {
     unsafe { f.get() }.expect(FUNC_UNWRAP_MSG).valid()
 }
 
-/// Count the number of satisfying assignments, assuming `vars` input variables
+/// Count the number of satisfying assignments
 ///
 /// Locking behavior: acquires the manager's lock for shared access.
 ///
 /// @param  f     A *valid* ZBDD function
-/// @param  vars  Number of input variables
+/// @param  vars  Assume that the function's domain has this many variables.
 ///
-/// @returns  The number of satisfying assignments
+/// @returns  The exact number of satisfying assignments
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn oxidd_zbdd_sat_count(f: zbdd_t, vars: LevelNo) -> util::num::natural_t {
+    let f = unsafe { f.get() }.expect(FUNC_UNWRAP_MSG);
+    f.sat_count::<Natural, BuildHasherDefault<FxHasher>>(vars, &mut Default::default())
+        .into()
+}
+
+/// Count the number of satisfying assignments
+///
+/// Locking behavior: acquires the manager's lock for shared access.
+///
+/// @param  f     A *valid* ZBDD function
+/// @param  vars  Assume that the function's domain has this many variables.
+///
+/// @returns  (An approximation of) the number of satisfying assignments
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn oxidd_zbdd_sat_count_double(f: zbdd_t, vars: LevelNo) -> f64 {
     let f = unsafe { f.get() }.expect(FUNC_UNWRAP_MSG);

@@ -44,6 +44,7 @@ cstdint
 cstdlib
 CUDD
 Cython
+dashu
 DDDMP
 dealloc
 decreasable
@@ -155,6 +156,7 @@ Rustonomicon
 rustup
 rwlock
 satisfiability
+scopeguard
 segtree
 serde
 setuptools
@@ -191,6 +193,7 @@ unescaping
 uninit
 unoptimized
 unref
+UNSAT
 unsuffixed
 usize
 venv
@@ -201,5 +204,3 @@ XCNF
 ZBDD
 ZDDs
 ZSDDs
-scopeguard
-UNSAT

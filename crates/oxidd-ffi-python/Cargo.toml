@@ -27,18 +27,17 @@ oxidd = { workspace = true, features = ["bdd", "bcdd", "zbdd"] }
 pyo3 = { version = "0.28.2", features = [
   "extension-module",
   "abi3-py39",
-  "num-bigint",
   "generate-import-lib",
 ] }
-
-# big integers
-num-bigint = "0.4"
 
 # fast hash function
 #
 # Note that there is a performance regression with 2.0, see
 # https://github.com/rust-lang/rustc-hash/issues/45
 rustc-hash = "1.1"
+
+# safe casting to bytes
+byte-slice-cast = "1.2.3"
 
 [build-dependencies]
 proc-macro2 = "1.0.89"

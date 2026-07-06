@@ -11,51 +11,55 @@ use oxidd_core::function::{ETagOfFunc, INodeOfFunc, TermOfFunc};
 use oxidd_core::util::Substitution;
 
 pub mod dddmp;
+pub mod num;
 
 mod interop;
 pub use interop::*;
 
+/// Result of a comparison
+#[repr(i8)]
+pub enum partial_ordering {
+    Less = -1,
+    Equal = 0,
+    Greater = 1,
+    Unordered = -128,
+}
+
+impl From<Option<std::cmp::Ordering>> for partial_ordering {
+    fn from(value: Option<std::cmp::Ordering>) -> Self {
+        match value {
+            Some(std::cmp::Ordering::Less) => partial_ordering::Less,
+            Some(std::cmp::Ordering::Equal) => partial_ordering::Equal,
+            Some(std::cmp::Ordering::Greater) => partial_ordering::Greater,
+            None => partial_ordering::Unordered,
+        }
+    }
+}
+
 /// General-purpose error type with human-readable error messages
+#[derive(Clone)]
 #[repr(C)]
 pub struct error_t {
-    /// A human-readable error message. This points to a null-terminated string.
-    msg: *const c_char,
-    /// Byte length of the message (excluding the trailing null byte)
-    msg_len: usize,
-    /// Capacity of the message character array. May be zero although `msg_len`
-    /// is non-zero to mean that the string is borrowed. This field is for
-    /// internal use only.
-    _msg_cap: usize,
+    /// Human-readable error message
+    msg: string_t,
 }
 
 impl error_t {
     /// cbindgen:ignore
-    pub const NONE: Self = error_t {
-        msg: c"".as_ptr(),
-        msg_len: 0,
-        _msg_cap: 0,
+    pub const NONE: Self = Self {
+        msg: string_t::EMPTY,
     };
 }
 
 impl From<&'static std::ffi::CStr> for error_t {
     fn from(value: &'static std::ffi::CStr) -> Self {
-        error_t {
-            msg: value.as_ptr(),
-            msg_len: value.count_bytes(),
-            _msg_cap: 0,
-        }
+        error_t { msg: value.into() }
     }
 }
 
 impl From<String> for error_t {
     fn from(value: String) -> Self {
-        let mut msg = ManuallyDrop::new(value.into_bytes());
-        msg.push(0);
-        error_t {
-            msg: msg.as_ptr().cast(),
-            msg_len: msg.len() - 1,
-            _msg_cap: msg.capacity(),
-        }
+        error_t { msg: value.into() }
     }
 }
 
@@ -65,39 +69,12 @@ impl From<std::io::Error> for error_t {
     }
 }
 
-impl Drop for error_t {
-    fn drop(&mut self) {
-        if self._msg_cap != 0 {
-            debug_assert!(!self.msg.is_null());
-            const { assert!(std::mem::size_of::<c_char>() == std::mem::size_of::<u8>()) };
-            drop(unsafe { Vec::from_raw_parts(self.msg as *mut u8, 0, self._msg_cap) });
-        }
-    }
-}
-
 /// Clone `error`
 ///
-/// The returned `error_t` must be deallocated independently of `error`.
+/// The returned `oxidd_error_t` must be deallocated independently of `error`.
 #[unsafe(no_mangle)]
 pub extern "C" fn oxidd_error_clone(error: &error_t) -> error_t {
-    if error._msg_cap == 0 {
-        error_t {
-            msg: error.msg,
-            msg_len: error.msg_len,
-            _msg_cap: 0,
-        }
-    } else {
-        debug_assert!(!error.msg.is_null());
-        let mut vec = Vec::with_capacity(error.msg_len + 1);
-        vec.extend_from_slice(unsafe { std::slice::from_raw_parts(error.msg, error.msg_len) });
-        vec.push(0);
-        let vec = ManuallyDrop::new(vec);
-        error_t {
-            msg: vec.as_ptr(),
-            msg_len: error.msg_len,
-            _msg_cap: error.msg_len + 1,
-        }
-    }
+    error.clone()
 }
 
 /// Deallocate the error
@@ -127,6 +104,14 @@ pub unsafe fn handle_err<T, E: Into<error_t>>(
     }
 }
 
+/// Handle a possible error by writing it to `target` (unless `target` is null)
+///
+/// If `target` is non-null, the referenced [`error_t`] is guaranteed to be
+/// initialized once this function returns.
+///
+/// # Safety
+///
+/// `target` must either be the null pointer or be valid for writes.
 pub unsafe fn handle_err_or_init<T, E: Into<error_t>>(
     result: Result<T, E>,
     target: *mut error_t,

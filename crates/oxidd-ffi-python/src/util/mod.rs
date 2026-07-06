@@ -1,12 +1,16 @@
 //! Primitives and utilities
 
+// spell-checker:ignore lshift
+
 use std::fmt;
 use std::marker::PhantomData;
 use std::ops::{Deref, Range};
 use std::path::Path;
 
+use byte_slice_cast::AsByteSlice;
+use oxidd::util::num::Natural;
 use pyo3::prelude::*;
-use pyo3::types::{PyIterator, PyRange, PyString, PyTuple};
+use pyo3::types::{PyBytes, PyInt, PyIterator, PyRange, PyString, PyTuple};
 
 use oxidd::{
     BooleanFunction, BooleanOperator, Function, HasLevel, LevelNo, Manager, ManagerRef, VarNo,
@@ -348,6 +352,46 @@ pub fn eval<B: BooleanFunction>(f: &B, args: &Bound<PyAny>) -> PyResult<bool> {
         }
         Ok(B::eval_edge(manager, edge, vals))
     })
+}
+
+pub fn natural_to_py<'py>(py: Python<'py>, natural: Natural) -> PyResult<Bound<'py, PyInt>> {
+    let mantissa = natural.mantissa();
+    let py_mantissa = if let &[n] = mantissa {
+        PyInt::new(py, n)
+    } else {
+        // Starting from Python 3.14, `PyLong_FromUnsignedNativeBytes()` becomes
+        // part of the stable ABI. For now, well use the Python method
+        // `int.from_bytes()` instead. The latter is also the fallback
+        // implementation used for the conversion from `num_bigint`'s `BigUint`
+        // to Python integers in PyO3 (file `src/conversions/num_bigint.rs`).
+
+        #[cfg(target_endian = "big")]
+        let mantissa: Vec<u64> = mantissa.iter().map(|d| d.swap_bytes()).collect();
+        #[cfg(target_endian = "big")]
+        let mantissa = mantissa.as_slice();
+
+        let mut bytes = mantissa.as_byte_slice();
+        // remove the most significant zeros
+        while let [tmp @ .., 0] = bytes {
+            bytes = tmp;
+        }
+
+        let py_bytes = PyBytes::new(py, bytes);
+
+        let int_ty = py.get_type::<PyInt>();
+        let res = int_ty.call_method("from_bytes", (py_bytes, "little"), None)?;
+        // SAFETY: Python's `int.from_bytes()` has return type `int`
+        unsafe { res.cast_into_unchecked() }
+    };
+
+    let exp = natural.exp();
+    if exp == 0 {
+        Ok(py_mantissa)
+    } else {
+        let res = py_mantissa.lshift(natural.exp())?;
+        // SAFETY: Python's `int.__lshift__(int)` has return type `int`
+        Ok(unsafe { res.cast_into_unchecked() })
+    }
 }
 
 pub fn visualize_serve(py: Python<'_>, visualizer: &mut oxidd_dump::Visualizer) -> PyResult<()> {

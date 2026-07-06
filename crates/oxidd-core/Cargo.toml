@@ -13,3 +13,4 @@ rust-version.workspace = true
 
 [dependencies]
 nanorand = { version = "0.8.0", default-features = false, features = ["wyrand"] }
+dashu-int = { version = "0.4.1", default-features = false }

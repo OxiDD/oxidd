@@ -2,7 +2,7 @@
 
 use std::borrow::Cow;
 use std::ffi::{OsStr, c_char};
-use std::mem::MaybeUninit;
+use std::mem::{ManuallyDrop, MaybeUninit};
 use std::str;
 
 /// A pointer to an array plus its size
@@ -57,6 +57,97 @@ impl From<&str> for str_t {
             len: s.len(),
         }
     }
+}
+
+/// An owned, potentially rust-allocated string
+///
+/// Owned means that the receiver is supposed to free it eventually using
+/// [`oxidd_string_free()`]
+#[repr(C)]
+pub struct string_t {
+    /// Null-terminated string data
+    data: *const c_char,
+    /// Byte length of the string (excluding the trailing null byte)
+    len: usize,
+    /// Capacity of the message character array. May be zero although `len` is
+    /// non-zero to mean that the string is borrowed. This field is for internal
+    /// use only.
+    _cap: usize,
+}
+
+impl string_t {
+    /// cbindgen:ignore
+    pub const EMPTY: Self = Self {
+        data: c"".as_ptr(),
+        len: 0,
+        _cap: 0,
+    };
+}
+
+impl Drop for string_t {
+    fn drop(&mut self) {
+        if self._cap != 0 {
+            debug_assert!(!self.data.is_null());
+            const { assert!(std::mem::size_of::<c_char>() == std::mem::size_of::<u8>()) };
+            drop(unsafe { Vec::from_raw_parts(self.data as *mut u8, 0, self._cap) });
+        }
+    }
+}
+
+impl Clone for string_t {
+    fn clone(&self) -> Self {
+        if self._cap == 0 {
+            Self { ..*self }
+        } else {
+            debug_assert!(!self.data.is_null());
+            let mut vec = Vec::with_capacity(self.len + 1);
+            vec.extend_from_slice(unsafe { std::slice::from_raw_parts(self.data, self.len) });
+            vec.push(0);
+            let vec = ManuallyDrop::new(vec);
+            Self {
+                data: vec.as_ptr(),
+                len: self.len,
+                _cap: self.len + 1,
+            }
+        }
+    }
+}
+
+impl From<&'static std::ffi::CStr> for string_t {
+    fn from(value: &'static std::ffi::CStr) -> Self {
+        Self {
+            data: value.as_ptr(),
+            len: value.count_bytes(),
+            _cap: 0,
+        }
+    }
+}
+
+impl From<String> for string_t {
+    fn from(value: String) -> Self {
+        let mut s = ManuallyDrop::new(value.into_bytes());
+        s.push(0);
+        Self {
+            data: s.as_ptr().cast(),
+            len: s.len() - 1,
+            _cap: s.capacity(),
+        }
+    }
+}
+
+/// Clone `string`
+///
+/// The returned `oxidd_string_t` must be deallocated independently of `string`,
+/// see [`oxidd_string_free()`].
+#[unsafe(no_mangle)]
+pub extern "C" fn oxidd_string_clone(string: &string_t) -> string_t {
+    string.clone()
+}
+
+/// Deallocate the string
+#[unsafe(no_mangle)]
+pub extern "C" fn oxidd_string_free(string: string_t) {
+    drop(string)
 }
 
 /// Optional

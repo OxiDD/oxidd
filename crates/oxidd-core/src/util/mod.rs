@@ -272,7 +272,6 @@ pub trait SatCountNumber:
     Clone
     + From<u32>
     + std::ops::Add<Self, Output = Self>
-    + std::ops::Sub<Self, Output = Self>
     + std::ops::Shl<u32, Output = Self>
     + std::ops::Shr<u32, Output = Self>
     + IsFloatingPoint
@@ -283,7 +282,6 @@ impl<T> SatCountNumber for T where
     T: Clone
         + From<u32>
         + std::ops::Add<Self, Output = Self>
-        + std::ops::Sub<Self, Output = Self>
         + std::ops::Shl<u32, Output = Self>
         + std::ops::Shr<u32, Output = Self>
         + IsFloatingPoint

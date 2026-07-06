@@ -23,9 +23,6 @@ oxidd-parser = { workspace = true, features = ["load-file"] }
 # command line argument parsing
 clap = { version = "4", features = ["derive", "wrap_help"] }
 
-# big integers
-num-bigint = "0.4"
-
 # fast hash function
 #
 # Note that there is a performance regression with 2.0, see

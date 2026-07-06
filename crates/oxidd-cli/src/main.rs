@@ -10,7 +10,6 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use clap::{Parser, ValueEnum};
-use num_bigint::BigUint;
 use oxidd::util::SatCountCache;
 use oxidd::{BooleanFunction, HasLevel, HasWorkers, Manager, ManagerRef, VarNo, WorkerPool};
 use oxidd_core::function::{ETagOfFunc, INodeOfFunc, TermOfFunc};
@@ -523,8 +522,10 @@ where
     }
 
     // Count nodes and satisfying assignments
-    let mut model_count_cache: SatCountCache<BigUint, BuildHasherDefault<FxHasher>> =
-        SatCountCache::default();
+    let mut model_count_cache: SatCountCache<
+        oxidd_core::util::num::Natural,
+        BuildHasherDefault<FxHasher>,
+    > = SatCountCache::default();
     for (f, equiv) in equivalences.into_iter() {
         print!("- {}", funcs[equiv[0]].1);
         for &i in &equiv[1..] {

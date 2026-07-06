@@ -4,6 +4,7 @@
 #ifndef OXIDD_UTIL_HPP
 #define OXIDD_UTIL_HPP
 
+#include <algorithm>
 #include <cassert>
 #include <compare>
 #include <concepts>
@@ -53,6 +54,108 @@ constexpr var_no_t invalid_var_no = std::numeric_limits<var_no_t>::max();
 /// Utility classes
 namespace util {
 
+/// String, potentially allocated by Rust
+class string {
+  capi::oxidd_string_t _str;
+
+  string(capi::oxidd_string_t string) : _str(string) {}
+
+public:
+  /// Construct a `string` from a C API struct
+  ///
+  /// This will take ownership of `string`, i.e., this object will take care of
+  /// calling `capi::oxidd_string_free()` (unless ownership is moved away via a
+  /// move constructor, …).
+  ///
+  /// Time complexity: O(1)
+  ///
+  /// @param  c_string  The C API struct to be wrapped
+  ///
+  /// @returns  The string object wrapping `c_string`
+  [[nodiscard]] static string
+  from_c_api(capi::oxidd_string_t c_string) noexcept {
+    return c_string;
+  }
+
+  /// Get the wrapped C API struct
+  ///
+  /// This method keeps ownership in `this`. To transfer ownership away, use
+  //  `release_to_c_api()`.
+  ///
+  /// Time complexity: O(1)
+  ///
+  /// @returns  The wrapped manager struct
+  [[nodiscard]] constexpr capi::oxidd_string_t to_c_api() const noexcept {
+    return _str;
+  }
+  /// Get the wrapped C API struct and release ownership of it
+  ///
+  /// You should eventually call `capi::oxidd_string_free()` on the result.
+  ///
+  /// Time complexity: O(1)
+  ///
+  /// @returns  The wrapped manager struct
+  ///
+  /// @see  `to_c_api()` for a version that does not transfer ownership.
+  constexpr capi::oxidd_string_t release_to_c_api() noexcept {
+    const capi::oxidd_string_t tmp = _str;
+    _str._cap = 0;
+    return tmp;
+  }
+
+  /// Copy constructor
+  string(const string &other) noexcept
+      : _str(capi::oxidd_string_clone(&other._str)) {}
+  /// Move constructor
+  ///
+  /// Note that calling the move constructor will transfer ownership of the
+  /// string data to the move-constructed object, but not clear the data in
+  /// `other`. This means that you will still be able to retrieve the error
+  /// message from `other`, but when the object having ownership gets
+  /// destructed, the `std::string_view` returned by `message` becomes a
+  /// dangling reference.
+  constexpr string(string &&other) noexcept : _str(other.release_to_c_api()) {}
+
+  ~string() noexcept {
+    if (_str._cap != 0)
+      capi::oxidd_string_free(_str);
+  }
+
+  /// Copy assignment operator
+  string &operator=(const string &other) noexcept {
+    _str = capi::oxidd_string_clone(&other._str);
+    return *this;
+  }
+  /// Move assignment operator
+  ///
+  /// Note that executing a move assignment will transfer ownership of the error
+  /// message to `this`, but not clear the message in `other`. This means that
+  /// you will still be able to retrieve the error message from `other`, but
+  /// when the object having ownership gets destructed, the `std::string_view`
+  /// returned by `message` becomes a dangling reference.
+  constexpr string &operator=(string &&other) noexcept {
+    _str = other.release_to_c_api();
+    return *this;
+  }
+
+  /// Conversion to a `std::string_view`
+  ///
+  /// Note that the returned string view is only valid until this object gets
+  /// destructed.
+  [[nodiscard]] constexpr operator std::string_view() const noexcept {
+    return {_str.data, _str.len};
+  }
+
+  friend constexpr bool operator==(const string &x, const string &y) {
+    return std::string_view(x) == std::string_view(y);
+  }
+
+  /// Write the string to `stream`
+  friend std::ostream &operator<<(std::ostream &stream, const string &str) {
+    return stream << std::string_view(str);
+  }
+};
+
 /// General-purpose error type with human-readable error messages
 class error {
   capi::oxidd_error_t _error;
@@ -97,8 +200,8 @@ public:
   /// @see  `to_c_api()` for a version that does not transfer ownership.
   constexpr capi::oxidd_error_t release_to_c_api() noexcept {
     const capi::oxidd_error_t tmp = _error;
-    _error._msg_cap = 0;
-    return _error;
+    _error.msg._cap = 0;
+    return tmp;
   }
 
   /// Copy constructor
@@ -112,11 +215,10 @@ public:
   /// message from `other`, but when the object having ownership gets
   /// destructed, the `std::string_view` returned by `message` becomes a
   /// dangling reference.
-  constexpr error(error &&other) noexcept : _error(other._error) {
-    other._error._msg_cap = 0;
-  }
+  constexpr error(error &&other) noexcept : _error(other.release_to_c_api()) {}
+
   ~error() noexcept {
-    if (_error._msg_cap != 0)
+    if (_error.msg._cap != 0)
       capi::oxidd_error_free(_error);
   }
 
@@ -133,8 +235,7 @@ public:
   /// when the object having ownership gets destructed, the `std::string_view`
   /// returned by `message` becomes a dangling reference.
   constexpr error &operator=(error &&other) noexcept {
-    _error = other._error;
-    other._error._msg_cap = 0;
+    _error = other.release_to_c_api();
     return *this;
   }
 
@@ -143,10 +244,12 @@ public:
   /// Note that the returned string view is only valid until this object gets
   /// destructed.
   [[nodiscard]] constexpr std::string_view message() const noexcept {
-    return {_error.msg, _error.msg_len};
+    return {_error.msg.data, _error.msg.len};
   }
   /// Conversion to a `std::string_view`, returns the same as `message()`
-  constexpr operator std::string_view() const noexcept { return message(); }
+  [[nodiscard]] constexpr operator std::string_view() const noexcept {
+    return message();
+  }
 
   friend constexpr bool operator==(const error &x, const error &y) noexcept {
     return x.message() == y.message();
@@ -494,8 +597,7 @@ public:
   /// @returns  The wrapped manager struct
   ///
   /// @see  `to_c_api()` for a version that does not transfer ownership.
-  [[nodiscard]] constexpr capi::oxidd_dddmp_file_t *
-  release_to_c_api() noexcept {
+  constexpr capi::oxidd_dddmp_file_t *release_to_c_api() noexcept {
     capi::oxidd_dddmp_file_t *f = _file;
     _file = nullptr;
     return f;
@@ -723,6 +825,163 @@ struct dddmp_export_settings {
   /// Name of the decision diagram
   std::string_view diagram_name;
 };
+
+/// Custom number types
+namespace num {
+
+/// Natural number, specifically well-suited for counting satisfying assignments
+///
+/// When counting the number of satisfying assignments in a decision diagram,
+/// the numbers often have many trailing zeros (in binary representation). Based
+/// on this observation, we decompose numbers as *m* × 2^<sup>e</sup> with a
+/// mantissa *m* and an exponent *e*. We require that both *m* and *e* are
+/// natural numbers. Further, *m* is odd unless the represented number is zero,
+/// in which case both *m* and *e* are zero.
+///
+/// The exponent *e* is stored as a `uint64_t` and the mantissa *m* as an array
+/// of `uint64_t` "digits." In case *m* fits into a single `uint64_t` digit, *m*
+/// is stored inline, i.e., without any heap allocation.
+///
+/// Conceptually, this type is similar to arbitrary precision floats. However,
+/// we do not require the user to choose the precision, instead we always
+/// represent numbers exactly.
+///
+/// To account for computation errors (e.g., an exponent that cannot be
+/// represented as a `uint64_t`). this type includes a NaN value. It is
+/// undefined if this value is larger or smaller than actual natural numbers.
+class natural {
+  capi::oxidd_natural_t _num;
+
+  natural(capi::oxidd_natural_t num) : _num(num) {}
+
+  static constexpr uint64_t nan_shl = std::numeric_limits<uint64_t>::max();
+
+public:
+  /// Construct a `natural` from a C API struct
+  ///
+  /// This will take ownership of `natural`, i.e., this object will take care of
+  /// calling `capi::oxidd_natural_free()` (unless ownership is moved away via a
+  /// move constructor, …).
+  ///
+  /// Time complexity: O(1)
+  ///
+  /// @param  c_natural  The C API struct to be wrapped
+  ///
+  /// @returns  The natural object wrapping `c_natural`
+  [[nodiscard]] static natural
+  from_c_api(capi::oxidd_natural_t c_natural) noexcept {
+    return c_natural;
+  }
+
+  /// Get the wrapped C API struct
+  ///
+  /// This method keeps ownership in `this`. To transfer ownership away, use
+  //  `release_to_c_api()`.
+  ///
+  /// Time complexity: O(1)
+  ///
+  /// @returns  The wrapped manager struct
+  [[nodiscard]] constexpr capi::oxidd_natural_t to_c_api() const noexcept {
+    return _num;
+  }
+  /// Get the wrapped C API struct and release ownership of it
+  ///
+  /// This method invalidates `this`, turning it into a NaN value. You should
+  /// eventually call `capi::oxidd_natural_free()` on the returned struct.
+  ///
+  /// Time complexity: O(1)
+  ///
+  /// @returns  The wrapped manager struct
+  ///
+  /// @see  `to_c_api()` for a version that does not transfer ownership.
+  constexpr capi::oxidd_natural_t release_to_c_api() noexcept {
+    const capi::oxidd_natural_t tmp = _num;
+    _num.ptr = nullptr;
+    _num.shl = nan_shl;
+    return tmp;
+  }
+
+  /// Copy constructor
+  natural(const natural &other) noexcept
+      : _num(capi::oxidd_natural_clone(&other._num)) {}
+
+  /// Move constructor
+  ///
+  /// Invalidates this number, turning it into a NaN value.
+  constexpr natural(natural &&other) noexcept
+      : _num(other.release_to_c_api()) {}
+
+  ~natural() noexcept {
+    if (_num.ptr != nullptr)
+      capi::oxidd_natural_free(_num);
+  }
+
+  /// Copy assignment operator
+  natural &operator=(const natural &other) noexcept {
+    _num = capi::oxidd_natural_clone(&other._num);
+    return *this;
+  }
+  /// Move assignment operator
+  ///
+  /// Invalidates this number, turning it into a NaN value.
+  constexpr natural &operator=(natural &&other) noexcept {
+    _num = other.release_to_c_api();
+    return *this;
+  }
+
+  friend constexpr bool operator==(const natural &x,
+                                   const natural &y) noexcept {
+    if (x._num.shl != y._num.shl)
+      return false;
+    if (x.is_nan())
+      return true; // both are `None`-alike
+    const std::span<const uint64_t> xm = x.mantissa(), ym = y.mantissa();
+    return xm.size() == ym.size() &&
+           (x._num.ptr == y._num.ptr || std::ranges::equal(xm, ym));
+  }
+
+  friend std::partial_ordering operator<=>(const natural &x,
+                                           const natural &y) noexcept {
+    const capi::oxidd_partial_ordering ord =
+        capi::oxidd_natural_cmp(&x._num, &y._num);
+    if (ord == capi::OXIDD_PARTIAL_ORDERING_LESS)
+      return std::partial_ordering::less;
+    if (ord == capi::OXIDD_PARTIAL_ORDERING_EQUAL)
+      return std::partial_ordering::equivalent;
+    if (ord == capi::OXIDD_PARTIAL_ORDERING_GREATER)
+      return std::partial_ordering::greater;
+    return std::partial_ordering::unordered;
+  }
+
+  /// Check if the number is NaN
+  [[nodiscard]] constexpr bool is_nan() const noexcept {
+    return _num.shl == nan_shl;
+  }
+
+  /// Get the mantissa
+  ///
+  /// The returned sequence starts with the least significant digit and has
+  /// minimal length, but at least one element. So unless the mantissa is 0,
+  /// the most significant digit (i.e., the last element) is non-zero.
+  [[nodiscard]] constexpr std::span<const uint64_t> mantissa() const noexcept {
+    if (_num.ptr != nullptr)
+      return {&_num.len, 1};
+    const std::span<const uint64_t> span = {_num.ptr, _num.len};
+    return span.back() != 0 ? span : span.first(_num.len - 1);
+  }
+
+  /// Convert the number to a string in decimal representation
+  [[nodiscard]] string to_string() const noexcept {
+    return string::from_c_api(capi::oxidd_natural_to_string(&_num));
+  }
+
+  /// Write `num` to `stream`
+  friend std::ostream &operator<<(std::ostream &stream, const natural &num) {
+    return stream << num.to_string();
+  }
+};
+
+} // namespace num
 
 /// Helper function to get a size hint for an iterator in constant time
 ///

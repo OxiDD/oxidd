@@ -3,9 +3,8 @@
 use std::hash::BuildHasherDefault;
 use std::path::PathBuf;
 
-use num_bigint::BigUint;
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyList, PyNone, PyRange, PyString, PyTuple, PyType};
+use pyo3::types::{PyBool, PyInt, PyList, PyNone, PyRange, PyString, PyTuple, PyType};
 use rustc_hash::FxHasher;
 
 use oxidd::util::{AllocResult, OptBool, num::F64};
@@ -13,6 +12,7 @@ use oxidd::{
     BooleanFunction, BooleanFunctionQuant, Function, FunctionSubst, HasLevel, LevelNo, Manager,
     ManagerRef, Subst, VarNo,
 };
+use oxidd_core::util::num::Natural;
 
 use crate::util::DDMemoryError;
 
@@ -1166,11 +1166,12 @@ impl BCDDFunction {
     ///
     /// Returns:
     ///     int: The exact number of satisfying assignments
-    fn sat_count(&self, py: Python, vars: LevelNo) -> BigUint {
-        py.detach(move || {
+    fn sat_count<'py>(&self, py: Python<'py>, vars: LevelNo) -> PyResult<Bound<'py, PyInt>> {
+        let count = py.detach(move || {
             self.0
-                .sat_count::<BigUint, BuildHasherDefault<FxHasher>>(vars, &mut Default::default())
-        })
+                .sat_count::<Natural, BuildHasherDefault<FxHasher>>(vars, &mut Default::default())
+        });
+        crate::util::natural_to_py(py, count)
     }
 
     /// Count the number of satisfying assignments.

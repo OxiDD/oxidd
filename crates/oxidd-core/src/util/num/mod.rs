@@ -1,6 +1,24 @@
 //! Number types useful for counting satisfying assignments
 
+use std::fmt;
+use std::ops::{Add, Shl, Shr, Sub};
+
 use crate::util::IsFloatingPoint;
+
+mod bigint;
+pub use bigint::Natural;
+
+/// Error type returned when a number is not representable in the target type
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct NotRepresentable;
+
+impl std::error::Error for NotRepresentable {}
+
+impl fmt::Display for NotRepresentable {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        "number is not representable in the target type".fmt(f)
+    }
+}
 
 /// Natural numbers with saturating arithmetic
 ///
@@ -101,8 +119,8 @@ macro_rules! impl_saturating {
 impl_saturating!(u64);
 impl_saturating!(u128);
 
-/// Floating point number like [`f64`], but with [`ShlAssign<u32>`] and
-/// [`ShrAssign<u32>`].
+/// Floating point number like [`f64`], but with [`Shl<u32>`] and
+/// [`Shr<u32>`].
 #[derive(Clone, Copy, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct F64(pub f64);
@@ -120,14 +138,14 @@ impl IsFloatingPoint for F64 {
     const MIN_EXP: i32 = f64::MIN_EXP;
 }
 
-impl std::ops::Add for F64 {
+impl Add for F64 {
     type Output = F64;
     #[inline]
     fn add(self, rhs: F64) -> F64 {
         F64(self.0 + rhs.0)
     }
 }
-impl std::ops::Sub for F64 {
+impl Sub for F64 {
     type Output = F64;
     #[inline]
     fn sub(self, rhs: F64) -> F64 {
@@ -135,7 +153,7 @@ impl std::ops::Sub for F64 {
     }
 }
 
-impl std::ops::Shl<u32> for F64 {
+impl Shl<u32> for F64 {
     type Output = F64;
     #[inline]
     #[allow(clippy::suspicious_arithmetic_impl)]
@@ -143,7 +161,7 @@ impl std::ops::Shl<u32> for F64 {
         F64(self.0 * (rhs as f64).exp2())
     }
 }
-impl std::ops::Shr<u32> for F64 {
+impl Shr<u32> for F64 {
     type Output = F64;
     #[inline]
     #[allow(clippy::suspicious_arithmetic_impl)]

@@ -27,6 +27,12 @@ int main(void) {
   // NOLINTNEXTLINE(*-bool-conversion) // bug llvm/llvm-project#195913
   puts(oxidd_bdd_satisfiable(f) ? "SAT" : "UNSAT");
 
+  oxidd_natural_t n = oxidd_bdd_sat_count(f, 3);
+  oxidd_string_t n_str = oxidd_natural_to_string(&n);
+  printf("#SAT: %s\n", n_str.data);
+  oxidd_string_free(n_str);
+  oxidd_natural_free(n);
+
   oxidd_bdd_unref(x);
   oxidd_bdd_unref(z);
   oxidd_bdd_unref(f);
