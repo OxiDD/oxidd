@@ -148,7 +148,7 @@ public:
   /// Conversion to a `std::string_view`, returns the same as `message()`
   constexpr operator std::string_view() const noexcept { return message(); }
 
-  friend constexpr bool operator==(error &x, error &y) {
+  friend constexpr bool operator==(const error &x, const error &y) noexcept {
     return x.message() == y.message();
   }
 
