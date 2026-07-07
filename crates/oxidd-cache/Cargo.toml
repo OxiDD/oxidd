@@ -21,7 +21,9 @@ document-features = "0.2"
 
 # allocation with madvise for hugepages
 hugealloc = { workspace = true, optional = true }
-allocator-api2 = { version = "0.2", optional = true }
+allocator-api2 = { version = "0.2", default-features = false, features = [
+  "alloc",
+], optional = true }
 
 [dev-dependencies]
 oxidd-derive.workspace = true

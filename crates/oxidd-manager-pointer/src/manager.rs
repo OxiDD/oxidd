@@ -27,7 +27,6 @@ use std::sync::atomic::Ordering::{Acquire, Relaxed};
 use arcslab::{ArcSlab, ArcSlabRef, AtomicRefCounted, ExtHandle, IntHandle};
 use derive_where::derive_where;
 use fixedbitset::FixedBitSet;
-use linear_hashtbl::raw::RawTable;
 use parking_lot::Mutex;
 use parking_lot::MutexGuard;
 use rustc_hash::FxHasher;
@@ -42,6 +41,11 @@ use oxidd_core::{
 use crate::node::NodeBase;
 use crate::terminal_manager::TerminalManager;
 use crate::util::{Invariant, TryLock, VarLevelMap, rwlock::RwLock};
+
+#[cfg(not(feature = "hugealloc"))]
+type RawTable<T> = linear_hashtbl::raw::RawTable<T, usize>;
+#[cfg(feature = "hugealloc")]
+type RawTable<T> = linear_hashtbl::raw::RawTable<T, usize, hugealloc::HugeAlloc>;
 
 // === Type Constructors =======================================================
 
@@ -1406,7 +1410,11 @@ impl<'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32> IntoIte
 {
     type Item = Edge<'id, N, ET, TAG_BITS>;
 
-    type IntoIter = linear_hashtbl::raw::IntoIter<Edge<'id, N, ET, TAG_BITS>>;
+    #[cfg(not(feature = "hugealloc"))]
+    type IntoIter = linear_hashtbl::raw::IntoIter<Edge<'id, N, ET, TAG_BITS>, usize>;
+    #[cfg(feature = "hugealloc")]
+    type IntoIter =
+        linear_hashtbl::raw::IntoIter<Edge<'id, N, ET, TAG_BITS>, usize, hugealloc::HugeAlloc>;
 
     fn into_iter(self) -> Self::IntoIter {
         let this = ManuallyDrop::new(self);

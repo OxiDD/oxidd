@@ -15,8 +15,8 @@ rust-version.workspace = true
 
 [dependencies]
 oxidd-core.workspace = true
-oxidd-manager-index = { workspace = true, optional = true }
-oxidd-manager-pointer = { workspace = true, optional = true }
+oxidd-manager-index = { workspace = true, features = ["hugealloc"], optional = true }
+oxidd-manager-pointer = { workspace = true, features = ["hugealloc"], optional = true }
 oxidd-cache = { workspace = true, features = ["hugealloc"], optional = true }
 oxidd-derive.workspace = true
 oxidd-dump.workspace = true

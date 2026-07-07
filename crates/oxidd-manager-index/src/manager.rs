@@ -28,7 +28,6 @@ use std::sync::atomic::Ordering::{Acquire, Relaxed};
 use crossbeam_utils::CachePadded;
 use derive_where::derive_where;
 use fixedbitset::FixedBitSet;
-use linear_hashtbl::raw::RawTable;
 use parking_lot::{Condvar, Mutex, MutexGuard};
 use rustc_hash::FxHasher;
 
@@ -40,6 +39,24 @@ use oxidd_core::{DiagramRules, InnerNode, LevelNo, ManagerEventSubscriber, Tag, 
 use crate::node::NodeBase;
 use crate::terminal_manager::TerminalManager;
 use crate::util::{Invariant, TryLock, VarLevelMap, rwlock::RwLock};
+
+#[cfg(not(feature = "hugealloc"))]
+mod huge {
+    pub type Box<T> = std::boxed::Box<T>;
+    pub type Vec<T> = std::vec::Vec<T>;
+
+    pub type RawTable<T> = linear_hashtbl::raw::RawTable<T, u32>;
+    pub type RawTableIntoIter<T> = linear_hashtbl::raw::IntoIter<T, u32>;
+}
+#[cfg(feature = "hugealloc")]
+mod huge {
+    use hugealloc::HugeAlloc;
+    pub type Box<T> = allocator_api2::boxed::Box<T, HugeAlloc>;
+    pub type Vec<T> = allocator_api2::vec::Vec<T, HugeAlloc>;
+
+    pub type RawTable<T> = linear_hashtbl::raw::RawTable<T, u32, HugeAlloc>;
+    pub type RawTableIntoIter<T> = linear_hashtbl::raw::IntoIter<T, u32, HugeAlloc>;
+}
 
 // === Type Constructors =======================================================
 
@@ -109,7 +126,7 @@ where
     TM: TerminalManager<'id, N, ET, TERMINALS>,
     MD: DropWith<Edge<'id, N, ET>>,
 {
-    inner_nodes: Box<SlotSlice<'id, N, TERMINALS>>,
+    inner_nodes: huge::Box<SlotSlice<'id, N, TERMINALS>>,
     manager: RwLock<Manager<'id, N, ET, TM, R, MD, TERMINALS>>,
     terminal_manager: TM,
     state: CachePadded<Mutex<SharedStoreState>>,
@@ -429,8 +446,12 @@ impl<N, ET> Drop for Edge<'_, N, ET> {
 
 impl<'id, N: NodeBase, const TERMINALS: usize> SlotSlice<'id, N, TERMINALS> {
     // Create a new slot slice for up to `capacity` nodes
-    fn new_boxed(capacity: u32) -> Box<Self> {
-        let mut vec: Vec<UnsafeCell<Slot<N>>> = Vec::with_capacity(capacity as usize);
+    fn new_boxed(capacity: u32) -> huge::Box<Self> {
+        #[cfg(not(feature = "hugealloc"))]
+        let mut vec: huge::Vec<UnsafeCell<Slot<N>>> = huge::Vec::with_capacity(capacity as usize);
+        #[cfg(feature = "hugealloc")]
+        let mut vec: huge::Vec<UnsafeCell<Slot<N>>> =
+            huge::Vec::with_capacity_in(capacity as usize, hugealloc::HugeAlloc);
 
         // SAFETY: The new length is equal to the capacity. All elements are
         // "initialized" as `Slot::uninit`.
@@ -1355,7 +1376,7 @@ where
 /// accordingly, this will simply leak all contained edges, not calling the
 /// `Edge`'s `Drop` implementation.
 struct LevelViewSet<'id, N, ET, TM, R, MD, const TERMINALS: usize>(
-    RawTable<Edge<'id, N, ET>, u32>,
+    huge::RawTable<Edge<'id, N, ET>>,
     PhantomData<(TM, R, MD)>,
 );
 
@@ -1571,7 +1592,7 @@ impl<'id, N, ET, TM, R, MD, const TERMINALS: usize> IntoIterator
 {
     type Item = Edge<'id, N, ET>;
 
-    type IntoIter = linear_hashtbl::raw::IntoIter<Edge<'id, N, ET>, u32>;
+    type IntoIter = huge::RawTableIntoIter<Edge<'id, N, ET>>;
 
     fn into_iter(self) -> Self::IntoIter {
         let this = ManuallyDrop::new(self);

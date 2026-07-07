@@ -16,6 +16,12 @@ oxidd-core.workspace = true
 
 arcslab.workspace = true
 
+# allocation on huge pages
+hugealloc = { workspace = true, optional = true }
+allocator-api2 = { version = "0.2", default-features = false, features = [
+  "alloc",
+], optional = true }
+
 # fast alternative Mutex & RwLock implementation
 parking_lot = "0.12"
 
@@ -42,7 +48,10 @@ scopeguard = { version = "1.2", default-features = false }
 
 
 [features]
-default = []
+default = ["hugealloc"]
+
+## Use the hugealloc crate to allocate memory
+hugealloc = ["dep:hugealloc", "dep:allocator-api2", "linear-hashtbl/allocator-api2"]
 
 ## Check that `Edge` is never dropped via its `Drop` implementation. This is
 ## done by adding a function call to a non-existing external function to the

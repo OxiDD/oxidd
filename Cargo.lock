@@ -624,9 +624,11 @@ dependencies = [
 name = "oxidd-manager-index"
 version = "0.11.0"
 dependencies = [
+ "allocator-api2",
  "crossbeam-utils",
  "derive-where",
  "fixedbitset",
+ "hugealloc",
  "linear-hashtbl",
  "oxidd-core",
  "parking_lot",
@@ -639,9 +641,11 @@ dependencies = [
 name = "oxidd-manager-pointer"
 version = "0.6.0"
 dependencies = [
+ "allocator-api2",
  "arcslab",
  "derive-where",
  "fixedbitset",
+ "hugealloc",
  "linear-hashtbl",
  "oxidd-core",
  "parking_lot",
