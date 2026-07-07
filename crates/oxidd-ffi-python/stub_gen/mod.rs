@@ -1357,11 +1357,11 @@ impl StubGen {
                     if *impl_eq || *impl_eq_int || *impl_ord {
                         writeln!(
                             w,
-                            "{sub_indent}def __eq__(self, /, rhs: object) -> bool: ..."
+                            "{sub_indent}def __eq__(self, rhs: object, /) -> bool: ..."
                         )?;
                         writeln!(
                             w,
-                            "{sub_indent}def __ne__(self, /, rhs: object) -> bool: ..."
+                            "{sub_indent}def __ne__(self, rhs: object, /) -> bool: ..."
                         )?;
                     }
                     if *impl_eq_int {
@@ -1371,7 +1371,7 @@ impl StubGen {
                         for op in ["le", "lt", "ge", "gt"] {
                             writeln!(
                                 w,
-                                "{sub_indent}def __{op}__(self, /, rhs: Self) -> bool: ..."
+                                "{sub_indent}def __{op}__(self, rhs: Self, /) -> bool: ..."
                             )?;
                         }
                     }
