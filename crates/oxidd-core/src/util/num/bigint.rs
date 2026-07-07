@@ -448,6 +448,17 @@ impl PartialOrd for Natural {
     }
 }
 
+impl std::hash::Hash for Natural {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        if self.is_nan() {
+            1.hash(state);
+        } else {
+            self.shl.hash(state);
+            self.mantissa().hash(state);
+        }
+    }
+}
+
 /// cbindgen:ignore
 impl IsFloatingPoint for Natural {
     const FLOATING_POINT: bool = false;
