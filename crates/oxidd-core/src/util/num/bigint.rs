@@ -823,7 +823,7 @@ impl Shr<u64> for Natural {
             if self.shl != u64::MAX {
                 self.shl -= rhs;
             }
-        } else {
+        } else if self.len != 0 {
             self.shl = u64::MAX;
         }
         self
