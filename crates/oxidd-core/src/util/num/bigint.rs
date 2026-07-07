@@ -102,6 +102,27 @@ impl Natural {
         shl: u64::MAX,
     };
 
+    #[allow(unused)] // only used by tests or with debug assertions enabled
+    fn check_inv(&self) {
+        if self.ptr == DANGLING {
+            if self.len == 0 {
+                assert!(self.shl == 0 || self.shl == u64::MAX);
+            } else {
+                assert_eq!(self.len & 1, 1);
+            }
+        } else {
+            assert_ne!(self.len, 0);
+            assert_ne!(self.len, 1);
+            // SAFETY: `self.ptr` is not `DANGLING`
+            let digits =
+                unsafe { std::slice::from_raw_parts(self.ptr.as_ptr(), self.len as usize) };
+            if *digits.last().unwrap() == 0 {
+                assert_eq!(digits[digits.len() - 2] >> (u64::BITS - 1), 1);
+            }
+            assert_eq!(digits[0] & 1, 1);
+        }
+    }
+
     /// Decompose a [`Natural`] into its raw parts
     ///
     /// The first tuple component is either [`std::ptr::null_mut()`] and the
@@ -140,15 +161,31 @@ impl Natural {
     /// interfaces and thus hidden from the documentation.
     ///
     /// See [`Self::into_raw_parts()`] for the inverse operation.
+    ///
+    /// # SAFETY
+    ///
+    /// `ptr` must either be null or point to an array of `len` elements and
+    /// be valid for reads. In general, functions taking an owned or mutably
+    /// borrowed [`Natural`] additionally assume that this array is valid for
+    /// writes and that it can be deallocated by turning it into a boxed slice.
     #[inline]
     #[doc(hidden)]
     pub unsafe fn from_raw_parts(ptr: *mut u64, len: u64, exp: u64) -> Self {
+        debug_assert!(ptr.is_null() || len != 0);
+        debug_assert!(len != 0 || exp == 0 || exp == u64::MAX);
         let ptr = NonNull::new(ptr).unwrap_or(DANGLING);
-        Self { ptr, len, shl: exp }
+        let num = Self { ptr, len, shl: exp };
+        #[cfg(debug_assertions)]
+        num.check_inv();
+        num
     }
 
     #[inline]
     fn from_mantissa_single_with_shl(mantissa: u64, shl: u64) -> Self {
+        debug_assert!(
+            mantissa & 1 == 1 || (mantissa == 0 && (shl == 0 || shl == u64::MAX)),
+            "invalid arguments (mantissa: {mantissa}, shl: {shl})"
+        );
         Self {
             ptr: DANGLING,
             len: mantissa,
@@ -159,6 +196,11 @@ impl Natural {
     #[inline]
     fn from_mantissa_with_shl(mantissa: Box<[u64]>, shl: u64) -> Self {
         let len = mantissa.len() as u64;
+        debug_assert!(len >= 2);
+        debug_assert!(
+            mantissa[len as usize - 1] != 0 || mantissa[len as usize - 2] >> (u64::BITS - 1) == 1
+        );
+        debug_assert_eq!(mantissa[0] & 1, 1);
         let ptr = NonNull::new(Box::into_raw(mantissa).cast()).unwrap();
         Self { ptr, len, shl }
     }
@@ -453,6 +495,10 @@ impl std::hash::Hash for Natural {
         if self.is_nan() {
             1.hash(state);
         } else {
+            debug_assert!(
+                self.len != 0 || self.shl == 0,
+                "0 has a unique representation"
+            );
             self.shl.hash(state);
             self.mantissa().hash(state);
         }
@@ -802,7 +848,7 @@ impl Shl<u64> for Natural {
     #[inline]
     fn shl(mut self, rhs: u64) -> Self {
         if self.len != 0 {
-            self.shl = self.shl.saturating_add(rhs);
+            self.shl = self.shl.saturating_add(rhs); // possibly becomes NaN
         }
         self
     }
@@ -824,7 +870,7 @@ impl Shr<u64> for Natural {
                 self.shl -= rhs;
             }
         } else if self.len != 0 {
-            self.shl = u64::MAX;
+            self.shl = u64::MAX; // set to NaN
         }
         self
     }
@@ -1206,58 +1252,39 @@ impl fmt::Debug for Natural {
 
 #[cfg(test)]
 mod test {
-    use super::{DANGLING, Natural};
+    use super::Natural;
     use std::fmt::Write as _;
-
-    fn check_inv(i: &Natural) {
-        if i.ptr == DANGLING {
-            if i.len == 0 {
-                assert_eq!(i.shl, 0);
-            } else {
-                assert_eq!(i.len.trailing_zeros(), 0);
-            }
-        } else {
-            assert_ne!(i.len, 0);
-            assert_ne!(i.len, 1);
-            // SAFETY: `i.ptr` is not `DANGLING`
-            let digits = unsafe { std::slice::from_raw_parts(i.ptr.as_ptr(), i.len as usize) };
-            if *digits.last().unwrap() == 0 {
-                assert_eq!(digits[digits.len() - 2] >> (u64::BITS - 1), 1);
-            }
-            assert_eq!(digits[0] & 1, 1);
-        }
-    }
 
     #[test]
     fn test_from_clone_and_shift_small() {
         let zero = Natural::from(0u32);
-        check_inv(&zero);
+        zero.check_inv();
         assert_eq!(zero, Natural::ZERO);
 
         let clone = zero.clone();
-        check_inv(&clone);
+        clone.check_inv();
         assert_eq!(clone, Natural::ZERO);
 
         let mut clone = clone << 1u64;
-        check_inv(&clone);
+        clone.check_inv();
         assert_eq!(clone, Natural::ZERO);
 
         let one = Natural::from(1u64);
-        check_inv(&one);
+        one.check_inv();
         assert_ne!(one, Natural::ZERO);
         assert!(one > Natural::ZERO);
 
         let two = Natural::from(2u64);
-        check_inv(&two);
+        two.check_inv();
         assert_ne!(two, one);
         assert!(two > one);
 
         clone.clone_from(&one);
-        check_inv(&clone);
+        clone.check_inv();
         assert_eq!(clone, one);
 
         let clone = clone << 1u32;
-        check_inv(&clone);
+        clone.check_inv();
         assert_eq!(clone, two);
     }
 
@@ -1265,48 +1292,48 @@ mod test {
     fn test_from_le_digits() {
         for slice in [[].as_slice(), &[0], &[0, 0]] {
             let num = Natural::from_le_digits(slice);
-            check_inv(&num);
+            num.check_inv();
             assert_eq!(num, Natural::ZERO);
         }
 
         let one = Natural::from(1u32);
         for slice in [[1].as_slice(), &[1, 0]] {
             let num = Natural::from_le_digits(slice);
-            check_inv(&num);
+            num.check_inv();
             assert_eq!(num, one);
         }
 
         let two = Natural::from(2u32);
         let num = Natural::from_le_digits(&[2]);
-        check_inv(&num);
+        num.check_inv();
         assert_eq!(num, two);
 
         let a = one.clone() << u64::BITS;
         let b = Natural::from_le_digits(&[0, 1]);
-        check_inv(&b);
+        b.check_inv();
         assert_eq!(a, b);
 
         let a = Natural::from(0b11u32) << (2 * u64::BITS - 1);
         let b = Natural::from_le_digits(&[0, 1 << (u64::BITS - 1), 1]);
-        check_inv(&b);
+        b.check_inv();
         assert_eq!(a, b);
 
         let half_bits = u64::BITS / 2;
         let a = Natural::from_le_digits(&[!0 << half_bits, !0, !0 >> half_bits]);
-        check_inv(&a);
+        a.check_inv();
         let b = Natural::from_le_digits(&[!0, !0]);
-        check_inv(&b);
+        b.check_inv();
         let b = b << half_bits;
-        check_inv(&b);
+        b.check_inv();
         assert_eq!(a, b);
 
         let half1_bits = u64::BITS / 2 - 1;
         let a = Natural::from_le_digits(&[!0 << half1_bits, !0, !0 >> half1_bits]);
-        check_inv(&a);
+        a.check_inv();
         let b = Natural::from_le_digits(&[!0, !0, 0b11]);
-        check_inv(&b);
+        b.check_inv();
         let b = b << half1_bits;
-        check_inv(&b);
+        b.check_inv();
         assert_eq!(a, b);
     }
 
@@ -1318,10 +1345,10 @@ mod test {
                 let rhs = rhs << shl;
                 let expected = sum << shl;
                 let actual = lhs.clone() + rhs.clone();
-                check_inv(&actual);
+                actual.check_inv();
                 assert_eq!(actual, expected);
                 let actual_rev = rhs + lhs;
-                check_inv(&actual_rev);
+                actual_rev.check_inv();
                 assert_eq!(actual_rev, expected);
             };
 
