@@ -31,7 +31,7 @@ jobs:
     outputs:
       package-tag: ${{ steps.build.outputs.tag }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: |
@@ -129,7 +129,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: |
@@ -193,7 +193,7 @@ jobs:
           - { arch: arm64, image: macos-15 }
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: |
@@ -229,7 +229,7 @@ jobs:
     runs-on: windows-2022
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: |
@@ -268,7 +268,7 @@ jobs:
     runs-on: windows-11-arm
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         id: cp314t
         with:
