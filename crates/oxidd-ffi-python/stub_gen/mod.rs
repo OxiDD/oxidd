@@ -1285,9 +1285,7 @@ impl StubGen {
                     match kind {
                         FunctionKind::Getter => writeln!(w, "{indent}@property")?,
                         FunctionKind::Setter(name) => writeln!(w, "{indent}@{name}.setter")?,
-                        FunctionKind::Classmethod | FunctionKind::Constructor => {
-                            writeln!(w, "{indent}@classmethod")?
-                        }
+                        FunctionKind::Classmethod => writeln!(w, "{indent}@classmethod")?,
                         FunctionKind::Staticmethod => writeln!(w, "{indent}@staticmethod")?,
                         _ => {}
                     }
@@ -1342,7 +1340,6 @@ impl StubGen {
 
                     if !*constructible {
                         writeln!(w)?;
-                        writeln!(w, "{sub_indent}@classmethod")?;
                         writeln!(w, "{sub_indent}def __new__(cls, _: Never) -> Self:")?;
                         writeln!(w, "{sub_indent}    \"\"\"Private constructor.\"\"\"")?;
                     }
