@@ -1,6 +1,6 @@
 [package]
 name = "oxidd-ffi-python"
-version = "0.11.2"
+version = "0.12.0"
 edition = "2024"
 description = "Python interface for OxiDD"
 readme = "../../bindings/python/README.md"

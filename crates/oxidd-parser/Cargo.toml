@@ -1,6 +1,6 @@
 [package]
 name = "oxidd-parser"
-version = "0.4.3"
+version = "0.5.0"
 edition = "2024"
 description = "Parsers for logic file formats"
 readme = "../../README.md"

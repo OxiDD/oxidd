@@ -1,6 +1,6 @@
 [package]
 name = "oxidd"
-version = "0.11.0"
+version = "0.12.0"
 edition = "2024"
 description = "A safe, concurrent, modular, and performant decision diagram framework."
 readme = "../../README.md"
