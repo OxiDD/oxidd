@@ -50,18 +50,15 @@ test = ["pytest >= 9.0"]
 
 
 [build-system]
-requires = ["maturin >= 1.9.4"]
+requires = ["maturin ~= 1.14"]
 build-backend = "maturin"
 
 [tool.maturin]
 # spell-checker:ignore auditwheel,sdist
 python-source = "bindings/python"
-include = [
-  { path = "bindings/python/oxidd/_oxidd.pyi", format = ["sdist"] },
-  { path = "oxidd/_oxidd.pyi", format = ["wheel"] },
-]
+include = ["bindings/python/oxidd/_oxidd.pyi"]
 exclude = [
-  { path = "oxidd/tests/**", format = ["wheel"] },
+  { path = "bindings/python/oxidd/tests/**", format = ["wheel"] },
   { path = "crates/oxidd-ffi-python/build.rs", format = ["sdist"] },
   { path = "crates/oxidd-ffi-python/stub_gen/**", format = ["sdist"] },
   ".gitignore",
