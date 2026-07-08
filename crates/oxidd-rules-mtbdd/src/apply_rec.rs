@@ -76,6 +76,95 @@ where
     Ok(h)
 }
 
+/// Recursively apply the if-then-else operator (`if f { g } else { h }`)
+///
+/// `f` must be a 0-1-valued MTBDD (see [`PseudoBooleanFunction::ite_edge`]).
+/// As an extension of the classical restriction, terminals of `f` other than
+/// `0`, `1`, and NaN are treated as "truthy" (`debug_assert`-ed against,
+/// since this indicates a violation of the documented precondition), and NaN
+/// propagates like in the other operators of this module.
+fn apply_ite<M, T>(
+    manager: &M,
+    f: Borrowed<M::Edge>,
+    g: Borrowed<M::Edge>,
+    h: Borrowed<M::Edge>,
+) -> AllocResult<M::Edge>
+where
+    M: Manager<Terminal = T> + HasApplyCache<M, MTBDDOp>,
+    M::InnerNode: HasLevel,
+    T: NumberBase,
+{
+    stat!(call MTBDDOp::Ite);
+
+    // The condition is irrelevant if both branches agree.
+    if g == h {
+        return Ok(manager.clone_edge(&g));
+    }
+
+    // Terminal cases for `f`. We decide as soon as `f` resolves to a
+    // terminal, which is what makes this a 0-1-valued-condition restricted
+    // "ite", as opposed to a fully generic ternary operator.
+    if let Node::Terminal(t) = manager.get_node(&f) {
+        let t = t.borrow();
+        return Ok(if t.is_zero() {
+            manager.clone_edge(&h)
+        } else if t.is_nan() {
+            manager.get_terminal(T::nan())?
+        } else {
+            debug_assert!(t.is_one(), "the condition of `ite` must be 0-1-valued");
+            manager.clone_edge(&g)
+        });
+    }
+
+    // Query apply cache
+    stat!(cache_query MTBDDOp::Ite);
+    if let Some(res) = manager.apply_cache().get(
+        manager,
+        MTBDDOp::Ite,
+        &[f.borrowed(), g.borrowed(), h.borrowed()],
+    ) {
+        stat!(cache_hit MTBDDOp::Ite);
+        return Ok(res);
+    }
+
+    // `f` is not a terminal (handled above), so it is safe to unwrap it.
+    let fnode = manager.get_node(&f).unwrap_inner();
+    let gnode = manager.get_node(&g);
+    let hnode = manager.get_node(&h);
+    let flevel = fnode.level();
+    let glevel = gnode.level();
+    let hlevel = hnode.level();
+    let level = flevel.min(glevel).min(hlevel);
+
+    // Collect cofactors of all top-most nodes
+    let (ft, fe) = if flevel == level {
+        collect_children(fnode)
+    } else {
+        (f.borrowed(), f.borrowed())
+    };
+    let (gt, ge) = if glevel == level {
+        collect_children(gnode.unwrap_inner())
+    } else {
+        (g.borrowed(), g.borrowed())
+    };
+    let (ht, he) = if hlevel == level {
+        collect_children(hnode.unwrap_inner())
+    } else {
+        (h.borrowed(), h.borrowed())
+    };
+
+    let t = EdgeDropGuard::new(manager, apply_ite(manager, ft, gt, ht)?);
+    let e = EdgeDropGuard::new(manager, apply_ite(manager, fe, ge, he)?);
+    let res = reduce(manager, level, t.into_edge(), e.into_edge(), MTBDDOp::Ite)?;
+
+    // Add to apply cache
+    manager
+        .apply_cache()
+        .add(manager, MTBDDOp::Ite, &[f, g, h], res.borrowed());
+
+    Ok(res)
+}
+
 // --- Function Interface ------------------------------------------------------
 
 /// Workaround for https://github.com/rust-lang/rust/issues/49601
@@ -184,6 +273,21 @@ where
         rhs: &EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>> {
         apply_bin::<_, T, { MTBDDOp::Max as u8 }>(manager, lhs.borrowed(), rhs.borrowed())
+    }
+
+    #[inline]
+    fn ite_edge<'id>(
+        manager: &Self::Manager<'id>,
+        if_edge: &EdgeOfFunc<'id, Self>,
+        then_edge: &EdgeOfFunc<'id, Self>,
+        else_edge: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        apply_ite::<_, T>(
+            manager,
+            if_edge.borrowed(),
+            then_edge.borrowed(),
+            else_edge.borrowed(),
+        )
     }
 
     #[inline]
