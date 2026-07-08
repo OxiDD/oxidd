@@ -158,6 +158,7 @@ rwlock
 satisfiability
 scopeguard
 segtree
+semiring
 serde
 setuptools
 sideeffect
@@ -196,6 +197,7 @@ unoptimized
 unref
 UNSAT
 unsuffixed
+untaken
 usize
 venv
 virtualenv

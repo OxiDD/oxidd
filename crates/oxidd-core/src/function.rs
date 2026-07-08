@@ -1418,6 +1418,26 @@ pub trait PseudoBooleanFunction: Function {
         Ok(Self::from_edge(manager, Self::var_edge(manager, var)?))
     }
 
+    /// Restrict a set of variables to constant values
+    ///
+    /// `vars` conceptually is a partial assignment, represented as the
+    /// conjunction of positive or negative literals (0-1-valued functions),
+    /// depending on whether the variable should be mapped to true or false.
+    ///
+    /// In other words, the restriction is a point-wise Shannon cofactor with
+    /// respect to the partial assignment given by `vars`. In an MTBDD, the
+    /// result never has more nodes than `self`.
+    ///
+    /// Locking behavior: acquires the manager's lock for shared access.
+    ///
+    /// Panics if `self` and `vars` don't belong to the same manager.
+    fn restrict(&self, vars: &Self) -> AllocResult<Self> {
+        self.with_manager_shared(|manager, root| {
+            let e = Self::restrict_edge(manager, root, vars.as_edge(manager))?;
+            Ok(Self::from_edge(manager, e))
+        })
+    }
+
     /// Point-wise addition `self + rhs`
     ///
     /// Locking behavior: acquires a shared manager lock
@@ -1490,23 +1510,32 @@ pub trait PseudoBooleanFunction: Function {
         })
     }
 
-    /// Restrict a set of variables to constant values
+    /// Compute `if self { then_case } else { else_case }` point-wise
     ///
-    /// `vars` conceptually is a partial assignment, represented as the
-    /// conjunction of positive or negative literals (0-1-valued functions),
-    /// depending on whether the variable should be mapped to true or false.
+    /// `self` must be a 0-1-valued function, i.e., every terminal reachable
+    /// from `self` must be [`Self::Number::zero()`][NumberBase::zero] or
+    /// [`Self::Number::one()`][NumberBase::one]. `then_case` and `else_case`
+    /// may be arbitrary-valued. Violating this precondition yields an
+    /// unspecified value; implementations may debug-assert the condition
+    /// instead.
     ///
-    /// In other words, the restriction is a point-wise Shannon cofactor with
-    /// respect to the partial assignment given by `vars`. In an MTBDD, the
-    /// result never has more nodes than `self`.
+    /// If the images of `then_case` and `else_case` do not contain infinite or
+    /// NaN values, the returned function is equivalent to
+    /// `self * then_case + (1 - self) * else_case`. Otherwise, the behavior
+    /// differs since `0 * NaN` and `0 * ∞` are NaN. This method only considers
+    /// the case selected via `self` and thereby ignores infinite or NaN values
+    /// from the other case.
     ///
-    /// Locking behavior: acquires the manager's lock for shared access.
+    /// Locking behavior: acquires a shared manager lock
     ///
-    /// Panics if `self` and `vars` don't belong to the same manager.
-    fn restrict(&self, vars: &Self) -> AllocResult<Self> {
-        self.with_manager_shared(|manager, root| {
-            let e = Self::restrict_edge(manager, root, vars.as_edge(manager))?;
-            Ok(Self::from_edge(manager, e))
+    /// Panics if `self`, `then_case`, and `else_case` don't belong to the
+    /// same manager.
+    fn ite(&self, then_case: &Self, else_case: &Self) -> AllocResult<Self> {
+        self.with_manager_shared(|manager, if_edge| {
+            let then_edge = then_case.as_edge(manager);
+            let else_edge = else_case.as_edge(manager);
+            let res = Self::ite_edge(manager, if_edge, then_edge, else_edge)?;
+            Ok(Self::from_edge(manager, res))
         })
     }
 
@@ -1520,6 +1549,14 @@ pub trait PseudoBooleanFunction: Function {
     fn var_edge<'id>(
         manager: &Self::Manager<'id>,
         var: VarNo,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
+
+    /// Edge version of [`Self::restrict()`]
+    #[must_use]
+    fn restrict_edge<'id>(
+        manager: &Self::Manager<'id>,
+        root: &EdgeOfFunc<'id, Self>,
+        vars: &EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
     /// Edge version of [`Self::add()`]
@@ -1564,12 +1601,13 @@ pub trait PseudoBooleanFunction: Function {
         rhs: &EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
-    /// Edge version of [`Self::restrict()`]
+    /// Edge version of [`Self::ite()`]
     #[must_use]
-    fn restrict_edge<'id>(
+    fn ite_edge<'id>(
         manager: &Self::Manager<'id>,
-        root: &EdgeOfFunc<'id, Self>,
-        vars: &EdgeOfFunc<'id, Self>,
+        if_edge: &EdgeOfFunc<'id, Self>,
+        then_edge: &EdgeOfFunc<'id, Self>,
+        else_edge: &EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
     /// Evaluate this function

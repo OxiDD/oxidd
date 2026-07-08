@@ -743,13 +743,14 @@ pub fn derive_pseudo_boolean_function(input: syn::DeriveInput) -> TokenStream {
         "PseudoBooleanFunction",
         &[
             Var("var"),
+            Binary("restrict"),
             Binary("add"),
             Binary("sub"),
             Binary("mul"),
             Binary("div"),
             Binary("min"),
             Binary("max"),
-            Binary("restrict"),
+            Ternary("ite"),
         ],
         |ctx| {
             let CustomMethodsCtx {

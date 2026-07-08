@@ -65,7 +65,6 @@ fn reduce<M: Manager>(
     e: M::Edge,
     op: MTBDDOp,
 ) -> AllocResult<M::Edge> {
-    let _ = op;
     let tmp = <MTBDDRules as DiagramRules<_, _, _>>::reduce(manager, level, [t, e]);
     if let ReducedOrNew::Reduced(..) = &tmp {
         stat!(reduced op);
