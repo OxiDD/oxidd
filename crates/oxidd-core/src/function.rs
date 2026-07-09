@@ -1484,6 +1484,29 @@ pub trait PseudoBooleanFunction: Function {
         })
     }
 
+    /// Restrict a set of variables to constant values
+    ///
+    /// `vars` conceptually is a partial assignment, represented as the
+    /// conjunction of positive or negative literals (0-1-valued functions),
+    /// depending on whether the variable should be mapped to true or false.
+    /// With this representation, the result is equivalent to the multiplication
+    /// of `self` and `vars`, unless there are infinite or NaN values in the
+    /// image of `self`.
+    ///
+    /// In other words, the restriction is a point-wise Shannon cofactor with
+    /// respect to the partial assignment given by `vars`. In an MTBDD, the
+    /// result never has more nodes than `self`.
+    ///
+    /// Locking behavior: acquires the manager's lock for shared access.
+    ///
+    /// Panics if `self` and `vars` don't belong to the same manager.
+    fn restrict(&self, vars: &Self) -> AllocResult<Self> {
+        self.with_manager_shared(|manager, root| {
+            let e = Self::restrict_edge(manager, root, vars.as_edge(manager))?;
+            Ok(Self::from_edge(manager, e))
+        })
+    }
+
     /// Edge version of [`Self::constant()`]
     fn constant_edge<'id>(
         manager: &Self::Manager<'id>,
@@ -1536,6 +1559,14 @@ pub trait PseudoBooleanFunction: Function {
         manager: &Self::Manager<'id>,
         lhs: &EdgeOfFunc<'id, Self>,
         rhs: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
+
+    /// Edge version of [`Self::restrict()`]
+    #[must_use]
+    fn restrict_edge<'id>(
+        manager: &Self::Manager<'id>,
+        root: &EdgeOfFunc<'id, Self>,
+        vars: &EdgeOfFunc<'id, Self>,
     ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
     /// Evaluate this function

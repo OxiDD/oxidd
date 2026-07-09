@@ -89,6 +89,9 @@ pub enum MTBDDOp {
 
     /// If-then-else
     Ite,
+
+    /// Restrict a set of variables to constant values
+    Restrict,
 }
 
 /// Collect the two children of a binary node
