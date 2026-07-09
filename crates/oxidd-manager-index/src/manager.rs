@@ -843,14 +843,14 @@ where
 {
     #[inline]
     fn drop(&mut self) {
+        /// Return pre-allocated slots to the shared state
         #[cold]
-        fn drop_slow<N>(
+        fn return_preallocated<N>(
             slots: &[UnsafeCell<Slot<N>>],
             shared_state: &Mutex<SharedStoreState>,
             terminals: u32,
         ) {
             LOCAL_STORE_STATE.with(|local| {
-                local.current_store.set(0);
                 let start = local.initialized.get();
                 let next_free = if start % CHUNK_SIZE != 0 {
                     // We cannot simply give an uninitialized chunk back. Hence,
@@ -881,12 +881,15 @@ where
         }
 
         LOCAL_STORE_STATE.with(|local| {
-            if addr(self.0) == local.current_store.get()
-                && (local.next_free.get() != 0
-                    || local.initialized.get() % CHUNK_SIZE != 0
-                    || local.node_count_delta.get() != 0)
+            debug_assert_eq!(addr(self.0), local.current_store.get());
+            // Always reset the current store. Otherwise, we can never use the local state
+            // for a store at a different address (see [`Store::prepare_local_state()`]).
+            local.current_store.set(0);
+            if local.next_free.get() != 0
+                || local.initialized.get() % CHUNK_SIZE != 0
+                || local.node_count_delta.get() != 0
             {
-                drop_slow(&self.0.inner_nodes.slots, &self.0.state, TERMINALS as u32);
+                return_preallocated(&self.0.inner_nodes.slots, &self.0.state, TERMINALS as u32);
             }
         });
     }
