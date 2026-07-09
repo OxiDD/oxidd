@@ -158,8 +158,8 @@ macro_rules! ldd_function_methods {
                 f: &Self,
                 g: &Self,
             ) -> ::oxidd_core::util::AllocResult<Self> {
-                use ::oxidd_core::function::Function;
                 use ::oxidd_core::Manager;
+                use ::oxidd_core::function::Function;
                 let f = manager.clone_edge(f.as_edge(manager));
                 let g = manager.clone_edge(g.as_edge(manager));
                 Ok(Self(FunctionInner::from_edge(
@@ -180,8 +180,8 @@ macro_rules! ldd_function_methods {
                 a: &Self,
                 b: &Self,
             ) -> ::oxidd_core::util::AllocResult<Self> {
-                use ::oxidd_core::function::Function;
                 use ::oxidd_core::Manager;
+                use ::oxidd_core::function::Function;
                 let a = manager.clone_edge(a.as_edge(manager));
                 let b = manager.clone_edge(b.as_edge(manager));
                 Ok(Self(FunctionInner::from_edge(
@@ -210,8 +210,8 @@ macro_rules! ldd_function_methods {
                 rel: &Self,
                 meta: &Self,
             ) -> ::oxidd_core::util::AllocResult<Self> {
-                use ::oxidd_core::function::Function;
                 use ::oxidd_core::Manager;
+                use ::oxidd_core::function::Function;
                 let set = manager.clone_edge(set.as_edge(manager));
                 let rel = manager.clone_edge(rel.as_edge(manager));
                 let meta = manager.clone_edge(meta.as_edge(manager));
@@ -251,8 +251,8 @@ macro_rules! ldd_function_methods {
                 meta: &Self,
                 universe: &Self,
             ) -> ::oxidd_core::util::AllocResult<Self> {
-                use ::oxidd_core::function::Function;
                 use ::oxidd_core::Manager;
+                use ::oxidd_core::function::Function;
                 let set = manager.clone_edge(set.as_edge(manager));
                 let rel = manager.clone_edge(rel.as_edge(manager));
                 let meta = manager.clone_edge(meta.as_edge(manager));
@@ -277,8 +277,8 @@ macro_rules! ldd_function_methods {
                 set: &Self,
                 proj: &Self,
             ) -> ::oxidd_core::util::AllocResult<Self> {
-                use ::oxidd_core::function::Function;
                 use ::oxidd_core::Manager;
+                use ::oxidd_core::function::Function;
                 let set = manager.clone_edge(set.as_edge(manager));
                 let proj = manager.clone_edge(proj.as_edge(manager));
                 Ok(Self(FunctionInner::from_edge(
@@ -301,7 +301,7 @@ macro_rules! ldd_function_methods {
             /// Returns `true` if `self` is the set containing only the empty
             /// vector, i.e. the `true` terminal.
             pub fn is_empty_vector(&self) -> bool {
-                use ::oxidd_core::{function::Function, Manager, ManagerRef};
+                use ::oxidd_core::{Manager, ManagerRef, function::Function};
                 self.manager_ref().with_manager_shared(|manager| {
                     manager
                         .get_node(self.as_edge(manager))
@@ -312,7 +312,7 @@ macro_rules! ldd_function_methods {
             /// Returns the `(value, down, right)` triple of the root node, or
             /// `None` if `self` is a terminal (the empty set or empty vector).
             pub fn node(&self) -> Option<(Value, Self, Self)> {
-                use ::oxidd_core::{function::Function, InnerNode, Manager, ManagerRef, Node};
+                use ::oxidd_core::{InnerNode, Manager, ManagerRef, Node, function::Function};
                 self.manager_ref().with_manager_shared(|manager| {
                     match manager.get_node(self.as_edge(manager)) {
                         Node::Terminal(_) => None,
@@ -338,7 +338,7 @@ macro_rules! ldd_function_methods {
                 down: &Self,
                 right: &Self,
             ) -> ::oxidd_core::util::AllocResult<Self> {
-                use ::oxidd_core::{function::Function, InnerNode, LevelView, Manager};
+                use ::oxidd_core::{InnerNode, LevelView, Manager, function::Function};
                 let t = manager.clone_edge(down.as_edge(manager));
                 let e = manager.clone_edge(right.as_edge(manager));
                 let edge = LevelView::get_or_insert(
@@ -351,7 +351,7 @@ macro_rules! ldd_function_methods {
             /// Returns a stable identifier for the root node of `self`, suitable
             /// for distinguishing nodes (e.g. when emitting DOT output).
             pub fn id(&self) -> ::oxidd_core::NodeID {
-                use ::oxidd_core::{function::Function, Edge, ManagerRef};
+                use ::oxidd_core::{Edge, ManagerRef, function::Function};
                 self.manager_ref()
                     .with_manager_shared(|manager| self.as_edge(manager).node_id())
             }
@@ -379,7 +379,7 @@ mod index {
         terminals: 2,
     });
 
-    crate::util::manager_data!(LDDManagerData for LDD, operator: LDDOp, cache_max_arity: 4);
+    crate::util::manager_data!(LDDManagerData for LDD, operator: LDDOp, cache_entry_capacity: 4);
 
     crate::util::manager_ref_index_based!(pub struct LDDManagerRef(<LDD as DD>::ManagerRef) with LDDManagerData);
 
@@ -417,7 +417,7 @@ mod pointer {
         tag_bits: 2,
     });
 
-    crate::util::manager_data!(LDDManagerData for LDD, operator: LDDOp, cache_max_arity: 4);
+    crate::util::manager_data!(LDDManagerData for LDD, operator: LDDOp, cache_entry_capacity: 4);
 
     crate::util::manager_ref_pointer_based!(pub struct LDDManagerRef(<LDD as DD>::ManagerRef) with LDDManagerData);
 

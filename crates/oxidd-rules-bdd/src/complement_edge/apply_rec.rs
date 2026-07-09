@@ -1195,6 +1195,7 @@ where
             cache: &mut SatCountCache<N, S>,
         ) -> N
         where
+            M: BCDDManager,
             N: SatCountNumber,
             S: BuildHasher,
         {
