@@ -1484,6 +1484,50 @@ pub trait PseudoBooleanFunction: Function {
         })
     }
 
+    /// Compute `if self { then_case } else { else_case }` point-wise
+    ///
+    /// `self` must be a 0-1-valued function, i.e., every terminal reachable
+    /// from `self` must be [`Self::Number::zero()`][NumberBase::zero] or
+    /// [`Self::Number::one()`][NumberBase::one]. `then_case` and `else_case`
+    /// may be arbitrary-valued. Violating this precondition yields an
+    /// unspecified (but not unsafe) value; implementations may debug-assert
+    /// it instead.
+    ///
+    /// Locking behavior: acquires a shared manager lock
+    ///
+    /// Panics if `self`, `then_case`, and `else_case` don't belong to the
+    /// same manager.
+    fn ite(&self, then_case: &Self, else_case: &Self) -> AllocResult<Self> {
+        self.with_manager_shared(|manager, if_edge| {
+            let then_edge = then_case.as_edge(manager);
+            let else_edge = else_case.as_edge(manager);
+            let res = Self::ite_edge(manager, if_edge, then_edge, else_edge)?;
+            Ok(Self::from_edge(manager, res))
+        })
+    }
+
+    /// Edge version of [`Self::ite()`]
+    ///
+    /// The default implementation computes `else_edge * (1 - if_edge) +
+    /// if_edge * then_edge` using [`Self::add_edge()`], [`Self::sub_edge()`],
+    /// and [`Self::mul_edge()`]. Implementations backed by a decision diagram
+    /// where terminals are single-pass reachable should override this with a
+    /// dedicated recursive traversal, which avoids materializing the
+    /// intermediate results of the four generic applies above.
+    #[must_use]
+    fn ite_edge<'id>(
+        manager: &Self::Manager<'id>,
+        if_edge: &EdgeOfFunc<'id, Self>,
+        then_edge: &EdgeOfFunc<'id, Self>,
+        else_edge: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        let one = EdgeDropGuard::new(manager, Self::constant_edge(manager, Self::Number::one())?);
+        let not_if = EdgeDropGuard::new(manager, Self::sub_edge(manager, &one, if_edge)?);
+        let else_part = EdgeDropGuard::new(manager, Self::mul_edge(manager, else_edge, &not_if)?);
+        let then_part = EdgeDropGuard::new(manager, Self::mul_edge(manager, if_edge, then_edge)?);
+        Self::add_edge(manager, &then_part, &else_part)
+    }
+
     /// Edge version of [`Self::constant()`]
     fn constant_edge<'id>(
         manager: &Self::Manager<'id>,
