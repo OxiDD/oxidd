@@ -161,6 +161,7 @@ segtree
 serde
 setuptools
 sideeffect
+signum
 smallvec
 spinlock
 spinlocks

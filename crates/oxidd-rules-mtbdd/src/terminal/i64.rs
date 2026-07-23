@@ -19,6 +19,18 @@ impl From<i64> for I64 {
     }
 }
 
+impl I64 {
+    /// Signum function, where NaN is mapped to None
+    fn signum(self) -> Option<i32> {
+        Some(match self {
+            I64::NaN => return None,
+            I64::MinusInf => -1,
+            I64::Num(n) => n.signum() as i32,
+            I64::PlusInf => 1,
+        })
+    }
+}
+
 impl NumberBase for I64 {
     #[inline]
     fn zero() -> Self {
@@ -172,9 +184,12 @@ impl Mul for I64 {
                     }
                 }
             },
-            (NaN, _) | (_, NaN) | (MinusInf, PlusInf) | (PlusInf, MinusInf) => NaN,
-            (MinusInf, _) | (_, MinusInf) => MinusInf,
-            (PlusInf, _) | (_, PlusInf) => PlusInf,
+            (NaN, _) | (_, NaN) => NaN,
+            _ => match self.signum().unwrap() * rhs.signum().unwrap() {
+                1 => PlusInf,
+                -1 => MinusInf,
+                _ => NaN,
+            },
         }
     }
 }
@@ -200,7 +215,9 @@ impl Div for I64 {
                 }
             }
             (Num(_), MinusInf | PlusInf) => Num(0),
+            (PlusInf, Num(n)) if n < 0 => MinusInf,
             (PlusInf, Num(_)) => PlusInf,
+            (MinusInf, Num(n)) if n < 0 => PlusInf,
             (MinusInf, Num(_)) => MinusInf,
             _ => NaN,
         }
@@ -211,3 +228,43 @@ super::impl_ref_op!(I64, Add, add);
 super::impl_ref_op!(I64, Sub, sub);
 super::impl_ref_op!(I64, Mul, mul);
 super::impl_ref_op!(I64, Div, div);
+
+#[cfg(test)]
+mod test {
+    use super::{super::F64, I64};
+
+    fn from_float(float: F64) -> I64 {
+        match f64::from(float) {
+            f if f.is_nan() => I64::NaN,
+            f64::NEG_INFINITY => I64::MinusInf,
+            f64::INFINITY => I64::PlusInf,
+            f => I64::Num(f as i64),
+        }
+    }
+
+    #[test]
+    fn agrees_with_float() {
+        let numbers = [
+            (I64::NaN, f64::NAN),
+            (I64::MinusInf, f64::NEG_INFINITY),
+            (I64::Num(-1), -1.),
+            (I64::Num(0), 0.),
+            (I64::Num(1), 1.),
+            (I64::PlusInf, f64::INFINITY),
+        ];
+
+        for (ai, af) in numbers {
+            let af = F64::from(af);
+            for (bi, bf) in numbers {
+                let bf = F64::from(bf);
+
+                assert_eq!(ai == bi, af == bf, "{ai} == {bi}");
+                assert_eq!(ai.partial_cmp(&bi), af.partial_cmp(&bf), "{ai} <=> {bi}");
+                assert_eq!(ai + bi, from_float(af + bf), "{ai} + {bi}");
+                assert_eq!(ai - bi, from_float(af - bf), "{ai} - {bi}");
+                assert_eq!(ai * bi, from_float(af * bf), "{ai} * {bi}");
+                assert_eq!(ai / bi, from_float(af / bf), "{ai} / {bi}");
+            }
+        }
+    }
+}
