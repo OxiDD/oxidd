@@ -18,6 +18,11 @@ lint-rust:
     cargo +nightly fmt --check
     cargo doc --no-deps
 
+# Run Rust tests with Miri
+test-miri:
+    @# The flags are needed by dependencies of OxiDD and probably not OxiDD itself
+    MIRIFLAGS="-Zmiri-permissive-provenance -Zmiri-tree-borrows -Zmiri-ignore-leaks" cargo +nightly miri test
+
 # Format C++ code using clang-format
 fmt-cpp:
     find bindings/cpp -regex '.*\.[ch]\(pp\)?$' -exec clang-format -i {} +
