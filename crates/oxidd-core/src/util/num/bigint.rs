@@ -1486,8 +1486,8 @@ mod test {
             }
         }
         assert_eq!(
-            f64::from(&Natural::from_mantissa_single_with_shl(1, 1023)),
-            2f64.powi(1023),
+            f64::from(&Natural::from_mantissa_single_with_shl(1, 1023)).to_bits(),
+            0x7fe << (f64::MANTISSA_DIGITS - 1), // 2f64.powi(1023), but with exact precision
         );
         assert_eq!(
             f64::from(&Natural::from_mantissa_single_with_shl(1, 1024)),
