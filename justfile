@@ -1,4 +1,4 @@
-# spell-checker:ignore autodoc,pydata,stubtest,Werror
+# spell-checker:ignore autodoc,pydata,stubtest,Werror,MIRIFLAGS,Zmiri
 
 # Print available recipes
 help:
