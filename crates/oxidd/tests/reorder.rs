@@ -11,7 +11,10 @@ use oxidd_reorder::set_var_order;
 fn reverse_empty_bdd() {
     let mref = oxidd::bdd::new_manager(1024, 128, 2);
     mref.with_manager_exclusive(|manager| {
+        #[cfg(not(miri))]
         let nvars = 1024;
+        #[cfg(miri)]
+        let nvars = 128;
         let mut order = Vec::from_iter(manager.add_vars(nvars));
 
         set_var_order(manager, &order);
