@@ -42,26 +42,18 @@ impl<E> Datum<E> {
     const UNINIT: Self = Self { uninit: () };
 
     /// SAFETY: `self` must be initialized as `edge`
+    #[inline]
     unsafe fn assume_edge_ref(&self) -> &E {
         // SAFETY: see above
         unsafe { &self.edge }
     }
 
-    /// SAFETY: `self` must be initialized as `numeric`
-    unsafe fn assume_numeric(&self) -> u32 {
-        // SAFETY: see above
-        unsafe { self.numeric }
-    }
-
+    #[inline]
     fn write_edge(&mut self, edge: Borrowed<E>) {
         // SAFETY: The referenced node lives at least until the next garbage
         // collection / reordering. Before that operation, we clear the entire
         // cache.
         self.edge = unsafe { Borrowed::into_inner(edge) };
-    }
-
-    fn write_numeric(&mut self, num: u32) {
-        self.numeric = num;
     }
 }
 
@@ -74,16 +66,19 @@ struct CountPair(u8);
 impl CountPair {
     const NULL: Self = CountPair(0);
 
+    #[inline]
     const fn new(edge: usize, numeric: usize) -> Self {
         debug_assert!(edge < KIND_COUNT);
         debug_assert!(numeric < KIND_COUNT);
         Self((numeric << 4 | edge) as u8)
     }
 
+    #[inline]
     const fn edge(self) -> usize {
         self.0 as usize & (KIND_COUNT - 1)
     }
 
+    #[inline]
     const fn numeric(self) -> usize {
         (self.0 >> KIND_BITS) as usize
     }
@@ -206,7 +201,7 @@ where
         }
         for (&o1, o2) in operands.1.iter().zip(data.by_ref()) {
             // SAFETY: The next `num_numeric_operands` operands are numeric
-            if o1 != unsafe { o2.assume_numeric() } {
+            if o1 != unsafe { o2.numeric } {
                 return None;
             }
         }
@@ -225,11 +220,11 @@ where
         let numeric_values = &remaining[..N];
         Some((
             // SAFETY: The next `E` values in `data` are edges
-            std::array::from_fn(|i| unsafe {
-                manager.clone_edge(edge_values[i].assume_edge_ref())
+            std::array::from_fn(|i| {
+                manager.clone_edge(unsafe { edge_values[i].assume_edge_ref() })
             }),
             // SAFETY: The final `N` values in `data` are numeric
-            std::array::from_fn(|i| unsafe { numeric_values[i].assume_numeric() }),
+            std::array::from_fn(|i| unsafe { numeric_values[i].numeric }),
         ))
     }
 
@@ -242,7 +237,7 @@ where
     /// - there is at least one operand,
     /// - there are at most `KIND_COUNT` operands and values of each kind, and
     /// - the count of operands and values is at most `ENTRY_CAP`.
-    #[inline]
+    #[inline(always)]
     fn set(
         &mut self,
         operator: O,
@@ -270,13 +265,13 @@ where
             dst.write_edge(src.borrowed());
         }
         for (&src, dst) in operands.1.iter().zip(data.by_ref()) {
-            dst.write_numeric(src);
+            dst.numeric = src;
         }
         for (src, dst) in values.0.iter().zip(data.by_ref()) {
             dst.write_edge(src.borrowed());
         }
         for (&src, dst) in values.1.iter().zip(data) {
-            dst.write_numeric(src);
+            dst.numeric = src;
         }
 
         // Important: Set the counts last for exception safety (the functions
@@ -330,7 +325,7 @@ where
     }
 
     /// Get the bucket for the given operator and operands
-    #[inline]
+    #[inline(always)]
     fn bucket(
         &self,
         operator: O,
@@ -517,7 +512,7 @@ where
             tuple.field(unsafe { operand.assume_edge_ref() });
         }
         for operand in data.by_ref().take(operands.numeric()) {
-            tuple.field(&unsafe { operand.assume_numeric() });
+            tuple.field(&unsafe { operand.numeric });
         }
         tuple.finish()?;
 
@@ -528,7 +523,7 @@ where
             tuple.field(unsafe { value.assume_edge_ref() });
         }
         for value in data.by_ref().take(values.numeric()) {
-            tuple.field(&unsafe { value.assume_numeric() });
+            tuple.field(&unsafe { value.numeric });
         }
         tuple.finish()?;
 
