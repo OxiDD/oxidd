@@ -1024,6 +1024,16 @@ where
     }
 
     #[inline]
+    fn restrict_edge<'id>(
+        manager: &Self::Manager<'id>,
+        root: &EdgeOfFunc<'id, Self>,
+        vars: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        let rec = SequentialRecursor;
+        restrict(manager, rec, root.borrowed(), vars.borrowed())
+    }
+
+    #[inline]
     fn not_edge<'id>(
         manager: &Self::Manager<'id>,
         edge: &EdgeOfFunc<'id, Self>,
@@ -1385,16 +1395,6 @@ where
     for<'id> INodeOfFunc<'id, F>: HasLevel,
 {
     #[inline]
-    fn restrict_edge<'id>(
-        manager: &Self::Manager<'id>,
-        root: &EdgeOfFunc<'id, Self>,
-        vars: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        let rec = SequentialRecursor;
-        restrict(manager, rec, root.borrowed(), vars.borrowed())
-    }
-
-    #[inline]
     fn forall_edge<'id>(
         manager: &Self::Manager<'id>,
         root: &EdgeOfFunc<'id, Self>,
@@ -1550,6 +1550,16 @@ pub mod mt {
         #[inline]
         fn t_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self> {
             get_terminal(manager, true)
+        }
+
+        #[inline]
+        fn restrict_edge<'id>(
+            manager: &Self::Manager<'id>,
+            root: &EdgeOfFunc<'id, Self>,
+            vars: &EdgeOfFunc<'id, Self>,
+        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            let (root, vars) = (root.borrowed(), vars.borrowed());
+            restrict(manager, ParallelRecursor::new(manager), root, vars)
         }
 
         #[inline]
@@ -1712,16 +1722,6 @@ pub mod mt {
         for<'id> INodeOfFunc<'id, F>: HasLevel,
         for<'id> EdgeOfFunc<'id, F>: Send + Sync,
     {
-        #[inline]
-        fn restrict_edge<'id>(
-            manager: &Self::Manager<'id>,
-            root: &EdgeOfFunc<'id, Self>,
-            vars: &EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let (root, vars) = (root.borrowed(), vars.borrowed());
-            restrict(manager, ParallelRecursor::new(manager), root, vars)
-        }
-
         #[inline]
         fn forall_edge<'id>(
             manager: &Self::Manager<'id>,

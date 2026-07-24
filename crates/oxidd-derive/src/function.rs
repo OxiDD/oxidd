@@ -481,6 +481,7 @@ pub fn derive_boolean_function(input: syn::DeriveInput) -> TokenStream {
             Terminal("t"),
             Var("var"),
             Var("not_var"),
+            Binary("restrict"),
             Unary("not"),
             UnaryOwned("not"),
             Binary("and"),
@@ -664,12 +665,7 @@ pub fn derive_boolean_function_quant(input: syn::DeriveInput) -> TokenStream {
     derive_function_trait(
         input,
         "BooleanFunctionQuant",
-        &[
-            Binary("restrict"),
-            Binary("forall"),
-            Binary("exists"),
-            Binary("unique"),
-        ],
+        &[Binary("forall"), Binary("exists"), Binary("unique")],
         |ctx| {
             let CustomMethodsCtx {
                 trait_path,

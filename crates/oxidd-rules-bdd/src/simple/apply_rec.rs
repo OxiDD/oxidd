@@ -952,6 +952,16 @@ where
         )
     }
 
+    #[inline]
+    fn restrict_edge<'id>(
+        manager: &Self::Manager<'id>,
+        root: &EdgeOfFunc<'id, Self>,
+        vars: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        let rec = SequentialRecursor;
+        restrict(manager, rec, root.borrowed(), vars.borrowed())
+    }
+
     fn sat_count_edge<'id, N: SatCountNumber, S: BuildHasher>(
         manager: &Self::Manager<'id>,
         edge: &EdgeOfFunc<'id, Self>,
@@ -1189,16 +1199,6 @@ where
     for<'id> F::Manager<'id>: Manager<Terminal = BDDTerminal> + HasBDDOpApplyCache<F::Manager<'id>>,
     for<'id> INodeOfFunc<'id, F>: HasLevel,
 {
-    #[inline]
-    fn restrict_edge<'id>(
-        manager: &Self::Manager<'id>,
-        root: &EdgeOfFunc<'id, Self>,
-        vars: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        let rec = SequentialRecursor;
-        restrict(manager, rec, root.borrowed(), vars.borrowed())
-    }
-
     #[inline]
     fn forall_edge<'id>(
         manager: &Self::Manager<'id>,
@@ -1456,6 +1456,16 @@ pub mod mt {
         }
 
         #[inline]
+        fn restrict_edge<'id>(
+            manager: &Self::Manager<'id>,
+            root: &EdgeOfFunc<'id, Self>,
+            vars: &EdgeOfFunc<'id, Self>,
+        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            let (root, vars) = (root.borrowed(), vars.borrowed());
+            restrict(manager, ParallelRecursor::new(manager), root, vars)
+        }
+
+        #[inline]
         fn sat_count_edge<'id, N: SatCountNumber, S: std::hash::BuildHasher>(
             manager: &Self::Manager<'id>,
             edge: &EdgeOfFunc<'id, Self>,
@@ -1507,16 +1517,6 @@ pub mod mt {
         for<'id> INodeOfFunc<'id, F>: HasLevel,
         for<'id> EdgeOfFunc<'id, F>: Send + Sync,
     {
-        #[inline]
-        fn restrict_edge<'id>(
-            manager: &Self::Manager<'id>,
-            root: &EdgeOfFunc<'id, Self>,
-            vars: &EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let (root, vars) = (root.borrowed(), vars.borrowed());
-            restrict(manager, ParallelRecursor::new(manager), root, vars)
-        }
-
         #[inline]
         fn forall_edge<'id>(
             manager: &Self::Manager<'id>,

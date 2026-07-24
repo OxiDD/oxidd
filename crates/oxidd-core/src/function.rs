@@ -300,6 +300,28 @@ pub trait BooleanFunction: Function {
         })
     }
 
+    /// Restrict a set of variables to constant values
+    ///
+    /// `vars` conceptually is a partial assignment, represented as the
+    /// conjunction of positive or negative literals, depending on whether the
+    /// variable should be mapped to true or false. With this representation,
+    /// the result is equivalent to the conjunction of `self` and `vars`. The
+    /// implementation may be more efficient, though.
+    ///
+    /// In other words, the restriction is a point-wise Shannon cofactor with
+    /// respect to the partial assignment given by `vars`. In an BDD, the result
+    /// never has more nodes than `self`.
+    ///
+    /// Locking behavior: acquires the manager's lock for shared access.
+    ///
+    /// Panics if `self` and `vars` don't belong to the same manager.
+    fn restrict(&self, vars: &Self) -> AllocResult<Self> {
+        self.with_manager_shared(|manager, root| {
+            let e = Self::restrict_edge(manager, root, vars.as_edge(manager))?;
+            Ok(Self::from_edge(manager, e))
+        })
+    }
+
     /// Compute the negation `¬self`
     ///
     /// Locking behavior: acquires the manager's lock for shared access.
@@ -473,6 +495,19 @@ pub trait BooleanFunction: Function {
     ) {
         let cofactor = <<Self::Manager<'id> as Manager>::Rules as DiagramRules<_, _, _>>::cofactor;
         (cofactor(tag, node, 0), cofactor(tag, node, 1))
+    }
+
+    /// Restrict a set of `vars` to constant values, edge version
+    ///
+    /// See [`Self::restrict()`] for more details. The default implementation
+    /// is just [`Self::and_edge()`].
+    #[must_use]
+    fn restrict_edge<'id>(
+        manager: &Self::Manager<'id>,
+        root: &EdgeOfFunc<'id, Self>,
+        vars: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        Self::and_edge(manager, root, vars)
     }
 
     /// Compute the negation `¬edge`, edge version
@@ -900,22 +935,6 @@ impl Display for BooleanOperator {
 
 /// Quantification extension for [`BooleanFunction`]
 pub trait BooleanFunctionQuant: BooleanFunction {
-    /// Restrict a set of `vars` to constant values
-    ///
-    /// `vars` conceptually is a partial assignment, represented as the
-    /// conjunction of positive or negative literals, depending on whether the
-    /// variable should be mapped to true or false.
-    ///
-    /// Locking behavior: acquires the manager's lock for shared access.
-    ///
-    /// Panics if `self` and `vars` don't belong to the same manager.
-    fn restrict(&self, vars: &Self) -> AllocResult<Self> {
-        self.with_manager_shared(|manager, root| {
-            let e = Self::restrict_edge(manager, root, vars.as_edge(manager))?;
-            Ok(Self::from_edge(manager, e))
-        })
-    }
-
     /// Compute the universal quantification over `vars`
     ///
     /// `vars` is a set of variables, which in turn is just the conjunction of
@@ -1036,16 +1055,6 @@ pub trait BooleanFunctionQuant: BooleanFunction {
             Ok(Self::from_edge(manager, e))
         })
     }
-
-    /// Restrict a set of `vars` to constant values, edge version
-    ///
-    /// See [`Self::restrict()`] for more details.
-    #[must_use]
-    fn restrict_edge<'id>(
-        manager: &Self::Manager<'id>,
-        root: &EdgeOfFunc<'id, Self>,
-        vars: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
     /// Compute the universal quantification of `root` over `vars`, edge
     /// version
