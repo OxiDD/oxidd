@@ -4,7 +4,8 @@ use oxidd::{
     BooleanFunction, HasLevel, HasWorkers, Manager, ManagerRef, VarNo, WorkerPool,
     util::AllocResult,
 };
-use oxidd_core::function::INodeOfFunc;
+use oxidd_core::function::{INodeOfFunc, TermOfFunc};
+use oxidd_dump::{AsciiDisplay, Visualizer};
 use oxidd_parser::{Circuit, GateKind, Literal, Var, Vec2d};
 use parking_lot::Mutex;
 
@@ -96,6 +97,7 @@ pub(crate) fn construct_bool_circuit<B>(
     profiler_csv_out: Option<&PathBuf>,
 ) where
     B: BooleanFunction + Send + Sync + 'static,
+    for<'id> TermOfFunc<'id, B>: AsciiDisplay,
     for<'id> B::Manager<'id>: HasWorkers,
     for<'id> INodeOfFunc<'id, B>: HasLevel,
     B::ManagerRef: HasWorkers,
@@ -151,8 +153,31 @@ pub(crate) fn construct_bool_circuit<B>(
         scheme,
     };
     if !cli.parallel {
+        let mut count = 0;
+        let mut next_visualization = 0;
         while let Some(task) = executor.0.pop_front() {
             let (result, target) = ctx.run_task(task);
+            if cli.build_visualization && next_visualization == count {
+                let functions = if cli.build_visualization_show_all {
+                    executor
+                        .0
+                        .iter()
+                        .flat_map(|task| [&task.lhs, &task.rhs])
+                        .chain(std::iter::once(&result))
+                        .chain(slots.iter().filter_map(|slot| slot.operand.as_ref()))
+                        .chain(root_results.iter().filter_map(|result| result.as_ref()))
+                        .collect::<Vec<_>>()
+                } else {
+                    vec![&result]
+                };
+                mref.with_manager_shared(|manager| {
+                    let name = format!("DD ({}/{inner_ops})", count + 1);
+                    let _ = Visualizer::new().add(&name, manager, functions).serve();
+                });
+                next_visualization =
+                    std::cmp::min(count + 1 + cli.build_visualization_skip, inner_ops - 1);
+            }
+            count += 1;
             ctx.finish_task(result, target, &mut slots, root_results, &mut executor);
         }
     } else {

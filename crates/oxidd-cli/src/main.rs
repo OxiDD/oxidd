@@ -81,6 +81,19 @@ struct Cli {
     #[arg(value_enum, long, default_value_t = GateBuildScheme::Balanced)]
     gate_build_scheme: GateBuildScheme,
 
+    /// Whether to visualize the building steps
+    #[arg(long)]
+    build_visualization: bool,
+
+    /// How many intermediate visualizations should be skipped
+    #[arg(long, default_value_t = 2)]
+    build_visualization_skip: usize,
+
+    /// Whether to show all the functions needed for diagram construction, or
+    /// only the just constructed function
+    #[arg(long)]
+    build_visualization_show_all: bool,
+
     /// For every DD operation of the problem(s), compute and print the size of
     /// the resulting DD function to the given CSV file
     ///
