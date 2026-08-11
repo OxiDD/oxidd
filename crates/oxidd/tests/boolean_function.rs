@@ -598,11 +598,27 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
             for pos in 0..num_assignments {
                 for neg in 0..num_assignments {
                     if pos & neg != 0 {
-                        continue;
+                        continue; // positive and negative set must be disjoint
                     }
 
                     let literal_set_explicit = self.make_cube(pos, neg);
                     let literal_set = &self.boolean_functions[literal_set_explicit as usize];
+
+                    // restrict
+                    let mut expected = 0;
+                    for assignment in 0..num_assignments {
+                        let assignment_restricted = (assignment | pos) & !neg;
+                        expected |= ((f_explicit >> assignment_restricted) & 1) << assignment;
+                    }
+                    self.check(
+                        "f.restrict(g)",
+                        self.dd_to_boolean_func[&f.restrict(literal_set).unwrap()],
+                        expected,
+                        &[f_explicit, literal_set_explicit],
+                        &[],
+                    );
+
+                    // pick_cube_dd_set
                     let actual = self.dd_to_boolean_func[&f.pick_cube_dd_set(literal_set).unwrap()];
 
                     if f_explicit == 0 {
@@ -777,30 +793,6 @@ impl<B: BooleanFunctionQuant> TestAllBooleanFunctions<'_, B> {
         let num_functions: ExplicitBFunc = 1 << num_assignments;
         let func_mask = num_functions - 1;
 
-        // restrict
-        for pos in 0..num_assignments {
-            for neg in 0..num_assignments {
-                if pos & neg != 0 {
-                    continue; // positive and negative set must be disjoint
-                }
-
-                let dd_literal_set = &self.boolean_functions[self.make_cube(pos, neg) as usize];
-
-                for (f_explicit, f) in self.boolean_functions.iter().enumerate() {
-                    let f_explicit = f_explicit as ExplicitBFunc;
-
-                    let mut expected = 0;
-                    for assignment in 0..num_assignments {
-                        let assignment_restricted = (assignment | pos) & !neg;
-                        expected |= ((f_explicit >> assignment_restricted) & 1) << assignment;
-                    }
-
-                    let actual = self.dd_to_boolean_func[&f.restrict(dd_literal_set).unwrap()];
-                    assert_eq!(actual, expected);
-                }
-            }
-        }
-
         // quantification
         let mut assignment_to_mask: Vec<ExplicitBFunc> = vec![0; num_assignments as usize];
         for var_set in 0..num_assignments {
@@ -902,6 +894,29 @@ impl<B: BooleanFunctionQuant> TestAllBooleanFunctions<'_, B> {
                             &[var_set],
                         );
                     }
+                }
+
+                // restrict(f, l) can be expressed as ∃pos(l). f ∧ ⋀l, where l
+                // is a set of literals
+                let assignment_mask = num_assignments - 1;
+                for neg in 0..num_assignments {
+                    if (neg & !var_set) & assignment_mask != 0 {
+                        continue; // negative set must be a subset of var_set
+                    }
+                    let pos = var_set ^ neg;
+
+                    let literal_set_explicit = self.make_cube(pos, neg);
+                    let literal_set = &self.boolean_functions[literal_set_explicit as usize];
+
+                    self.check(
+                        "f.restrict(g) vs. ∃support(g). f ∧ g",
+                        self.dd_to_boolean_func[&f.restrict(literal_set).unwrap()],
+                        self.dd_to_boolean_func[&f
+                            .apply_exists(BooleanOperator::And, literal_set, dd_var_set)
+                            .unwrap()],
+                        &[f_explicit, literal_set_explicit],
+                        &[var_set],
+                    )
                 }
             }
         }
