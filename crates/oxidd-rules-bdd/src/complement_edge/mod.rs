@@ -264,7 +264,6 @@ impl fmt::Display for BCDDTerminal {
 }
 
 #[inline]
-#[must_use]
 fn get_terminal<M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal>>(
     manager: &M,
     val: bool,
