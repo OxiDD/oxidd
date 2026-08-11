@@ -362,168 +362,6 @@ where
     Ok(res)
 }
 
-/// Result of [`restrict_inner()`]
-enum RestrictInnerResult<'a, M: Manager> {
-    Done(M::Edge),
-    Rec {
-        vars: Borrowed<'a, M::Edge>,
-        f: Borrowed<'a, M::Edge>,
-        f_neg: bool,
-        fnode: &'a M::InnerNode,
-    },
-}
-
-/// Tail-recursive part of [`restrict()`]. `f` is the function of which the
-/// variables should be restricted to constant values according to `vars`.
-///
-/// Invariant: `f` points to `fnode` at `flevel`, `vars` points to `vnode`
-///
-/// We expose this, because it can be reused for the multi-threaded version.
-#[inline]
-#[allow(clippy::too_many_arguments)]
-fn restrict_inner<'a, M>(
-    manager: &'a M,
-    f: Borrowed<'a, M::Edge>,
-    f_neg: bool,
-    fnode: &'a M::InnerNode,
-    flevel: LevelNo,
-    vars: Borrowed<'a, M::Edge>,
-    vars_neg: bool,
-    vnode: &'a M::InnerNode,
-) -> RestrictInnerResult<'a, M>
-where
-    M: Manager<EdgeTag = EdgeTag>,
-    M::InnerNode: HasLevel,
-{
-    debug_assert!(std::ptr::eq(manager.get_node(&f).unwrap_inner(), fnode));
-    debug_assert_eq!(fnode.level(), flevel);
-    debug_assert!(std::ptr::eq(manager.get_node(&vars).unwrap_inner(), vnode));
-
-    let vlevel = vnode.level();
-    if vlevel > flevel {
-        // f above vars
-        return RestrictInnerResult::Rec {
-            vars: vars.edge_with_tag(if vars_neg {
-                EdgeTag::Complemented
-            } else {
-                EdgeTag::None
-            }),
-            f,
-            f_neg,
-            fnode,
-        };
-    }
-
-    let (f, complement) = 'ret_f: {
-        let vt = vnode.child(0);
-        if vlevel < flevel {
-            // vars above f
-            if let Node::Inner(n) = manager.get_node(&vt) {
-                debug_assert!(
-                    manager.get_node(&vnode.child(1)).is_any_terminal(),
-                    "vars must be a conjunction of literals (but both children are non-terminals)"
-                );
-
-                debug_assert_eq!(
-                    vnode.child(1).tag(),
-                    if vars_neg {
-                        EdgeTag::None
-                    } else {
-                        EdgeTag::Complemented
-                    },
-                    "vars must be a conjunction of literals (but is of shape ¬x ∨ {}φ)",
-                    if vars_neg { "¬" } else { "" }
-                );
-                // shape: x ∧ if vars_neg { ¬φ } else { φ }
-                let vars_neg = vars_neg ^ (vt.tag() == EdgeTag::Complemented);
-                return restrict_inner(manager, f, f_neg, fnode, flevel, vt, vars_neg, n);
-            }
-            // then edge of vars edge points to ⊤
-            if vars_neg {
-                // shape ¬x ∧ φ
-                let ve = vnode.child(1);
-                if let Node::Inner(n) = manager.get_node(&ve) {
-                    // `vars` is currently negated, hence `!=`
-                    let vars_neg = ve.tag() != EdgeTag::Complemented;
-                    return restrict_inner(manager, f, f_neg, fnode, flevel, ve, vars_neg, n);
-                }
-                // shape ¬x
-            } else {
-                debug_assert!(
-                    manager.get_node(&vnode.child(1)).is_any_terminal(),
-                    "vars must be a conjunction of literals (but is of shape x ∨ φ)"
-                );
-                // shape x
-            }
-            // `vars` is a single variable above `f` ⇒ return `f`
-            break 'ret_f (f, f_neg);
-        }
-
-        debug_assert_eq!(vlevel, flevel);
-        // top var at the level of f ⇒ select accordingly
-        let (f, vars, vars_neg, vnode) = if let Node::Inner(n) = manager.get_node(&vt) {
-            debug_assert!(
-                manager.get_node(&vnode.child(1)).is_any_terminal(),
-                "vars must be a conjunction of literals (but both children are non-terminals)"
-            );
-
-            debug_assert_eq!(
-                vnode.child(1).tag(),
-                if vars_neg {
-                    EdgeTag::None
-                } else {
-                    EdgeTag::Complemented
-                },
-                "vars must be a conjunction of literals (but is of shape ¬x ∨ {}φ)",
-                if vars_neg { "¬" } else { "" }
-            );
-            // shape: x ∧ if vars_neg { ¬φ } else { φ } ⇒ select then branch
-            let vars_neg = vars_neg ^ (vt.tag() == EdgeTag::Complemented);
-            (fnode.child(0), vt, vars_neg, n)
-        } else {
-            // then edge of vars edge points to ⊤
-
-            if !vars_neg {
-                debug_assert!(
-                    manager.get_node(&vnode.child(1)).is_any_terminal(),
-                    "vars must be a conjunction of literals (but is of shape x ∨ φ)"
-                );
-
-                // shape x ⇒ select then branch
-                let f = fnode.child(0);
-                let f_neg = f_neg ^ (f.tag() == EdgeTag::Complemented);
-                break 'ret_f (f, f_neg);
-            }
-
-            // shape ¬x ∧ φ ⇒ select else branch
-            let f = fnode.child(1);
-            let ve = vnode.child(1);
-            if let Node::Inner(n) = manager.get_node(&ve) {
-                // `vars` is currently negated, hence `!=`
-                let vars_neg = ve.tag() != EdgeTag::Complemented;
-                (f, ve, vars_neg, n)
-            } else {
-                // shape `¬x` ⇒ return
-                let f_neg = f_neg ^ (f.tag() == EdgeTag::Complemented);
-                break 'ret_f (f, f_neg);
-            }
-        };
-
-        let f_neg = f_neg ^ (f.tag() == EdgeTag::Complemented);
-        if let Node::Inner(fnode) = manager.get_node(&f) {
-            let flevel = fnode.level();
-            return restrict_inner(manager, f, f_neg, fnode, flevel, vars, vars_neg, vnode);
-        }
-        (f, f_neg)
-    };
-
-    RestrictInnerResult::Done(manager.clone_edge(&f).with_tag_owned(if complement {
-        EdgeTag::Complemented
-    } else {
-        EdgeTag::None
-    }))
-}
-
 fn restrict<M, R: Recursor<M>>(
     manager: &M,
     rec: R,
@@ -544,15 +382,174 @@ where
         return Ok(manager.clone_edge(&f));
     };
 
+    enum InnerResult<'a, M: Manager> {
+        Done(M::Edge),
+        Rec {
+            vars: Borrowed<'a, M::Edge>,
+            f: Borrowed<'a, M::Edge>,
+            f_neg: bool,
+            fnode: &'a M::InnerNode,
+        },
+    }
+
+    /// Tail-recursive part of [`restrict()`]. `f` is the function of which the
+    /// variables should be restricted to constant values according to `vars`.
+    ///
+    /// Invariant: `f` points to `fnode` at `flevel`, `vars` points to `vnode`
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    fn inner<'a, M>(
+        manager: &'a M,
+        f: Borrowed<'a, M::Edge>,
+        f_neg: bool,
+        fnode: &'a M::InnerNode,
+        flevel: LevelNo,
+        vars: Borrowed<'a, M::Edge>,
+        vars_neg: bool,
+        vnode: &'a M::InnerNode,
+    ) -> InnerResult<'a, M>
+    where
+        M: Manager<EdgeTag = EdgeTag>,
+        M::InnerNode: HasLevel,
+    {
+        debug_assert!(std::ptr::eq(manager.get_node(&f).unwrap_inner(), fnode));
+        debug_assert_eq!(fnode.level(), flevel);
+        debug_assert!(std::ptr::eq(manager.get_node(&vars).unwrap_inner(), vnode));
+
+        let vlevel = vnode.level();
+        if vlevel > flevel {
+            // f above vars
+            return InnerResult::Rec {
+                vars: vars.edge_with_tag(if vars_neg {
+                    EdgeTag::Complemented
+                } else {
+                    EdgeTag::None
+                }),
+                f,
+                f_neg,
+                fnode,
+            };
+        }
+
+        let (f, complement) = 'ret_f: {
+            let vt = vnode.child(0);
+            if vlevel < flevel {
+                // vars above f
+                if let Node::Inner(n) = manager.get_node(&vt) {
+                    debug_assert!(
+                        manager.get_node(&vnode.child(1)).is_any_terminal(),
+                        "vars must be a conjunction of literals (but both children are non-terminals)"
+                    );
+
+                    debug_assert_eq!(
+                        vnode.child(1).tag(),
+                        if vars_neg {
+                            EdgeTag::None
+                        } else {
+                            EdgeTag::Complemented
+                        },
+                        "vars must be a conjunction of literals (but is of shape ¬x ∨ {}φ)",
+                        if vars_neg { "¬" } else { "" }
+                    );
+                    // shape: x ∧ if vars_neg { ¬φ } else { φ }
+                    let vars_neg = vars_neg ^ (vt.tag() == EdgeTag::Complemented);
+                    return inner(manager, f, f_neg, fnode, flevel, vt, vars_neg, n);
+                }
+                // then edge of vars edge points to ⊤
+                if vars_neg {
+                    // shape ¬x ∧ φ
+                    let ve = vnode.child(1);
+                    if let Node::Inner(n) = manager.get_node(&ve) {
+                        // `vars` is currently negated, hence `!=`
+                        let vars_neg = ve.tag() != EdgeTag::Complemented;
+                        return inner(manager, f, f_neg, fnode, flevel, ve, vars_neg, n);
+                    }
+                    // shape ¬x
+                } else {
+                    debug_assert!(
+                        manager.get_node(&vnode.child(1)).is_any_terminal(),
+                        "vars must be a conjunction of literals (but is of shape x ∨ φ)"
+                    );
+                    // shape x
+                }
+                // `vars` is a single variable above `f` ⇒ return `f`
+                break 'ret_f (f, f_neg);
+            }
+
+            debug_assert_eq!(vlevel, flevel);
+            // top var at the level of f ⇒ select accordingly
+            let (f, vars, vars_neg, vnode) = if let Node::Inner(n) = manager.get_node(&vt) {
+                debug_assert!(
+                    manager.get_node(&vnode.child(1)).is_any_terminal(),
+                    "vars must be a conjunction of literals (but both children are non-terminals)"
+                );
+
+                debug_assert_eq!(
+                    vnode.child(1).tag(),
+                    if vars_neg {
+                        EdgeTag::None
+                    } else {
+                        EdgeTag::Complemented
+                    },
+                    "vars must be a conjunction of literals (but is of shape ¬x ∨ {}φ)",
+                    if vars_neg { "¬" } else { "" }
+                );
+                // shape: x ∧ if vars_neg { ¬φ } else { φ } ⇒ select then branch
+                let vars_neg = vars_neg ^ (vt.tag() == EdgeTag::Complemented);
+                (fnode.child(0), vt, vars_neg, n)
+            } else {
+                // then edge of vars edge points to ⊤
+
+                if !vars_neg {
+                    debug_assert!(
+                        manager.get_node(&vnode.child(1)).is_any_terminal(),
+                        "vars must be a conjunction of literals (but is of shape x ∨ φ)"
+                    );
+
+                    // shape x ⇒ select then branch
+                    let f = fnode.child(0);
+                    let f_neg = f_neg ^ (f.tag() == EdgeTag::Complemented);
+                    break 'ret_f (f, f_neg);
+                }
+
+                // shape ¬x ∧ φ ⇒ select else branch
+                let f = fnode.child(1);
+                let ve = vnode.child(1);
+                if let Node::Inner(n) = manager.get_node(&ve) {
+                    // `vars` is currently negated, hence `!=`
+                    let vars_neg = ve.tag() != EdgeTag::Complemented;
+                    (f, ve, vars_neg, n)
+                } else {
+                    // shape `¬x` ⇒ return
+                    let f_neg = f_neg ^ (f.tag() == EdgeTag::Complemented);
+                    break 'ret_f (f, f_neg);
+                }
+            };
+
+            let f_neg = f_neg ^ (f.tag() == EdgeTag::Complemented);
+            if let Node::Inner(fnode) = manager.get_node(&f) {
+                let flevel = fnode.level();
+                return inner(manager, f, f_neg, fnode, flevel, vars, vars_neg, vnode);
+            }
+            (f, f_neg)
+        };
+
+        InnerResult::Done(manager.clone_edge(&f).with_tag_owned(if complement {
+            EdgeTag::Complemented
+        } else {
+            EdgeTag::None
+        }))
+    }
+
     let inner_res = {
         let f_neg = f.tag() == EdgeTag::Complemented;
         let flevel = fnode.level();
         let vars_neg = vars.tag() == EdgeTag::Complemented;
-        restrict_inner(manager, f, f_neg, fnode, flevel, vars, vars_neg, vnode)
+        inner(manager, f, f_neg, fnode, flevel, vars, vars_neg, vnode)
     };
     match inner_res {
-        RestrictInnerResult::Done(result) => Ok(result),
-        RestrictInnerResult::Rec {
+        InnerResult::Done(result) => Ok(result),
+        InnerResult::Rec {
             vars,
             f,
             f_neg,
