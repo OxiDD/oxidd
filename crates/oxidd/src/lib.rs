@@ -82,7 +82,9 @@ pub trait RawManagerRef {
     unsafe fn from_raw(raw: *const std::ffi::c_void) -> Self;
 }
 
-#[cfg(all(feature = "manager-pointer", not(miri)))]
-const PAGE_SIZE: usize = 2 * 1024 * 1024;
-#[cfg(all(feature = "manager-pointer", miri))]
-const PAGE_SIZE: usize = 4 * 1024;
+#[cfg(feature = "manager-pointer")]
+const PAGE_SIZE: usize = if cfg!(miri) {
+    4 * 1024
+} else {
+    2 * 1024 * 1024
+};

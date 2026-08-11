@@ -896,10 +896,8 @@ fn to_u_big(value: &[u64]) -> dashu_int::UBig {
     const SCALE: usize = mem::size_of::<u64>() / mem::size_of::<dashu_int::Word>();
     const ALIGN_MATCH: bool = mem::align_of::<dashu_int::Word>() <= mem::align_of::<u64>();
     // spell-checker:ignore CONV
-    #[cfg(target_endian = "little")]
-    const FAST_CONV: bool = ALIGN_MATCH && IS_MULTIPLE;
-    #[cfg(target_endian = "big")]
-    const FAST_CONV: bool = ALIGN_MATCH && IS_MULTIPLE && SCALE == 1;
+    const FAST_CONV: bool =
+        ALIGN_MATCH && IS_MULTIPLE && (cfg!(target_endian = "little") || SCALE == 1);
 
     if FAST_CONV {
         // SAFETY: `dashu_int::Word` is a primitive integer type with equal or

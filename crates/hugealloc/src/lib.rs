@@ -26,16 +26,12 @@ const fn is_large(size: usize) -> bool {
     res
 }
 
-//const HUGE: usize = 1 * 1024 * 1024 * 1024; // 1 GiB
+// const HUGE: usize = 1 * 1024 * 1024 * 1024; // 1 GiB
 
-//#[inline(always)]
-//const fn is_huge(size: usize) -> bool {
-//    #[cfg(not(miri))]
-//    let res = size >= HUGE;
-//    #[cfg(miri)]
-//    let res = false;
-//    res
-//}
+// #[inline(always)]
+// const fn is_huge(size: usize) -> bool {
+//     cfg!(not(miri)) && size >= HUGE
+// }
 
 /// The global allocator, but with target dependent features for huge pages
 ///
