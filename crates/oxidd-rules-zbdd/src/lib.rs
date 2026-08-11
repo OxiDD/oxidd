@@ -24,6 +24,11 @@ mod recursor;
 
 // --- Reduction Rules ---------------------------------------------------------
 
+/// Index of the HI branch in a node
+const HI: usize = 0;
+/// Index of the LO branch in a node
+const LO: usize = 1;
+
 /// [`DiagramRules`] for simple binary decision diagrams
 pub struct ZBDDRules;
 

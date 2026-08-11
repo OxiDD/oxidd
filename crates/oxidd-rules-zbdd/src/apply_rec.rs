@@ -18,7 +18,9 @@ use crate::recursor::{Recursor, SequentialRecursor};
 
 #[cfg(feature = "statistics")]
 use super::STAT_COUNTERS;
-use super::{HasZBDDCache, ZBDDOp, ZBDDTerminal, collect_children, reduce, reduce_borrowed, stat};
+use super::{
+    HI, HasZBDDCache, LO, ZBDDOp, ZBDDTerminal, collect_children, reduce, reduce1, reduce_borrowed, stat,
+};
 
 // spell-checker:ignore fnode,gnode,hnode,flevel,glevel,hlevel,ghlevel
 // spell-checker:ignore symm
@@ -220,7 +222,7 @@ where
     let h = match flevel.cmp(&glevel) {
         Ordering::Less => {
             // f above g
-            let flo = fnode.unwrap_inner().child(1);
+            let flo = fnode.unwrap_inner().child(LO);
             apply_intsec(manager, rec, flo.borrowed(), g.borrowed())
         }
         Ordering::Equal => {
@@ -230,7 +232,7 @@ where
             reduce(manager, flevel, hi.into_edge(), lo.into_edge(), Intsec)
         }
         Ordering::Greater => {
-            let glo = gnode.unwrap_inner().child(1);
+            let glo = gnode.unwrap_inner().child(LO);
             apply_intsec(manager, rec, f.borrowed(), glo.borrowed())
         }
     }?;
@@ -296,7 +298,7 @@ where
             reduce(manager, flevel, hi.into_edge(), lo.into_edge(), Diff)
         }
         Ordering::Greater => {
-            let glo = gnode.unwrap_inner().child(1);
+            let glo = gnode.unwrap_inner().child(LO);
             apply_diff(manager, rec, f.borrowed(), glo.borrowed())
         }
     }?;
@@ -466,12 +468,12 @@ where
         Ordering::Greater => {
             debug_assert!(hlevel < flevel || glevel < flevel);
             if glevel < hlevel {
-                let glo = gnode.unwrap_inner().child(1);
+                let glo = gnode.unwrap_inner().child(LO);
                 apply_ite(manager, rec, f.borrowed(), glo.borrowed(), h.borrowed())
             } else {
                 let (hi, hlo) = collect_children(hnode.unwrap_inner());
                 let g = if glevel == hlevel {
-                    gnode.unwrap_inner().child(1)
+                    gnode.unwrap_inner().child(LO)
                 } else {
                     g.borrowed()
                 };
@@ -480,7 +482,7 @@ where
             }
         }
         Ordering::Less => {
-            let flo = fnode.unwrap_inner().child(1);
+            let flo = fnode.unwrap_inner().child(LO);
             apply_ite(manager, rec, flo.borrowed(), g.borrowed(), h.borrowed())
         }
         Ordering::Equal => {
@@ -922,7 +924,7 @@ where
             match manager.get_node(&edge) {
                 Node::Terminal(_) => (edge, None),
                 Node::Inner(node) => match node.level().cmp(&until) {
-                    Ordering::Less => set_pop(manager, node.child(0), until),
+                    Ordering::Less => set_pop(manager, node.child(HI), until),
                     Ordering::Equal => (edge, Some(node)),
                     Ordering::Greater => (edge, None),
                 },
