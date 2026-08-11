@@ -17,6 +17,8 @@ use oxidd::{
     HasWorkers, InnerNode, Manager, ManagerRef, VarNo, WorkerPool,
 };
 
+use crate::util::debug::ColumnData;
+
 // spell-checker:ignore nvars,mref
 
 #[test]
@@ -225,20 +227,48 @@ struct TestAllBooleanFunctions<'a, B: BooleanFunction> {
     var_functions: Vec<ExplicitBFunc>,
 }
 
+trait ToExplicitBFunc<T> {
+    fn to_explicit(&self, map: &FxHashMap<T, ExplicitBFunc>) -> ColumnData;
+}
+
+impl<T> ToExplicitBFunc<T> for ExplicitBFunc {
+    fn to_explicit(&self, _map: &FxHashMap<T, ExplicitBFunc>) -> ColumnData {
+        Ok(*self)
+    }
+}
+impl<T: std::hash::Hash + Eq> ToExplicitBFunc<T> for oxidd::util::AllocResult<T> {
+    fn to_explicit(&self, map: &FxHashMap<T, ExplicitBFunc>) -> ColumnData {
+        match self {
+            Ok(v) => match map.get(v) {
+                Some(v) => Ok(*v),
+                None => Err('?'),
+            },
+            Err(_) => Err('m'),
+        }
+    }
+}
+
 impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
     #[track_caller]
     fn check(
         &self,
         desc: impl fmt::Display,
-        actual: ExplicitBFunc,
-        expected: ExplicitBFunc,
+        actual: impl ToExplicitBFunc<B>,
+        expected: impl ToExplicitBFunc<B>,
         operands: &[ExplicitBFunc],
         sets: &[u32],
     ) {
-        if actual != expected {
-            let vars = self.nvars;
+        #[track_caller]
+        fn fail(
+            vars: u32,
+            desc: impl fmt::Display,
+            actual: Result<ExplicitBFunc, char>,
+            expected: Result<ExplicitBFunc, char>,
+            operands: &[ExplicitBFunc],
+            sets: &[u32],
+        ) -> ! {
             let mut columns = Vec::with_capacity(operands.len() + 2);
-            let op_it = operands.iter().copied();
+            let op_it = operands.iter().map(|&o| Ok(o));
             if operands.len() <= 3 {
                 columns.extend(["f", "g", "h"].iter().map(|n| n.to_string()).zip(op_it))
             } else {
@@ -259,10 +289,17 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
                 );
             }
         }
+
+        let actual = actual.to_explicit(&self.dd_to_boolean_func);
+        let expected = expected.to_explicit(&self.dd_to_boolean_func);
+        match (actual, expected) {
+            (Ok(a), Ok(e)) if a == e => (),
+            _ => fail(self.nvars, desc, actual, expected, operands, sets),
+        }
     }
 
     #[track_caller]
-    fn panic(&self, desc: impl fmt::Display, columns: &[(impl AsRef<str>, ExplicitBFunc)]) -> ! {
+    fn panic(&self, desc: impl fmt::Display, columns: &[(impl AsRef<str>, ColumnData)]) -> ! {
         panic!(
             "{desc}\n\n{}",
             util::debug::TruthTable {
@@ -277,7 +314,7 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
         &self,
         cond: bool,
         desc: impl fmt::Display,
-        columns: &[(impl AsRef<str>, ExplicitBFunc)],
+        columns: &[(impl AsRef<str>, ColumnData)],
     ) {
         if !cond {
             self.panic(desc, columns)
@@ -398,10 +435,9 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
 
             for (i, &expected) in self.var_functions.iter().enumerate() {
                 let i = i as VarNo;
-                let actual = self.dd_to_boolean_func[&B::var(manager, i).unwrap()];
-                self.check("var", actual, expected, &[], &[]);
+                self.check("var", B::var(manager, i), expected, &[], &[]);
 
-                let actual = self.dd_to_boolean_func[&B::not_var(manager, i).unwrap()];
+                let actual = B::not_var(manager, i);
                 self.check("not var", actual, expected ^ func_mask, &[], &[]);
             }
         });
@@ -412,52 +448,44 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
 
             // not
             let expected = !f_explicit & func_mask;
-            let actual = self.dd_to_boolean_func[&f.not().unwrap()];
-            self.check("¬f", actual, expected, &[f_explicit], &[]);
+            self.check("¬f", f.not(), expected, &[f_explicit], &[]);
 
             // arity >= 2
             for (g_explicit, g) in self.boolean_functions.iter().enumerate() {
                 let g_explicit = g_explicit as ExplicitBFunc;
+                let operands = &[f_explicit, g_explicit];
 
                 // and
                 let expected = f_explicit & g_explicit;
-                let actual = self.dd_to_boolean_func[&f.and(g).unwrap()];
-                self.check("f ∧ g", actual, expected, &[f_explicit, g_explicit], &[]);
+                self.check("f ∧ g", f.and(g), expected, operands, &[]);
 
                 // or
                 let expected = f_explicit | g_explicit;
-                let actual = self.dd_to_boolean_func[&f.or(g).unwrap()];
-                self.check("f ∨ g", actual, expected, &[f_explicit, g_explicit], &[]);
+                self.check("f ∨ g", f.or(g), expected, operands, &[]);
 
                 // xor
                 let expected = f_explicit ^ g_explicit;
-                let actual = self.dd_to_boolean_func[&f.xor(g).unwrap()];
-                self.check("f ⊕ g", actual, expected, &[f_explicit, g_explicit], &[]);
+                self.check("f ⊕ g", f.xor(g), expected, operands, &[]);
 
                 // equiv
                 let expected = !(f_explicit ^ g_explicit) & func_mask;
-                let actual = self.dd_to_boolean_func[&f.equiv(g).unwrap()];
-                self.check("f ↔ g", actual, expected, &[f_explicit, g_explicit], &[]);
+                self.check("f ↔ g", f.equiv(g), expected, operands, &[]);
 
                 // nand
                 let expected = !(f_explicit & g_explicit) & func_mask;
-                let actual = self.dd_to_boolean_func[&f.nand(g).unwrap()];
-                self.check("f ⊼ g", actual, expected, &[f_explicit, g_explicit], &[]);
+                self.check("f ⊼ g", f.nand(g), expected, operands, &[]);
 
                 // nor
                 let expected = !(f_explicit | g_explicit) & func_mask;
-                let actual = self.dd_to_boolean_func[&f.nor(g).unwrap()];
-                self.check("f ⊽ g", actual, expected, &[f_explicit, g_explicit], &[]);
+                self.check("f ⊽ g", f.nor(g), expected, operands, &[]);
 
                 // implication
                 let expected = (!f_explicit | g_explicit) & func_mask;
-                let actual = self.dd_to_boolean_func[&f.imp(g).unwrap()];
-                self.check("f → g", actual, expected, &[f_explicit, g_explicit], &[]);
+                self.check("f → g", f.imp(g), expected, operands, &[]);
 
                 // strict implication
                 let expected = !f_explicit & g_explicit;
-                let actual = self.dd_to_boolean_func[&f.imp_strict(g).unwrap()];
-                self.check("f < g", actual, expected, &[f_explicit, g_explicit], &[]);
+                self.check("f < g", f.imp_strict(g), expected, operands, &[]);
 
                 // arity >= 3
                 for (h_explicit, h) in self.boolean_functions.iter().enumerate() {
@@ -466,7 +494,7 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
                     // ite
                     self.check(
                         "if f { g } else { h }",
-                        self.dd_to_boolean_func[&f.ite(g, h).unwrap()],
+                        f.ite(g, h),
                         (f_explicit & g_explicit) | (!f_explicit & h_explicit),
                         &[f_explicit, g_explicit, h_explicit],
                         &[],
@@ -507,34 +535,32 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
                     assignment & (1u32 << level) != 0
                 });
                 let mut choice_requested_sym = 0u32;
-                let dd_cube = f
-                    .pick_cube_dd(|manager, edge, level| {
-                        manager
-                            .get_node(edge)
-                            .unwrap_inner()
-                            .assert_level_matches(level);
-                        if choice_requested_sym & (1 << level) != 0 {
-                            panic!("choice requested twice for x{level}");
-                        } else {
-                            choice_requested_sym |= 1 << level;
-                        }
-                        assignment & (1u32 << level) != 0
-                    })
-                    .unwrap();
+                let dd_cube = f.pick_cube_dd(|manager, edge, level| {
+                    manager
+                        .get_node(edge)
+                        .unwrap_inner()
+                        .assert_level_matches(level);
+                    if choice_requested_sym & (1 << level) != 0 {
+                        panic!("choice requested twice for x{level}");
+                    } else {
+                        choice_requested_sym |= 1 << level;
+                    }
+                    assignment & (1u32 << level) != 0
+                });
 
-                let actual = self.dd_to_boolean_func[&dd_cube];
                 if f_explicit == 0 {
-                    self.check("f.pick_cube_dd(..)", actual, 0, &[f_explicit], &[]);
+                    self.check("f.pick_cube_dd(..)", dd_cube, 0, &[f_explicit], &[]);
                     assert_eq!(cube, None);
                     assert_eq!(choice_requested, 0);
                 } else {
+                    let actual = self.dd_to_boolean_func[&dd_cube.unwrap()];
                     let cube =
                         cube.expect("f.pick_cube(..) returned None for a satisfiable function");
                     assert_eq!(cube.len(), nvars as usize);
                     self.check_cond(
                         actual & !f_explicit == 0,
                         "f.pick_cube_dd(..) does not imply f",
-                        &[("f", f_explicit), ("f.pick_cube_dd(..)", actual)],
+                        &[("f", Ok(f_explicit)), ("f.pick_cube_dd(..)", Ok(actual))],
                     );
 
                     let mut cube_func = func_mask;
@@ -561,9 +587,9 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
                                 flipped & !f_explicit != 0,
                                 format_args!("f.pick_cube_dd(..) should call the choice function or leave a don't care for x{var}"),
                                 &[
-                                    ("f", f_explicit),
-                                    ("f.pick_cube_dd(..)", actual),
-                                    ("cube with flipped literal", flipped),
+                                    ("f", Ok(f_explicit)),
+                                    ("f.pick_cube_dd(..)", Ok(actual)),
+                                    ("cube with flipped literal", Ok(flipped)),
                                 ],
                             );
                         }
@@ -577,7 +603,7 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
                     self.check_cond(
                         cube_func & !f_explicit == 0,
                         "f.pick_cube(..) does not imply f",
-                        &[("f", f_explicit), ("f.pick_cube(..)", actual)],
+                        &[("f", Ok(f_explicit)), ("f.pick_cube(..)", Ok(actual))],
                     );
 
                     self.check(
@@ -612,14 +638,14 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
                     }
                     self.check(
                         "f.restrict(g)",
-                        self.dd_to_boolean_func[&f.restrict(literal_set).unwrap()],
+                        f.restrict(literal_set),
                         expected,
                         &[f_explicit, literal_set_explicit],
                         &[],
                     );
 
                     // pick_cube_dd_set
-                    let actual = self.dd_to_boolean_func[&f.pick_cube_dd_set(literal_set).unwrap()];
+                    let actual = f.pick_cube_dd_set(literal_set);
 
                     if f_explicit == 0 {
                         self.check(
@@ -630,13 +656,14 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
                             &[],
                         );
                     } else {
+                        let actual = self.dd_to_boolean_func[&actual.unwrap()];
                         self.check_cond(
                             actual & !f_explicit == 0,
                             "f.pick_cube_dd_set(literal_set) does not imply f",
                             &[
-                                ("f", f_explicit),
-                                ("literal_set", literal_set_explicit),
-                                ("f.pick_cube_dd_set(literal_set)", actual),
+                                ("f", Ok(f_explicit)),
+                                ("literal_set", Ok(literal_set_explicit)),
+                                ("f.pick_cube_dd_set(literal_set)", Ok(actual)),
                             ],
                         );
 
@@ -660,9 +687,9 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
                                 self.panic(
                                     format_args!("f.pick_cube_dd_set(literal_set) is not a cube (checking x{var})"),
                                     &[
-                                        ("f", f_explicit),
-                                        ("literal_set", literal_set_explicit),
-                                        ("f.pick_cube_dd_set(literal_set)", actual),
+                                        ("f", Ok(f_explicit)),
+                                        ("literal_set", Ok(literal_set_explicit)),
+                                        ("f.pick_cube_dd_set(literal_set)", Ok(actual)),
                                     ],
                                 )
                             };
@@ -680,10 +707,10 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
                                 flipped & !f_explicit != 0,
                                 format_args!("f.pick_cube_dd_set(literal_set) does not follow the requirements from literal_set (selecting {selected} for x{var})"),
                                 &[
-                                    ("f", f_explicit),
-                                    ("literal_set", literal_set_explicit),
-                                    ("f.pick_cube_dd_set(literal_set)", actual),
-                                    ("flipped", flipped),
+                                    ("f", Ok(f_explicit)),
+                                    ("literal_set", Ok(literal_set_explicit)),
+                                    ("f.pick_cube_dd_set(literal_set)", Ok(actual)),
+                                    ("flipped", Ok(flipped)),
                                 ],
                             );
                         }
@@ -702,7 +729,7 @@ impl<B: BooleanFunction + BooleanVecSet> TestAllBooleanFunctions<'_, B> {
                 let v = v as VarNo;
                 self.check(
                     "f.subset0(v)",
-                    self.dd_to_boolean_func[&f.subset0(v).unwrap()],
+                    f.subset0(v),
                     f_explicit & !v_func,
                     &[f_explicit],
                     &[1 << v],
@@ -710,7 +737,7 @@ impl<B: BooleanFunction + BooleanVecSet> TestAllBooleanFunctions<'_, B> {
 
                 self.check(
                     "f.subset1(v)",
-                    self.dd_to_boolean_func[&f.subset1(v).unwrap()],
+                    f.subset1(v),
                     (f_explicit & v_func) >> (1 << v),
                     &[f_explicit],
                     &[1 << v],
@@ -718,7 +745,7 @@ impl<B: BooleanFunction + BooleanVecSet> TestAllBooleanFunctions<'_, B> {
 
                 self.check(
                     "f.change(v)",
-                    self.dd_to_boolean_func[&f.change(v).unwrap()],
+                    f.change(v),
                     ((f_explicit & !v_func) << (1 << v)) | ((f_explicit & v_func) >> (1 << v)),
                     &[f_explicit],
                     &[1 << v],
@@ -872,24 +899,24 @@ impl<B: BooleanFunctionQuant> TestAllBooleanFunctions<'_, B> {
 
                         self.check(
                             format_args!("∃v. f {inner_symbol} g"),
-                            self.dd_to_boolean_func[&f.apply_exists(op, g, dd_var_set).unwrap()],
-                            self.dd_to_boolean_func[&inner.exists(dd_var_set).unwrap()],
+                            f.apply_exists(op, g, dd_var_set),
+                            inner.exists(dd_var_set),
                             &[f_explicit, g_explicit],
                             &[var_set],
                         );
 
                         self.check(
                             format_args!("∀v. f {inner_symbol} g"),
-                            self.dd_to_boolean_func[&f.apply_forall(op, g, dd_var_set).unwrap()],
-                            self.dd_to_boolean_func[&inner.forall(dd_var_set).unwrap()],
+                            f.apply_forall(op, g, dd_var_set),
+                            inner.forall(dd_var_set),
                             &[f_explicit, g_explicit],
                             &[var_set],
                         );
 
                         self.check(
                             format_args!("∃!v. f {inner_symbol} g"),
-                            self.dd_to_boolean_func[&f.apply_unique(op, g, dd_var_set).unwrap()],
-                            self.dd_to_boolean_func[&inner.unique(dd_var_set).unwrap()],
+                            f.apply_unique(op, g, dd_var_set),
+                            inner.unique(dd_var_set),
                             &[f_explicit, g_explicit],
                             &[var_set],
                         );
@@ -910,10 +937,8 @@ impl<B: BooleanFunctionQuant> TestAllBooleanFunctions<'_, B> {
 
                     self.check(
                         "f.restrict(g) vs. ∃support(g). f ∧ g",
-                        self.dd_to_boolean_func[&f.restrict(literal_set).unwrap()],
-                        self.dd_to_boolean_func[&f
-                            .apply_exists(BooleanOperator::And, literal_set, dd_var_set)
-                            .unwrap()],
+                        f.restrict(literal_set),
+                        f.apply_exists(BooleanOperator::And, literal_set, dd_var_set),
                         &[f_explicit, literal_set_explicit],
                         &[var_set],
                     )

@@ -1,10 +1,11 @@
 use std::fmt::{Debug, Display, Formatter, Result, Write};
 
 pub type ExplicitBFunc = u32;
+pub type ColumnData = std::result::Result<ExplicitBFunc, char>;
 
 pub struct TruthTable<'a, S: AsRef<str>> {
     pub(crate) vars: u32,
-    pub(crate) columns: &'a [(S, ExplicitBFunc)],
+    pub(crate) columns: &'a [(S, ColumnData)],
 }
 
 impl<S: AsRef<str>> Display for TruthTable<'_, S> {
@@ -32,7 +33,10 @@ impl<S: AsRef<str>> Display for TruthTable<'_, S> {
             }
             for (name, func) in self.columns {
                 let width = name.as_ref().len();
-                let val = (func >> assignment) & 1;
+                let val = match func {
+                    Ok(f) => (b'0' + ((f >> assignment) & 1) as u8) as char,
+                    Err(c) => *c,
+                };
                 write!(f, "| {val:>width$} ")?;
             }
             writeln!(f)?;
