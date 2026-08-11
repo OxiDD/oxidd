@@ -8,6 +8,14 @@ type BinaryOp<M, R> = fn(
     Borrowed<<M as Manager>::Edge>,
 ) -> AllocResult<<M as Manager>::Edge>;
 
+type BinaryWithLevelOp<M, R> = fn(
+    &M,
+    R,
+    Borrowed<<M as Manager>::Edge>,
+    Borrowed<<M as Manager>::Edge>,
+    LevelNo,
+) -> AllocResult<<M as Manager>::Edge>;
+
 type TernaryOp<M, R> = fn(
     &M,
     R,
@@ -26,6 +34,15 @@ pub trait Recursor<M: Manager>: Copy {
         manager: &'a M,
         a: (Borrowed<M::Edge>, Borrowed<M::Edge>),
         b: (Borrowed<M::Edge>, Borrowed<M::Edge>),
+    ) -> AllocResult<(EdgeDropGuard<'a, M>, EdgeDropGuard<'a, M>)>;
+
+    #[allow(clippy::type_complexity)]
+    fn binary_with_level<'a>(
+        self,
+        op: BinaryWithLevelOp<M, Self>,
+        manager: &'a M,
+        a: (Borrowed<M::Edge>, Borrowed<M::Edge>, LevelNo),
+        b: (Borrowed<M::Edge>, Borrowed<M::Edge>, LevelNo),
     ) -> AllocResult<(EdgeDropGuard<'a, M>, EdgeDropGuard<'a, M>)>;
 
     #[allow(clippy::type_complexity)]
@@ -79,6 +96,19 @@ impl<M: Manager> Recursor<M> for SequentialRecursor {
     ) -> AllocResult<(EdgeDropGuard<'a, M>, EdgeDropGuard<'a, M>)> {
         let ra = EdgeDropGuard::new(manager, op(manager, self, a.0, a.1)?);
         let rb = EdgeDropGuard::new(manager, op(manager, self, b.0, b.1)?);
+        Ok((ra, rb))
+    }
+
+    #[inline(always)]
+    fn binary_with_level<'a>(
+        self,
+        op: BinaryWithLevelOp<M, Self>,
+        manager: &'a M,
+        a: (Borrowed<M::Edge>, Borrowed<M::Edge>, LevelNo),
+        b: (Borrowed<M::Edge>, Borrowed<M::Edge>, LevelNo),
+    ) -> AllocResult<(EdgeDropGuard<'a, M>, EdgeDropGuard<'a, M>)> {
+        let ra = EdgeDropGuard::new(manager, op(manager, self, a.0, a.1, a.2)?);
+        let rb = EdgeDropGuard::new(manager, op(manager, self, b.0, b.1, b.2)?);
         Ok((ra, rb))
     }
 
@@ -172,6 +202,27 @@ pub mod mt {
             Ok((ra?, rb?))
         }
 
+        fn binary_with_level<'a>(
+            mut self,
+            op: BinaryWithLevelOp<M, Self>,
+            manager: &'a M,
+            a: (Borrowed<M::Edge>, Borrowed<M::Edge>, LevelNo),
+            b: (Borrowed<M::Edge>, Borrowed<M::Edge>, LevelNo),
+        ) -> AllocResult<(EdgeDropGuard<'a, M>, EdgeDropGuard<'a, M>)> {
+            self.remaining_depth -= 1;
+            let (ra, rb) = manager.workers().join(
+                move || {
+                    let edge = op(manager, self, a.0, a.1, a.2)?;
+                    Ok(EdgeDropGuard::new(manager, edge))
+                },
+                move || {
+                    let edge = op(manager, self, b.0, b.1, a.2)?;
+                    Ok(EdgeDropGuard::new(manager, edge))
+                },
+            );
+            Ok((ra?, rb?))
+        }
+
         fn ternary<'a>(
             mut self,
             op: TernaryOp<M, Self>,
@@ -193,7 +244,6 @@ pub mod mt {
             Ok((ra?, rb?))
         }
 
-        #[inline(always)]
         fn binary_ternary<'a>(
             mut self,
             manager: &'a M,

@@ -10,7 +10,7 @@
 use std::fmt;
 use std::hash::Hash;
 
-use oxidd_core::util::{AllocResult, Borrowed, DropWith};
+use oxidd_core::util::{AllocResult, Borrowed, DropWith, EdgeDropGuard};
 use oxidd_core::{
     DiagramRules, Edge, HasLevel, InnerNode, LevelNo, LevelView, Manager, ManagerEventSubscriber,
     ReducedOrNew,
@@ -74,16 +74,33 @@ fn reduce<M>(
 where
     M: Manager<Terminal = ZBDDTerminal>,
 {
+    let hi = EdgeDropGuard::new(manager, hi);
+    let lo = EdgeDropGuard::new(manager, lo);
     // We do not use `DiagramRules::reduce()` here, as the iterator is
     // apparently not fully optimized away.
     if manager.get_node(&hi).is_terminal(&ZBDDTerminal::Empty) {
         stat!(reduced op);
-        manager.drop_edge(hi);
-        return Ok(lo);
+        return Ok(lo.into_edge());
     }
     oxidd_core::LevelView::get_or_insert(
         &mut manager.level(level),
-        M::InnerNode::new(level, [hi, lo]),
+        M::InnerNode::new(level, [hi.into_edge(), lo.into_edge()]),
+    )
+}
+
+#[inline(always)]
+fn reduce1<M>(manager: &M, level: LevelNo, child: M::Edge, op: ZBDDOp) -> AllocResult<M::Edge>
+where
+    M: Manager<Terminal = ZBDDTerminal>,
+{
+    let child = EdgeDropGuard::new(manager, child);
+    if manager.get_node(&child).is_terminal(&ZBDDTerminal::Empty) {
+        stat!(reduced op);
+        return Ok(child.into_edge());
+    }
+    oxidd_core::LevelView::get_or_insert(
+        &mut manager.level(level),
+        M::InnerNode::new(level, [manager.clone_edge(&child), child.into_edge()]),
     )
 }
 
@@ -98,13 +115,13 @@ fn reduce_borrowed<M>(
 where
     M: Manager<Terminal = ZBDDTerminal>,
 {
-    let _ = op;
+    let lo = EdgeDropGuard::new(manager, lo);
     if manager.get_node(&hi).is_terminal(&ZBDDTerminal::Empty) {
         stat!(reduced op);
-        return Ok(lo);
+        return Ok(lo.into_edge());
     }
     ReducedOrNew::New(
-        M::InnerNode::new(level, [manager.clone_edge(&hi), lo]),
+        M::InnerNode::new(level, [manager.clone_edge(&hi), lo.into_edge()]),
         Default::default(),
     )
     .then_insert(manager, level)
@@ -266,6 +283,7 @@ pub enum ZBDDOp {
     Subset0,
     Subset1,
     Change,
+    Restrict,
     Union,
     Intsec,
     Diff,

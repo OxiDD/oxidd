@@ -305,11 +305,11 @@ pub trait BooleanFunction: Function {
     /// `vars` conceptually is a partial assignment, represented as the
     /// conjunction of positive or negative literals, depending on whether the
     /// variable should be mapped to true or false. With this representation,
-    /// the result is equivalent to the conjunction of `self` and `vars`. The
-    /// implementation may be more efficient, though.
+    /// the result is equivalent to the conjunction of `self` and `vars` with a
+    /// subsequent existential quantification over the variable set.
     ///
     /// In other words, the restriction is a point-wise Shannon cofactor with
-    /// respect to the partial assignment given by `vars`. In an BDD, the result
+    /// respect to the partial assignment given by `vars`. In a BDD, the result
     /// never has more nodes than `self`.
     ///
     /// Locking behavior: acquires the manager's lock for shared access.
@@ -499,16 +499,13 @@ pub trait BooleanFunction: Function {
 
     /// Restrict a set of `vars` to constant values, edge version
     ///
-    /// See [`Self::restrict()`] for more details. The default implementation
-    /// is just [`Self::and_edge()`].
+    /// See [`Self::restrict()`] for more details.
     #[must_use]
     fn restrict_edge<'id>(
         manager: &Self::Manager<'id>,
         root: &EdgeOfFunc<'id, Self>,
         vars: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        Self::and_edge(manager, root, vars)
-    }
+    ) -> AllocResult<EdgeOfFunc<'id, Self>>;
 
     /// Compute the negation `¬edge`, edge version
     #[must_use]
@@ -1498,9 +1495,6 @@ pub trait PseudoBooleanFunction: Function {
     /// `vars` conceptually is a partial assignment, represented as the
     /// conjunction of positive or negative literals (0-1-valued functions),
     /// depending on whether the variable should be mapped to true or false.
-    /// With this representation, the result is equivalent to the multiplication
-    /// of `self` and `vars`, unless there are infinite or NaN values in the
-    /// image of `self`.
     ///
     /// In other words, the restriction is a point-wise Shannon cofactor with
     /// respect to the partial assignment given by `vars`. In an MTBDD, the

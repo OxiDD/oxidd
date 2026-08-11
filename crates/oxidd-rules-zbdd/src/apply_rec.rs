@@ -19,10 +19,12 @@ use crate::recursor::{Recursor, SequentialRecursor};
 #[cfg(feature = "statistics")]
 use super::STAT_COUNTERS;
 use super::{
-    HI, HasZBDDCache, LO, ZBDDOp, ZBDDTerminal, collect_children, reduce, reduce1, reduce_borrowed, stat,
+    HI, HasZBDDCache, LO, ZBDDOp, ZBDDTerminal, collect_children, reduce, reduce_borrowed, reduce1,
+    stat,
 };
 
-// spell-checker:ignore fnode,gnode,hnode,flevel,glevel,hlevel,ghlevel
+// spell-checker:ignore fnode,gnode,hnode,vnode
+// spell-checker:ignore flevel,glevel,hlevel,ghlevel,vlevel
 // spell-checker:ignore symm
 
 /// Recursively compute the subset with `var` set to `VAL`, or change `var` if
@@ -104,6 +106,144 @@ where
         .add_extended(manager, op, (&[f], &[var]), (&[h.borrowed()], &[]));
 
     Ok(h)
+}
+
+fn restrict<M, R: Recursor<M>>(
+    manager: &M,
+    rec: R,
+    f: Borrowed<M::Edge>,
+    vars: Borrowed<M::Edge>,
+    level: LevelNo,
+) -> AllocResult<M::Edge>
+where
+    M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, ZBDDOp> + HasZBDDCache<M::Edge>,
+    M::InnerNode: HasLevel,
+{
+    if rec.should_switch_to_sequential() {
+        return restrict(manager, SequentialRecursor, f, vars, level);
+    }
+    use ZBDDOp::Restrict;
+    use ZBDDTerminal::*;
+    stat!(call Restrict);
+
+    fn restrict_base<M>(
+        manager: &M,
+        vars: Borrowed<M::Edge>,
+        level: LevelNo,
+    ) -> AllocResult<M::Edge>
+    where
+        M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, ZBDDOp> + HasZBDDCache<M::Edge>,
+        M::InnerNode: HasLevel,
+    {
+        Ok(match manager.get_node(&vars) {
+            Node::Inner(node) => {
+                let (hi, lo) = collect_children(node);
+                if hi != lo {
+                    debug_assert!(
+                        manager.get_node(&lo).is_terminal(&Empty),
+                        "vars must be a conjunction of literals"
+                    );
+                    // select (zero-suppressed) LO branch
+                    return manager.get_terminal(Empty);
+                }
+
+                let node_level = node.level();
+                let mut res = restrict_base(manager, hi, node_level + 1)?;
+                if node_level > level && !manager.get_node(&res).is_terminal(&Empty) {
+                    for l in (level..node_level).rev() {
+                        res = oxidd_core::LevelView::get_or_insert(
+                            &mut manager.level(l),
+                            M::InnerNode::new(l, [manager.clone_edge(&res), res]),
+                        )?;
+                    }
+                }
+                res
+            }
+            Node::Terminal(_t) => {
+                debug_assert!(
+                    _t.borrow() == &Base,
+                    "vars must be a conjunction of literals"
+                );
+                manager.clone_edge(manager.zbdd_cache().tautology(level))
+            }
+        })
+    }
+
+    let fnode = match manager.get_node(&f) {
+        Node::Inner(n) => n,
+        Node::Terminal(t) => {
+            return match t.borrow() {
+                Empty => Ok(manager.clone_edge(&f)),
+                Base => restrict_base(manager, vars, level),
+            };
+        }
+    };
+
+    let vnode = manager.get_node(&vars);
+
+    // We only cache when both `f` and `vars` have a node at `level`.
+    // Otherwise, the cached results may be wrong after reordering.
+
+    let flevel = fnode.level();
+    let vlevel = vnode.level();
+    debug_assert!(flevel >= level);
+    debug_assert!(vlevel >= level);
+
+    if vlevel != level {
+        // select LO branch
+        let sel = if flevel == level { fnode.child(LO) } else { f };
+        let child = restrict(manager, rec, sel, vars, level + 1)?;
+        return reduce1(manager, level, child, Restrict);
+    }
+
+    let (vhi, vlo) = collect_children(vnode.unwrap_inner());
+    if vhi != vlo {
+        debug_assert!(
+            manager.get_node(&vlo).is_terminal(&Empty),
+            "vars must be a conjunction of literals"
+        );
+        // select HI branch
+        if flevel != level {
+            // HI branch is suppressed and would refer to the empty set.
+            // The restriction is still the empty set.
+            return manager.get_terminal(Empty);
+        };
+        let child = restrict(manager, rec, fnode.child(HI), vhi, level + 1)?;
+        return reduce1(manager, level, child, Restrict);
+    }
+
+    if flevel != level {
+        return restrict(manager, rec, f, vhi, level + 1);
+    }
+
+    // Query apply cache
+    stat!(cache_query Restrict);
+    if let Some(res) =
+        manager
+            .apply_cache()
+            .get(manager, Restrict, &[f.borrowed(), vars.borrowed()])
+    {
+        stat!(cache_hit Restrict);
+        return Ok(res);
+    }
+
+    let (fhi, flo) = collect_children(fnode);
+    debug_assert!(vhi == vlo);
+    let (hi, lo) = rec.binary_with_level(
+        restrict,
+        manager,
+        (fhi, vhi.borrowed(), level + 1),
+        (flo, vhi.borrowed(), level + 1),
+    )?;
+
+    let res = reduce(manager, level, hi.into_edge(), lo.into_edge(), Restrict)?;
+
+    // Add to apply cache
+    manager
+        .apply_cache()
+        .add(manager, Restrict, &[f, vars], res.borrowed());
+
+    Ok(res)
 }
 
 /// Recursively apply the union operator to `f` and `g`
@@ -685,6 +825,16 @@ where
     }
 
     #[inline]
+    fn restrict_edge<'id>(
+        manager: &Self::Manager<'id>,
+        root: &EdgeOfFunc<'id, Self>,
+        vars: &EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        let rec = SequentialRecursor;
+        restrict(manager, rec, root.borrowed(), vars.borrowed(), 0)
+    }
+
+    #[inline]
     fn not_edge<'id>(
         manager: &Self::Manager<'id>,
         edge: &EdgeOfFunc<'id, Self>,
@@ -1180,6 +1330,16 @@ pub mod mt {
         #[inline]
         fn t_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self> {
             manager.clone_edge(manager.zbdd_cache().tautology(0))
+        }
+
+        #[inline]
+        fn restrict_edge<'id>(
+            manager: &Self::Manager<'id>,
+            root: &EdgeOfFunc<'id, Self>,
+            vars: &EdgeOfFunc<'id, Self>,
+        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            let rec = ParallelRecursor::new(manager);
+            restrict(manager, rec, root.borrowed(), vars.borrowed(), 0)
         }
 
         #[inline]
