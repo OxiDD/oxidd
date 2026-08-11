@@ -78,101 +78,6 @@ where
     Ok(h)
 }
 
-/// Result of [`restrict_inner()`]
-enum RestrictInnerResult<'a, M: Manager> {
-    Done(M::Edge),
-    Rec {
-        vars: Borrowed<'a, M::Edge>,
-        f: Borrowed<'a, M::Edge>,
-        fnode: &'a M::InnerNode,
-    },
-}
-
-/// Tail-recursive part of [`restrict()`]. `f` is the function of which the
-/// variables should be restricted to constant values according to `vars`.
-///
-/// Invariant: `f` points to `fnode` at `flevel`, `vars` points to `vnode`
-#[inline]
-fn restrict_inner<'a, M, T>(
-    manager: &'a M,
-    f: Borrowed<'a, M::Edge>,
-    fnode: &'a M::InnerNode,
-    flevel: LevelNo,
-    vars: Borrowed<'a, M::Edge>,
-    vnode: &'a M::InnerNode,
-) -> RestrictInnerResult<'a, M>
-where
-    M: Manager<Terminal = T>,
-    M::InnerNode: HasLevel,
-    T: NumberBase,
-{
-    debug_assert!(std::ptr::eq(manager.get_node(&f).unwrap_inner(), fnode));
-    debug_assert_eq!(fnode.level(), flevel);
-    debug_assert!(std::ptr::eq(manager.get_node(&vars).unwrap_inner(), vnode));
-
-    let vlevel = vnode.level();
-    if vlevel > flevel {
-        // f above vars
-        return RestrictInnerResult::Rec { vars, f, fnode };
-    }
-
-    let vt = vnode.child(0);
-    if vlevel < flevel {
-        // vars above f
-        return match manager.get_node(&vt) {
-            Node::Inner(n) => restrict_inner(manager, f, fnode, flevel, vt, n),
-            Node::Terminal(t) if t.borrow().is_one() => {
-                RestrictInnerResult::Done(manager.clone_edge(&f))
-            }
-            Node::Terminal(_) => {
-                let ve = vnode.child(1);
-                if let Node::Inner(n) = manager.get_node(&ve) {
-                    restrict_inner(manager, f, fnode, flevel, ve, n)
-                } else {
-                    RestrictInnerResult::Done(manager.clone_edge(&f))
-                }
-            }
-        };
-    }
-
-    debug_assert_eq!(vlevel, flevel);
-    // top var at the level of f ⇒ select accordingly
-    let (f, vars, vnode) = match manager.get_node(&vt) {
-        Node::Inner(n) => {
-            debug_assert!(
-                matches!(manager.get_node(&vnode.child(1)), Node::Terminal(t) if t.borrow().is_zero()),
-                "vars must be a conjunction of literals"
-            );
-            // positive literal ⇒ select then branch
-            (fnode.child(0), vt, n)
-        }
-        Node::Terminal(t) if t.borrow().is_one() => {
-            debug_assert!(
-                matches!(manager.get_node(&vnode.child(1)), Node::Terminal(t) if t.borrow().is_zero()),
-                "vars must be a conjunction of literals"
-            );
-            // positive literal ⇒ select then branch
-            return RestrictInnerResult::Done(manager.clone_edge(&fnode.child(0)));
-        }
-        Node::Terminal(_) => {
-            // negative literal ⇒ select else branch
-            let f = fnode.child(1);
-            let ve = vnode.child(1);
-            if let Node::Inner(n) = manager.get_node(&ve) {
-                (f, ve, n)
-            } else {
-                return RestrictInnerResult::Done(manager.clone_edge(&f));
-            }
-        }
-    };
-
-    if let Node::Inner(fnode) = manager.get_node(&f) {
-        restrict_inner(manager, f, fnode, fnode.level(), vars, vnode)
-    } else {
-        RestrictInnerResult::Done(manager.clone_edge(&f))
-    }
-}
-
 /// Recursively restrict a set of `vars` (a conjunction of literals) to
 /// constant values in `f`
 fn restrict<M, T>(
@@ -192,9 +97,103 @@ where
         return Ok(manager.clone_edge(&f));
     };
 
-    match restrict_inner(manager, f, fnode, fnode.level(), vars, vnode) {
-        RestrictInnerResult::Done(res) => Ok(res),
-        RestrictInnerResult::Rec { vars, f, fnode } => {
+    enum InnerResult<'a, M: Manager> {
+        Done(M::Edge),
+        Rec {
+            vars: Borrowed<'a, M::Edge>,
+            f: Borrowed<'a, M::Edge>,
+            fnode: &'a M::InnerNode,
+        },
+    }
+
+    /// Tail-recursive part of [`restrict()`]. `f` is the function of which the
+    /// variables should be restricted to constant values according to `vars`.
+    ///
+    /// Invariant: `f` points to `fnode` at `flevel`, `vars` points to `vnode`
+    #[inline]
+    fn inner<'a, M, T>(
+        manager: &'a M,
+        f: Borrowed<'a, M::Edge>,
+        fnode: &'a M::InnerNode,
+        flevel: LevelNo,
+        vars: Borrowed<'a, M::Edge>,
+        vnode: &'a M::InnerNode,
+    ) -> InnerResult<'a, M>
+    where
+        M: Manager<Terminal = T>,
+        M::InnerNode: HasLevel,
+        T: NumberBase,
+    {
+        debug_assert!(std::ptr::eq(manager.get_node(&f).unwrap_inner(), fnode));
+        debug_assert_eq!(fnode.level(), flevel);
+        debug_assert!(std::ptr::eq(manager.get_node(&vars).unwrap_inner(), vnode));
+
+        let vlevel = vnode.level();
+        if vlevel > flevel {
+            // f above vars
+            return InnerResult::Rec { vars, f, fnode };
+        }
+
+        let vt = vnode.child(0);
+        if vlevel < flevel {
+            // vars above f
+            return match manager.get_node(&vt) {
+                Node::Inner(n) => inner(manager, f, fnode, flevel, vt, n),
+                Node::Terminal(t) if t.borrow().is_one() => {
+                    InnerResult::Done(manager.clone_edge(&f))
+                }
+                Node::Terminal(_) => {
+                    let ve = vnode.child(1);
+                    if let Node::Inner(n) = manager.get_node(&ve) {
+                        inner(manager, f, fnode, flevel, ve, n)
+                    } else {
+                        InnerResult::Done(manager.clone_edge(&f))
+                    }
+                }
+            };
+        }
+
+        debug_assert_eq!(vlevel, flevel);
+        // top var at the level of f ⇒ select accordingly
+        let (f, vars, vnode) = match manager.get_node(&vt) {
+            Node::Inner(n) => {
+                debug_assert!(
+                    matches!(manager.get_node(&vnode.child(1)), Node::Terminal(t) if t.borrow().is_zero()),
+                    "vars must be a conjunction of literals"
+                );
+                // positive literal ⇒ select then branch
+                (fnode.child(0), vt, n)
+            }
+            Node::Terminal(t) if t.borrow().is_one() => {
+                debug_assert!(
+                    matches!(manager.get_node(&vnode.child(1)), Node::Terminal(t) if t.borrow().is_zero()),
+                    "vars must be a conjunction of literals"
+                );
+                // positive literal ⇒ select then branch
+                return InnerResult::Done(manager.clone_edge(&fnode.child(0)));
+            }
+            Node::Terminal(_) => {
+                // negative literal ⇒ select else branch
+                let f = fnode.child(1);
+                let ve = vnode.child(1);
+                if let Node::Inner(n) = manager.get_node(&ve) {
+                    (f, ve, n)
+                } else {
+                    return InnerResult::Done(manager.clone_edge(&f));
+                }
+            }
+        };
+
+        if let Node::Inner(fnode) = manager.get_node(&f) {
+            inner(manager, f, fnode, fnode.level(), vars, vnode)
+        } else {
+            InnerResult::Done(manager.clone_edge(&f))
+        }
+    }
+
+    match inner(manager, f, fnode, fnode.level(), vars, vnode) {
+        InnerResult::Done(res) => Ok(res),
+        InnerResult::Rec { vars, f, fnode } => {
             // f above top-most restrict variable
 
             // Query apply cache
