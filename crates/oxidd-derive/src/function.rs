@@ -49,7 +49,7 @@ impl StructField {
                         trait_name
                     );
                 }
-                let field = fields.pop().unwrap().into_value();
+                let field = fields.pop().unwrap();
                 let ty = field.ty;
                 match &field.ident {
                     Some(ident) => Self {
