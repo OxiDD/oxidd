@@ -383,7 +383,10 @@ mod index {
 
     crate::util::manager_ref_index_based!(pub struct LDDManagerRef(<LDD as DD>::ManagerRef) with LDDManagerData);
 
+    #[cfg(not(feature = "multi-threading"))]
     type FunctionInner = oxidd_rules_ldd::LDDFunction<<LDD as DD>::Function>;
+    #[cfg(feature = "multi-threading")]
+    type FunctionInner = oxidd_rules_ldd::mt::LDDFunctionMT<<LDD as DD>::Function>;
 
     /// Boolean function represented as BDD
     #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, oxidd_derive::Function)]
@@ -421,7 +424,10 @@ mod pointer {
 
     crate::util::manager_ref_pointer_based!(pub struct LDDManagerRef(<LDD as DD>::ManagerRef) with LDDManagerData);
 
+    #[cfg(not(feature = "multi-threading"))]
     type FunctionInner = oxidd_rules_ldd::LDDFunction<<LDD as DD>::Function>;
+    #[cfg(feature = "multi-threading")]
+    type FunctionInner = oxidd_rules_ldd::mt::LDDFunctionMT<<LDD as DD>::Function>;
 
     /// Boolean function represented as BDD
     #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, oxidd_derive::Function)]
