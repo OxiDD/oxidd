@@ -108,6 +108,7 @@ apply-cache-direct-mapped = ["dep:oxidd-cache", "oxidd-cache/direct"]
 ## Enable statistics (will harm performance)
 statistics = [
   "oxidd-rules-bdd?/statistics",
+  "oxidd-rules-ldd?/statistics",
   "oxidd-rules-mtbdd?/statistics",
   "oxidd-rules-tdd?/statistics",
   "oxidd-rules-zbdd?/statistics",

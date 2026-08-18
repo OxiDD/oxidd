@@ -15,6 +15,61 @@ use crate::recursor::{Recursor, SequentialRecursor};
 use crate::stat;
 use crate::{LDDManager, LDDOp, LDDTerminal, LDDValue, RelationProductMeta};
 
+#[cfg(feature = "statistics")]
+struct StatCounters {
+    calls: std::sync::atomic::AtomicI64,
+    cache_queries: std::sync::atomic::AtomicI64,
+    cache_hits: std::sync::atomic::AtomicI64,
+    reduced: std::sync::atomic::AtomicI64,
+}
+
+#[cfg(feature = "statistics")]
+impl StatCounters {
+    #[allow(clippy::declare_interior_mutable_const)]
+    const INIT: StatCounters = StatCounters {
+        calls: std::sync::atomic::AtomicI64::new(0),
+        cache_queries: std::sync::atomic::AtomicI64::new(0),
+        cache_hits: std::sync::atomic::AtomicI64::new(0),
+        reduced: std::sync::atomic::AtomicI64::new(0),
+    };
+
+    fn print<O: oxidd_core::Countable + std::fmt::Debug>(counters: &[Self]) {
+        // spell-checker:ignore ctrs
+        for (i, ctrs) in counters.iter().enumerate() {
+            let calls = ctrs.calls.swap(0, std::sync::atomic::Ordering::Relaxed);
+            let cache_queries = ctrs
+                .cache_queries
+                .swap(0, std::sync::atomic::Ordering::Relaxed);
+            let cache_hits = ctrs
+                .cache_hits
+                .swap(0, std::sync::atomic::Ordering::Relaxed);
+            let reduced = ctrs.reduced.swap(0, std::sync::atomic::Ordering::Relaxed);
+
+            if calls == 0 {
+                continue;
+            }
+
+            let terminal_percent = (calls - cache_queries) as f32 / calls as f32 * 100.0;
+            let cache_hit_percent = cache_hits as f32 / cache_queries as f32 * 100.0;
+            let op = <O as oxidd_core::Countable>::from_usize(i);
+            eprintln!(
+                "  {op:?}: calls: {calls}, cache queries: {cache_queries} ({terminal_percent} % terminal cases), cache hits: {cache_hits} ({cache_hit_percent} %), reduced: {reduced}"
+            );
+        }
+    }
+}
+
+#[cfg(feature = "statistics")]
+static STAT_COUNTERS: [StatCounters; <LDDOp as oxidd_core::Countable>::MAX_VALUE + 1] =
+    [StatCounters::INIT; <LDDOp as oxidd_core::Countable>::MAX_VALUE + 1];
+
+/// Print statistics to stderr
+#[cfg(feature = "statistics")]
+pub fn print_stats() {
+    eprintln!("[oxidd_rules_ldd]");
+    StatCounters::print::<LDDOp>(&STAT_COUNTERS);
+}
+
 /// Builds the meta-LDD encoding the read/write projection described by
 /// `read_proj` and `write_proj`, together with the positions of the read and
 /// write variables in that encoding.
@@ -135,6 +190,7 @@ pub(crate) fn project<M: LDDManager, R: Recursor<M>>(
     if rec.should_switch_to_sequential() {
         return project(manager, SequentialRecursor, set, proj);
     }
+    stat!(call LDDOp::Project);
 
     // Base case: if proj has reached the True terminal, the projection is
     // fully consumed — return the True terminal (empty vector).
@@ -237,6 +293,7 @@ pub(crate) fn apply_union<M: LDDManager, R: Recursor<M>>(
     if rec.should_switch_to_sequential() {
         return apply_union(manager, SequentialRecursor, f, g);
     }
+    stat!(call LDDOp::Union);
 
     if f == g {
         return Ok(manager.clone_edge(&f));
@@ -331,6 +388,7 @@ pub(crate) fn apply_minus<M: LDDManager, R: Recursor<M>>(
     if rec.should_switch_to_sequential() {
         return apply_minus(manager, SequentialRecursor, a, b);
     }
+    stat!(call LDDOp::Minus);
 
     // a \ a == ∅  and  ∅ \ b == ∅
     if a == b || manager.get_node(&a).is_terminal(&LDDTerminal::Empty) {
@@ -428,6 +486,7 @@ pub(crate) fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
     if rec.should_switch_to_sequential() {
         return apply_relational_product(manager, SequentialRecursor, set, rel, meta);
     }
+    stat!(call LDDOp::RelationalProduct);
 
     // meta == True means all meta levels consumed; return set unchanged.
     match manager.get_node(&meta) {
@@ -705,6 +764,7 @@ fn apply_intersect<M: LDDManager, R: Recursor<M>>(
     if rec.should_switch_to_sequential() {
         return apply_intersect(manager, SequentialRecursor, a, b);
     }
+    stat!(call LDDOp::Intersect);
 
     // a ∩ a == a
     if a == b {
@@ -812,6 +872,7 @@ pub(crate) fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
     if rec.should_switch_to_sequential() {
         return apply_relational_predecessor(manager, SequentialRecursor, set, rel, meta, universe);
     }
+    stat!(call LDDOp::RelationalPredecessor);
 
     // An empty set, relation, or universe yields the empty set.
     if manager.get_node(&set).is_terminal(&LDDTerminal::Empty)

@@ -51,7 +51,7 @@ pub fn print_stats() {
     eprintln!("[statistics feature disabled]");
 
     #[cfg(feature = "statistics")]
-    oxidd_rules_bdd::simple::print_stats();
+    oxidd_rules_ldd::print_stats();
 }
 
 /// We only expose a hard coded u32 valued LDDManager.
