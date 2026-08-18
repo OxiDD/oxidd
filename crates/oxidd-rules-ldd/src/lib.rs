@@ -16,6 +16,9 @@ use crate::recursor::SequentialRecursor;
 mod apply;
 mod recursor;
 
+#[cfg(feature = "statistics")]
+pub use apply::print_stats;
+
 /// Terminal nodes in simple binary decision diagrams
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Countable, Debug)]
 #[repr(u8)]
