@@ -420,9 +420,9 @@ pub mod mt {
     /// Set of vectors backed by a list decision diagram, multi-threaded version
     ///
     /// This is the parallel counterpart of [`LDDFunction`]: the apply
-    /// algorithms split independent sub-problems onto the manager's worker pool
-    /// via a [`ParallelRecursor`]. All other operations behave exactly like the
-    /// sequential [`LDDFunction`].
+    /// algorithms split independent sub-problems onto the manager's worker
+    /// pool. All other operations behave exactly like the sequential
+    /// [`LDDFunction`].
     #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Function, Debug)]
     #[repr_id = "LDD"]
     #[repr(transparent)]
