@@ -128,7 +128,9 @@ fn restrict<M, R: Recursor<M>>(
     level: LevelNo,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = ZBDDTerminal, InnerNodeValue = ()> + HasApplyCache<M, ZBDDOp> + HasZBDDCache<M::Edge>,
+    M: Manager<Terminal = ZBDDTerminal, InnerNodeValue = ()>
+        + HasApplyCache<M, ZBDDOp>
+        + HasZBDDCache<M::Edge>,
     M::InnerNode: HasLevel,
 {
     if rec.should_switch_to_sequential() {
