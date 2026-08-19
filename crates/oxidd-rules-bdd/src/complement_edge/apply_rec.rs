@@ -369,14 +369,13 @@ where
     Ok(res)
 }
 
-fn restrict<M, R: Recursor<M>>(
+fn restrict<M: BCDDManager, R: Recursor<M>>(
     manager: &M,
     rec: R,
     f: Borrowed<M::Edge>,
     vars: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag> + HasApplyCache<M, BCDDOp>,
     M::InnerNode: HasLevel,
 {
     if rec.should_switch_to_sequential() {
@@ -543,31 +542,12 @@ where
             (f, f_neg)
         };
 
-    RestrictInnerResult::Done(manager.clone_edge(&f).with_tag_owned(if complement {
-        EdgeTag::Complemented
-    } else {
-        EdgeTag::None
-    }))
-}
-
-fn restrict<M: BCDDManager, R: Recursor<M>>(
-    manager: &M,
-    rec: R,
-    f: Borrowed<M::Edge>,
-    vars: Borrowed<M::Edge>,
-) -> AllocResult<M::Edge>
-where
-    M::InnerNode: HasLevel,
-{
-    if rec.should_switch_to_sequential() {
-        return restrict(manager, SequentialRecursor, f, vars);
+        InnerResult::Done(manager.clone_edge(&f).with_tag_owned(if complement {
+            EdgeTag::Complemented
+        } else {
+            EdgeTag::None
+        }))
     }
-    stat!(call BCDDOp::Restrict);
-
-    let (Node::Inner(fnode), Node::Inner(vnode)) = (manager.get_node(&f), manager.get_node(&vars))
-    else {
-        return Ok(manager.clone_edge(&f));
-    };
 
     let inner_res = {
         let f_neg = f.tag() == EdgeTag::Complemented;

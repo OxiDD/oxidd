@@ -356,14 +356,13 @@ where
     Ok(res)
 }
 
-fn restrict<M, R: Recursor<M>>(
+fn restrict<M: BDDManager, R: Recursor<M>>(
     manager: &M,
     rec: R,
     f: Borrowed<M::Edge>,
     vars: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = BDDTerminal> + HasApplyCache<M, BDDOp>,
     M::InnerNode: HasLevel,
 {
     if rec.should_switch_to_sequential() {
@@ -465,35 +464,16 @@ where
             }
         };
 
-    if let Node::Inner(fnode) = manager.get_node(&f) {
-        restrict_inner(manager, f, fnode, fnode.level(), vars, vnode)
-    } else {
-        RestrictInnerResult::Done(manager.clone_edge(&f))
+        if let Node::Inner(fnode) = manager.get_node(&f) {
+            inner(manager, f, fnode, fnode.level(), vars, vnode)
+        } else {
+            InnerResult::Done(manager.clone_edge(&f))
+        }
     }
-}
 
-fn restrict<M: BDDManager, R: Recursor<M>>(
-    manager: &M,
-    rec: R,
-    f: Borrowed<M::Edge>,
-    vars: Borrowed<M::Edge>,
-) -> AllocResult<M::Edge>
-where
-    M::InnerNode: HasLevel,
-{
-    if rec.should_switch_to_sequential() {
-        return restrict(manager, SequentialRecursor, f, vars);
-    }
-    stat!(call BDDOp::Restrict);
-
-    let (Node::Inner(fnode), Node::Inner(vnode)) = (manager.get_node(&f), manager.get_node(&vars))
-    else {
-        return Ok(manager.clone_edge(&f));
-    };
-
-    match restrict_inner(manager, f, fnode, fnode.level(), vars, vnode) {
-        RestrictInnerResult::Done(res) => Ok(res),
-        RestrictInnerResult::Rec { vars, f, fnode } => {
+    match inner(manager, f, fnode, fnode.level(), vars, vnode) {
+        InnerResult::Done(res) => Ok(res),
+        InnerResult::Rec { vars, f, fnode } => {
             // f above top-most restrict variable
 
             // Query apply cache

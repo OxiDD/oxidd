@@ -128,7 +128,7 @@ fn restrict<M, R: Recursor<M>>(
     level: LevelNo,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, ZBDDOp> + HasZBDDCache<M::Edge>,
+    M: Manager<Terminal = ZBDDTerminal, InnerNodeValue = ()> + HasApplyCache<M, ZBDDOp> + HasZBDDCache<M::Edge>,
     M::InnerNode: HasLevel,
 {
     if rec.should_switch_to_sequential() {
@@ -144,7 +144,9 @@ where
         level: LevelNo,
     ) -> AllocResult<M::Edge>
     where
-        M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, ZBDDOp> + HasZBDDCache<M::Edge>,
+        M: Manager<Terminal = ZBDDTerminal, InnerNodeValue = ()>
+            + HasApplyCache<M, ZBDDOp>
+            + HasZBDDCache<M::Edge>,
         M::InnerNode: HasLevel,
     {
         Ok(match manager.get_node(&vars) {
@@ -165,7 +167,7 @@ where
                     for l in (level..node_level).rev() {
                         res = oxidd_core::LevelView::get_or_insert(
                             &mut manager.level(l),
-                            M::InnerNode::new(l, [manager.clone_edge(&res), res]),
+                            M::InnerNode::new(l, [manager.clone_edge(&res), res], ()),
                         )?;
                     }
                 }

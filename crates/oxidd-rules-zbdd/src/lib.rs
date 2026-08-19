@@ -84,14 +84,14 @@ where
     }
     oxidd_core::LevelView::get_or_insert(
         &mut manager.level(level),
-        M::InnerNode::new(level, [hi.into_edge(), lo.into_edge()]),
+        M::InnerNode::new(level, [hi.into_edge(), lo.into_edge()], ()),
     )
 }
 
 #[inline(always)]
 fn reduce1<M>(manager: &M, level: LevelNo, child: M::Edge, op: ZBDDOp) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = ZBDDTerminal>,
+    M: Manager<Terminal = ZBDDTerminal, InnerNodeValue = ()>,
 {
     let child = EdgeDropGuard::new(manager, child);
     if manager.get_node(&child).is_terminal(&ZBDDTerminal::Empty) {
@@ -100,7 +100,7 @@ where
     }
     oxidd_core::LevelView::get_or_insert(
         &mut manager.level(level),
-        M::InnerNode::new(level, [child.into_edge()], ()),
+        M::InnerNode::new(level, [manager.clone_edge(&child), child.into_edge()], ()),
     )
 }
 

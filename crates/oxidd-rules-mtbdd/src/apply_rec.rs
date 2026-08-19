@@ -88,7 +88,7 @@ fn restrict<M, T>(
     vars: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = T> + HasApplyCache<M, MTBDDOp>,
+    M: Manager<Terminal = T, InnerNodeValue = ()> + HasApplyCache<M, MTBDDOp>,
     M::InnerNode: HasLevel,
     T: NumberBase,
 {
@@ -242,7 +242,7 @@ fn apply_ite<M, T>(
     h: Borrowed<M::Edge>,
 ) -> AllocResult<M::Edge>
 where
-    M: Manager<Terminal = T> + HasApplyCache<M, MTBDDOp>,
+    M: Manager<Terminal = T, InnerNodeValue = ()> + HasApplyCache<M, MTBDDOp>,
     M::InnerNode: HasLevel,
     T: NumberBase,
 {
