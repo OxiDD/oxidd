@@ -1079,7 +1079,7 @@ impl ZBDDFunction {
             self.0
                 .sat_count::<Natural, BuildHasherDefault<FxHasher>>(vars, &mut Default::default())
         });
-        crate::util::natural_to_py(py, count)
+        crate::util::sat_count_to_py(py, count)
     }
 
     /// Count the number of satisfying assignments.

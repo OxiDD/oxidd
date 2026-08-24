@@ -354,7 +354,9 @@ pub fn eval<B: BooleanFunction>(f: &B, args: &Bound<PyAny>) -> PyResult<bool> {
     })
 }
 
-pub fn natural_to_py<'py>(py: Python<'py>, natural: Natural) -> PyResult<Bound<'py, PyInt>> {
+/// Convert a non-NaN `Natural` into a Python `int`
+fn natural_to_py<'py>(py: Python<'py>, natural: Natural) -> PyResult<Bound<'py, PyInt>> {
+    debug_assert!(!natural.is_nan());
     let mantissa = natural.mantissa();
     let py_mantissa = if let &[n] = mantissa {
         PyInt::new(py, n)
@@ -391,6 +393,16 @@ pub fn natural_to_py<'py>(py: Python<'py>, natural: Natural) -> PyResult<Bound<'
         let res = py_mantissa.lshift(natural.exp())?;
         // SAFETY: Python's `int.__lshift__(int)` has return type `int`
         Ok(unsafe { res.cast_into_unchecked() })
+    }
+}
+
+pub fn sat_count_to_py<'py>(py: Python<'py>, natural: Natural) -> PyResult<Bound<'py, PyInt>> {
+    if natural.is_nan() {
+        Err(pyo3::exceptions::PyRuntimeError::new_err(
+            "The SAT count computed for some node is non-integral. Likely, the given number of variables is less than the size of the function's domain.",
+        ))
+    } else {
+        natural_to_py(py, natural)
     }
 }
 
