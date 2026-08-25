@@ -16,11 +16,11 @@ use crate::stat;
 use crate::{LDDManager, LDDOp, LDDTerminal, LDDValue, RelationProductMeta};
 
 #[cfg(feature = "statistics")]
-struct StatCounters {
-    calls: std::sync::atomic::AtomicI64,
-    cache_queries: std::sync::atomic::AtomicI64,
-    cache_hits: std::sync::atomic::AtomicI64,
-    reduced: std::sync::atomic::AtomicI64,
+pub(crate) struct StatCounters {
+    pub(crate) calls: std::sync::atomic::AtomicI64,
+    pub(crate) cache_queries: std::sync::atomic::AtomicI64,
+    pub(crate) cache_hits: std::sync::atomic::AtomicI64,
+    pub(crate) reduced: std::sync::atomic::AtomicI64,
 }
 
 #[cfg(feature = "statistics")]
@@ -60,7 +60,7 @@ impl StatCounters {
 }
 
 #[cfg(feature = "statistics")]
-static STAT_COUNTERS: [StatCounters; <LDDOp as oxidd_core::Countable>::MAX_VALUE + 1] =
+pub(crate) static STAT_COUNTERS: [StatCounters; <LDDOp as oxidd_core::Countable>::MAX_VALUE + 1] =
     [StatCounters::INIT; <LDDOp as oxidd_core::Countable>::MAX_VALUE + 1];
 
 /// Print statistics to stderr
@@ -1404,7 +1404,9 @@ pub(crate) fn len<M: LDDManager>(
 /// Collect the two children of a binary node
 #[inline]
 #[must_use]
-fn collect_children<E: Edge, N: InnerNode<E>>(node: &N) -> (Borrowed<'_, E>, Borrowed<'_, E>) {
+pub(crate) fn collect_children<E: Edge, N: InnerNode<E>>(
+    node: &N,
+) -> (Borrowed<'_, E>, Borrowed<'_, E>) {
     debug_assert_eq!(N::ARITY, 2);
     let mut it = node.children();
     let f_down = it.next().unwrap();
@@ -1415,7 +1417,7 @@ fn collect_children<E: Edge, N: InnerNode<E>>(node: &N) -> (Borrowed<'_, E>, Bor
 
 /// Create a node in `manager` if necessary
 #[inline(always)]
-fn make_node<M: LDDManager>(
+pub(crate) fn make_node<M: LDDManager>(
     manager: &M,
     value: &<M as Manager>::InnerNodeValue,
     down: M::Edge,
