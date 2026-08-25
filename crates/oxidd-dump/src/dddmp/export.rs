@@ -660,7 +660,7 @@ fn replace_space_and_control(mut string: &str) -> Cow<'_, str> {
     let mut result = Cow::Borrowed(string);
     'outer: loop {
         for (i, b) in string.bytes().enumerate() {
-            if b.is_ascii_control() {
+            if b.is_ascii_control() || b == b' ' {
                 if let Cow::Borrowed(_) = result {
                     result = Cow::Owned(String::with_capacity(string.len()));
                 }
