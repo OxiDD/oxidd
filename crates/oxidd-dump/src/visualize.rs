@@ -179,7 +179,7 @@ impl Visualizer {
     /// internal buffer. On error, the internal buffer is left as-is.
     pub fn serve(&mut self) -> io::Result<()> {
         let port = self.port;
-        let listener = TcpListener::bind(("localhost", port))?;
+        let listener = TcpListener::bind(("::", port))?;
         println!("Data can be read on http://localhost:{port}");
 
         let mut buf = EMPTY_RECV_BUF;
