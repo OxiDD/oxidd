@@ -230,6 +230,18 @@ where
         apply_minus(manager, SequentialRecursor, a.borrowed(), b.borrowed())
     }
 
+    /// Computes the intersection `a ∩ b`.
+    #[inline]
+    pub fn intersect_edge<'id>(
+        manager: &<LDDFunction<F> as Function>::Manager<'id>,
+        a: EdgeOfFunc<'id, Self>,
+        b: EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        let a = EdgeDropGuard::new(manager, a);
+        let b = EdgeDropGuard::new(manager, b);
+        apply_intersect(manager, SequentialRecursor, a.borrowed(), b.borrowed())
+    }
+
     /// Computes the set of vectors reachable in one step from `set` via the
     /// sparse relation `rel`.  `meta` must be produced by
     /// [`relation_product_meta`][Self::relation_product_meta].
@@ -330,6 +342,18 @@ where
     pub fn minus(&self, other: &Self) -> AllocResult<Self> {
         self.manager_ref().with_manager_shared(|manager| {
             let edge = Self::minus_edge(
+                manager,
+                manager.clone_edge(self.as_edge(manager)),
+                manager.clone_edge(other.as_edge(manager)),
+            )?;
+            Ok(Self::from_edge(manager, edge))
+        })
+    }
+
+    /// Computes the intersection `self ∩ other`.
+    pub fn intersect(&self, other: &Self) -> AllocResult<Self> {
+        self.manager_ref().with_manager_shared(|manager| {
+            let edge = Self::intersect_edge(
                 manager,
                 manager.clone_edge(self.as_edge(manager)),
                 manager.clone_edge(other.as_edge(manager)),
@@ -528,6 +552,23 @@ pub mod mt {
             )
         }
 
+        /// See [`LDDFunction::intersect_edge`].
+        #[inline]
+        pub fn intersect_edge<'id>(
+            manager: &<Self as Function>::Manager<'id>,
+            a: EdgeOfFunc<'id, Self>,
+            b: EdgeOfFunc<'id, Self>,
+        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            let a = EdgeDropGuard::new(manager, a);
+            let b = EdgeDropGuard::new(manager, b);
+            apply_intersect(
+                manager,
+                ParallelRecursor::new(manager),
+                a.borrowed(),
+                b.borrowed(),
+            )
+        }
+
         /// See [`LDDFunction::relational_product_edge`].
         #[inline]
         pub fn relational_product_edge<'id>(
@@ -623,6 +664,18 @@ pub mod mt {
         pub fn minus(&self, other: &Self) -> AllocResult<Self> {
             self.manager_ref().with_manager_shared(|manager| {
                 let edge = Self::minus_edge(
+                    manager,
+                    manager.clone_edge(self.as_edge(manager)),
+                    manager.clone_edge(other.as_edge(manager)),
+                )?;
+                Ok(Self::from_edge(manager, edge))
+            })
+        }
+
+        /// See [`LDDFunction::intersect`].
+        pub fn intersect(&self, other: &Self) -> AllocResult<Self> {
+            self.manager_ref().with_manager_shared(|manager| {
+                let edge = Self::intersect_edge(
                     manager,
                     manager.clone_edge(self.as_edge(manager)),
                     manager.clone_edge(other.as_edge(manager)),

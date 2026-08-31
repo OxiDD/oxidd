@@ -190,6 +190,28 @@ macro_rules! ldd_function_methods {
                 )))
             }
 
+            /// Computes the intersection `self ∩ other`.
+            pub fn intersect(&self, other: &Self) -> ::oxidd_core::util::AllocResult<Self> {
+                Ok(Self(self.0.intersect(&other.0)?))
+            }
+
+            /// Computes the intersection `a ∩ b` using the already-borrowed
+            /// `manager`; the lock-free counterpart of [`intersect`][Self::intersect].
+            pub fn intersect_edge(
+                manager: &<Self as ::oxidd_core::function::Function>::Manager<'_>,
+                a: &Self,
+                b: &Self,
+            ) -> ::oxidd_core::util::AllocResult<Self> {
+                use ::oxidd_core::Manager;
+                use ::oxidd_core::function::Function;
+                let a = manager.clone_edge(a.as_edge(manager));
+                let b = manager.clone_edge(b.as_edge(manager));
+                Ok(Self(FunctionInner::from_edge(
+                    manager,
+                    FunctionInner::intersect_edge(manager, a, b)?,
+                )))
+            }
+
             /// Computes the set of vectors reachable in one step from `self` via
             /// the sparse relation `rel`, guided by `meta` (produced by
             /// [`relation_product_meta`][Self::relation_product_meta]).
