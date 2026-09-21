@@ -217,6 +217,18 @@ where
         apply_union(manager, SequentialRecursor, f.borrowed(), g.borrowed())
     }
 
+    /// Computes the intersection `a ∩ b` of the two sets of vectors.
+    #[inline]
+    pub fn intersect_edge<'id>(
+        manager: &<LDDFunction<F> as Function>::Manager<'id>,
+        a: EdgeOfFunc<'id, Self>,
+        b: EdgeOfFunc<'id, Self>,
+    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        let a = EdgeDropGuard::new(manager, a);
+        let b = EdgeDropGuard::new(manager, b);
+        apply_intersect(manager, SequentialRecursor, a.borrowed(), b.borrowed())
+    }
+
     /// Returns the largest subset of `a` that does not contain any element of
     /// `b` (set difference `a \ b`).
     #[inline]
@@ -318,6 +330,18 @@ where
     pub fn union(&self, other: &Self) -> AllocResult<Self> {
         self.manager_ref().with_manager_shared(|manager| {
             let edge = Self::union_edge(
+                manager,
+                manager.clone_edge(self.as_edge(manager)),
+                manager.clone_edge(other.as_edge(manager)),
+            )?;
+            Ok(Self::from_edge(manager, edge))
+        })
+    }
+
+    /// Computes the intersection `self ∩ other`.
+    pub fn intersect(&self, other: &Self) -> AllocResult<Self> {
+        self.manager_ref().with_manager_shared(|manager| {
+            let edge = Self::intersect_edge(
                 manager,
                 manager.clone_edge(self.as_edge(manager)),
                 manager.clone_edge(other.as_edge(manager)),
@@ -511,6 +535,23 @@ pub mod mt {
             )
         }
 
+        /// See [`LDDFunction::intersect_edge`].
+        #[inline]
+        pub fn intersect_edge<'id>(
+            manager: &<Self as Function>::Manager<'id>,
+            a: EdgeOfFunc<'id, Self>,
+            b: EdgeOfFunc<'id, Self>,
+        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            let a = EdgeDropGuard::new(manager, a);
+            let b = EdgeDropGuard::new(manager, b);
+            apply_intersect(
+                manager,
+                ParallelRecursor::new(manager),
+                a.borrowed(),
+                b.borrowed(),
+            )
+        }
+
         /// See [`LDDFunction::minus_edge`].
         #[inline]
         pub fn minus_edge<'id>(
@@ -611,6 +652,18 @@ pub mod mt {
         pub fn union(&self, other: &Self) -> AllocResult<Self> {
             self.manager_ref().with_manager_shared(|manager| {
                 let edge = Self::union_edge(
+                    manager,
+                    manager.clone_edge(self.as_edge(manager)),
+                    manager.clone_edge(other.as_edge(manager)),
+                )?;
+                Ok(Self::from_edge(manager, edge))
+            })
+        }
+
+        /// See [`LDDFunction::intersect`].
+        pub fn intersect(&self, other: &Self) -> AllocResult<Self> {
+            self.manager_ref().with_manager_shared(|manager| {
+                let edge = Self::intersect_edge(
                     manager,
                     manager.clone_edge(self.as_edge(manager)),
                     manager.clone_edge(other.as_edge(manager)),

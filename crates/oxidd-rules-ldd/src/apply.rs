@@ -755,7 +755,7 @@ pub(crate) fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
 }
 
 /// Computes the intersection `a ∩ b` of the two sets of vectors.
-fn apply_intersect<M: LDDManager, R: Recursor<M>>(
+pub(crate) fn apply_intersect<M: LDDManager, R: Recursor<M>>(
     manager: &M,
     rec: R,
     a: Borrowed<M::Edge>,
