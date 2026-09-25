@@ -633,6 +633,7 @@ dependencies = [
  "hugealloc",
  "linear-hashtbl",
  "oxidd-core",
+ "oxidd-rules-bdd",
  "parking_lot",
  "rayon",
  "rustc-hash",

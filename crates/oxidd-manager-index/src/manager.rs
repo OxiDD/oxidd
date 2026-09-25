@@ -22,8 +22,8 @@ use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
 use std::ops::Range;
 use std::sync::Arc;
-use std::sync::atomic::AtomicU64;
-use std::sync::atomic::Ordering::{Acquire, Relaxed};
+use std::sync::atomic::Ordering::{AcqRel, Acquire, Relaxed};
+use std::sync::atomic::{AtomicU64, AtomicUsize};
 
 use crossbeam_utils::CachePadded;
 use derive_where::derive_where;
@@ -117,6 +117,7 @@ pub trait ManagerDataCons<
 enum GCSignal {
     RunGc,
     Quit,
+    Exited,
 }
 
 pub struct Store<'id, N, ET, TM, R, MD, const TERMINALS: usize>
@@ -131,6 +132,9 @@ where
     terminal_manager: TM,
     state: CachePadded<Mutex<SharedStoreState>>,
     gc_signal: (Mutex<GCSignal>, Condvar),
+    gc_thread: Mutex<Option<std::thread::JoinHandle<()>>>,
+    /// Counts manager references without the GC thread's own Store Arc.
+    external_refs: AtomicUsize,
     workers: crate::workers::Workers,
 }
 
@@ -532,6 +536,17 @@ where
             "TERMINALS must fit into an u32"
         );
     };
+
+    /// Creation from a live `&Manager` can revive a zero external count in a
+    /// GC callback. Serialize that transition with the worker's exit check.
+    fn retain_external_from_manager(&self) {
+        let mut signal = self.gc_signal.0.lock();
+        if self.external_refs.fetch_add(1, Relaxed) == 0 {
+            debug_assert_ne!(*signal, GCSignal::Exited);
+            *signal = GCSignal::RunGc;
+            self.gc_signal.1.notify_all();
+        }
+    }
 
     #[inline]
     fn prepare_local_state(
@@ -2032,8 +2047,16 @@ where
 
 // === ManagerRef ==============================================================
 
+/// A caller-owned reference to an index-based manager.
+///
+/// Function handles also own an external manager reference. Dropping the last
+/// manager or function handle may wait for an ongoing collection to finish.
+/// This also applies to C `*_unref` and Python finalization. A handle created
+/// by a GC callback may revive a zero count and keep the worker running; the
+/// prior final drop then returns once it observes the revival. A final drop on
+/// the GC thread signals retirement without joining itself. A worker panic is
+/// propagated by a joining drop unless that thread is already unwinding.
 #[repr(transparent)]
-#[derive_where(Clone)]
 pub struct ManagerRef<
     NC: InnerNodeCons<ET>,
     ET: Tag,
@@ -2062,15 +2085,57 @@ impl<
     RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
     MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
     const TERMINALS: usize,
+> Clone for ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS>
+{
+    fn clone(&self) -> Self {
+        self.0.external_refs.fetch_add(1, Relaxed);
+        Self(self.0.clone())
+    }
+}
+
+impl<
+    NC: InnerNodeCons<ET>,
+    ET: Tag,
+    TMC: TerminalManagerCons<NC, ET, TERMINALS>,
+    RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
+    MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
+    const TERMINALS: usize,
 > Drop for ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS>
 {
+    /// Retire the GC thread when this is the last external reference. If this
+    /// runs on the GC thread, signal it without attempting to join itself.
     fn drop(&mut self) {
-        if Arc::strong_count(&self.0) == 2 {
-            // This is the second last reference. The last reference belongs to
-            // the gc thread. Terminate it.
-            let gc_signal = &self.0.gc_signal;
-            *gc_signal.0.lock() = GCSignal::Quit;
-            gc_signal.1.notify_one();
+        let gc_signal = &self.0.gc_signal;
+        let mut signal = gc_signal.0.lock();
+        if self.0.external_refs.fetch_sub(1, AcqRel) == 1 {
+            if *signal != GCSignal::Exited {
+                *signal = GCSignal::Quit;
+                gc_signal.1.notify_one();
+            }
+            if self
+                .0
+                .gc_thread
+                .lock()
+                .as_ref()
+                .is_some_and(|thread| thread.thread().id() == std::thread::current().id())
+            {
+                return;
+            }
+            while *signal == GCSignal::Quit {
+                gc_signal.1.wait(&mut signal);
+            }
+            if *signal == GCSignal::Exited {
+                drop(signal);
+                // Hold this mutex through join so another zero drop cannot
+                // return before the worker has actually exited.
+                let mut thread = self.0.gc_thread.lock();
+                if let Some(thread) = thread.take()
+                    && thread.join().is_err()
+                    && !std::thread::panicking()
+                {
+                    panic!("OxiDD GC thread panicked");
+                }
+            }
         }
     }
 }
@@ -2200,6 +2265,7 @@ impl<
         //   `&Manager` reference, the counter is at least 1.
         ManagerRef(unsafe {
             let manager = &*ptr;
+            (*manager.store).retain_external_from_manager();
             Arc::increment_strong_count(manager.store);
             Arc::from_raw(manager.store)
         })
@@ -2304,6 +2370,8 @@ pub fn new_manager<
         }),
         terminal_manager: TMC::T::<'static>::with_capacity(terminal_node_capacity),
         gc_signal: (Mutex::new(GCSignal::RunGc), Condvar::new()),
+        gc_thread: Mutex::new(None),
+        external_refs: AtomicUsize::new(1),
         workers: crate::workers::Workers::new(threads),
     });
 
@@ -2317,17 +2385,24 @@ pub fn new_manager<
         LOCAL_STORE_STATE.with(|state| state.current_store.set(store_addr))
     });
 
-    // spell-checker:ignore mref
-    let gc_mref: ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS> = ManagerRef(arc.clone());
-    std::thread::Builder::new()
+    let gc_store = arc.clone();
+    let gc_thread = std::thread::Builder::new()
         .name("oxidd mi gc".to_string())
         .spawn(move || {
+            let _on_exit = scopeguard::guard(&*gc_store, |store| {
+                *store.gc_signal.0.lock() = GCSignal::Exited;
+                store.gc_signal.1.notify_all();
+            });
             // The worker is dedicated to this store.
             LOCAL_STORE_STATE.with(|state| state.current_store.set(store_addr));
 
-            let store = &*gc_mref.0;
+            let store = &*gc_store;
             loop {
                 let mut lock = store.gc_signal.0.lock();
+                // Quit may have arrived before this thread first waited.
+                if *lock == GCSignal::Quit {
+                    break;
+                }
                 store.gc_signal.1.wait(&mut lock);
                 if *lock == GCSignal::Quit {
                     break;
@@ -2335,9 +2410,9 @@ pub fn new_manager<
                 drop(lock);
 
                 // parking_lot `Condvar`s have no spurious wakeups -> run gc now
-                oxidd_core::ManagerRef::with_manager_shared(&gc_mref, |manager| {
-                    oxidd_core::Manager::gc(manager);
-                });
+                let local_guard = store.prepare_local_state();
+                oxidd_core::Manager::gc(&*store.manager.shared());
+                drop(local_guard);
 
                 let mut shared = store.state.lock();
                 LOCAL_STORE_STATE.with(|local| {
@@ -2354,6 +2429,7 @@ pub fn new_manager<
             }
         })
         .unwrap();
+    *arc.gc_thread.lock() = Some(gc_thread);
 
     // initialize the manager data
     let local_guard = arc.prepare_local_state();
@@ -2379,6 +2455,10 @@ impl<
         &self.0.workers
     }
 }
+
+#[cfg(test)]
+#[path = "manager_lifetime_tests.rs"]
+mod manager_lifetime_tests;
 
 // === Function ================================================================
 
@@ -2498,6 +2578,7 @@ unsafe impl<
         //   `&Manager` reference, the counter is at least 1.
         let store = ManagerRef(unsafe {
             let manager = &*ptr;
+            (*manager.store).retain_external_from_manager();
             Arc::increment_strong_count(manager.store);
             Arc::from_raw(manager.store)
         });
