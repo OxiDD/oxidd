@@ -29,7 +29,7 @@ pub mod function;
 pub mod util;
 
 use error::DuplicateVarName;
-use util::{AllocResult, Borrowed, DropWith, NodeSet};
+use util::{AllocResult, DropWith, NodeSet, Own, Ref};
 
 /// Manager reference
 ///
@@ -66,7 +66,7 @@ pub trait ManagerRef: Clone + Eq + Hash + for<'a, 'id> From<&'a Self::Manager<'i
 /// [`DiagramRules::reduce()`] for an example implementation.
 pub trait DiagramRules<E: Edge, N: InnerNode<E>, T> {
     /// Iterator created by [`DiagramRules::cofactors()`]
-    type Cofactors<'a>: Iterator<Item = Borrowed<'a, E>>
+    type Cofactors<'a>: Iterator<Item = Ref<'a, E>>
     where
         E: 'a,
         N: 'a;
@@ -87,7 +87,7 @@ pub trait DiagramRules<E: Edge, N: InnerNode<E>, T> {
     /// children. An implementation might look like this:
     ///
     /// ```
-    /// # use oxidd_core::{*, util::BorrowedEdgeIter};
+    /// # use oxidd_core::{*, util::EdgeRefIter, util::Own};
     /// struct BDDRules;
     /// impl<E: Edge, N: InnerNode<E>, T> DiagramRules<E, N, T> for BDDRules {
     ///     type Cofactors<'a> = N::ChildrenIter<'a> where N: 'a, E: 'a;
@@ -95,7 +95,7 @@ pub trait DiagramRules<E: Edge, N: InnerNode<E>, T> {
     ///     fn reduce<M: Manager<Edge = E, InnerNode = N, Terminal = T>>(
     ///         manager: &M,
     ///         level: LevelNo,
-    ///         children: impl IntoIterator<Item = E>,
+    ///         children: impl IntoIterator<Item = Own<E>>,
     ///     ) -> ReducedOrNew<E, N> {
     ///         let mut it = children.into_iter();
     ///         let f0 = it.next().unwrap();
@@ -126,7 +126,7 @@ pub trait DiagramRules<E: Edge, N: InnerNode<E>, T> {
     fn reduce<M: Manager<Edge = E, InnerNode = N, Terminal = T>>(
         manager: &M,
         level: LevelNo,
-        children: impl IntoIterator<Item = E>,
+        children: impl IntoIterator<Item = Own<E>>,
     ) -> ReducedOrNew<E, N>;
 
     /// Get the cofactors of `node` assuming an incoming edge with `tag`
@@ -141,7 +141,7 @@ pub trait DiagramRules<E: Edge, N: InnerNode<E>, T> {
     ///
     /// This is equivalent to `Self::cofactors(tag, node).nth(n).unwrap()`.
     #[inline]
-    fn cofactor(tag: E::Tag, node: &N, n: usize) -> Borrowed<'_, E> {
+    fn cofactor(tag: E::Tag, node: &N, n: usize) -> Ref<'_, E> {
         Self::cofactors(tag, node).nth(n).expect("out of range")
     }
 }
@@ -154,7 +154,7 @@ pub trait DiagramRules<E: Edge, N: InnerNode<E>, T> {
 /// `New` variant.
 pub enum ReducedOrNew<E: Edge, N: InnerNode<E>> {
     /// A reduction rule was applied
-    Reduced(E),
+    Reduced(Own<E>),
     /// The node is new. After inserting it into the manager, the edge should be
     /// tagged with the given tag.
     New(N, E::Tag),
@@ -168,7 +168,7 @@ impl<E: Edge, N: InnerNode<E>> ReducedOrNew<E, N> {
     /// be strictly above (i.e. less than) the children's levels.
     #[must_use]
     #[inline(always)]
-    pub fn then_insert<M>(self, manager: &M, level: LevelNo) -> AllocResult<E>
+    pub fn then_insert<M>(self, manager: &M, level: LevelNo) -> AllocResult<Own<E>>
     where
         M: Manager<InnerNode = N, Edge = E>,
     {
@@ -178,7 +178,7 @@ impl<E: Edge, N: InnerNode<E>> ReducedOrNew<E, N> {
                 debug_assert_ne!(level, LevelNo::MAX);
                 debug_assert!(node.check_level(|l| l == level));
                 debug_assert!(node.children().all(|c| {
-                    if let Node::Inner(node) = manager.get_node(&*c) {
+                    if let Node::Inner(node) = manager.get_node(c) {
                         node.check_level(|l| level < l)
                     } else {
                         true
@@ -186,7 +186,7 @@ impl<E: Edge, N: InnerNode<E>> ReducedOrNew<E, N> {
                 }));
 
                 let edge = manager.level(level).get_or_insert(node)?;
-                Ok(edge.with_tag_owned(tag))
+                Ok(edge.with_tag(tag))
             }
         }
     }
@@ -206,7 +206,7 @@ pub trait InnerNode<E: Edge>: Sized + Eq + Hash + DropWith<E> {
     const ARITY: usize;
 
     /// Iterator over children of an inner node
-    type ChildrenIter<'a>: ExactSizeIterator<Item = Borrowed<'a, E>>
+    type ChildrenIter<'a>: ExactSizeIterator<Item = Ref<'a, E>>
     where
         Self: 'a,
         E: 'a;
@@ -221,7 +221,7 @@ pub trait InnerNode<E: Edge>: Sized + Eq + Hash + DropWith<E> {
     /// (typically, the length should be [`Self::ARITY`], but some node types
     /// may deviate from that).
     #[must_use]
-    fn new(level: LevelNo, children: impl IntoIterator<Item = E>) -> Self;
+    fn new(level: LevelNo, children: impl IntoIterator<Item = Own<E>>) -> Self;
 
     /// Returns the result of `check` applied to the node's level in case this
     /// node type stores levels, otherwise returns `true`.
@@ -239,7 +239,7 @@ pub trait InnerNode<E: Edge>: Sized + Eq + Hash + DropWith<E> {
     fn children(&self) -> Self::ChildrenIter<'_>;
 
     /// Get the `n`-th child of this node
-    fn child(&self, n: usize) -> Borrowed<'_, E>;
+    fn child(&self, n: usize) -> Ref<'_, E>;
 
     /// Set the `n`-th child of this node
     ///
@@ -262,7 +262,7 @@ pub trait InnerNode<E: Edge>: Sized + Eq + Hash + DropWith<E> {
     /// there must not be a borrowed child (obtained via
     /// [`InnerNode::children()`]).
     #[must_use = "call `Manager::drop_edge()` if you don't need the previous edge"]
-    unsafe fn set_child(&self, n: usize, child: E) -> E;
+    unsafe fn set_child(&self, n: usize, child: Own<E>) -> Own<E>;
 
     /// Get the node's reference count
     ///
@@ -358,8 +358,7 @@ pub type NodeID = usize;
 /// for [`Ord`] can be an arbitrary, fixed order (e.g. using addresses of the
 /// nodes). The main idea of this is to give the set `{f, g}` of two edges `f`
 /// and `g` a unique tuple/array representation.
-#[must_use]
-pub trait Edge: Sized + Ord + Hash {
+pub trait Edge: Copy + Sized + Ord + Hash {
     /// Edge tag
     ///
     /// For instance, an edge tag can be used to mark an edge as complemented.
@@ -368,21 +367,15 @@ pub trait Edge: Sized + Ord + Hash {
     /// simply be `()`.
     type Tag: Tag;
 
-    /// Turn a reference into a borrowed handle
-    fn borrowed(&self) -> Borrowed<'_, Self>;
     /// Get a version of this [`Edge`] with the given tag
-    ///
-    /// Refer to [`Borrowed::edge_with_tag()`] for cases in which this method
-    /// cannot be used due to lifetime restrictions.
-    fn with_tag(&self, tag: Self::Tag) -> Borrowed<'_, Self>;
-    /// Get a version of this [`Edge`] with the given tag
-    fn with_tag_owned(self, tag: Self::Tag) -> Self;
+    fn with_tag(self, tag: Self::Tag) -> Self;
 
     /// Get the [`Tag`] of this [`Edge`]
-    fn tag(&self) -> Self::Tag;
+    fn tag(self) -> Self::Tag;
 
-    /// Returns some unique identifier for the node, e.g. for I/O purposes
-    fn node_id(&self) -> NodeID;
+    /// Returns some unique identifier for the referenced node, e.g., for I/O
+    /// purposes
+    fn node_id(self) -> NodeID;
 }
 
 /// Trait for tags that can be attached to pointers (e.g. edges, see
@@ -641,7 +634,7 @@ pub unsafe trait Manager: Sized {
     ///
     /// The actual items are edges pointing to terminals since this allows us to
     /// get a [`NodeID`].
-    type TerminalIterator<'a>: Iterator<Item = Self::Edge>
+    type TerminalIterator<'a>: Iterator<Item = Own<Self::Edge>>
     where
         Self: 'a;
 
@@ -660,14 +653,14 @@ pub unsafe trait Manager: Sized {
 
     /// Get a reference to the node to which `edge` points
     #[must_use]
-    fn get_node(&self, edge: &Self::Edge) -> Node<'_, Self>;
+    fn get_node<'a>(&'a self, edge: Ref<'a, Self::Edge>) -> Node<'a, Self>;
 
     /// Clone `edge`
     #[must_use]
-    fn clone_edge(&self, edge: &Self::Edge) -> Self::Edge;
+    fn clone_edge(&self, edge: Ref<'_, Self::Edge>) -> Own<Self::Edge>;
 
     /// Drop `edge`
-    fn drop_edge(&self, edge: Self::Edge);
+    fn drop_edge(&self, edge: Own<Self::Edge>);
     /// Drop `edge` and try to remove the node it points to
     ///
     /// `level` is the node's level. This is required because nodes do not
@@ -686,7 +679,7 @@ pub unsafe trait Manager: Sized {
     /// Passing the wrong `level` is considered to be a programming mistake. To
     /// aid debugging, the implementation is allowed (but not required) to panic
     /// if it can diagnose such a mistake.
-    fn try_remove_node(&self, edge: Self::Edge, level: LevelNo) -> bool;
+    fn try_remove_node(&self, edge: Own<Self::Edge>, level: LevelNo) -> bool;
 
     /// Get the count of inner nodes
     #[must_use]
@@ -833,7 +826,7 @@ pub unsafe trait Manager: Sized {
     /// holding a terminal iterator ([`Manager::terminals()`]) may cause a
     /// deadlock.
     #[must_use]
-    fn get_terminal(&self, terminal: Self::Terminal) -> AllocResult<Self::Edge>;
+    fn get_terminal(&self, terminal: Self::Terminal) -> AllocResult<Own<Self::Edge>>;
 
     /// Get the number of terminals
     ///
@@ -913,8 +906,7 @@ pub unsafe trait Manager: Sized {
 /// When using reference counting to implement garbage collection of dead nodes,
 /// cloning and dropping edges when inserting entries into the apply cache may
 /// cause many CPU cache misses. To circumvent this performance issue, the apply
-/// cache may store [`Borrowed<M::Edge>`]s (e.g., using the unsafe
-/// [`Borrowed::into_inner()`]). Now, the apply cache implementation has to
+/// cache may store raw [`Edge`]s. Now, the apply cache implementation has to
 /// guarantee that every edge returned by the [`get()`][ApplyCache::get]
 /// method still points to a valid node. To that end, the cache may, e.g., clear
 /// itself when [`Self::pre_gc()`] is called and reject any insertion of new
@@ -1034,7 +1026,7 @@ pub trait ManagerEventSubscriber<M: Manager> {
 /// inserts them at the other level and vice versa.
 pub unsafe trait LevelView<E: Edge, N: InnerNode<E>> {
     /// Iterator over [`Edge`]s pointing to nodes at this level
-    type Iterator<'a>: Iterator<Item = &'a E>
+    type Iterator<'a>: Iterator<Item = Ref<'a, E>>
     where
         Self: 'a,
         E: 'a;
@@ -1061,7 +1053,7 @@ pub unsafe trait LevelView<E: Edge, N: InnerNode<E>> {
 
     /// Get the edge corresponding to the given node (if present)
     #[must_use]
-    fn get(&self, node: &N) -> Option<&E>;
+    fn get(&self, node: &N) -> Option<Ref<'_, E>>;
 
     /// Insert the given edge into the unique table at this level, assuming that
     /// the referenced node is already stored in the associated manager.
@@ -1078,7 +1070,7 @@ pub unsafe trait LevelView<E: Edge, N: InnerNode<E>> {
     /// Furthermore, this function ideally panics if `edge` is tagged, but the
     /// caller must not rely on that. An implementation may simply remove the
     /// tag for optimization purposes.
-    fn insert(&mut self, edge: E) -> bool;
+    fn insert(&mut self, edge: Own<E>) -> bool;
 
     /// Insert the given edge into the unique table at this level, assuming that
     /// the referenced node is already stored in the associated manager. Unsafe
@@ -1099,7 +1091,7 @@ pub unsafe trait LevelView<E: Edge, N: InnerNode<E>> {
     /// level number of this level for the referenced node. During reordering,
     /// the second requirement does not need to be fulfilled immediately,
     /// but must hold at the end of the reordering process.
-    unsafe fn insert_unchecked(&mut self, edge: E) -> bool;
+    unsafe fn insert_unchecked(&mut self, edge: Own<E>) -> bool;
 
     /// Get the edge corresponding to `level` and `node` if present, or insert
     /// it.
@@ -1110,7 +1102,7 @@ pub unsafe trait LevelView<E: Edge, N: InnerNode<E>> {
     ///   [`HasLevel::level(node)`][HasLevel::level()] returns a different
     ///   level.
     #[must_use]
-    fn get_or_insert(&mut self, node: N) -> AllocResult<E>;
+    fn get_or_insert(&mut self, node: N) -> AllocResult<Own<E>>;
 
     /// Get the edge corresponding to `level` and `node` if present, or insert
     /// it. Unsafe version of [`Self::get_or_insert()`]
@@ -1125,7 +1117,7 @@ pub unsafe trait LevelView<E: Edge, N: InnerNode<E>> {
     /// fulfilled immediately, but must hold at the end of the reordering
     /// process.
     #[must_use]
-    unsafe fn get_or_insert_unchecked(&mut self, node: N) -> AllocResult<E>;
+    unsafe fn get_or_insert_unchecked(&mut self, node: N) -> AllocResult<Own<E>>;
 
     /// Perform garbage collection on this level
     ///
@@ -1133,14 +1125,15 @@ pub unsafe trait LevelView<E: Edge, N: InnerNode<E>> {
     /// prepared. For instance, this is what [`Manager::reorder()`] does.
     fn gc(&mut self);
 
-    /// Remove `node` from (this level of) the manager
+    /// Try to remove the node referred to by `edge` from (this level of) the
+    /// manager
     ///
     /// Returns whether the node was present at this level and has been removed.
     ///
     /// This method may be a no-op unless a garbage collection has been
     /// prepared. For instance, this is what [`Manager::reorder()`] does. In the
     /// no-op case, the return value is always false.
-    fn remove(&mut self, node: &N) -> bool;
+    fn try_remove(&mut self, edge: Own<E>) -> bool;
 
     /// Move all nodes from this level to the other level and vice versa.
     ///
@@ -1177,33 +1170,35 @@ pub trait ApplyCache<M: Manager, O: Copy>: DropWith<M::Edge> {
     /// `N` indicate the number of expected edge values and numeric values,
     /// respectively.
     #[must_use]
+    #[allow(clippy::type_complexity)]
     fn get_extended<const E: usize, const N: usize>(
         &self,
         manager: &M,
         operator: O,
-        operands: (&[Borrowed<M::Edge>], &[u32]),
-    ) -> Option<([M::Edge; E], [u32; N])>;
+        operands: (&[Ref<'_, M::Edge>], &[u32]),
+    ) -> Option<([Own<M::Edge>; E], [u32; N])>;
 
     /// Add the result of `operation` to this cache
     ///
     /// An implementation is free to not cache any result. (This is why we use
-    /// `Borrowed<M::Edge>`, which in this case elides a few clone and drop
+    /// [`Ref<M::Edge>`], which in this case elides a few clone and drop
     /// operations.) If the cache already contains the key consisting of
     /// `operator` and `operands`, there is no need to update its value. (Again,
     /// an implementation could elide clone and drop operations.)
+    #[allow(clippy::type_complexity)]
     fn add_extended(
         &self,
         manager: &M,
         operator: O,
-        operands: (&[Borrowed<M::Edge>], &[u32]),
-        values: (&[Borrowed<M::Edge>], &[u32]),
+        operands: (&[Ref<'_, M::Edge>], &[u32]),
+        values: (&[Ref<'_, M::Edge>], &[u32]),
     );
 
     /// Shorthand for [`Self::get_extended()`] without numeric operands and just
     /// a single edge value
     #[inline(always)]
     #[must_use]
-    fn get(&self, manager: &M, operator: O, operands: &[Borrowed<M::Edge>]) -> Option<M::Edge> {
+    fn get(&self, manager: &M, operator: O, operands: &[Ref<'_, M::Edge>]) -> Option<Own<M::Edge>> {
         let ([e], []) = self.get_extended::<1, 0>(manager, operator, (operands, &[]))?;
         Some(e)
     }
@@ -1215,8 +1210,8 @@ pub trait ApplyCache<M: Manager, O: Copy>: DropWith<M::Edge> {
         &self,
         manager: &M,
         operator: O,
-        operands: &[Borrowed<M::Edge>],
-        value: Borrowed<M::Edge>,
+        operands: &[Ref<'_, M::Edge>],
+        value: Ref<'_, M::Edge>,
     ) {
         self.add_extended(manager, operator, (operands, &[]), (&[value], &[]))
     }

@@ -3,7 +3,7 @@ use std::ops::{Deref, DerefMut};
 
 use crate::Manager;
 
-use crate::util::DropWith;
+use super::{DropWith, Own};
 
 /// Zero-sized struct that calls [`std::process::abort()`] if dropped
 ///
@@ -46,13 +46,13 @@ impl Drop for AbortOnDrop<'_> {
 pub struct EdgeDropGuard<'a, M: Manager> {
     /// Manager containing the edge
     pub manager: &'a M,
-    edge: ManuallyDrop<M::Edge>,
+    edge: ManuallyDrop<Own<M::Edge>>,
 }
 
 impl<'a, M: Manager> EdgeDropGuard<'a, M> {
     /// Create a new drop guard
     #[inline]
-    pub fn new(manager: &'a M, edge: M::Edge) -> Self {
+    pub fn new(manager: &'a M, edge: Own<M::Edge>) -> Self {
         Self {
             manager,
             edge: ManuallyDrop::new(edge),
@@ -61,8 +61,8 @@ impl<'a, M: Manager> EdgeDropGuard<'a, M> {
 
     /// Convert `this` into the contained edge
     #[inline]
-    pub fn into_edge(mut self) -> M::Edge {
-        // SAFETY: `this.edge` is never used again, we drop `this` below
+    pub fn into_edge(mut self) -> Own<M::Edge> {
+        // SAFETY: `this.edge` is never used again, we drop `self` below
         let edge = unsafe { ManuallyDrop::take(&mut self.edge) };
         std::mem::forget(self);
         edge
@@ -79,7 +79,7 @@ impl<'a, M: Manager> Drop for EdgeDropGuard<'a, M> {
 }
 
 impl<'a, M: Manager> Deref for EdgeDropGuard<'a, M> {
-    type Target = M::Edge;
+    type Target = Own<M::Edge>;
 
     #[inline]
     fn deref(&self) -> &Self::Target {
@@ -97,19 +97,19 @@ impl<'a, M: Manager> DerefMut for EdgeDropGuard<'a, M> {
 pub struct EdgeVecDropGuard<'a, M: Manager> {
     /// Manager containing the edges
     pub manager: &'a M,
-    vec: Vec<M::Edge>,
+    vec: Vec<Own<M::Edge>>,
 }
 
 impl<'a, M: Manager> EdgeVecDropGuard<'a, M> {
     /// Create a new drop guard
     #[inline]
-    pub fn new(manager: &'a M, vec: Vec<M::Edge>) -> Self {
+    pub fn new(manager: &'a M, vec: Vec<Own<M::Edge>>) -> Self {
         Self { manager, vec }
     }
 
     /// Convert `this` into the contained edge
     #[inline]
-    pub fn into_vec(mut self) -> Vec<M::Edge> {
+    pub fn into_vec(mut self) -> Vec<Own<M::Edge>> {
         std::mem::take(&mut self.vec)
     }
 }
@@ -124,7 +124,7 @@ impl<'a, M: Manager> Drop for EdgeVecDropGuard<'a, M> {
 }
 
 impl<'a, M: Manager> Deref for EdgeVecDropGuard<'a, M> {
-    type Target = Vec<M::Edge>;
+    type Target = Vec<Own<M::Edge>>;
 
     #[inline]
     fn deref(&self) -> &Self::Target {

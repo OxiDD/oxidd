@@ -3,14 +3,14 @@
 //! The implementation is very limited but perfectly fine to test e.g. an apply
 //! cache.
 
-use std::cmp::Ordering;
 use std::collections::HashSet;
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
+use std::mem::ManuallyDrop;
 use std::ops::Range;
 use std::sync::Arc;
 
 use oxidd_core::error::DuplicateVarName;
-use oxidd_core::util::{AllocResult, Borrowed, DropWith};
+use oxidd_core::util::{AllocResult, DropWith, Own, Ref};
 use oxidd_core::{
     DiagramRules, Edge, HasWorkers, InnerNode, LevelNo, LevelView, Manager, Node, NodeID,
     ReducedOrNew, VarNo,
@@ -20,76 +20,34 @@ use oxidd_core::{
 ///
 /// The implementation is very limited but perfectly fine to test e.g. an apply
 /// cache.
-#[derive(Debug)]
-pub struct DummyEdge(Arc<()>);
-
-impl PartialEq for DummyEdge {
-    fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
-    }
-}
-impl Eq for DummyEdge {}
-impl PartialOrd for DummyEdge {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-impl Ord for DummyEdge {
-    fn cmp(&self, other: &Self) -> Ordering {
-        Arc::as_ptr(&self.0).cmp(&Arc::as_ptr(&other.0))
-    }
-}
-impl Hash for DummyEdge {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        Arc::as_ptr(&self.0).hash(state);
-    }
-}
-
-impl Drop for DummyEdge {
-    fn drop(&mut self) {
-        eprintln!(
-            "Edges must not be dropped. Use Manager::drop_edge(). Backtrace:\n{}",
-            std::backtrace::Backtrace::capture()
-        );
-    }
-}
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct DummyEdge(*const ());
 
 impl DummyEdge {
     /// Create a new `DummyEdge`
-    pub fn new() -> Self {
-        DummyEdge(Arc::new(()))
+    pub fn new() -> Own<Self> {
+        let e = DummyEdge(Arc::into_raw(Arc::new(())));
+        unsafe { Own::from_raw(e) }
     }
 
     /// Get the node's reference count (note: `Node::ref_count()` is
     /// unimplemented)
-    pub fn ref_count(&self) -> usize {
-        Arc::strong_count(&self.0)
-    }
-}
-impl Default for DummyEdge {
-    fn default() -> Self {
-        Self::new()
+    pub fn ref_count(this: Ref<'_, Self>) -> usize {
+        let arc = ManuallyDrop::new(unsafe { Arc::from_raw(this.raw().0) });
+        Arc::strong_count(&arc)
     }
 }
 
 impl Edge for DummyEdge {
     type Tag = ();
 
-    fn borrowed(&self) -> Borrowed<'_, Self> {
-        let ptr = Arc::as_ptr(&self.0);
-        Borrowed::new(DummyEdge(unsafe { Arc::from_raw(ptr) }))
-    }
-    fn with_tag(&self, _tag: ()) -> Borrowed<'_, Self> {
-        let ptr = Arc::as_ptr(&self.0);
-        Borrowed::new(DummyEdge(unsafe { Arc::from_raw(ptr) }))
-    }
-    fn with_tag_owned(self, _tag: ()) -> Self {
+    fn with_tag(self, _tag: ()) -> Self {
         self
     }
-    fn tag(&self) -> Self::Tag {}
+    fn tag(self) -> Self::Tag {}
 
-    fn node_id(&self) -> NodeID {
-        Arc::as_ptr(&self.0) as usize
+    fn node_id(self) -> NodeID {
+        self.0.addr()
     }
 }
 
@@ -100,12 +58,12 @@ pub struct DummyManager;
 /// Dummy diagram rules
 pub struct DummyRules;
 impl DiagramRules<DummyEdge, DummyNode, ()> for DummyRules {
-    type Cofactors<'a> = std::iter::Empty<Borrowed<'a, DummyEdge>>;
+    type Cofactors<'a> = std::iter::Empty<Ref<'a, DummyEdge>>;
 
     fn reduce<M>(
         _manager: &M,
         _level: LevelNo,
-        _children: impl IntoIterator<Item = DummyEdge>,
+        _children: impl IntoIterator<Item = Own<DummyEdge>>,
     ) -> ReducedOrNew<DummyEdge, DummyNode>
     where
         M: Manager<Edge = DummyEdge, InnerNode = DummyNode>,
@@ -126,7 +84,7 @@ unsafe impl Manager for DummyManager {
     type TerminalRef<'a> = &'a ();
     type Rules = DummyRules;
     type TerminalIterator<'a>
-        = std::iter::Empty<DummyEdge>
+        = std::iter::Empty<Own<DummyEdge>>
     where
         Self: 'a;
     type NodeSet = HashSet<NodeID>;
@@ -139,28 +97,24 @@ unsafe impl Manager for DummyManager {
     where
         Self: 'a;
 
-    fn get_node(&self, _edge: &Self::Edge) -> Node<'_, Self> {
+    fn get_node<'a>(&'a self, _edge: Ref<'a, Self::Edge>) -> Node<'a, Self> {
         Node::Inner(&DummyNode)
     }
 
-    fn clone_edge(&self, edge: &Self::Edge) -> Self::Edge {
-        DummyEdge(edge.0.clone())
+    fn clone_edge(&self, edge: Ref<'_, Self::Edge>) -> Own<Self::Edge> {
+        let raw = edge.raw();
+        let _ = ManuallyDrop::new(unsafe { Arc::from_raw(raw.0) }).clone();
+        unsafe { Own::from_raw(raw) }
     }
 
-    fn drop_edge(&self, edge: Self::Edge) {
-        // Move the inner arc out. We need to use `std::ptr::read` since
-        // `DummyEdge` implements `Drop` (to print an error).
-        let arc = unsafe { std::ptr::read(&edge.0) };
-        std::mem::forget(edge);
-        drop(arc);
+    fn drop_edge(&self, edge: Own<Self::Edge>) {
+        let raw = edge.into_raw();
+        drop(unsafe { Arc::from_raw(raw.0) });
     }
 
-    fn try_remove_node(&self, edge: Self::Edge, _level: LevelNo) -> bool {
-        // Move the inner arc out. We need to use `std::ptr::read` since
-        // `DummyEdge` implements `Drop` (to print an error).
-        let arc = unsafe { std::ptr::read(&edge.0) };
-        std::mem::forget(edge);
-        Arc::into_inner(arc).is_some()
+    fn try_remove_node(&self, edge: Own<Self::Edge>, _level: LevelNo) -> bool {
+        let raw = edge.into_raw();
+        Arc::into_inner(unsafe { Arc::from_raw(raw.0) }).is_some()
     }
 
     fn num_inner_nodes(&self) -> usize {
@@ -222,7 +176,7 @@ unsafe impl Manager for DummyManager {
         std::iter::empty()
     }
 
-    fn get_terminal(&self, _terminal: Self::Terminal) -> AllocResult<Self::Edge> {
+    fn get_terminal(&self, _terminal: Self::Terminal) -> AllocResult<Own<Self::Edge>> {
         unimplemented!()
     }
 
@@ -264,10 +218,9 @@ pub struct DummyLevelView;
 
 unsafe impl LevelView<DummyEdge, DummyNode> for DummyLevelView {
     type Iterator<'a>
-        = std::iter::Empty<&'a DummyEdge>
+        = std::iter::Empty<Ref<'a, DummyEdge>>
     where
-        Self: 'a,
-        DummyEdge: 'a;
+        Self: 'a;
 
     type Taken = Self;
 
@@ -283,23 +236,23 @@ unsafe impl LevelView<DummyEdge, DummyNode> for DummyLevelView {
         unreachable!()
     }
 
-    fn get(&self, _node: &DummyNode) -> Option<&DummyEdge> {
+    fn get(&self, _node: &DummyNode) -> Option<Ref<'_, DummyEdge>> {
         unreachable!()
     }
 
-    fn insert(&mut self, _edge: DummyEdge) -> bool {
+    fn insert(&mut self, _edge: Own<DummyEdge>) -> bool {
         unreachable!()
     }
 
-    unsafe fn insert_unchecked(&mut self, _edge: DummyEdge) -> bool {
+    unsafe fn insert_unchecked(&mut self, _edge: Own<DummyEdge>) -> bool {
         unreachable!()
     }
 
-    fn get_or_insert(&mut self, _node: DummyNode) -> AllocResult<DummyEdge> {
+    fn get_or_insert(&mut self, _node: DummyNode) -> AllocResult<Own<DummyEdge>> {
         unreachable!()
     }
 
-    unsafe fn get_or_insert_unchecked(&mut self, _node: DummyNode) -> AllocResult<DummyEdge> {
+    unsafe fn get_or_insert_unchecked(&mut self, _node: DummyNode) -> AllocResult<Own<DummyEdge>> {
         unreachable!()
     }
 
@@ -307,7 +260,7 @@ unsafe impl LevelView<DummyEdge, DummyNode> for DummyLevelView {
         unreachable!()
     }
 
-    fn remove(&mut self, _node: &DummyNode) -> bool {
+    fn try_remove(&mut self, _edge: Own<DummyEdge>) -> bool {
         unreachable!()
     }
 
@@ -329,7 +282,7 @@ unsafe impl LevelView<DummyEdge, DummyNode> for DummyLevelView {
 pub struct DummyNode;
 
 impl DropWith<DummyEdge> for DummyNode {
-    fn drop_with(self, _drop_edge: impl Fn(DummyEdge)) {
+    fn drop_with(self, _drop_edge: impl Fn(Own<DummyEdge>)) {
         unimplemented!()
     }
 }
@@ -338,11 +291,11 @@ impl InnerNode<DummyEdge> for DummyNode {
     const ARITY: usize = 0;
 
     type ChildrenIter<'a>
-        = std::iter::Empty<Borrowed<'a, DummyEdge>>
+        = std::iter::Empty<Ref<'a, DummyEdge>>
     where
         Self: 'a;
 
-    fn new(_level: LevelNo, _children: impl IntoIterator<Item = DummyEdge>) -> Self {
+    fn new(_level: LevelNo, _children: impl IntoIterator<Item = Own<DummyEdge>>) -> Self {
         unimplemented!()
     }
 
@@ -355,11 +308,11 @@ impl InnerNode<DummyEdge> for DummyNode {
         std::iter::empty()
     }
 
-    fn child(&self, _n: usize) -> Borrowed<'_, DummyEdge> {
+    fn child(&self, _n: usize) -> Ref<'_, DummyEdge> {
         unimplemented!()
     }
 
-    unsafe fn set_child(&self, _n: usize, _child: DummyEdge) -> DummyEdge {
+    unsafe fn set_child(&self, _n: usize, _child: Own<DummyEdge>) -> Own<DummyEdge> {
         unimplemented!()
     }
 
@@ -377,7 +330,7 @@ impl InnerNode<DummyEdge> for DummyNode {
 /// # use oxidd_test_utils::assert_ref_counts;
 /// # use oxidd_test_utils::edge::{DummyEdge, DummyManager};
 /// let e1 = DummyEdge::new();
-/// let e2 = DummyManager.clone_edge(&e1);
+/// let e2 = DummyManager.clone_edge(e1.borrowed());
 /// let e3 = DummyEdge::new();
 /// assert_ref_counts!(e1, e2 = 2; e3 = 1);
 /// # DummyManager.drop_edge(e1);
@@ -387,7 +340,7 @@ impl InnerNode<DummyEdge> for DummyNode {
 #[macro_export]
 macro_rules! assert_ref_counts {
     ($edge:ident = $count:literal) => {
-        assert_eq!($edge.ref_count(), $count);
+        assert_eq!($crate::edge::DummyEdge::ref_count($edge.borrowed()), $count);
     };
     ($edge:ident, $($edges:ident),+ = $count:literal) => {
         assert_ref_counts!($edge = $count);

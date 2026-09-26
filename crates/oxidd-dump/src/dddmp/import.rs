@@ -1,9 +1,9 @@
 use std::io;
 
 use oxidd_core::error::OutOfMemory;
-use oxidd_core::function::{ETagOfFunc, EdgeOfFunc, Function, INodeOfFunc, TermOfFunc};
-use oxidd_core::util::{AllocResult, EdgeDropGuard, EdgeVecDropGuard};
-use oxidd_core::{DiagramRules, Edge, HasLevel, InnerNode, LevelNo, Manager, VarNo};
+use oxidd_core::function::{ETagOfFunc, Function, INodeOfFunc, OwnEdgeOfFunc, TermOfFunc};
+use oxidd_core::util::{AllocResult, EdgeDropGuard, EdgeVecDropGuard, Own};
+use oxidd_core::{DiagramRules, HasLevel, InnerNode, LevelNo, Manager, VarNo};
 
 use crate::ParseTagged;
 
@@ -498,7 +498,7 @@ pub fn import<'id, F: Function>(
     header: &DumpHeader,
     manager: &F::Manager<'id>,
     support_vars: impl IntoIterator<Item = VarNo>,
-    complement: impl Fn(&F::Manager<'id>, EdgeOfFunc<'id, F>) -> AllocResult<EdgeOfFunc<'id, F>>,
+    complement: impl Fn(&F::Manager<'id>, OwnEdgeOfFunc<'id, F>) -> AllocResult<OwnEdgeOfFunc<'id, F>>,
 ) -> io::Result<Vec<F>>
 where
     INodeOfFunc<'id, F>: HasLevel,
@@ -549,7 +549,7 @@ where
     for &root in &header.rootids {
         debug_assert_ne!(root, 0);
         let node_index = root.unsigned_abs() - 1;
-        let e = manager.clone_edge(&nodes[node_index]);
+        let e = manager.clone_edge(nodes[node_index].borrowed());
         roots.push(F::from_edge(
             manager,
             if root > 0 { e } else { complement(manager, e)? },
@@ -572,8 +572,8 @@ fn import_ascii<M: Manager>(
     header: &DumpHeader,
     manager: &M,
     suppvar_level_map: &[LevelNo],
-    complement: impl Fn(&M, M::Edge) -> AllocResult<M::Edge>,
-) -> io::Result<Vec<M::Edge>>
+    complement: impl Fn(&M, Own<M::Edge>) -> AllocResult<Own<M::Edge>>,
+) -> io::Result<Vec<Own<M::Edge>>>
 where
     M::InnerNode: HasLevel,
     M::Terminal: ParseTagged<M::EdgeTag>,
@@ -647,7 +647,7 @@ where
                     "invalid terminal description '{string}' (line {line_no})"
                 ));
             };
-            manager.get_terminal(terminal)?.with_tag_owned(tag)
+            manager.get_terminal(terminal)?.with_tag(tag)
         } else {
             let (_, var_id) = parse_u32(var_id, line_no)?;
             let Some(&level) = suppvar_level_map.get(var_id as usize) else {
@@ -661,7 +661,7 @@ where
                         "children ids must be less than node ({child} >= {node_id}, line {line_no})",
                     ));
                 }
-                let child_level = manager.get_node(&nodes[child - 1]).level();
+                let child_level = manager.get_node(nodes[child - 1].borrowed()).level();
                 if level >= child_level {
                     return err(format!(
                         "node level must be less than the children's levels ({level} >= {child_level}, line {line_no})",
@@ -674,7 +674,7 @@ where
                 level,
                 children.iter().map(|&child| {
                     debug_assert_ne!(child, 0);
-                    let e = manager.clone_edge(&nodes[child.unsigned_abs() - 1]);
+                    let e = manager.clone_edge(nodes[child.unsigned_abs() - 1].borrowed());
                     if child < 0 {
                         complement(manager, e).unwrap()
                     } else {
@@ -699,8 +699,8 @@ fn import_bin<M: Manager>(
     manager: &M,
     level_suppvar_map: &[u32],
     suppvar_level_map: &[LevelNo],
-    complement: impl Fn(&M, M::Edge) -> AllocResult<M::Edge>,
-) -> io::Result<Vec<M::Edge>>
+    complement: impl Fn(&M, Own<M::Edge>) -> AllocResult<Own<M::Edge>>,
+) -> io::Result<Vec<Own<M::Edge>>>
 where
     M::InnerNode: HasLevel,
     M::Terminal: ParseTagged<M::EdgeTag>,
@@ -714,7 +714,7 @@ where
     let Some((terminal, tag)) = M::Terminal::parse("T") else {
         panic!("could not find the T terminal")
     };
-    let terminal = EdgeDropGuard::new(manager, manager.get_terminal(terminal)?.with_tag_owned(tag));
+    let terminal = EdgeDropGuard::new(manager, manager.get_terminal(terminal)?.with_tag(tag));
 
     fn idx(input: impl io::BufRead, node_id: usize, code: Code) -> io::Result<usize> {
         debug_assert!(node_id >= 1);
@@ -743,7 +743,7 @@ where
 
         let vid = match var_code {
             Code::Terminal => {
-                nodes.push(manager.clone_edge(&terminal));
+                nodes.push(manager.clone_edge(terminal.borrowed()));
                 continue;
             }
             Code::AbsoluteID | Code::RelativeID => decode_7bit(&mut input)?,
@@ -752,14 +752,14 @@ where
 
         let t = EdgeDropGuard::new(
             manager,
-            manager.clone_edge(&nodes[idx(&mut input, node_id, t_code)?]),
+            manager.clone_edge(nodes[idx(&mut input, node_id, t_code)?].borrowed()),
         );
-        let t_level = manager.get_node(&t).level();
+        let t_level = manager.get_node(t.borrowed()).level();
         let e = EdgeDropGuard::new(
             manager,
-            manager.clone_edge(&nodes[idx(&mut input, node_id, e_code)?]),
+            manager.clone_edge(nodes[idx(&mut input, node_id, e_code)?].borrowed()),
         );
-        let e_level = manager.get_node(&e).level();
+        let e_level = manager.get_node(e.borrowed()).level();
         let e = if e_complement {
             match complement(manager, e.into_edge()) {
                 Ok(e) => EdgeDropGuard::new(manager, e),

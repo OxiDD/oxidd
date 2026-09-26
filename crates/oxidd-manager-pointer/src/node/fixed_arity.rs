@@ -1,6 +1,5 @@
 use std::cell::UnsafeCell;
-use std::hash::Hash;
-use std::hash::Hasher;
+use std::hash::{Hash, Hasher};
 use std::mem::MaybeUninit;
 use std::sync::atomic;
 use std::sync::atomic::AtomicUsize;
@@ -8,15 +7,8 @@ use std::sync::atomic::Ordering::{Relaxed, Release};
 
 use arcslab::AtomicRefCounted;
 
-use oxidd_core::AtomicLevelNo;
-use oxidd_core::Edge;
-use oxidd_core::HasLevel;
-use oxidd_core::InnerNode;
-use oxidd_core::LevelNo;
-use oxidd_core::Tag;
-use oxidd_core::util::Borrowed;
-use oxidd_core::util::BorrowedEdgeIter;
-use oxidd_core::util::DropWith;
+use oxidd_core::util::{DropWith, EdgeRefIter, Own, Ref};
+use oxidd_core::{AtomicLevelNo, HasLevel, InnerNode, LevelNo, Tag};
 
 use crate::manager;
 use crate::manager::InnerNodeCons;
@@ -26,13 +18,14 @@ use super::NodeBase;
 pub struct NodeWithLevel<'id, ET, const TAG_BITS: u32, const ARITY: usize> {
     rc: AtomicUsize,
     level: AtomicLevelNo,
-    children: UnsafeCell<[manager::Edge<'id, Self, ET, TAG_BITS>; ARITY]>,
+    children: UnsafeCell<[Own<manager::Edge<'id, Self, ET, TAG_BITS>>; ARITY]>,
 }
 
 impl<'id, ET: Tag, const TAG_BITS: u32, const ARITY: usize>
     NodeWithLevel<'id, ET, TAG_BITS, ARITY>
 {
-    const UNINIT_EDGE: MaybeUninit<manager::Edge<'id, Self, ET, TAG_BITS>> = MaybeUninit::uninit();
+    const UNINIT_EDGE: MaybeUninit<Own<manager::Edge<'id, Self, ET, TAG_BITS>>> =
+        MaybeUninit::uninit();
 }
 
 unsafe impl<ET, const TAG_BITS: u32, const ARITY: usize> AtomicRefCounted
@@ -100,7 +93,7 @@ impl<'id, ET: Tag, const TAG_BITS: u32, const ARITY: usize>
     DropWith<manager::Edge<'id, Self, ET, TAG_BITS>> for NodeWithLevel<'id, ET, TAG_BITS, ARITY>
 {
     #[inline]
-    fn drop_with(self, drop_edge: impl Fn(manager::Edge<'id, Self, ET, TAG_BITS>)) {
+    fn drop_with(self, drop_edge: impl Fn(Own<manager::Edge<'id, Self, ET, TAG_BITS>>)) {
         for c in self.children.into_inner() {
             drop_edge(c);
         }
@@ -113,10 +106,10 @@ impl<'id, ET: Tag, const TAG_BITS: u32, const ARITY: usize>
     const ARITY: usize = 2;
 
     type ChildrenIter<'a>
-        = BorrowedEdgeIter<
+        = EdgeRefIter<
         'a,
         manager::Edge<'id, Self, ET, TAG_BITS>,
-        std::slice::Iter<'a, manager::Edge<'id, Self, ET, TAG_BITS>>,
+        std::slice::Iter<'a, Own<manager::Edge<'id, Self, ET, TAG_BITS>>>,
     >
     where
         Self: 'a;
@@ -124,7 +117,7 @@ impl<'id, ET: Tag, const TAG_BITS: u32, const ARITY: usize>
     #[inline(always)]
     fn new(
         level: LevelNo,
-        children: impl IntoIterator<Item = manager::Edge<'id, Self, ET, TAG_BITS>>,
+        children: impl IntoIterator<Item = Own<manager::Edge<'id, Self, ET, TAG_BITS>>>,
     ) -> Self {
         let mut it = children.into_iter();
         let mut children = [Self::UNINIT_EDGE; ARITY];
@@ -136,14 +129,15 @@ impl<'id, ET: Tag, const TAG_BITS: u32, const ARITY: usize>
 
         // SAFETY:
         // - all elements are initialized
-        // - we effectively move out of `children`; the old `children` are not dropped
-        //   since they are `MaybeUninit`
+        // - we effectively move out of `children`; the old `children` are not
+        //   dropped since they are `MaybeUninit`
         //
         // TODO: replace this by `MaybeUninit::transpose()` /
         // `MaybeUninit::array_assume_init()` once stable
         let children = unsafe {
             std::ptr::read(
-                (&raw const children).cast::<[manager::Edge<'id, Self, ET, TAG_BITS>; ARITY]>(),
+                (&raw const children)
+                    .cast::<[Own<manager::Edge<'id, Self, ET, TAG_BITS>>; ARITY]>(),
             )
         };
 
@@ -171,11 +165,11 @@ impl<'id, ET: Tag, const TAG_BITS: u32, const ARITY: usize>
     #[inline(always)]
     fn children(&self) -> Self::ChildrenIter<'_> {
         // SAFETY: we have shared access to the node
-        BorrowedEdgeIter::from(unsafe { &*self.children.get() }.iter())
+        EdgeRefIter::from(unsafe { &*self.children.get() }.iter())
     }
 
     #[inline(always)]
-    fn child(&self, n: usize) -> Borrowed<'_, manager::Edge<'id, Self, ET, TAG_BITS>> {
+    fn child(&self, n: usize) -> Ref<'_, manager::Edge<'id, Self, ET, TAG_BITS>> {
         // SAFETY: we have shared access to the node
         let children = unsafe { &*self.children.get() };
         children[n].borrowed()
@@ -185,8 +179,8 @@ impl<'id, ET: Tag, const TAG_BITS: u32, const ARITY: usize>
     unsafe fn set_child(
         &self,
         n: usize,
-        child: manager::Edge<'id, Self, ET, TAG_BITS>,
-    ) -> manager::Edge<'id, Self, ET, TAG_BITS> {
+        child: Own<manager::Edge<'id, Self, ET, TAG_BITS>>,
+    ) -> Own<manager::Edge<'id, Self, ET, TAG_BITS>> {
         // SAFETY: we have exclusive access to the node and no child is
         // referenced
         let children = unsafe { &mut *self.children.get() };

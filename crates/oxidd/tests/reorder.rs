@@ -52,7 +52,7 @@ fn reorder_nonempty_bdd() -> AllocResult<()> {
                 let i = level.level_no();
                 for e in level.iter() {
                     let node = manager.get_node(e).unwrap_inner();
-                    assert!(node.children().all(|e| manager.get_node(&e).level() > i));
+                    assert!(node.children().all(|e| manager.get_node(e).level() > i));
                 }
             }
         });

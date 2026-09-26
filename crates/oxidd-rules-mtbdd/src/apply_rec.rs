@@ -4,11 +4,11 @@ use std::borrow::Borrow;
 
 use fixedbitset::FixedBitSet;
 
-use oxidd_core::function::{EdgeOfFunc, Function, INodeOfFunc, NumberBase, PseudoBooleanFunction};
-use oxidd_core::util::{AllocResult, Borrowed, EdgeDropGuard};
-use oxidd_core::{
-    ApplyCache, Edge, HasApplyCache, HasLevel, InnerNode, LevelNo, Manager, Node, Tag, VarNo,
+use oxidd_core::function::{
+    EdgeOfFunc, Function, INodeOfFunc, NumberBase, OwnEdgeOfFunc, PseudoBooleanFunction,
 };
+use oxidd_core::util::{AllocResult, EdgeDropGuard, Own, Ref};
+use oxidd_core::{ApplyCache, HasApplyCache, HasLevel, InnerNode, Manager, Node, Tag, VarNo};
 use oxidd_derive::Function;
 use oxidd_dump::dot::DotStyle;
 
@@ -24,32 +24,29 @@ use super::{MTBDDOp, Operation, collect_children, reduce, stat};
 /// for each operator.
 fn apply_bin<M, T, const OP: u8>(
     manager: &M,
-    f: Borrowed<M::Edge>,
-    g: Borrowed<M::Edge>,
-) -> AllocResult<M::Edge>
+    f: Ref<'_, M::Edge>,
+    g: Ref<'_, M::Edge>,
+) -> AllocResult<Own<M::Edge>>
 where
     M: Manager<Terminal = T> + HasApplyCache<M, MTBDDOp>,
     M::InnerNode: HasLevel,
     T: NumberBase,
 {
     stat!(call OP);
-    let (operator, op1, op2) = match super::terminal_bin::<M, T, OP>(manager, &f, &g)? {
+    let (operator, op1, op2) = match super::terminal_bin::<M, T, OP>(manager, f, g)? {
         Operation::Binary(o, op1, op2) => (o, op1, op2),
         Operation::Done(h) => return Ok(h),
     };
 
     // Query apply cache
     stat!(cache_query OP);
-    if let Some(h) = manager
-        .apply_cache()
-        .get(manager, operator, &[op1.borrowed(), op2.borrowed()])
-    {
+    if let Some(h) = manager.apply_cache().get(manager, operator, &[op1, op2]) {
         stat!(cache_hit OP);
         return Ok(h);
     }
 
-    let fnode = manager.get_node(&f);
-    let gnode = manager.get_node(&g);
+    let fnode = manager.get_node(f);
+    let gnode = manager.get_node(g);
     let flevel = fnode.level();
     let glevel = gnode.level();
     let level = std::cmp::min(flevel, glevel);
@@ -58,12 +55,12 @@ where
     let (f0, f1) = if flevel == level {
         collect_children(fnode.unwrap_inner())
     } else {
-        (f.borrowed(), f.borrowed())
+        (f, f)
     };
     let (g0, g1) = if glevel == level {
         collect_children(gnode.unwrap_inner())
     } else {
-        (g.borrowed(), g.borrowed())
+        (g, g)
     };
 
     let t = EdgeDropGuard::new(manager, apply_bin::<M, T, OP>(manager, f0, g0)?);
@@ -80,11 +77,11 @@ where
 
 /// Recursively restrict a set of `vars` (a conjunction of literals) to
 /// constant values in `f`
-fn restrict<M, T>(
-    manager: &M,
-    f: Borrowed<M::Edge>,
-    vars: Borrowed<M::Edge>,
-) -> AllocResult<M::Edge>
+fn restrict<'a, M, T>(
+    manager: &'a M,
+    mut f: Ref<'a, M::Edge>,
+    mut vars: Ref<'a, M::Edge>,
+) -> AllocResult<Own<M::Edge>>
 where
     M: Manager<Terminal = T> + HasApplyCache<M, MTBDDOp>,
     M::InnerNode: HasLevel,
@@ -92,139 +89,110 @@ where
 {
     stat!(call MTBDDOp::Restrict);
 
-    let (Node::Inner(fnode), Node::Inner(vnode)) = (manager.get_node(&f), manager.get_node(&vars))
+    let (Node::Inner(mut fnode), Node::Inner(mut vnode)) =
+        (manager.get_node(f), manager.get_node(vars))
     else {
-        return Ok(manager.clone_edge(&f));
+        return Ok(manager.clone_edge(f));
     };
 
-    enum InnerResult<'a, M: Manager> {
-        Done(M::Edge),
-        Rec {
-            vars: Borrowed<'a, M::Edge>,
-            f: Borrowed<'a, M::Edge>,
-            fnode: &'a M::InnerNode,
-        },
-    }
-
-    /// Tail-recursive part of [`restrict()`]. `f` is the function of which the
-    /// variables should be restricted to constant values according to `vars`.
-    ///
-    /// Invariant: `f` points to `fnode` at `flevel`, `vars` points to `vnode`
-    #[inline]
-    fn inner<'a, M, T>(
-        manager: &'a M,
-        f: Borrowed<'a, M::Edge>,
-        fnode: &'a M::InnerNode,
-        flevel: LevelNo,
-        vars: Borrowed<'a, M::Edge>,
-        vnode: &'a M::InnerNode,
-    ) -> InnerResult<'a, M>
-    where
-        M: Manager<Terminal = T>,
-        M::InnerNode: HasLevel,
-        T: NumberBase,
-    {
-        debug_assert!(std::ptr::eq(manager.get_node(&f).unwrap_inner(), fnode));
+    let mut flevel = fnode.level();
+    loop {
+        debug_assert!(std::ptr::eq(manager.get_node(f).unwrap_inner(), fnode));
         debug_assert_eq!(fnode.level(), flevel);
-        debug_assert!(std::ptr::eq(manager.get_node(&vars).unwrap_inner(), vnode));
+        debug_assert!(std::ptr::eq(manager.get_node(vars).unwrap_inner(), vnode));
 
         let vlevel = vnode.level();
         if vlevel > flevel {
             // f above vars
-            return InnerResult::Rec { vars, f, fnode };
+            break;
         }
 
         let vt = vnode.child(0);
         if vlevel < flevel {
             // vars above f
-            return match manager.get_node(&vt) {
-                Node::Inner(n) => inner(manager, f, fnode, flevel, vt, n),
-                Node::Terminal(t) if t.borrow().is_one() => {
-                    InnerResult::Done(manager.clone_edge(&f))
-                }
+            (vars, vnode) = match manager.get_node(vt) {
+                Node::Inner(n) => (vt, n),
+                Node::Terminal(t) if t.borrow().is_one() => return Ok(manager.clone_edge(f)),
                 Node::Terminal(_) => {
                     let ve = vnode.child(1);
-                    if let Node::Inner(n) = manager.get_node(&ve) {
-                        inner(manager, f, fnode, flevel, ve, n)
+                    if let Node::Inner(n) = manager.get_node(ve) {
+                        (ve, n)
                     } else {
-                        InnerResult::Done(manager.clone_edge(&f))
+                        return Ok(manager.clone_edge(f));
                     }
                 }
             };
+            continue;
         }
 
         debug_assert_eq!(vlevel, flevel);
         // top var at the level of f ⇒ select accordingly
-        let (f, vars, vnode) = match manager.get_node(&vt) {
+        (vars, vnode) = match manager.get_node(vt) {
             Node::Inner(n) => {
                 debug_assert!(
-                    matches!(manager.get_node(&vnode.child(1)), Node::Terminal(t) if t.borrow().is_zero()),
+                    matches!(manager.get_node(vnode.child(1)), Node::Terminal(t) if t.borrow().is_zero()),
                     "vars must be a conjunction of literals"
                 );
                 // positive literal ⇒ select then branch
-                (fnode.child(0), vt, n)
+                f = fnode.child(0);
+                (vt, n)
             }
             Node::Terminal(t) if t.borrow().is_one() => {
                 debug_assert!(
-                    matches!(manager.get_node(&vnode.child(1)), Node::Terminal(t) if t.borrow().is_zero()),
+                    matches!(manager.get_node(vnode.child(1)), Node::Terminal(t) if t.borrow().is_zero()),
                     "vars must be a conjunction of literals"
                 );
                 // positive literal ⇒ select then branch
-                return InnerResult::Done(manager.clone_edge(&fnode.child(0)));
+                return Ok(manager.clone_edge(fnode.child(0)));
             }
             Node::Terminal(_) => {
                 // negative literal ⇒ select else branch
-                let f = fnode.child(1);
+                f = fnode.child(1);
                 let ve = vnode.child(1);
-                if let Node::Inner(n) = manager.get_node(&ve) {
-                    (f, ve, n)
+                if let Node::Inner(n) = manager.get_node(ve) {
+                    (ve, n)
                 } else {
-                    return InnerResult::Done(manager.clone_edge(&f));
+                    return Ok(manager.clone_edge(f));
                 }
             }
         };
 
-        if let Node::Inner(fnode) = manager.get_node(&f) {
-            inner(manager, f, fnode, fnode.level(), vars, vnode)
+        if let Node::Inner(n) = manager.get_node(f) {
+            fnode = n;
+            flevel = n.level();
         } else {
-            InnerResult::Done(manager.clone_edge(&f))
+            return Ok(manager.clone_edge(f));
         }
     }
 
-    match inner(manager, f, fnode, fnode.level(), vars, vnode) {
-        InnerResult::Done(res) => Ok(res),
-        InnerResult::Rec { vars, f, fnode } => {
-            // f above top-most restrict variable
+    // f above top-most restrict variable
 
-            // Query apply cache
-            stat!(cache_query MTBDDOp::Restrict);
-            if let Some(res) = manager.apply_cache().get(
-                manager,
-                MTBDDOp::Restrict,
-                &[f.borrowed(), vars.borrowed()],
-            ) {
-                stat!(cache_hit MTBDDOp::Restrict);
-                return Ok(res);
-            }
-
-            let (ft, fe) = collect_children(fnode);
-            let t = EdgeDropGuard::new(manager, restrict(manager, ft, vars.borrowed())?);
-            let e = EdgeDropGuard::new(manager, restrict(manager, fe, vars.borrowed())?);
-            let res = reduce(
-                manager,
-                fnode.level(),
-                t.into_edge(),
-                e.into_edge(),
-                MTBDDOp::Restrict,
-            )?;
-
-            manager
-                .apply_cache()
-                .add(manager, MTBDDOp::Restrict, &[f, vars], res.borrowed());
-
-            Ok(res)
-        }
+    // Query apply cache
+    stat!(cache_query MTBDDOp::Restrict);
+    if let Some(res) = manager
+        .apply_cache()
+        .get(manager, MTBDDOp::Restrict, &[f, vars])
+    {
+        stat!(cache_hit MTBDDOp::Restrict);
+        return Ok(res);
     }
+
+    let (ft, fe) = collect_children(fnode);
+    let t = EdgeDropGuard::new(manager, restrict(manager, ft, vars)?);
+    let e = EdgeDropGuard::new(manager, restrict(manager, fe, vars)?);
+    let res = reduce(
+        manager,
+        fnode.level(),
+        t.into_edge(),
+        e.into_edge(),
+        MTBDDOp::Restrict,
+    )?;
+
+    manager
+        .apply_cache()
+        .add(manager, MTBDDOp::Restrict, &[f, vars], res.borrowed());
+
+    Ok(res)
 }
 
 /// Recursively apply the if-then-else operator (`if f { g } else { h }`)
@@ -235,10 +203,10 @@ where
 /// since this indicates a violation of the documented precondition).
 fn apply_ite<M, T>(
     manager: &M,
-    f: Borrowed<M::Edge>,
-    g: Borrowed<M::Edge>,
-    h: Borrowed<M::Edge>,
-) -> AllocResult<M::Edge>
+    f: Ref<'_, M::Edge>,
+    g: Ref<'_, M::Edge>,
+    h: Ref<'_, M::Edge>,
+) -> AllocResult<Own<M::Edge>>
 where
     M: Manager<Terminal = T> + HasApplyCache<M, MTBDDOp>,
     M::InnerNode: HasLevel,
@@ -248,38 +216,34 @@ where
 
     // The condition is irrelevant if both branches agree.
     if g == h {
-        return Ok(manager.clone_edge(&g));
+        return Ok(manager.clone_edge(g));
     }
 
     // Terminal cases for `f`. We decide as soon as `f` resolves to a
     // terminal, which is what makes this a 0-1-valued-condition restricted
     // "ite", as opposed to a fully generic ternary operator.
-    let fnode = match manager.get_node(&f) {
+    let fnode = match manager.get_node(f) {
         Node::Inner(node) => node,
         Node::Terminal(t) => {
             let t = t.borrow();
             return Ok(if t.is_zero() {
-                manager.clone_edge(&h)
+                manager.clone_edge(h)
             } else {
                 debug_assert!(t.is_one(), "the condition of `ite` must be 0-1-valued");
-                manager.clone_edge(&g)
+                manager.clone_edge(g)
             });
         }
     };
 
     // Query apply cache
     stat!(cache_query MTBDDOp::Ite);
-    if let Some(res) = manager.apply_cache().get(
-        manager,
-        MTBDDOp::Ite,
-        &[f.borrowed(), g.borrowed(), h.borrowed()],
-    ) {
+    if let Some(res) = manager.apply_cache().get(manager, MTBDDOp::Ite, &[f, g, h]) {
         stat!(cache_hit MTBDDOp::Ite);
         return Ok(res);
     }
 
-    let gnode = manager.get_node(&g);
-    let hnode = manager.get_node(&h);
+    let gnode = manager.get_node(g);
+    let hnode = manager.get_node(h);
     let flevel = fnode.level();
     let glevel = gnode.level();
     let hlevel = hnode.level();
@@ -289,17 +253,17 @@ where
     let (ft, fe) = if flevel == level {
         collect_children(fnode)
     } else {
-        (f.borrowed(), f.borrowed())
+        (f, f)
     };
     let (gt, ge) = if glevel == level {
         collect_children(gnode.unwrap_inner())
     } else {
-        (g.borrowed(), g.borrowed())
+        (g, g)
     };
     let (ht, he) = if hlevel == level {
         collect_children(hnode.unwrap_inner())
     } else {
-        (h.borrowed(), h.borrowed())
+        (h, h)
     };
 
     let t = EdgeDropGuard::new(manager, apply_ite(manager, ft, gt, ht)?);
@@ -352,7 +316,7 @@ where
     fn constant_edge<'id>(
         manager: &Self::Manager<'id>,
         value: Self::Number,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         manager.get_terminal(value)
     }
 
@@ -360,7 +324,7 @@ where
     fn var_edge<'id>(
         manager: &Self::Manager<'id>,
         var: VarNo,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         let level = manager.var_to_level(var);
         let t = EdgeDropGuard::new(manager, manager.get_terminal(T::one())?);
         let e = EdgeDropGuard::new(manager, manager.get_terminal(T::zero())?);
@@ -373,85 +337,80 @@ where
     #[inline]
     fn add_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_bin::<_, T, { MTBDDOp::Add as u8 }>(manager, lhs.borrowed(), rhs.borrowed())
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+        apply_bin::<_, T, { MTBDDOp::Add as u8 }>(manager, lhs, rhs)
     }
 
     #[inline]
     fn sub_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_bin::<_, T, { MTBDDOp::Sub as u8 }>(manager, lhs.borrowed(), rhs.borrowed())
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+        apply_bin::<_, T, { MTBDDOp::Sub as u8 }>(manager, lhs, rhs)
     }
 
     #[inline]
     fn mul_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_bin::<_, T, { MTBDDOp::Mul as u8 }>(manager, lhs.borrowed(), rhs.borrowed())
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+        apply_bin::<_, T, { MTBDDOp::Mul as u8 }>(manager, lhs, rhs)
     }
 
     #[inline]
     fn div_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_bin::<_, T, { MTBDDOp::Div as u8 }>(manager, lhs.borrowed(), rhs.borrowed())
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+        apply_bin::<_, T, { MTBDDOp::Div as u8 }>(manager, lhs, rhs)
     }
 
     #[inline]
     fn min_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_bin::<_, T, { MTBDDOp::Min as u8 }>(manager, lhs.borrowed(), rhs.borrowed())
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+        apply_bin::<_, T, { MTBDDOp::Min as u8 }>(manager, lhs, rhs)
     }
 
     #[inline]
     fn max_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_bin::<_, T, { MTBDDOp::Max as u8 }>(manager, lhs.borrowed(), rhs.borrowed())
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+        apply_bin::<_, T, { MTBDDOp::Max as u8 }>(manager, lhs, rhs)
     }
 
     #[inline]
     fn restrict_edge<'id>(
         manager: &Self::Manager<'id>,
-        root: &EdgeOfFunc<'id, Self>,
-        vars: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        restrict::<_, T>(manager, root.borrowed(), vars.borrowed())
+        root: Ref<'_, EdgeOfFunc<'id, Self>>,
+        vars: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+        restrict::<_, T>(manager, root, vars)
     }
 
     #[inline]
     fn ite_edge<'id>(
         manager: &Self::Manager<'id>,
-        if_edge: &EdgeOfFunc<'id, Self>,
-        then_edge: &EdgeOfFunc<'id, Self>,
-        else_edge: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_ite::<_, T>(
-            manager,
-            if_edge.borrowed(),
-            then_edge.borrowed(),
-            else_edge.borrowed(),
-        )
+        if_edge: Ref<'_, EdgeOfFunc<'id, Self>>,
+        then_edge: Ref<'_, EdgeOfFunc<'id, Self>>,
+        else_edge: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+        apply_ite::<_, T>(manager, if_edge, then_edge, else_edge)
     }
 
     #[inline]
-    fn eval_edge<'id>(
-        manager: &Self::Manager<'id>,
-        edge: &EdgeOfFunc<'id, Self>,
+    fn eval_edge<'id, 'a>(
+        manager: &'a Self::Manager<'id>,
+        mut edge: Ref<'a, EdgeOfFunc<'id, Self>>,
         args: impl IntoIterator<Item = (VarNo, bool)>,
     ) -> T {
         // `choices` maps levels to the child number to choose
@@ -461,22 +420,14 @@ where
             choices.set(manager.var_to_level(var) as usize, !val);
         }
 
-        #[inline] // this function is tail-recursive
-        fn inner<M, T: Clone>(manager: &M, edge: Borrowed<M::Edge>, choices: &FixedBitSet) -> T
-        where
-            M: Manager<Terminal = T>,
-            M::InnerNode: HasLevel,
-        {
-            match manager.get_node(&edge) {
+        loop {
+            match manager.get_node(edge) {
                 Node::Inner(node) => {
-                    let edge = node.child(choices.contains(node.level() as usize) as usize);
-                    inner(manager, edge, choices)
+                    edge = node.child(choices.contains(node.level() as usize) as usize)
                 }
-                Node::Terminal(t) => t.borrow().clone(),
+                Node::Terminal(t) => break t.borrow().clone(),
             }
         }
-
-        inner(manager, edge.borrowed(), &choices)
     }
 }
 

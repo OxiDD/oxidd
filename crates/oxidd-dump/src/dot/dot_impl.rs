@@ -4,7 +4,7 @@ use std::ops::Deref;
 
 use oxidd_core::function::{ETagOfFunc, Function, TermOfFunc};
 use oxidd_core::util::EdgeDropGuard;
-use oxidd_core::{Edge, InnerNode, LevelNo, LevelView, Manager};
+use oxidd_core::{InnerNode, LevelNo, LevelView, Manager};
 
 use super::DotStyle;
 
@@ -76,7 +76,7 @@ where
     for edge in manager.terminals() {
         let edge = EdgeDropGuard::new(manager, edge);
         let id = edge.node_id();
-        let node = manager.get_node(&*edge);
+        let node = manager.get_node(edge.borrowed());
         let terminal = node.unwrap_terminal();
         writeln!(
             file,

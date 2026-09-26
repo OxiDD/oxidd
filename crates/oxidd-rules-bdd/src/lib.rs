@@ -14,10 +14,7 @@
 // `'id` lifetimes may make the code easier to understand
 #![allow(clippy::needless_lifetimes)]
 
-use oxidd_core::HasLevel;
-use oxidd_core::InnerNode;
-use oxidd_core::LevelNo;
-use oxidd_core::Manager;
+use oxidd_core::{HasLevel, InnerNode, LevelNo, Manager};
 
 mod recursor;
 
@@ -33,25 +30,19 @@ pub mod simple;
 #[inline]
 fn set_pop<'a, M: Manager>(
     manager: &'a M,
-    set: Borrowed<'a, M::Edge>,
+    mut set: Ref<'a, M::Edge>,
     until: LevelNo,
-) -> Borrowed<'a, M::Edge>
+) -> Ref<'a, M::Edge>
 where
     M::InnerNode: HasLevel,
 {
-    match manager.get_node(&set) {
-        oxidd_core::Node::Inner(n) => {
-            if n.level() >= until {
-                set
-            } else {
-                // It seems like we cannot simply implement this as a loop due
-                // to lifetime restrictions. But the compiler should perform
-                // tail call optimization.
-                set_pop(manager, n.child(0), until)
-            }
+    while let oxidd_core::Node::Inner(n) = manager.get_node(set) {
+        if n.level() >= until {
+            break;
         }
-        oxidd_core::Node::Terminal(_) => set,
+        set = n.child(0);
     }
+    set
 }
 
 // --- Statistics --------------------------------------------------------------
@@ -131,5 +122,5 @@ macro_rules! stat {
     };
 }
 
-use oxidd_core::util::Borrowed;
+use oxidd_core::util::Ref;
 pub(crate) use stat;

@@ -4,43 +4,26 @@ use std::marker::PhantomData;
 use std::mem::align_of;
 use std::ptr::NonNull;
 
-use oxidd_core::Countable;
-use oxidd_core::Tag;
-use oxidd_core::util::AllocResult;
+use oxidd_core::util::{AllocResult, Own, Ref};
+use oxidd_core::{Countable, Tag};
 
-use crate::manager::DiagramRulesCons;
-use crate::manager::Edge;
-use crate::manager::InnerNodeCons;
-use crate::manager::ManagerDataCons;
-use crate::manager::TerminalManagerCons;
+use crate::manager::{DiagramRulesCons, Edge, InnerNodeCons, ManagerDataCons, TerminalManagerCons};
 use crate::node::NodeBase;
 
 use super::TerminalManager;
 
 #[repr(align(128))]
-pub struct StaticTerminalManager<
-    'id,
-    Terminal,
-    InnerNode,
-    EdgeTag,
-    ManagerData,
-    const PAGE_SIZE: usize,
-    const TAG_BITS: u32,
->(PhantomData<(&'id (), Terminal, InnerNode, EdgeTag, ManagerData)>);
+pub struct StaticTerminalManager<'id, T, N, ET, MD, const PAGE_SIZE: usize, const TAG_BITS: u32>(
+    PhantomData<(&'id (), T, N, ET, MD)>,
+);
 
-impl<
-    Terminal: Countable,
-    InnerNode,
-    EdgeTag: Tag,
-    ManagerData,
-    const PAGE_SIZE: usize,
-    const TAG_BITS: u32,
-> StaticTerminalManager<'_, Terminal, InnerNode, EdgeTag, ManagerData, PAGE_SIZE, TAG_BITS>
+impl<T: Countable, N, ET: Tag, MD, const PAGE_SIZE: usize, const TAG_BITS: u32>
+    StaticTerminalManager<'_, T, N, ET, MD, PAGE_SIZE, TAG_BITS>
 {
     /// All "info" bits of edges: `TAG_BITS` for the `EdgeTag`, one bit for
     /// inner/terminal node, and `bit_width(Terminal::MAX_VALUE)` bits for the
     /// terminal value.
-    const ALL_BITS: u32 = TAG_BITS + 1 + (usize::BITS - Terminal::MAX_VALUE.leading_zeros());
+    const ALL_BITS: u32 = TAG_BITS + 1 + (usize::BITS - T::MAX_VALUE.leading_zeros());
 
     /// Bit mask corresponding to `Self::ALL_BITS`
     const ALL_BITS_MASK: usize = (1 << Self::ALL_BITS) - 1;
@@ -59,29 +42,22 @@ impl<
     };
 }
 
-unsafe impl<
-    'id,
-    Terminal,
-    InnerNode,
-    EdgeTag,
-    ManagerData,
-    const PAGE_SIZE: usize,
-    const TAG_BITS: u32,
-> TerminalManager<'id, InnerNode, EdgeTag, ManagerData, PAGE_SIZE, TAG_BITS>
-    for StaticTerminalManager<'id, Terminal, InnerNode, EdgeTag, ManagerData, PAGE_SIZE, TAG_BITS>
+unsafe impl<'id, T, N, ET, MD, const PAGE_SIZE: usize, const TAG_BITS: u32>
+    TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>
+    for StaticTerminalManager<'id, T, N, ET, MD, PAGE_SIZE, TAG_BITS>
 where
-    Terminal: Countable + Eq + Hash,
-    InnerNode: NodeBase,
-    EdgeTag: Tag,
+    T: Countable + Eq + Hash,
+    N: NodeBase,
+    ET: Tag,
 {
-    type TerminalNode = Terminal;
+    type TerminalNode = T;
     type TerminalNodeRef<'a>
-        = Terminal
+        = T
     where
         Self: 'a;
 
     type Iterator<'a>
-        = StaticTerminalIterator<'id, InnerNode, EdgeTag, TAG_BITS>
+        = StaticTerminalIterator<'id, N, ET, TAG_BITS>
     where
         Self: 'a,
         'id: 'a;
@@ -92,43 +68,39 @@ where
     }
 
     #[inline]
-    fn terminal_manager(edge: &Edge<'id, InnerNode, EdgeTag, TAG_BITS>) -> NonNull<Self> {
-        assert!(!edge.is_inner());
-        let edge_ptr = edge.as_ptr().as_ptr();
+    fn terminal_manager(edge: Ref<'_, Edge<'id, N, ET, TAG_BITS>>) -> NonNull<Self> {
+        assert!(!edge.raw().is_inner());
+        let edge_ptr = edge.raw().as_ptr().as_ptr();
         let ptr = edge_ptr.map_addr(|p| p & !Self::ALL_BITS_MASK) as *mut Self;
         unsafe { NonNull::new_unchecked(ptr) }
     }
 
     #[inline(always)]
     fn len(&self) -> usize {
-        Terminal::MAX_VALUE + 1
+        T::MAX_VALUE + 1
     }
 
     #[inline]
-    fn deref_edge(&self, edge: &Edge<'id, InnerNode, EdgeTag, TAG_BITS>) -> Terminal {
-        Terminal::from_usize((edge.addr() & Self::ALL_BITS_MASK) >> Self::VAL_LSB)
+    fn deref_edge(&self, edge: Ref<'_, Edge<'id, N, ET, TAG_BITS>>) -> T {
+        T::from_usize((edge.raw().addr() & Self::ALL_BITS_MASK) >> Self::VAL_LSB)
     }
 
     #[inline]
-    fn clone_edge(
-        edge: &Edge<'id, InnerNode, EdgeTag, TAG_BITS>,
-    ) -> Edge<'id, InnerNode, EdgeTag, TAG_BITS> {
-        assert!(!edge.is_inner());
-        let ptr = edge.as_ptr();
+    fn clone_edge(edge: Ref<'_, Edge<'id, N, ET, TAG_BITS>>) -> Own<Edge<'id, N, ET, TAG_BITS>> {
+        let raw = edge.raw();
+        assert!(!raw.is_inner());
+        let ptr = raw.as_ptr();
         unsafe { Edge::from_ptr(ptr) }
     }
 
     #[inline(always)]
-    fn drop_edge(edge: Edge<'id, InnerNode, EdgeTag, TAG_BITS>) {
+    fn drop_edge(edge: Own<Edge<'id, N, ET, TAG_BITS>>) {
+        let edge = edge.into_raw();
         debug_assert!(!edge.is_inner());
-        std::mem::forget(edge)
     }
 
     #[inline]
-    unsafe fn get(
-        this: *const Self,
-        terminal: Terminal,
-    ) -> AllocResult<Edge<'id, InnerNode, EdgeTag, TAG_BITS>> {
+    unsafe fn get(this: *const Self, terminal: T) -> AllocResult<Own<Edge<'id, N, ET, TAG_BITS>>> {
         let ptr = (this as *mut ())
             .map_addr(|p| p | (1 << Self::TERMINAL_BIT) | (terminal.as_usize() << Self::VAL_LSB));
         Ok(unsafe { Edge::from_ptr(NonNull::new_unchecked(ptr)) })
@@ -140,7 +112,7 @@ where
         Self: 'a,
     {
         let first = (this as *mut ()).map_addr(|p| p | (1 << Self::TERMINAL_BIT));
-        StaticTerminalIterator::new(NonNull::new(first).unwrap(), Terminal::MAX_VALUE + 1)
+        StaticTerminalIterator::new(NonNull::new(first).unwrap(), T::MAX_VALUE + 1)
     }
 
     #[inline(always)]
@@ -152,30 +124,26 @@ where
 pub struct StaticTerminalManagerCons<Terminal>(PhantomData<Terminal>);
 
 impl<
-    Terminal: Countable + Hash + Eq,
+    T: Countable + Hash + Eq,
     NC: InnerNodeCons<ET, TAG_BITS>,
     ET: Tag,
     MDC: ManagerDataCons<NC, ET, Self, RC, PAGE_SIZE, TAG_BITS>,
     RC: DiagramRulesCons<NC, ET, Self, MDC, PAGE_SIZE, TAG_BITS>,
     const PAGE_SIZE: usize,
     const TAG_BITS: u32,
-> TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>
-    for StaticTerminalManagerCons<Terminal>
+> TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS> for StaticTerminalManagerCons<T>
 {
-    type TerminalNode = Terminal;
-    type T<'id> =
-        StaticTerminalManager<'id, Terminal, NC::T<'id>, ET, MDC::T<'id>, PAGE_SIZE, TAG_BITS>;
+    type TerminalNode = T;
+    type T<'id> = StaticTerminalManager<'id, T, NC::T<'id>, ET, MDC::T<'id>, PAGE_SIZE, TAG_BITS>;
 }
 
-pub struct StaticTerminalIterator<'id, InnerNode, EdgeTag, const TAG_BITS: u32> {
+pub struct StaticTerminalIterator<'id, N, ET, const TAG_BITS: u32> {
     ptr: NonNull<()>,
     count: usize,
-    phantom: PhantomData<Edge<'id, InnerNode, EdgeTag, TAG_BITS>>,
+    phantom: PhantomData<Edge<'id, N, ET, TAG_BITS>>,
 }
 
-impl<InnerNode, EdgeTag, const TAG_BITS: u32>
-    StaticTerminalIterator<'_, InnerNode, EdgeTag, TAG_BITS>
-{
+impl<N, ET, const TAG_BITS: u32> StaticTerminalIterator<'_, N, ET, TAG_BITS> {
     const TERMINAL_BIT: u32 = TAG_BITS;
 
     const VAL_LSB: u32 = TAG_BITS + 1;
@@ -190,10 +158,10 @@ impl<InnerNode, EdgeTag, const TAG_BITS: u32>
     }
 }
 
-impl<'id, InnerNode: NodeBase, EdgeTag: Tag, const TAG_BITS: u32> Iterator
-    for StaticTerminalIterator<'id, InnerNode, EdgeTag, TAG_BITS>
+impl<'id, N: NodeBase, ET: Tag, const TAG_BITS: u32> Iterator
+    for StaticTerminalIterator<'id, N, ET, TAG_BITS>
 {
-    type Item = Edge<'id, InnerNode, EdgeTag, TAG_BITS>;
+    type Item = Own<Edge<'id, N, ET, TAG_BITS>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.count != 0 {
@@ -217,13 +185,13 @@ impl<'id, InnerNode: NodeBase, EdgeTag: Tag, const TAG_BITS: u32> Iterator
     }
 }
 
-impl<InnerNode: NodeBase, EdgeTag: Tag, const TAG_BITS: u32> FusedIterator
-    for StaticTerminalIterator<'_, InnerNode, EdgeTag, TAG_BITS>
+impl<N: NodeBase, ET: Tag, const TAG_BITS: u32> FusedIterator
+    for StaticTerminalIterator<'_, N, ET, TAG_BITS>
 {
 }
 
-impl<InnerNode: NodeBase, EdgeTag: Tag, const TAG_BITS: u32> ExactSizeIterator
-    for StaticTerminalIterator<'_, InnerNode, EdgeTag, TAG_BITS>
+impl<N: NodeBase, ET: Tag, const TAG_BITS: u32> ExactSizeIterator
+    for StaticTerminalIterator<'_, N, ET, TAG_BITS>
 {
     fn len(&self) -> usize {
         self.count

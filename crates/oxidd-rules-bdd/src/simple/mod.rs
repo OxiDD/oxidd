@@ -4,7 +4,7 @@ use std::borrow::Borrow;
 use std::fmt;
 use std::hash::Hash;
 
-use oxidd_core::util::{AllocResult, Borrowed};
+use oxidd_core::util::{AllocResult, Own, Ref};
 use oxidd_core::{DiagramRules, Edge, InnerNode, LevelNo, Manager, Node, ReducedOrNew};
 use oxidd_derive::Countable;
 
@@ -28,7 +28,7 @@ impl<E: Edge, N: InnerNode<E>> DiagramRules<E, N, BDDTerminal> for BDDRules {
     fn reduce<M: Manager<Edge = E, InnerNode = N>>(
         manager: &M,
         level: LevelNo,
-        children: impl IntoIterator<Item = E>,
+        children: impl IntoIterator<Item = Own<E>>,
     ) -> ReducedOrNew<E, N> {
         let mut it = children.into_iter();
         let f_then = it.next().unwrap();
@@ -49,14 +49,20 @@ impl<E: Edge, N: InnerNode<E>> DiagramRules<E, N, BDDTerminal> for BDDRules {
     }
 
     #[inline(always)]
-    fn cofactor(_tag: E::Tag, node: &N, n: usize) -> Borrowed<'_, E> {
+    fn cofactor(_tag: E::Tag, node: &N, n: usize) -> Ref<'_, E> {
         node.child(n)
     }
 }
 
 /// Apply the reduction rules, creating a node in `manager` if necessary
 #[inline(always)]
-fn reduce<M>(manager: &M, level: LevelNo, t: M::Edge, e: M::Edge, op: BDDOp) -> AllocResult<M::Edge>
+fn reduce<M>(
+    manager: &M,
+    level: LevelNo,
+    t: Own<M::Edge>,
+    e: Own<M::Edge>,
+    op: BDDOp,
+) -> AllocResult<Own<M::Edge>>
 where
     M: Manager<Terminal = BDDTerminal>,
 {
@@ -76,7 +82,7 @@ where
 /// Collect the two children of a binary node
 #[inline]
 #[must_use]
-fn collect_children<E: Edge, N: InnerNode<E>>(node: &N) -> (Borrowed<'_, E>, Borrowed<'_, E>) {
+fn collect_children<E: Edge, N: InnerNode<E>>(node: &N) -> (Ref<'_, E>, Ref<'_, E>) {
     debug_assert_eq!(N::ARITY, 2);
     let mut it = node.children();
     let f_then = it.next().unwrap();
@@ -146,8 +152,8 @@ impl std::ops::Not for BDDTerminal {
 #[inline]
 fn terminal_bin<'a, M: Manager<Terminal = BDDTerminal>, const OP: u8>(
     m: &M,
-    f: &'a M::Edge,
-    g: &'a M::Edge,
+    f: Ref<'a, M::Edge>,
+    g: Ref<'a, M::Edge>,
 ) -> Operation<'a, M::Edge> {
     use BDDTerminal::*;
     use Node::*;
@@ -159,8 +165,8 @@ fn terminal_bin<'a, M: Manager<Terminal = BDDTerminal>, const OP: u8>(
         }
         match (m.get_node(f), m.get_node(g)) {
             // Unique representation of {f, g} for commutative functions
-            (Inner(_), Inner(_)) if f > g => Binary(BDDOp::And, g.borrowed(), f.borrowed()),
-            (Inner(_), Inner(_)) => Binary(BDDOp::And, f.borrowed(), g.borrowed()),
+            (Inner(_), Inner(_)) if f > g => Binary(BDDOp::And, g, f),
+            (Inner(_), Inner(_)) => Binary(BDDOp::And, f, g),
             (Terminal(t), _) | (_, Terminal(t)) if *t.borrow() == False => {
                 Done(m.get_terminal(False).unwrap())
             }
@@ -172,8 +178,8 @@ fn terminal_bin<'a, M: Manager<Terminal = BDDTerminal>, const OP: u8>(
             return Done(m.clone_edge(f));
         }
         match (m.get_node(f), m.get_node(g)) {
-            (Inner(_), Inner(_)) if f > g => Binary(BDDOp::Or, g.borrowed(), f.borrowed()),
-            (Inner(_), Inner(_)) => Binary(BDDOp::Or, f.borrowed(), g.borrowed()),
+            (Inner(_), Inner(_)) if f > g => Binary(BDDOp::Or, g, f),
+            (Inner(_), Inner(_)) => Binary(BDDOp::Or, f, g),
             (Terminal(t), _) | (_, Terminal(t)) if *t.borrow() == True => {
                 Done(m.get_terminal(True).unwrap())
             }
@@ -182,75 +188,75 @@ fn terminal_bin<'a, M: Manager<Terminal = BDDTerminal>, const OP: u8>(
         }
     } else if OP == BDDOp::Nand as u8 {
         if f == g {
-            return Not(f.borrowed());
+            return Not(f);
         }
         match (m.get_node(f), m.get_node(g)) {
-            (Inner(_), Inner(_)) if f > g => Binary(BDDOp::Nand, g.borrowed(), f.borrowed()),
-            (Inner(_), Inner(_)) => Binary(BDDOp::Nand, f.borrowed(), g.borrowed()),
+            (Inner(_), Inner(_)) if f > g => Binary(BDDOp::Nand, g, f),
+            (Inner(_), Inner(_)) => Binary(BDDOp::Nand, f, g),
             (Terminal(t), _) | (_, Terminal(t)) if *t.borrow() == False => {
                 Done(m.get_terminal(True).unwrap())
             }
-            (Terminal(_), _) => Not(g.borrowed()),
-            (_, Terminal(_)) => Not(f.borrowed()),
+            (Terminal(_), _) => Not(g),
+            (_, Terminal(_)) => Not(f),
         }
     } else if OP == BDDOp::Nor as u8 {
         if f == g {
-            return Not(f.borrowed());
+            return Not(f);
         }
         match (m.get_node(f), m.get_node(g)) {
-            (Inner(_), Inner(_)) if f > g => Binary(BDDOp::Nor, g.borrowed(), f.borrowed()),
-            (Inner(_), Inner(_)) => Binary(BDDOp::Nor, f.borrowed(), g.borrowed()),
+            (Inner(_), Inner(_)) if f > g => Binary(BDDOp::Nor, g, f),
+            (Inner(_), Inner(_)) => Binary(BDDOp::Nor, f, g),
             (Terminal(t), _) | (_, Terminal(t)) if *t.borrow() == True => {
                 Done(m.get_terminal(False).unwrap())
             }
-            (Terminal(_), _) => Not(g.borrowed()),
-            (_, Terminal(_)) => Not(f.borrowed()),
+            (Terminal(_), _) => Not(g),
+            (_, Terminal(_)) => Not(f),
         }
     } else if OP == BDDOp::Xor as u8 {
         if f == g {
             return Done(m.get_terminal(False).unwrap());
         }
         match (m.get_node(f), m.get_node(g)) {
-            (Inner(_), Inner(_)) if f > g => Binary(BDDOp::Xor, g.borrowed(), f.borrowed()),
-            (Inner(_), Inner(_)) => Binary(BDDOp::Xor, f.borrowed(), g.borrowed()),
+            (Inner(_), Inner(_)) if f > g => Binary(BDDOp::Xor, g, f),
+            (Inner(_), Inner(_)) => Binary(BDDOp::Xor, f, g),
             (Terminal(t), _) if *t.borrow() == False => Done(m.clone_edge(g)),
             (_, Terminal(t)) if *t.borrow() == False => Done(m.clone_edge(f)),
-            (Terminal(_), _) => Not(g.borrowed()),
-            (_, Terminal(_)) => Not(f.borrowed()),
+            (Terminal(_), _) => Not(g),
+            (_, Terminal(_)) => Not(f),
         }
     } else if OP == BDDOp::Equiv as u8 {
         if f == g {
             return Done(m.get_terminal(True).unwrap());
         }
         match (m.get_node(f), m.get_node(g)) {
-            (Inner(_), Inner(_)) if f > g => Binary(BDDOp::Equiv, g.borrowed(), f.borrowed()),
-            (Inner(_), Inner(_)) => Binary(BDDOp::Equiv, f.borrowed(), g.borrowed()),
+            (Inner(_), Inner(_)) if f > g => Binary(BDDOp::Equiv, g, f),
+            (Inner(_), Inner(_)) => Binary(BDDOp::Equiv, f, g),
             (Terminal(t), _) if *t.borrow() == True => Done(m.clone_edge(g)),
             (_, Terminal(t)) if *t.borrow() == True => Done(m.clone_edge(f)),
-            (Terminal(_), _) => Not(g.borrowed()),
-            (_, Terminal(_)) => Not(f.borrowed()),
+            (Terminal(_), _) => Not(g),
+            (_, Terminal(_)) => Not(f),
         }
     } else if OP == BDDOp::Imp as u8 {
         if f == g {
             return Done(m.get_terminal(True).unwrap());
         }
         match (m.get_node(f), m.get_node(g)) {
-            (Inner(_), Inner(_)) => Binary(BDDOp::Imp, f.borrowed(), g.borrowed()),
+            (Inner(_), Inner(_)) => Binary(BDDOp::Imp, f, g),
             (Terminal(t), _) if *t.borrow() == False => Done(m.get_terminal(True).unwrap()),
             (_, Terminal(t)) if *t.borrow() == True => Done(m.get_terminal(True).unwrap()),
             (Terminal(_), _) => Done(m.clone_edge(g)),
-            (_, Terminal(_)) => Not(f.borrowed()),
+            (_, Terminal(_)) => Not(f),
         }
     } else if OP == BDDOp::ImpStrict as u8 {
         if f == g {
             return Done(m.get_terminal(False).unwrap());
         }
         match (m.get_node(f), m.get_node(g)) {
-            (Inner(_), Inner(_)) => Binary(BDDOp::ImpStrict, f.borrowed(), g.borrowed()),
+            (Inner(_), Inner(_)) => Binary(BDDOp::ImpStrict, f, g),
             (Terminal(t), _) if *t.borrow() == True => Done(m.get_terminal(False).unwrap()),
             (_, Terminal(t)) if *t.borrow() == False => Done(m.get_terminal(False).unwrap()),
             (Terminal(_), _) => Done(m.clone_edge(g)),
-            (_, Terminal(_)) => Not(f.borrowed()),
+            (_, Terminal(_)) => Not(f),
         }
     } else {
         unreachable!("invalid binary operator")
@@ -360,9 +366,9 @@ impl BDDOp {
 }
 
 enum Operation<'a, E: 'a + Edge> {
-    Binary(BDDOp, Borrowed<'a, E>, Borrowed<'a, E>),
-    Not(Borrowed<'a, E>),
-    Done(E),
+    Binary(BDDOp, Ref<'a, E>, Ref<'a, E>),
+    Not(Ref<'a, E>),
+    Done(Own<E>),
 }
 
 #[cfg(feature = "statistics")]

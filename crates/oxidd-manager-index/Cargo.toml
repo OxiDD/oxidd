@@ -56,9 +56,3 @@ statistics = []
 
 ## Use the hugealloc crate to allocate memory
 hugealloc = ["dep:hugealloc", "dep:allocator-api2", "linear-hashtbl/allocator-api2"]
-
-## Check that `Edge` is never dropped via its `Drop` implementation. This is
-## done by adding a function call to a non-existing external function to the
-## `Drop` implementation. So if the check fails, there will be a weird linker
-## error. Using this feature in unoptimized builds may cause false positives.
-static_leak_check = []

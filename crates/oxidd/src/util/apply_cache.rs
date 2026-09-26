@@ -1,6 +1,6 @@
 use std::hash::Hash;
 
-use oxidd_core::util::Borrowed;
+use oxidd_core::util::{Own, Ref};
 use oxidd_core::{Manager, ManagerEventSubscriber};
 
 cfg_if::cfg_if! {
@@ -39,7 +39,7 @@ impl<M: Manager, O: Copy, const ARITY: usize> oxidd_core::util::DropWith<M::Edge
     for NoApplyCache<M, O, ARITY>
 {
     #[inline(always)]
-    fn drop_with(self, _drop_edge: impl Fn(M::Edge)) {
+    fn drop_with(self, _drop_edge: impl Fn(Own<M::Edge>)) {
         // Nothing to do
     }
 }
@@ -62,8 +62,8 @@ impl<M: Manager, O: Copy, const ARITY: usize> oxidd_core::ApplyCache<M, O>
         &self,
         _manager: &M,
         _operator: O,
-        _operands: (&[Borrowed<M::Edge>], &[u32]),
-    ) -> Option<([M::Edge; E], [u32; N])> {
+        _operands: (&[Ref<M::Edge>], &[u32]),
+    ) -> Option<([Own<M::Edge>; E], [u32; N])> {
         None
     }
 
@@ -72,8 +72,8 @@ impl<M: Manager, O: Copy, const ARITY: usize> oxidd_core::ApplyCache<M, O>
         &self,
         _manager: &M,
         _operator: O,
-        _operands: (&[Borrowed<M::Edge>], &[u32]),
-        _values: (&[Borrowed<M::Edge>], &[u32]),
+        _operands: (&[Ref<M::Edge>], &[u32]),
+        _values: (&[Ref<M::Edge>], &[u32]),
     ) {
         // Just forget about it
     }

@@ -4,12 +4,12 @@ use std::cell::UnsafeCell;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
-use std::mem::{ManuallyDrop, MaybeUninit};
+use std::mem::MaybeUninit;
 
 use parking_lot::lock_api::RawMutex;
 
-use oxidd_core::util::{Borrowed, DropWith};
-use oxidd_core::{ApplyCache, Edge, Manager, ManagerEventSubscriber};
+use oxidd_core::util::{DropWith, Own, Ref};
+use oxidd_core::{ApplyCache, Manager, ManagerEventSubscriber};
 
 #[cfg(feature = "hugealloc")]
 type Box<T> = allocator_api2::boxed::Box<T, hugealloc::HugeAlloc>;
@@ -27,34 +27,19 @@ impl<M: Manager, O, H, const ENTRY_CAP: usize> DropWith<M::Edge>
 where
     O: Copy + Eq + Hash,
 {
-    fn drop_with(self, _drop_edge: impl Fn(M::Edge)) {
+    fn drop_with(self, _drop_edge: impl Fn(Own<M::Edge>)) {
         // The plain drop impl suffices
     }
 }
 
-union Datum<E> {
-    edge: ManuallyDrop<E>,
+union Datum<E: Copy> {
+    edge: E,
     numeric: u32,
     uninit: (),
 }
 
-impl<E> Datum<E> {
+impl<E: Copy> Datum<E> {
     const UNINIT: Self = Self { uninit: () };
-
-    /// SAFETY: `self` must be initialized as `edge`
-    #[inline]
-    unsafe fn assume_edge_ref(&self) -> &E {
-        // SAFETY: see above
-        unsafe { &self.edge }
-    }
-
-    #[inline]
-    fn write_edge(&mut self, edge: Borrowed<E>) {
-        // SAFETY: The referenced node lives at least until the next garbage
-        // collection / reordering. Before that operation, we clear the entire
-        // cache.
-        self.edge = unsafe { Borrowed::into_inner(edge) };
-    }
 }
 
 const KIND_BITS: u32 = 4;
@@ -167,14 +152,15 @@ where
     /// - there are at most `KIND_COUNT` operands and values of each kind, and
     /// - the count of operands and values is at most `ENTRY_CAP`.
     #[inline]
+    #[allow(clippy::type_complexity)]
     fn get<const E: usize, const N: usize>(
         &self,
         manager: &M,
         operator: O,
-        operands: (&[Borrowed<M::Edge>], &[u32]),
-    ) -> Option<([M::Edge; E], [u32; N])> {
+        operands: (&[Ref<'_, M::Edge>], &[u32]),
+    ) -> Option<([Own<M::Edge>; E], [u32; N])> {
         // These conditions are ensured when called by
-        // `DMApplyCache::get_with_numeric()`
+        // `DMApplyCache::get_extended()`
         debug_assert_ne!(operands.0.len() + operands.1.len(), 0);
         debug_assert!(operands.0.len() <= KIND_COUNT);
         debug_assert!(operands.1.len() <= KIND_COUNT);
@@ -195,7 +181,7 @@ where
         let mut data = unsafe { &*self.0.data.get() }.iter();
         for (o1, o2) in operands.0.iter().zip(data.by_ref()) {
             // SAFETY: The first `operands.len()` operands are edges
-            if &**o1 != unsafe { o2.assume_edge_ref() } {
+            if o1.raw() != unsafe { o2.edge } {
                 return None;
             }
         }
@@ -221,7 +207,7 @@ where
         Some((
             // SAFETY: The next `E` values in `data` are edges
             std::array::from_fn(|i| {
-                manager.clone_edge(unsafe { edge_values[i].assume_edge_ref() })
+                manager.clone_edge(unsafe { Ref::from_raw(edge_values[i].edge) })
             }),
             // SAFETY: The final `N` values in `data` are numeric
             std::array::from_fn(|i| unsafe { numeric_values[i].numeric }),
@@ -241,8 +227,8 @@ where
     fn set(
         &mut self,
         operator: O,
-        operands: (&[Borrowed<M::Edge>], &[u32]),
-        values: (&[Borrowed<M::Edge>], &[u32]),
+        operands: (&[Ref<'_, M::Edge>], &[u32]),
+        values: (&[Ref<'_, M::Edge>], &[u32]),
     ) {
         debug_assert_ne!(operands.0.len() + operands.1.len(), 0);
         debug_assert!(operands.0.len() <= KIND_COUNT);
@@ -262,13 +248,13 @@ where
         unsafe { &mut *self.0.operator.get() }.write(operator);
         let mut data = unsafe { &mut *self.0.data.get() }.iter_mut();
         for (src, dst) in operands.0.iter().zip(data.by_ref()) {
-            dst.write_edge(src.borrowed());
+            dst.edge = src.raw();
         }
         for (&src, dst) in operands.1.iter().zip(data.by_ref()) {
             dst.numeric = src;
         }
         for (src, dst) in values.0.iter().zip(data.by_ref()) {
-            dst.write_edge(src.borrowed());
+            dst.edge = src.raw();
         }
         for (&src, dst) in values.1.iter().zip(data) {
             dst.numeric = src;
@@ -329,7 +315,7 @@ where
     fn bucket(
         &self,
         operator: O,
-        operands: (&[Borrowed<M::Edge>], &[u32]),
+        operands: (&[Ref<'_, M::Edge>], &[u32]),
     ) -> &Entry<M, O, ENTRY_CAP> {
         let mut hasher = H::default();
         operator.hash(&mut hasher);
@@ -393,8 +379,8 @@ where
         &self,
         manager: &M,
         operator: O,
-        operands: (&[Borrowed<M::Edge>], &[u32]),
-    ) -> Option<([M::Edge; E], [u32; N])> {
+        operands: (&[Ref<'_, M::Edge>], &[u32]),
+    ) -> Option<([Own<M::Edge>; E], [u32; N])> {
         let total_operands = operands.0.len() + operands.1.len();
         if total_operands == 0
             || total_operands + (N + E) > ENTRY_CAP
@@ -415,8 +401,8 @@ where
         &self,
         _manager: &M,
         operator: O,
-        operands: (&[Borrowed<M::Edge>], &[u32]),
-        values: (&[Borrowed<M::Edge>], &[u32]),
+        operands: (&[Ref<'_, M::Edge>], &[u32]),
+        values: (&[Ref<'_, M::Edge>], &[u32]),
     ) {
         let total_operands = operands.0.len() + operands.1.len();
         if total_operands == 0
@@ -509,7 +495,7 @@ where
 
         let mut tuple = f.debug_tuple("");
         for operand in data.by_ref().take(operands.edge()) {
-            tuple.field(unsafe { operand.assume_edge_ref() });
+            tuple.field(&unsafe { operand.edge });
         }
         for operand in data.by_ref().take(operands.numeric()) {
             tuple.field(&unsafe { operand.numeric });
@@ -520,7 +506,7 @@ where
 
         let mut tuple = f.debug_tuple("");
         for value in data.by_ref().take(values.edge()) {
-            tuple.field(unsafe { value.assume_edge_ref() });
+            tuple.field(&unsafe { value.edge });
         }
         for value in data.by_ref().take(values.numeric()) {
             tuple.field(&unsafe { value.numeric });

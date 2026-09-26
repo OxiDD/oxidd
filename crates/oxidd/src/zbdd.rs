@@ -37,7 +37,9 @@ macro_rules! manager_data {
         {
             fn drop_with(
                 self,
-                drop_edge: impl Fn(<$dd as $crate::util::type_cons::DD>::Edge<'id>),
+                drop_edge: impl Fn(
+                    ::oxidd_core::util::Own<<$dd as $crate::util::type_cons::DD>::Edge<'id>>,
+                ),
             ) {
                 self.apply_cache.drop_with(&drop_edge);
                 self.zbdd_cache.drop_with(drop_edge);

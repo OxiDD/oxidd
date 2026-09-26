@@ -12,7 +12,7 @@ use std::cmp::Ordering;
 use std::hash::Hash;
 
 use oxidd_core::function::NumberBase;
-use oxidd_core::util::{AllocResult, Borrowed};
+use oxidd_core::util::{AllocResult, Own, Ref};
 use oxidd_core::{DiagramRules, Edge, InnerNode, LevelNo, Manager, Node, ReducedOrNew};
 use oxidd_derive::Countable;
 
@@ -36,7 +36,7 @@ impl<E: Edge, N: InnerNode<E>, T> DiagramRules<E, N, T> for MTBDDRules {
     fn reduce<M: Manager<Edge = E, InnerNode = N, Terminal = T>>(
         manager: &M,
         level: LevelNo,
-        children: impl IntoIterator<Item = E>,
+        children: impl IntoIterator<Item = Own<E>>,
     ) -> ReducedOrNew<E, N> {
         let mut it = children.into_iter();
         let t = it.next().unwrap();
@@ -61,10 +61,10 @@ impl<E: Edge, N: InnerNode<E>, T> DiagramRules<E, N, T> for MTBDDRules {
 fn reduce<M: Manager>(
     manager: &M,
     level: LevelNo,
-    t: M::Edge,
-    e: M::Edge,
+    t: Own<M::Edge>,
+    e: Own<M::Edge>,
     op: MTBDDOp,
-) -> AllocResult<M::Edge> {
+) -> AllocResult<Own<M::Edge>> {
     let tmp = <MTBDDRules as DiagramRules<_, _, _>>::reduce(manager, level, [t, e]);
     if let ReducedOrNew::Reduced(..) = &tmp {
         stat!(reduced op);
@@ -96,7 +96,7 @@ pub enum MTBDDOp {
 /// Collect the two children of a binary node
 #[inline]
 #[must_use]
-fn collect_children<E: Edge, N: InnerNode<E>>(node: &N) -> (Borrowed<'_, E>, Borrowed<'_, E>) {
+fn collect_children<E: Edge, N: InnerNode<E>>(node: &N) -> (Ref<'_, E>, Ref<'_, E>) {
     debug_assert_eq!(N::ARITY, 2);
     let mut it = node.children();
     let t = it.next().unwrap();
@@ -106,16 +106,16 @@ fn collect_children<E: Edge, N: InnerNode<E>>(node: &N) -> (Borrowed<'_, E>, Bor
 }
 
 enum Operation<'a, E: 'a + Edge> {
-    Binary(MTBDDOp, Borrowed<'a, E>, Borrowed<'a, E>),
-    Done(E),
+    Binary(MTBDDOp, Ref<'a, E>, Ref<'a, E>),
+    Done(Own<E>),
 }
 
 /// Terminal case for binary operators
 #[inline]
 fn terminal_bin<'a, M: Manager<Terminal = T>, T: NumberBase, const OP: u8>(
     m: &M,
-    f: &'a M::Edge,
-    g: &'a M::Edge,
+    f: Ref<'a, M::Edge>,
+    g: Ref<'a, M::Edge>,
 ) -> AllocResult<Operation<'a, M::Edge>> {
     use Node::*;
     use Operation::*;
@@ -131,8 +131,8 @@ fn terminal_bin<'a, M: Manager<Terminal = T>, T: NumberBase, const OP: u8>(
             (Terminal(t), _) | (_, Terminal(t)) if t.borrow().is_nan() => {
                 Done(m.get_terminal(T::nan())?)
             }
-            _ if f > g => Binary(MTBDDOp::Add, g.borrowed(), f.borrowed()),
-            _ => Binary(MTBDDOp::Add, f.borrowed(), g.borrowed()),
+            _ if f > g => Binary(MTBDDOp::Add, g, f),
+            _ => Binary(MTBDDOp::Add, f, g),
         }
     } else if OP == MTBDDOp::Sub as u8 {
         match (m.get_node(f), m.get_node(g)) {
@@ -145,7 +145,7 @@ fn terminal_bin<'a, M: Manager<Terminal = T>, T: NumberBase, const OP: u8>(
             (Terminal(t), _) | (_, Terminal(t)) if t.borrow().is_nan() => {
                 Done(m.get_terminal(T::nan())?)
             }
-            _ => Binary(MTBDDOp::Sub, f.borrowed(), g.borrowed()),
+            _ => Binary(MTBDDOp::Sub, f, g),
         }
     } else if OP == MTBDDOp::Mul as u8 {
         match (m.get_node(f), m.get_node(g)) {
@@ -160,8 +160,8 @@ fn terminal_bin<'a, M: Manager<Terminal = T>, T: NumberBase, const OP: u8>(
             }
             // Don't optimize the case where one of the operands is 0. 0 * NaN
             // is still NaN.
-            _ if f > g => Binary(MTBDDOp::Mul, g.borrowed(), f.borrowed()),
-            _ => Binary(MTBDDOp::Mul, f.borrowed(), g.borrowed()),
+            _ if f > g => Binary(MTBDDOp::Mul, g, f),
+            _ => Binary(MTBDDOp::Mul, f, g),
         }
     } else if OP == MTBDDOp::Div as u8 {
         match (m.get_node(f), m.get_node(g)) {
@@ -173,7 +173,7 @@ fn terminal_bin<'a, M: Manager<Terminal = T>, T: NumberBase, const OP: u8>(
             (Terminal(t), _) | (_, Terminal(t)) if t.borrow().is_nan() => {
                 Done(m.get_terminal(T::nan())?)
             }
-            _ => Binary(MTBDDOp::Div, f.borrowed(), g.borrowed()),
+            _ => Binary(MTBDDOp::Div, f, g),
         }
     } else if OP == MTBDDOp::Min as u8 {
         if f == g {
@@ -188,8 +188,8 @@ fn terminal_bin<'a, M: Manager<Terminal = T>, T: NumberBase, const OP: u8>(
             (Terminal(t), _) | (_, Terminal(t)) if t.borrow().is_nan() => {
                 Done(m.get_terminal(T::nan())?)
             }
-            _ if f > g => Binary(MTBDDOp::Min, g.borrowed(), f.borrowed()),
-            _ => Binary(MTBDDOp::Min, f.borrowed(), g.borrowed()),
+            _ if f > g => Binary(MTBDDOp::Min, g, f),
+            _ => Binary(MTBDDOp::Min, f, g),
         }
     } else if OP == MTBDDOp::Max as u8 {
         if f == g {
@@ -204,8 +204,8 @@ fn terminal_bin<'a, M: Manager<Terminal = T>, T: NumberBase, const OP: u8>(
             (Terminal(t), _) | (_, Terminal(t)) if t.borrow().is_nan() => {
                 Done(m.get_terminal(T::nan())?)
             }
-            _ if f > g => Binary(MTBDDOp::Min, g.borrowed(), f.borrowed()),
-            _ => Binary(MTBDDOp::Min, f.borrowed(), g.borrowed()),
+            _ if f > g => Binary(MTBDDOp::Min, g, f),
+            _ => Binary(MTBDDOp::Min, f, g),
         }
     } else {
         unreachable!("invalid binary operator")

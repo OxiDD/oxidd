@@ -10,7 +10,7 @@
 use std::fmt;
 use std::hash::Hash;
 
-use oxidd_core::util::{AllocResult, Borrowed, DropWith, EdgeDropGuard};
+use oxidd_core::util::{AllocResult, DropWith, EdgeDropGuard, Own, Ref};
 use oxidd_core::{
     DiagramRules, Edge, HasLevel, InnerNode, LevelNo, LevelView, Manager, ManagerEventSubscriber,
     ReducedOrNew,
@@ -43,14 +43,17 @@ impl<E: Edge, N: InnerNode<E>> DiagramRules<E, N, ZBDDTerminal> for ZBDDRules {
     fn reduce<M: Manager<Edge = E, InnerNode = N, Terminal = ZBDDTerminal>>(
         manager: &M,
         level: LevelNo,
-        children: impl IntoIterator<Item = E>,
+        children: impl IntoIterator<Item = Own<E>>,
     ) -> ReducedOrNew<E, N> {
         let mut it = children.into_iter();
         let hi = it.next().unwrap();
         let lo = it.next().unwrap();
         debug_assert!(it.next().is_none());
 
-        if manager.get_node(&hi).is_terminal(&ZBDDTerminal::Empty) {
+        if manager
+            .get_node(hi.borrowed())
+            .is_terminal(&ZBDDTerminal::Empty)
+        {
             manager.drop_edge(hi);
             return ReducedOrNew::Reduced(lo);
         }
@@ -63,22 +66,24 @@ impl<E: Edge, N: InnerNode<E>> DiagramRules<E, N, ZBDDTerminal> for ZBDDRules {
     }
 }
 
+#[inline]
+fn is_empty<M: Manager<Terminal = ZBDDTerminal>>(manager: &M, e: Ref<'_, M::Edge>) -> bool {
+    manager.get_node(e).is_terminal(&ZBDDTerminal::Empty)
+}
+
 #[inline(always)]
-fn reduce<M>(
+fn reduce<M: Manager<Terminal = ZBDDTerminal>>(
     manager: &M,
     level: LevelNo,
-    hi: M::Edge,
-    lo: M::Edge,
+    hi: Own<M::Edge>,
+    lo: Own<M::Edge>,
     op: ZBDDOp,
-) -> AllocResult<M::Edge>
-where
-    M: Manager<Terminal = ZBDDTerminal>,
-{
+) -> AllocResult<Own<M::Edge>> {
     let hi = EdgeDropGuard::new(manager, hi);
     let lo = EdgeDropGuard::new(manager, lo);
     // We do not use `DiagramRules::reduce()` here, as the iterator is
     // apparently not fully optimized away.
-    if manager.get_node(&hi).is_terminal(&ZBDDTerminal::Empty) {
+    if is_empty(manager, hi.borrowed()) {
         stat!(reduced op);
         return Ok(lo.into_edge());
     }
@@ -89,39 +94,41 @@ where
 }
 
 #[inline(always)]
-fn reduce1<M>(manager: &M, level: LevelNo, child: M::Edge, op: ZBDDOp) -> AllocResult<M::Edge>
-where
-    M: Manager<Terminal = ZBDDTerminal>,
-{
+fn reduce1<M: Manager<Terminal = ZBDDTerminal>>(
+    manager: &M,
+    level: LevelNo,
+    child: Own<M::Edge>,
+    op: ZBDDOp,
+) -> AllocResult<Own<M::Edge>> {
     let child = EdgeDropGuard::new(manager, child);
-    if manager.get_node(&child).is_terminal(&ZBDDTerminal::Empty) {
+    if is_empty(manager, child.borrowed()) {
         stat!(reduced op);
         return Ok(child.into_edge());
     }
     oxidd_core::LevelView::get_or_insert(
         &mut manager.level(level),
-        M::InnerNode::new(level, [manager.clone_edge(&child), child.into_edge()]),
+        M::InnerNode::new(
+            level,
+            [manager.clone_edge(child.borrowed()), child.into_edge()],
+        ),
     )
 }
 
 #[inline(always)]
-fn reduce_borrowed<M>(
+fn reduce_borrowed<M: Manager<Terminal = ZBDDTerminal>>(
     manager: &M,
     level: LevelNo,
-    hi: Borrowed<M::Edge>,
-    lo: M::Edge,
+    hi: Ref<'_, M::Edge>,
+    lo: Own<M::Edge>,
     op: ZBDDOp,
-) -> AllocResult<M::Edge>
-where
-    M: Manager<Terminal = ZBDDTerminal>,
-{
+) -> AllocResult<Own<M::Edge>> {
     let lo = EdgeDropGuard::new(manager, lo);
-    if manager.get_node(&hi).is_terminal(&ZBDDTerminal::Empty) {
+    if is_empty(manager, hi) {
         stat!(reduced op);
         return Ok(lo.into_edge());
     }
     ReducedOrNew::New(
-        M::InnerNode::new(level, [manager.clone_edge(&hi), lo.into_edge()]),
+        M::InnerNode::new(level, [manager.clone_edge(hi), lo.into_edge()]),
         Default::default(),
     )
     .then_insert(manager, level)
@@ -170,8 +177,8 @@ impl fmt::Display for ZBDDTerminal {
 
 // --- ZBDD Cache --------------------------------------------------------------
 
-pub struct ZBDDCache<E> {
-    tautologies: Vec<E>,
+pub struct ZBDDCache<E: Copy> {
+    tautologies: Vec<Own<E>>,
 }
 
 impl<M> ManagerEventSubscriber<M> for ZBDDCache<M::Edge>
@@ -201,15 +208,15 @@ where
     fn post_reorder_mut(manager: &mut M) {
         // Build the tautologies bottom up
         //
-        // Storing the edge for `ZBDDTerminal::Base` as well enables us to return
-        // `&E` instead of `E` in `Self::tautology()`, so we don't need as many
-        // clone/drop operations.
+        // Storing the edge for `ZBDDTerminal::Base` as well enables us to
+        // return `&E` instead of `E` in `Self::tautology()`, so we
+        // don't need as many clone/drop operations.
         let mut tautologies = Vec::with_capacity(1 + manager.num_levels() as usize);
         tautologies.push(manager.get_terminal(ZBDDTerminal::Base).unwrap());
         for mut view in manager.levels().rev() {
             let level = view.level_no();
-            let hi = manager.clone_edge(tautologies.last().unwrap());
-            let lo = manager.clone_edge(&hi);
+            let hi = manager.clone_edge(tautologies.last().unwrap().borrowed());
+            let lo = manager.clone_edge(hi.borrowed());
             let Ok(edge) = view.get_or_insert(M::InnerNode::new(level, [hi, lo])) else {
                 eprintln!("Out of memory");
                 std::process::abort();
@@ -237,7 +244,7 @@ impl<E: Edge, T: AsRef<ZBDDCache<E>> + AsMut<ZBDDCache<E>>> HasZBDDCache<E> for 
 }
 
 impl<E: Edge> DropWith<E> for ZBDDCache<E> {
-    fn drop_with(self, drop_edge: impl Fn(E)) {
+    fn drop_with(self, drop_edge: impl Fn(Own<E>)) {
         for e in self.tautologies.into_iter().rev() {
             drop_edge(e)
         }
@@ -254,7 +261,7 @@ impl<E: Edge> ZBDDCache<E> {
 
     /// Get the tautology for the set of variables at `level` and below
     #[inline]
-    fn tautology(&self, level: LevelNo) -> &E {
+    fn tautology(&self, level: LevelNo) -> Ref<'_, E> {
         // The vector contains one entry for each level including the terminals.
         // The terminal level comes first, the top-most level last.
         let len = self.tautologies.len() as u32;
@@ -263,7 +270,7 @@ impl<E: Edge> ZBDDCache<E> {
             "ZBDDCache is empty. This is an OxiDD-internal error."
         );
         let rev_idx = std::cmp::min(len - 1, level);
-        &self.tautologies[(len - 1 - rev_idx) as usize]
+        self.tautologies[(len - 1 - rev_idx) as usize].borrowed()
     }
 }
 
@@ -301,7 +308,7 @@ pub enum ZBDDOp {
 /// Collect the two children of a binary node
 #[inline]
 #[must_use]
-fn collect_children<E: Edge, N: InnerNode<E>>(node: &N) -> (Borrowed<'_, E>, Borrowed<'_, E>) {
+fn collect_children<E: Edge, N: InnerNode<E>>(node: &N) -> (Ref<'_, E>, Ref<'_, E>) {
     debug_assert_eq!(N::ARITY, 2);
     let mut it = node.children();
     let hi = it.next().unwrap();
@@ -315,7 +322,10 @@ fn collect_children<E: Edge, N: InnerNode<E>>(node: &N) -> (Borrowed<'_, E>, Bor
 /// Panics if `edge` does not point to a singleton set.
 #[inline]
 #[track_caller]
-fn singleton_level<M: Manager<Terminal = ZBDDTerminal>>(manager: &M, edge: &M::Edge) -> LevelNo
+fn singleton_level<M: Manager<Terminal = ZBDDTerminal>>(
+    manager: &M,
+    edge: Ref<'_, M::Edge>,
+) -> LevelNo
 where
     M::InnerNode: HasLevel,
 {
@@ -325,8 +335,8 @@ where
     debug_assert!(
         {
             let (hi, lo) = collect_children(node);
-            manager.get_node(&*hi).is_terminal(&ZBDDTerminal::Base)
-                && manager.get_node(&*lo).is_terminal(&ZBDDTerminal::Empty)
+            manager.get_node(hi).is_terminal(&ZBDDTerminal::Base)
+                && manager.get_node(lo).is_terminal(&ZBDDTerminal::Empty)
         },
         "expected a singleton set, but the children are not the respective terminals"
     );
@@ -342,7 +352,12 @@ where
 ///
 /// The set semantics of this new node is `lo ∪ {x ∪ {var} | x ∈ hi}`, the
 /// logical equivalent is `lo ∨ (var ∧ hi|ᵥₐᵣ₌₀)`.
-pub fn make_node<M>(manager: &M, var: &M::Edge, hi: M::Edge, lo: M::Edge) -> AllocResult<M::Edge>
+pub fn make_node<M>(
+    manager: &M,
+    var: Ref<'_, M::Edge>,
+    hi: Own<M::Edge>,
+    lo: Own<M::Edge>,
+) -> AllocResult<Own<M::Edge>>
 where
     M: Manager<Terminal = ZBDDTerminal>,
     M::InnerNode: HasLevel,

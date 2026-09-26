@@ -5,7 +5,7 @@ use std::hash::Hash;
 use std::iter::FusedIterator;
 use std::marker::PhantomData;
 
-use oxidd_core::util::{AllocResult, Borrowed, EdgeDropGuard};
+use oxidd_core::util::{AllocResult, EdgeDropGuard, Own, Ref};
 use oxidd_core::{DiagramRules, Edge, HasLevel, InnerNode, LevelNo, Manager, Node, ReducedOrNew};
 use oxidd_derive::Countable;
 
@@ -54,19 +54,30 @@ impl std::ops::BitXor for EdgeTag {
         }
     }
 }
+impl std::ops::BitXorAssign for EdgeTag {
+    fn bitxor_assign(&mut self, rhs: Self) {
+        *self = *self ^ rhs;
+    }
+}
 
-#[inline]
-#[must_use]
-fn not_owned<E: Edge<Tag = EdgeTag>>(e: E) -> E {
-    let tag = e.tag();
-    e.with_tag_owned(!tag)
+impl EdgeTag {
+    fn as_neg_sign(self) -> &'static str {
+        match self {
+            EdgeTag::None => "",
+            EdgeTag::Complemented => "¬",
+        }
+    }
 }
 
 #[inline]
-#[must_use]
-fn not<E: Edge<Tag = EdgeTag>>(e: &E) -> Borrowed<'_, E> {
+fn not_owned<E: Edge<Tag = EdgeTag>>(e: Own<E>) -> Own<E> {
     let tag = e.tag();
     e.with_tag(!tag)
+}
+
+#[inline]
+fn not<E: Edge<Tag = EdgeTag>>(e: Ref<'_, E>) -> Ref<'_, E> {
+    e.with_tag(!e.tag())
 }
 
 // --- Reduction Rules ---------------------------------------------------------
@@ -85,7 +96,7 @@ impl<E: Edge<Tag = EdgeTag>, N: InnerNode<E>> DiagramRules<E, N, BCDDTerminal> f
     fn reduce<M: Manager<Edge = E, InnerNode = N>>(
         manager: &M,
         level: LevelNo,
-        children: impl IntoIterator<Item = E>,
+        children: impl IntoIterator<Item = Own<E>>,
     ) -> ReducedOrNew<E, N> {
         let mut it = children.into_iter();
         let t = it.next().unwrap();
@@ -100,10 +111,7 @@ impl<E: Edge<Tag = EdgeTag>, N: InnerNode<E>> DiagramRules<E, N, BCDDTerminal> f
         let tt = t.tag();
         if tt == EdgeTag::Complemented {
             let et = e.tag();
-            let node = N::new(
-                level,
-                [t.with_tag_owned(EdgeTag::None), e.with_tag_owned(!et)],
-            );
+            let node = N::new(level, [t.with_tag(EdgeTag::None), e.with_tag(!et)]);
             ReducedOrNew::New(node, EdgeTag::Complemented)
         } else {
             let node = N::new(level, [t, e]);
@@ -121,13 +129,12 @@ impl<E: Edge<Tag = EdgeTag>, N: InnerNode<E>> DiagramRules<E, N, BCDDTerminal> f
     }
 
     #[inline]
-    fn cofactor(tag: E::Tag, node: &N, n: usize) -> Borrowed<'_, E> {
+    fn cofactor(tag: E::Tag, node: &N, n: usize) -> Ref<'_, E> {
         let e = node.child(n);
         if tag == EdgeTag::None {
             e
         } else {
-            let e_tag = e.tag();
-            e.edge_with_tag(!e_tag)
+            e.with_tag(!e.tag())
         }
     }
 }
@@ -136,22 +143,19 @@ impl<E: Edge<Tag = EdgeTag>, N: InnerNode<E>> DiagramRules<E, N, BCDDTerminal> f
 pub struct Cofactors<'a, E, I> {
     it: I,
     tag: EdgeTag,
-    phantom: PhantomData<Borrowed<'a, E>>,
+    phantom: PhantomData<&'a E>,
 }
 
-impl<'a, E: Edge<Tag = EdgeTag> + 'a, I: Iterator<Item = Borrowed<'a, E>>> Iterator
+impl<'a, E: Edge<Tag = EdgeTag> + 'a, I: Iterator<Item = Ref<'a, E>>> Iterator
     for Cofactors<'a, E, I>
 {
-    type Item = Borrowed<'a, E>;
+    type Item = Ref<'a, E>;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         match (self.it.next(), self.tag) {
             (Some(e), EdgeTag::None) => Some(e),
-            (Some(e), EdgeTag::Complemented) => {
-                let tag = !e.tag();
-                Some(Borrowed::edge_with_tag(e, tag))
-            }
+            (Some(e), EdgeTag::Complemented) => Some(e.with_tag(!e.tag())),
             (None, _) => None,
         }
     }
@@ -162,12 +166,12 @@ impl<'a, E: Edge<Tag = EdgeTag> + 'a, I: Iterator<Item = Borrowed<'a, E>>> Itera
     }
 }
 
-impl<'a, E: Edge<Tag = EdgeTag>, I: FusedIterator<Item = Borrowed<'a, E>>> FusedIterator
+impl<'a, E: Edge<Tag = EdgeTag>, I: FusedIterator<Item = Ref<'a, E>>> FusedIterator
     for Cofactors<'a, E, I>
 {
 }
 
-impl<'a, E: Edge<Tag = EdgeTag>, I: ExactSizeIterator<Item = Borrowed<'a, E>>> ExactSizeIterator
+impl<'a, E: Edge<Tag = EdgeTag>, I: ExactSizeIterator<Item = Ref<'a, E>>> ExactSizeIterator
     for Cofactors<'a, E, I>
 {
     #[inline]
@@ -179,7 +183,7 @@ impl<'a, E: Edge<Tag = EdgeTag>, I: ExactSizeIterator<Item = Borrowed<'a, E>>> E
 /// Check if `edge` represents the function `⊥`
 #[inline]
 #[must_use]
-fn is_false<M: Manager<EdgeTag = EdgeTag>>(manager: &M, edge: &M::Edge) -> bool {
+fn is_false<M: Manager<EdgeTag = EdgeTag>>(manager: &M, edge: Ref<'_, M::Edge>) -> bool {
     edge.tag() == EdgeTag::Complemented && manager.get_node(edge).is_any_terminal()
 }
 
@@ -190,7 +194,7 @@ fn is_false<M: Manager<EdgeTag = EdgeTag>>(manager: &M, edge: &M::Edge) -> bool 
 fn collect_cofactors<E: Edge<Tag = EdgeTag>, N: InnerNode<E>>(
     tag: EdgeTag,
     node: &N,
-) -> (Borrowed<'_, E>, Borrowed<'_, E>) {
+) -> (Ref<'_, E>, Ref<'_, E>) {
     debug_assert_eq!(N::ARITY, 2);
     let mut it = BCDDRules::cofactors(tag, node);
     let ft = it.next().unwrap();
@@ -204,10 +208,10 @@ fn collect_cofactors<E: Edge<Tag = EdgeTag>, N: InnerNode<E>>(
 fn reduce<M>(
     manager: &M,
     level: LevelNo,
-    t: M::Edge,
-    e: M::Edge,
+    t: Own<M::Edge>,
+    e: Own<M::Edge>,
     op: BCDDOp,
-) -> AllocResult<M::Edge>
+) -> AllocResult<Own<M::Edge>>
 where
     M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag>,
 {
@@ -222,16 +226,13 @@ where
     let tt = t.tag();
     let (node, tag) = if tt == EdgeTag::Complemented {
         let et = e.tag();
-        let node = M::InnerNode::new(
-            level,
-            [t.with_tag_owned(EdgeTag::None), e.with_tag_owned(!et)],
-        );
+        let node = M::InnerNode::new(level, [t.with_tag(EdgeTag::None), e.with_tag(!et)]);
         (node, EdgeTag::Complemented)
     } else {
         (M::InnerNode::new(level, [t, e]), EdgeTag::None)
     };
 
-    Ok(oxidd_core::LevelView::get_or_insert(&mut manager.level(level), node)?.with_tag_owned(tag))
+    Ok(oxidd_core::LevelView::get_or_insert(&mut manager.level(level), node)?.with_tag(tag))
 }
 
 // --- Terminal Type -----------------------------------------------------------
@@ -267,12 +268,12 @@ impl fmt::Display for BCDDTerminal {
 fn get_terminal<M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal>>(
     manager: &M,
     val: bool,
-) -> M::Edge {
+) -> Own<M::Edge> {
     let t = manager.get_terminal(BCDDTerminal).unwrap();
     if val {
         t
     } else {
-        t.with_tag_owned(EdgeTag::Complemented)
+        t.with_tag(EdgeTag::Complemented)
     }
 }
 
@@ -281,8 +282,8 @@ fn get_terminal<M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal>>(
 #[must_use]
 fn terminal_and<'a, M>(
     manager: &'a M,
-    f: &'a M::Edge,
-    g: &'a M::Edge,
+    f: Ref<'a, M::Edge>,
+    g: Ref<'a, M::Edge>,
 ) -> NodesOrDone<'a, EdgeDropGuard<'a, M>, M::InnerNode>
 where
     M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal>,
@@ -293,9 +294,7 @@ where
 
     let ft = f.tag();
     let gt = g.tag();
-    let fu = f.with_tag(None);
-    let gu = g.with_tag(None);
-    if *fu == *gu {
+    if f.with_tag(None) == g.with_tag(None) {
         if ft == gt {
             return Done(EdgeDropGuard::new(manager, manager.clone_edge(g)));
         }
@@ -324,8 +323,8 @@ where
 #[must_use]
 fn terminal_xor<'a, M>(
     manager: &'a M,
-    f: &'a M::Edge,
-    g: &'a M::Edge,
+    f: Ref<'a, M::Edge>,
+    g: Ref<'a, M::Edge>,
 ) -> NodesOrDone<'a, EdgeDropGuard<'a, M>, M::InnerNode>
 where
     M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal>,
@@ -336,9 +335,7 @@ where
 
     let ft = f.tag();
     let gt = g.tag();
-    let fu = f.with_tag(None);
-    let gu = g.with_tag(None);
-    if *fu == *gu {
+    if f.with_tag(None) == g.with_tag(None) {
         return Done(EdgeDropGuard::new(manager, get_terminal(manager, ft != gt)));
     }
     let (h, tag) = match (manager.get_node(f), manager.get_node(g)) {
@@ -441,26 +438,26 @@ pub fn print_stats() {
 #[inline]
 fn add_literal_to_cube<M>(
     manager: &M,
-    sub: M::Edge,
+    sub: Own<M::Edge>,
     level: LevelNo,
     positive: bool,
-) -> AllocResult<M::Edge>
+) -> AllocResult<Own<M::Edge>>
 where
     M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal>,
     M::InnerNode: HasLevel,
 {
     let sub = EdgeDropGuard::new(manager, sub);
-    debug_assert!(!is_false(manager, &sub));
-    debug_assert!(manager.get_node(&sub).level() > level);
+    debug_assert!(!is_false(manager, sub.borrowed()));
+    debug_assert!(manager.get_node(sub.borrowed()).level() > level);
 
     let t = manager.get_terminal(BCDDTerminal)?;
     let sub = sub.into_edge();
     let (children, tag) = if positive {
         let tag = sub.tag();
         if tag == EdgeTag::Complemented {
-            ([sub.with_tag_owned(EdgeTag::None), t], tag)
+            ([sub.with_tag(EdgeTag::None), t], tag)
         } else {
-            ([sub, t.with_tag_owned(EdgeTag::Complemented)], tag)
+            ([sub, t.with_tag(EdgeTag::Complemented)], tag)
         }
     } else {
         ([t, not_owned(sub)], EdgeTag::Complemented)
@@ -470,7 +467,7 @@ where
         &mut manager.level(level),
         M::InnerNode::new(level, children),
     )?;
-    Ok(res.with_tag_owned(tag))
+    Ok(res.with_tag(tag))
 }
 
 // --- Function Interface ------------------------------------------------------

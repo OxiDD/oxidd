@@ -6,7 +6,7 @@ use std::io::{self, Write};
 use fixedbitset::FixedBitSet;
 
 use oxidd_core::function::{Function, INodeOfFunc, TermOfFunc};
-use oxidd_core::util::{Borrowed, EdgeHashMap, EdgeVecDropGuard};
+use oxidd_core::util::{EdgeHashMap, EdgeVecDropGuard, Own, Ref};
 use oxidd_core::{Edge, HasLevel, InnerNode, LevelNo, Manager, Node};
 
 use crate::AsciiDisplay;
@@ -20,7 +20,7 @@ use super::{Code, VarInfo};
 type FxBuildHasher = std::hash::BuildHasherDefault<rustc_hash::FxHasher>;
 
 #[inline]
-fn is_complemented<E: Edge>(edge: &E) -> bool {
+fn is_complemented<E: Edge>(edge: Ref<'_, E>) -> bool {
     edge.tag() != Default::default()
 }
 
@@ -323,7 +323,7 @@ fn export_common<M: Manager, W: io::Write>(
     mut file: W,
     settings: &ExportSettings,
     manager: &M,
-    roots: &[M::Edge],
+    roots: &[Own<M::Edge>],
     root_names: Option<&[u8]>,
 ) -> io::Result<()>
 where
@@ -364,15 +364,15 @@ where
         manager: &M,
         node_map: &mut Vec<(u32, EdgeHashMap<M, usize, FxBuildHasher>)>,
         terminal_map: &mut EdgeHashMap<M, usize, FxBuildHasher>,
-        e: Borrowed<M::Edge>,
+        e: Ref<M::Edge>,
     ) where
         M::InnerNode: HasLevel,
     {
-        match manager.get_node(&e) {
+        match manager.get_node(e) {
             Node::Inner(node) => {
                 let (_, map) = &mut node_map[node.level() as usize];
                 // Map to 0 -> we assign the indexes below
-                let res = map.insert(&e.with_tag(Default::default()), 0);
+                let res = map.insert(e.with_tag(Default::default()), 0);
                 if res.is_none() {
                     for e in node.children() {
                         rec_add_map::<M>(manager, node_map, terminal_map, e);
@@ -380,7 +380,7 @@ where
                 }
             }
             Node::Terminal(_) => {
-                terminal_map.insert(&e.with_tag(Default::default()), 0);
+                terminal_map.insert(e.with_tag(Default::default()), 0);
             }
         }
     }
@@ -501,23 +501,23 @@ where
 
     // TODO: .auxids?
 
-    let idx = |e: &M::Edge| {
+    let idx = |e: Ref<'_, M::Edge>| {
         let idx = match manager.get_node(e) {
             Node::Inner(node) => {
                 let (_, map) = &node_map[node.level() as usize];
-                *map.get(&e.with_tag(Default::default())).unwrap() as isize
+                *map.get(e.with_tag(Default::default())).unwrap() as isize
             }
             Node::Terminal(_) => {
-                *terminal_map.get(&e.with_tag(Default::default())).unwrap() as isize
+                *terminal_map.get(e.with_tag(Default::default())).unwrap() as isize
             }
         };
         if is_complemented(e) { -idx } else { idx }
     };
-    let bin_idx = |e: &M::Edge, node_id: usize| {
+    let bin_idx = |e: Ref<'_, M::Edge>, node_id: usize| {
         let idx = match manager.get_node(e) {
             Node::Inner(node) => {
                 let (_, map) = &node_map[node.level() as usize];
-                *map.get(&e.with_tag(Default::default())).unwrap()
+                *map.get(e.with_tag(Default::default())).unwrap()
             }
             // TODO: How to support multiple terminals?
             Node::Terminal(_) => return (Code::Terminal, 0),
@@ -534,7 +534,7 @@ where
     writeln!(file, ".nroots {}", roots.len())?;
     write!(file, ".rootids")?;
     for root in roots {
-        write!(file, " {}", idx(root))?;
+        write!(file, " {}", idx(root.borrowed()))?;
     }
     writeln!(file)?;
     if let Some(root_names) = root_names {
@@ -574,19 +574,19 @@ where
             assert_eq!(exported_nodes + 1, node_id);
             let node = manager.get_node(e).unwrap_inner();
             if ascii {
-                // <Node-index> [<Var-extra-info>] <Var-internal-index> <Then-index>
-                // <Else-index>
+                // <Node-index> [<Var-extra-info>] <Var-internal-index>
+                //   <Then-index> <Else-index>
                 write!(file, "{node_id} {var_idx}")?;
                 for child in node.children() {
-                    write!(file, " {}", idx(&child))?;
+                    write!(file, " {}", idx(child))?;
                 }
                 writeln!(file)?;
             } else {
                 let mut iter = node.children();
                 let t = iter.next().unwrap();
-                let t_lvl = manager.get_node(&t).level();
+                let t_lvl = manager.get_node(t).level();
                 let e = iter.next().unwrap();
-                let e_lvl = manager.get_node(&e).level();
+                let e_lvl = manager.get_node(e).level();
                 debug_assert!(iter.next().is_none());
 
                 let mut var_code = Code::AbsoluteID;
@@ -602,13 +602,13 @@ where
                     }
                 }
 
-                let (t_code, t_idx) = bin_idx(&t, node_id);
-                let (e_code, e_idx) = bin_idx(&e, node_id);
+                let (t_code, t_idx) = bin_idx(t, node_id);
+                let (e_code, e_idx) = bin_idx(e, node_id);
 
-                debug_assert!(!is_complemented(&*t));
+                debug_assert!(!is_complemented(t));
                 write_escaped(
                     &mut file,
-                    &[node_code(var_code, t_code, is_complemented(&*e), e_code)],
+                    &[node_code(var_code, t_code, is_complemented(e), e_code)],
                 )?;
                 if var_code == Code::AbsoluteID || var_code == Code::RelativeID {
                     encode_7bit(&mut file, var_idx as usize)?;

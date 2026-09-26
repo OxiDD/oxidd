@@ -2,9 +2,9 @@
 
 use std::borrow::Borrow;
 
-use oxidd_core::function::{EdgeOfFunc, Function, INodeOfFunc, TVLFunction};
-use oxidd_core::util::{AllocResult, Borrowed, EdgeDropGuard};
-use oxidd_core::{ApplyCache, Edge, HasApplyCache, HasLevel, InnerNode, Manager, Node, Tag, VarNo};
+use oxidd_core::function::{EdgeOfFunc, Function, INodeOfFunc, OwnEdgeOfFunc, TVLFunction};
+use oxidd_core::util::{AllocResult, EdgeDropGuard, Own, Ref};
+use oxidd_core::{ApplyCache, HasApplyCache, HasLevel, InnerNode, Manager, Node, Tag, VarNo};
 use oxidd_derive::Function;
 use oxidd_dump::dot::DotStyle;
 
@@ -15,23 +15,20 @@ use super::{Operation, TDDOp, TDDTerminal, collect_children, reduce, stat, termi
 // spell-checker:ignore fnode,gnode,hnode,flevel,glevel,hlevel,ghlevel
 
 /// Recursively apply the 'not' operator to `f`
-fn apply_not<M>(manager: &M, f: Borrowed<M::Edge>) -> AllocResult<M::Edge>
+fn apply_not<M>(manager: &M, f: Ref<'_, M::Edge>) -> AllocResult<Own<M::Edge>>
 where
     M: Manager<Terminal = TDDTerminal> + HasApplyCache<M, TDDOp>,
     M::InnerNode: HasLevel,
 {
     stat!(call TDDOp::Not);
-    let node = match manager.get_node(&f) {
+    let node = match manager.get_node(f) {
         Node::Inner(node) => node,
         Node::Terminal(t) => return Ok(manager.get_terminal(!*t.borrow()).unwrap()),
     };
 
     // Query apply cache
     stat!(cache_query TDDOp::Not);
-    if let Some(h) = manager
-        .apply_cache()
-        .get(manager, TDDOp::Not, &[f.borrowed()])
-    {
+    if let Some(h) = manager.apply_cache().get(manager, TDDOp::Not, &[f]) {
         stat!(cache_hit TDDOp::Not);
         return Ok(h);
     }
@@ -54,7 +51,7 @@ where
     // Add to apply cache
     manager
         .apply_cache()
-        .add(manager, TDDOp::Not, &[f.borrowed()], h.borrowed());
+        .add(manager, TDDOp::Not, &[f], h.borrowed());
 
     Ok(h)
 }
@@ -65,15 +62,15 @@ where
 /// for each operator.
 fn apply_bin<M, const OP: u8>(
     manager: &M,
-    f: Borrowed<M::Edge>,
-    g: Borrowed<M::Edge>,
-) -> AllocResult<M::Edge>
+    f: Ref<'_, M::Edge>,
+    g: Ref<'_, M::Edge>,
+) -> AllocResult<Own<M::Edge>>
 where
     M: Manager<Terminal = TDDTerminal> + HasApplyCache<M, TDDOp>,
     M::InnerNode: HasLevel,
 {
     stat!(call OP);
-    let (operator, op1, op2) = match terminal_bin::<M, OP>(manager, &f, &g) {
+    let (operator, op1, op2) = match terminal_bin::<M, OP>(manager, f, g) {
         Operation::Binary(o, op1, op2) => (o, op1, op2),
         Operation::Not(f) => {
             return apply_not(manager, f);
@@ -83,16 +80,13 @@ where
 
     // Query apply cache
     stat!(cache_query OP);
-    if let Some(h) = manager
-        .apply_cache()
-        .get(manager, operator, &[op1.borrowed(), op2.borrowed()])
-    {
+    if let Some(h) = manager.apply_cache().get(manager, operator, &[op1, op2]) {
         stat!(cache_hit OP);
         return Ok(h);
     }
 
-    let fnode = manager.get_node(&f);
-    let gnode = manager.get_node(&g);
+    let fnode = manager.get_node(f);
+    let gnode = manager.get_node(g);
     let flevel = fnode.level();
     let glevel = gnode.level();
     let level = std::cmp::min(flevel, glevel);
@@ -101,12 +95,12 @@ where
     let (f0, f1, f2) = if flevel == level {
         collect_children(fnode.unwrap_inner())
     } else {
-        (f.borrowed(), f.borrowed(), f.borrowed())
+        (f, f, f)
     };
     let (g0, g1, g2) = if glevel == level {
         collect_children(gnode.unwrap_inner())
     } else {
-        (g.borrowed(), g.borrowed(), g.borrowed())
+        (g, g, g)
     };
 
     let t = EdgeDropGuard::new(manager, apply_bin::<M, OP>(manager, f0, g0)?);
@@ -132,10 +126,10 @@ where
 /// Recursively apply the if-then-else operator (`if f { g } else { h }`)
 fn apply_ite_rec<M>(
     manager: &M,
-    f: Borrowed<M::Edge>,
-    g: Borrowed<M::Edge>,
-    h: Borrowed<M::Edge>,
-) -> AllocResult<M::Edge>
+    f: Ref<'_, M::Edge>,
+    g: Ref<'_, M::Edge>,
+    h: Ref<'_, M::Edge>,
+) -> AllocResult<Own<M::Edge>>
 where
     M: Manager<Terminal = TDDTerminal> + HasApplyCache<M, TDDOp>,
     M::InnerNode: HasLevel,
@@ -145,7 +139,7 @@ where
 
     // Terminal cases
     if g == h {
-        return Ok(manager.clone_edge(&g));
+        return Ok(manager.clone_edge(g));
     }
     if f == g {
         return apply_bin::<M, { TDDOp::Or as u8 }>(manager, f, h);
@@ -153,18 +147,18 @@ where
     if f == h {
         return apply_bin::<M, { TDDOp::And as u8 }>(manager, f, g);
     }
-    let fnode = manager.get_node(&f);
-    let gnode = manager.get_node(&g);
-    let hnode = manager.get_node(&h);
+    let fnode = manager.get_node(f);
+    let gnode = manager.get_node(g);
+    let hnode = manager.get_node(h);
     if let Node::Terminal(t) = fnode {
         let t = *t.borrow();
         if t != Unknown {
-            return Ok(manager.clone_edge(&*if t == True { g } else { h }));
+            return Ok(manager.clone_edge(if t == True { g } else { h }));
         } else if gnode.is_any_terminal() && hnode.is_any_terminal() {
             return Ok(manager.get_terminal(Unknown).unwrap());
         }
     }
-    match (manager.get_node(&g), manager.get_node(&h)) {
+    match (manager.get_node(g), manager.get_node(h)) {
         (Node::Terminal(t), Node::Inner(_)) => match *t.borrow() {
             True => return apply_bin::<M, { TDDOp::Or as u8 }>(manager, f, h),
             Unknown => {}
@@ -178,7 +172,7 @@ where
         (Node::Terminal(gt), Node::Terminal(ht)) => {
             match (*gt.borrow(), *ht.borrow()) {
                 (False, True) => return apply_not(manager, f),
-                (True, False) => return Ok(manager.clone_edge(&f)),
+                (True, False) => return Ok(manager.clone_edge(f)),
                 _ => {}
             };
         }
@@ -187,11 +181,7 @@ where
 
     // Query apply cache
     stat!(cache_query TDDOp::Ite);
-    if let Some(res) = manager.apply_cache().get(
-        manager,
-        TDDOp::Ite,
-        &[f.borrowed(), g.borrowed(), h.borrowed()],
-    ) {
+    if let Some(res) = manager.apply_cache().get(manager, TDDOp::Ite, &[f, g, h]) {
         stat!(cache_hit TDDOp::Ite);
         return Ok(res);
     }
@@ -206,17 +196,17 @@ where
     let (f0, f1, f2) = if flevel == level {
         collect_children(fnode.unwrap_inner())
     } else {
-        (f.borrowed(), f.borrowed(), f.borrowed())
+        (f, f, f)
     };
     let (g0, g1, g2) = if glevel == level {
         collect_children(gnode.unwrap_inner())
     } else {
-        (g.borrowed(), g.borrowed(), g.borrowed())
+        (g, g, g)
     };
     let (h0, h1, h2) = if hlevel == level {
         collect_children(hnode.unwrap_inner())
     } else {
-        (h.borrowed(), h.borrowed(), h.borrowed())
+        (h, h, h)
     };
 
     let t = EdgeDropGuard::new(manager, apply_ite_rec(manager, f0, g0, h0)?);
@@ -274,7 +264,7 @@ where
     fn var_edge<'id>(
         manager: &Self::Manager<'id>,
         var: VarNo,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+    ) -> AllocResult<Own<EdgeOfFunc<'id, Self>>> {
         let level = manager.var_to_level(var);
         let f0 = manager.get_terminal(TDDTerminal::True).unwrap();
         let f1 = manager.get_terminal(TDDTerminal::Unknown).unwrap();
@@ -286,110 +276,105 @@ where
     }
 
     #[inline]
-    fn f_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self> {
+    fn f_edge<'id>(manager: &Self::Manager<'id>) -> OwnEdgeOfFunc<'id, Self> {
         manager.get_terminal(TDDTerminal::False).unwrap()
     }
     #[inline]
-    fn u_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self> {
+    fn u_edge<'id>(manager: &Self::Manager<'id>) -> OwnEdgeOfFunc<'id, Self> {
         manager.get_terminal(TDDTerminal::Unknown).unwrap()
     }
     #[inline]
-    fn t_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self> {
+    fn t_edge<'id>(manager: &Self::Manager<'id>) -> OwnEdgeOfFunc<'id, Self> {
         manager.get_terminal(TDDTerminal::True).unwrap()
     }
 
     #[inline]
     fn not_edge<'id>(
         manager: &Self::Manager<'id>,
-        edge: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_not(manager, edge.borrowed())
+        edge: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<Own<EdgeOfFunc<'id, Self>>> {
+        apply_not(manager, edge)
     }
 
     #[inline]
     fn and_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_bin::<_, { TDDOp::And as u8 }>(manager, lhs.borrowed(), rhs.borrowed())
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<Own<EdgeOfFunc<'id, Self>>> {
+        apply_bin::<_, { TDDOp::And as u8 }>(manager, lhs, rhs)
     }
     #[inline]
     fn or_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_bin::<_, { TDDOp::Or as u8 }>(manager, lhs.borrowed(), rhs.borrowed())
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<Own<EdgeOfFunc<'id, Self>>> {
+        apply_bin::<_, { TDDOp::Or as u8 }>(manager, lhs, rhs)
     }
     #[inline]
     fn nand_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_bin::<_, { TDDOp::Nand as u8 }>(manager, lhs.borrowed(), rhs.borrowed())
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<Own<EdgeOfFunc<'id, Self>>> {
+        apply_bin::<_, { TDDOp::Nand as u8 }>(manager, lhs, rhs)
     }
     #[inline]
     fn nor_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_bin::<_, { TDDOp::Nor as u8 }>(manager, lhs.borrowed(), rhs.borrowed())
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<Own<EdgeOfFunc<'id, Self>>> {
+        apply_bin::<_, { TDDOp::Nor as u8 }>(manager, lhs, rhs)
     }
     #[inline]
     fn xor_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_bin::<_, { TDDOp::Xor as u8 }>(manager, lhs.borrowed(), rhs.borrowed())
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<Own<EdgeOfFunc<'id, Self>>> {
+        apply_bin::<_, { TDDOp::Xor as u8 }>(manager, lhs, rhs)
     }
     #[inline]
     fn equiv_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_bin::<_, { TDDOp::Equiv as u8 }>(manager, lhs.borrowed(), rhs.borrowed())
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<Own<EdgeOfFunc<'id, Self>>> {
+        apply_bin::<_, { TDDOp::Equiv as u8 }>(manager, lhs, rhs)
     }
     #[inline]
     fn imp_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_bin::<_, { TDDOp::Imp as u8 }>(manager, lhs.borrowed(), rhs.borrowed())
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<Own<EdgeOfFunc<'id, Self>>> {
+        apply_bin::<_, { TDDOp::Imp as u8 }>(manager, lhs, rhs)
     }
     #[inline]
     fn imp_strict_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_bin::<_, { TDDOp::ImpStrict as u8 }>(manager, lhs.borrowed(), rhs.borrowed())
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<Own<EdgeOfFunc<'id, Self>>> {
+        apply_bin::<_, { TDDOp::ImpStrict as u8 }>(manager, lhs, rhs)
     }
 
     #[inline]
     fn ite_edge<'id>(
         manager: &Self::Manager<'id>,
-        if_edge: &EdgeOfFunc<'id, Self>,
-        then_edge: &EdgeOfFunc<'id, Self>,
-        else_edge: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_ite_rec(
-            manager,
-            if_edge.borrowed(),
-            then_edge.borrowed(),
-            else_edge.borrowed(),
-        )
+        if_edge: Ref<'_, EdgeOfFunc<'id, Self>>,
+        then_edge: Ref<'_, EdgeOfFunc<'id, Self>>,
+        else_edge: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<Own<EdgeOfFunc<'id, Self>>> {
+        apply_ite_rec(manager, if_edge, then_edge, else_edge)
     }
 
     #[inline]
-    fn eval_edge<'id>(
-        manager: &Self::Manager<'id>,
-        edge: &EdgeOfFunc<'id, Self>,
+    fn eval_edge<'id, 'a>(
+        manager: &'a Self::Manager<'id>,
+        mut edge: Ref<'a, EdgeOfFunc<'id, Self>>,
         args: impl IntoIterator<Item = (VarNo, Option<bool>)>,
     ) -> Option<bool> {
         const ELEMENTS_PER_BLOCK: u32 = u32::BITS / 2;
@@ -408,28 +393,19 @@ where
             *block = (val << shift) | (*block & mask);
         }
 
-        #[inline] // this function is tail-recursive
-        fn inner<M>(manager: &M, edge: Borrowed<M::Edge>, choices: &[u32]) -> Option<bool>
-        where
-            M: Manager<Terminal = TDDTerminal>,
-            M::InnerNode: HasLevel,
-        {
-            const ELEMENTS_PER_BLOCK: u32 = u32::BITS / 2;
-            match manager.get_node(&edge) {
+        loop {
+            match manager.get_node(edge) {
                 Node::Inner(node) => {
                     let level = node.level();
                     let block = choices[(level / ELEMENTS_PER_BLOCK) as usize];
                     let shift = 2 * (level % ELEMENTS_PER_BLOCK);
                     let val = (block >> shift) & 0b11;
 
-                    let edge = node.child(val as usize);
-                    inner(manager, edge, choices)
+                    edge = node.child(val as usize);
                 }
-                Node::Terminal(t) => (*t.borrow()).into(),
+                Node::Terminal(t) => break (*t.borrow()).into(),
             }
         }
-
-        inner(manager, edge.borrowed(), &choices)
     }
 }
 

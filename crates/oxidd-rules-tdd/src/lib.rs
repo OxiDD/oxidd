@@ -10,7 +10,7 @@ use std::borrow::Borrow;
 use std::fmt;
 use std::hash::Hash;
 
-use oxidd_core::util::{AllocResult, Borrowed};
+use oxidd_core::util::{AllocResult, Own, Ref};
 use oxidd_core::{DiagramRules, Edge, InnerNode, LevelNo, Manager, Node, ReducedOrNew};
 use oxidd_derive::Countable;
 
@@ -32,7 +32,7 @@ impl<E: Edge, N: InnerNode<E>> DiagramRules<E, N, TDDTerminal> for TDDRules {
     fn reduce<M: Manager<Edge = E, InnerNode = N, Terminal = TDDTerminal>>(
         manager: &M,
         level: LevelNo,
-        children: impl IntoIterator<Item = E>,
+        children: impl IntoIterator<Item = Own<E>>,
     ) -> ReducedOrNew<E, N> {
         let mut it = children.into_iter();
         let t = it.next().unwrap();
@@ -59,11 +59,11 @@ impl<E: Edge, N: InnerNode<E>> DiagramRules<E, N, TDDTerminal> for TDDRules {
 fn reduce<M>(
     manager: &M,
     level: LevelNo,
-    t: M::Edge,
-    u: M::Edge,
-    e: M::Edge,
+    t: Own<M::Edge>,
+    u: Own<M::Edge>,
+    e: Own<M::Edge>,
     op: TDDOp,
-) -> AllocResult<M::Edge>
+) -> AllocResult<Own<M::Edge>>
 where
     M: Manager<Terminal = TDDTerminal>,
 {
@@ -165,9 +165,7 @@ pub enum TDDOp {
 /// Collect the two children of a ternary node
 #[inline]
 #[must_use]
-fn collect_children<E: Edge, N: InnerNode<E>>(
-    node: &N,
-) -> (Borrowed<'_, E>, Borrowed<'_, E>, Borrowed<'_, E>) {
+fn collect_children<E: Edge, N: InnerNode<E>>(node: &N) -> (Ref<'_, E>, Ref<'_, E>, Ref<'_, E>) {
     debug_assert_eq!(N::ARITY, 3);
     let mut it = node.children();
     let t = it.next().unwrap();
@@ -178,17 +176,17 @@ fn collect_children<E: Edge, N: InnerNode<E>>(
 }
 
 enum Operation<'a, E: 'a + Edge> {
-    Binary(TDDOp, Borrowed<'a, E>, Borrowed<'a, E>),
-    Not(Borrowed<'a, E>),
-    Done(E),
+    Binary(TDDOp, Ref<'a, E>, Ref<'a, E>),
+    Not(Ref<'a, E>),
+    Done(Own<E>),
 }
 
 /// Terminal case for binary operators
 #[inline]
 fn terminal_bin<'a, M: Manager<Terminal = TDDTerminal>, const OP: u8>(
     m: &M,
-    f: &'a M::Edge,
-    g: &'a M::Edge,
+    f: Ref<'a, M::Edge>,
+    g: Ref<'a, M::Edge>,
 ) -> Operation<'a, M::Edge> {
     use Node::*;
     use Operation::*;
@@ -206,8 +204,8 @@ fn terminal_bin<'a, M: Manager<Terminal = TDDTerminal>, const OP: u8>(
             (_, Terminal(t)) if *t.borrow() == True => Done(m.clone_edge(f)),
             // Both terminal U is handled above
             // One terminal U or both inner
-            _ if f > g => Binary(TDDOp::And, g.borrowed(), f.borrowed()),
-            _ => Binary(TDDOp::And, f.borrowed(), g.borrowed()),
+            _ if f > g => Binary(TDDOp::And, g, f),
+            _ => Binary(TDDOp::And, f, g),
         }
     } else if OP == TDDOp::Or as u8 {
         if f == g {
@@ -219,34 +217,34 @@ fn terminal_bin<'a, M: Manager<Terminal = TDDTerminal>, const OP: u8>(
             }
             (Terminal(t), _) if *t.borrow() == False => Done(m.clone_edge(g)),
             (_, Terminal(t)) if *t.borrow() == False => Done(m.clone_edge(f)),
-            _ if f > g => Binary(TDDOp::Or, g.borrowed(), f.borrowed()),
-            _ => Binary(TDDOp::Or, f.borrowed(), g.borrowed()),
+            _ if f > g => Binary(TDDOp::Or, g, f),
+            _ => Binary(TDDOp::Or, f, g),
         }
     } else if OP == TDDOp::Nand as u8 {
         if f == g {
-            return Not(f.borrowed());
+            return Not(f);
         }
         match (m.get_node(f), m.get_node(g)) {
             (Terminal(t), _) | (_, Terminal(t)) if *t.borrow() == False => {
                 Done(m.get_terminal(True).unwrap())
             }
-            (Terminal(t), _) if *t.borrow() == True => Not(g.borrowed()),
-            (_, Terminal(t)) if *t.borrow() == True => Not(f.borrowed()),
-            _ if f > g => Binary(TDDOp::Nand, g.borrowed(), f.borrowed()),
-            _ => Binary(TDDOp::Nand, f.borrowed(), g.borrowed()),
+            (Terminal(t), _) if *t.borrow() == True => Not(g),
+            (_, Terminal(t)) if *t.borrow() == True => Not(f),
+            _ if f > g => Binary(TDDOp::Nand, g, f),
+            _ => Binary(TDDOp::Nand, f, g),
         }
     } else if OP == TDDOp::Nor as u8 {
         if f == g {
-            return Not(f.borrowed());
+            return Not(f);
         }
         match (m.get_node(f), m.get_node(g)) {
             (Terminal(t), _) | (_, Terminal(t)) if *t.borrow() == True => {
                 Done(m.get_terminal(False).unwrap())
             }
-            (Terminal(t), _) if *t.borrow() == False => Not(g.borrowed()),
-            (_, Terminal(t)) if *t.borrow() == False => Not(f.borrowed()),
-            _ if f > g => Binary(TDDOp::Nor, g.borrowed(), f.borrowed()),
-            _ => Binary(TDDOp::Nor, f.borrowed(), g.borrowed()),
+            (Terminal(t), _) if *t.borrow() == False => Not(g),
+            (_, Terminal(t)) if *t.borrow() == False => Not(f),
+            _ if f > g => Binary(TDDOp::Nor, g, f),
+            _ => Binary(TDDOp::Nor, f, g),
         }
     } else if OP == TDDOp::Xor as u8 {
         if f == g {
@@ -255,10 +253,10 @@ fn terminal_bin<'a, M: Manager<Terminal = TDDTerminal>, const OP: u8>(
         match (m.get_node(f), m.get_node(g)) {
             (Terminal(t), _) if *t.borrow() == False => Done(m.clone_edge(g)),
             (_, Terminal(t)) if *t.borrow() == False => Done(m.clone_edge(f)),
-            (Terminal(t), _) if *t.borrow() == True => Not(g.borrowed()),
-            (_, Terminal(t)) if *t.borrow() == True => Not(f.borrowed()),
-            _ if f > g => Binary(TDDOp::Xor, g.borrowed(), f.borrowed()),
-            _ => Binary(TDDOp::Xor, f.borrowed(), g.borrowed()),
+            (Terminal(t), _) if *t.borrow() == True => Not(g),
+            (_, Terminal(t)) if *t.borrow() == True => Not(f),
+            _ if f > g => Binary(TDDOp::Xor, g, f),
+            _ => Binary(TDDOp::Xor, f, g),
         }
     } else if OP == TDDOp::Equiv as u8 {
         if f == g {
@@ -267,10 +265,10 @@ fn terminal_bin<'a, M: Manager<Terminal = TDDTerminal>, const OP: u8>(
         match (m.get_node(f), m.get_node(g)) {
             (Terminal(t), _) if *t.borrow() == True => Done(m.clone_edge(g)),
             (_, Terminal(t)) if *t.borrow() == True => Done(m.clone_edge(f)),
-            (Terminal(t), _) if *t.borrow() == False => Not(g.borrowed()),
-            (_, Terminal(t)) if *t.borrow() == False => Not(f.borrowed()),
-            _ if f > g => Binary(TDDOp::Equiv, g.borrowed(), f.borrowed()),
-            _ => Binary(TDDOp::Equiv, f.borrowed(), g.borrowed()),
+            (Terminal(t), _) if *t.borrow() == False => Not(g),
+            (_, Terminal(t)) if *t.borrow() == False => Not(f),
+            _ if f > g => Binary(TDDOp::Equiv, g, f),
+            _ => Binary(TDDOp::Equiv, f, g),
         }
     } else if OP == TDDOp::Imp as u8 {
         if f == g {
@@ -280,8 +278,8 @@ fn terminal_bin<'a, M: Manager<Terminal = TDDTerminal>, const OP: u8>(
             (Terminal(t), _) if *t.borrow() == False => Done(m.get_terminal(True).unwrap()),
             (_, Terminal(t)) if *t.borrow() == True => Done(m.get_terminal(True).unwrap()),
             (Terminal(t), _) if *t.borrow() == True => Done(m.clone_edge(g)),
-            (_, Terminal(t)) if *t.borrow() == False => Not(f.borrowed()),
-            _ => Binary(TDDOp::Imp, f.borrowed(), g.borrowed()),
+            (_, Terminal(t)) if *t.borrow() == False => Not(f),
+            _ => Binary(TDDOp::Imp, f, g),
         }
     } else if OP == TDDOp::ImpStrict as u8 {
         if f == g {
@@ -291,8 +289,8 @@ fn terminal_bin<'a, M: Manager<Terminal = TDDTerminal>, const OP: u8>(
             (Terminal(t), _) if *t.borrow() == True => Done(m.get_terminal(False).unwrap()),
             (_, Terminal(t)) if *t.borrow() == False => Done(m.get_terminal(False).unwrap()),
             (Terminal(t), _) if *t.borrow() == False => Done(m.clone_edge(g)),
-            (_, Terminal(t)) if *t.borrow() == True => Not(f.borrowed()),
-            _ => Binary(TDDOp::ImpStrict, f.borrowed(), g.borrowed()),
+            (_, Terminal(t)) if *t.borrow() == True => Not(f),
+            _ => Binary(TDDOp::ImpStrict, f, g),
         }
     } else {
         unreachable!("invalid binary operator")

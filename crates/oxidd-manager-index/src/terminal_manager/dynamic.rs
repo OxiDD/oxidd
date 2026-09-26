@@ -13,7 +13,7 @@ use rustc_hash::FxHasher;
 
 use oxidd_core::Tag;
 use oxidd_core::error::OutOfMemory;
-use oxidd_core::util::AllocResult;
+use oxidd_core::util::{AllocResult, Own};
 
 use crate::manager::{Edge, InnerNodeCons, TerminalManagerCons};
 use crate::node::NodeBase;
@@ -154,7 +154,7 @@ where
     }
 
     #[inline]
-    fn get_edge(&self, terminal: T) -> AllocResult<Edge<'id, N, ET>> {
+    fn get_edge(&self, terminal: T) -> AllocResult<Own<Edge<'id, N, ET>>> {
         let mut state = self.state.lock();
         let hash = hash(&terminal);
         let id = match state.unique_table.find_or_find_insert_slot(
@@ -196,7 +196,7 @@ where
             }
         };
 
-        Ok(unsafe { Edge::from_terminal_id(id) })
+        Ok(unsafe { Own::from_raw(Edge::from_terminal_id(id)) })
     }
 
     #[inline]
@@ -278,7 +278,7 @@ pub struct DynamicTerminalIterator<'a, 'id, T, N, ET> {
 }
 
 impl<'id, T, N: NodeBase, ET: Tag> Iterator for DynamicTerminalIterator<'_, 'id, T, N, ET> {
-    type Item = Edge<'id, N, ET>;
+    type Item = Own<Edge<'id, N, ET>>;
 
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
@@ -299,7 +299,7 @@ impl<'id, T, N: NodeBase, ET: Tag> Iterator for DynamicTerminalIterator<'_, 'id,
         // SAFETY: `id` was obtained from the unique_table, hence it is a valid
         // terminal ID for `self.store`.
         unsafe { retain(self.store, id as usize) };
-        Some(unsafe { Edge::from_terminal_id(id) })
+        Some(unsafe { Own::from_raw(Edge::from_terminal_id(id)) })
     }
 
     #[inline(always)]

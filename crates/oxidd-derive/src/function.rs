@@ -175,6 +175,11 @@ pub fn derive_function(input: syn::DeriveInput) -> TokenStream {
     let repr_id =
         repr_id.unwrap_or_else(|| quote!(<#ty as ::oxidd_core::function::Function>::REPR_ID));
 
+    let own_edge =
+        quote!(::oxidd_core::util::Own<<Self::Manager<'__id> as ::oxidd_core::Manager>::Edge>);
+    let ref_edge =
+        quote!(::oxidd_core::util::Ref<'_, <Self::Manager<'__id> as ::oxidd_core::Manager>::Edge>);
+
     // SAFETY of the generated implementation is inherited from the inner
     // `Function` implementation
     quote! {
@@ -186,23 +191,17 @@ pub fn derive_function(input: syn::DeriveInput) -> TokenStream {
             type ManagerRef = #manager_ref;
 
             #[inline]
-            fn from_edge<'__id>(
-                manager: &Self::Manager<'__id>,
-                edge: <Self::Manager<'__id> as ::oxidd_core::Manager>::Edge,
-            ) -> Self {
+            fn from_edge<'__id>(manager: &Self::Manager<'__id>, edge: #own_edge) -> Self {
                 #from_edge_body
             }
 
             #[inline]
-            fn as_edge<'__id>(
-                &self,
-                manager: &Self::Manager<'__id>,
-            ) -> &<Self::Manager<'__id> as ::oxidd_core::Manager>::Edge {
+            fn as_edge<'__id>(&self, manager: &Self::Manager<'__id>) -> #ref_edge {
                 ::oxidd_core::function::Function::as_edge(&self.#field, manager)
             }
 
             #[inline]
-            fn into_edge<'__id>(self, manager: &Self::Manager<'__id>) -> <Self::Manager<'__id> as ::oxidd_core::Manager>::Edge {
+            fn into_edge<'__id>(self, manager: &Self::Manager<'__id>) -> #own_edge {
                 ::oxidd_core::function::Function::into_edge(self.#field, manager)
             }
 
@@ -215,7 +214,7 @@ pub fn derive_function(input: syn::DeriveInput) -> TokenStream {
             #[inline]
             fn with_manager_shared<__F, __T>(&self, f: __F) -> __T
             where
-                __F: for<'__id> ::std::ops::FnOnce(&Self::Manager<'__id>, &<Self::Manager<'__id> as ::oxidd_core::Manager>::Edge) -> __T,
+                __F: for<'__id> ::std::ops::FnOnce(&Self::Manager<'__id>, #ref_edge) -> __T,
             {
                 <#ty as ::oxidd_core::function::Function>::with_manager_shared(&self.#field, f)
             }
@@ -223,7 +222,7 @@ pub fn derive_function(input: syn::DeriveInput) -> TokenStream {
             #[inline]
             fn with_manager_exclusive<__F, __T>(&self, f: __F) -> __T
             where
-                __F: for<'__id> ::std::ops::FnOnce(&mut Self::Manager<'__id>, &<Self::Manager<'__id> as ::oxidd_core::Manager>::Edge) -> __T,
+                __F: for<'__id> ::std::ops::FnOnce(&mut Self::Manager<'__id>, #ref_edge) -> __T,
             {
                 <#ty as ::oxidd_core::function::Function>::with_manager_exclusive(&self.#field, f)
             }
@@ -253,6 +252,10 @@ impl Method {
         let field = &struct_field.ident;
         let inner = &struct_field.ty;
 
+        let edge_alloc_result =
+            quote!(::oxidd_core::util::AllocResult<::oxidd_core::util::Own<#edge_ty>>);
+        let edge_ref_anon = quote!(::oxidd_core::util::Ref<'_, #edge_ty>);
+
         match self {
             Method::Terminal(n) => {
                 let method = syn::Ident::new(n, Span::call_site());
@@ -266,7 +269,7 @@ impl Method {
                         #func
                     }
                     #[inline]
-                    fn #method_edge<'__id>(manager: &#manager_ty) -> #edge_ty {
+                    fn #method_edge<'__id>(manager: &#manager_ty) -> ::oxidd_core::util::Own<#edge_ty> {
                         <#inner as #trait_path>::#method_edge(manager)
                     }
                 }
@@ -284,7 +287,7 @@ impl Method {
                         ::std::result::Result::Ok(#func)
                     }
                     #[inline]
-                    fn #method_edge<'__id>(manager: &#manager_ty, var: ::oxidd_core::VarNo) -> ::oxidd_core::util::AllocResult<#edge_ty> {
+                    fn #method_edge<'__id>(manager: &#manager_ty, var: ::oxidd_core::VarNo) -> #edge_alloc_result {
                         <#inner as #trait_path>::#method_edge(manager, var)
                     }
                 }
@@ -301,7 +304,7 @@ impl Method {
                         ::std::result::Result::Ok(#func)
                     }
                     #[inline]
-                    fn #method_edge<'__id>(manager: &#manager_ty, edge: &#edge_ty) -> ::oxidd_core::util::AllocResult<#edge_ty> {
+                    fn #method_edge<'__id>(manager: &#manager_ty, edge: #edge_ref_anon) -> #edge_alloc_result {
                         <#inner as #trait_path>::#method_edge(manager, edge)
                     }
                 }
@@ -318,7 +321,7 @@ impl Method {
                         ::std::result::Result::Ok(#func)
                     }
                     #[inline]
-                    fn #method_edge<'__id>(manager: &#manager_ty, edge: #edge_ty) -> ::oxidd_core::util::AllocResult<#edge_ty> {
+                    fn #method_edge<'__id>(manager: &#manager_ty, edge: ::oxidd_core::util::Own<#edge_ty>) -> #edge_alloc_result {
                         <#inner as #trait_path>::#method_edge(manager, edge)
                     }
                 }
@@ -336,7 +339,7 @@ impl Method {
                         ::std::result::Result::Ok(#func)
                     }
                     #[inline]
-                    fn #method_edge<'__id>(manager: &#manager_ty, lhs: &#edge_ty, rhs: &#edge_ty) -> ::oxidd_core::util::AllocResult<#edge_ty> {
+                    fn #method_edge<'__id>(manager: &#manager_ty, lhs: #edge_ref_anon, rhs: #edge_ref_anon) -> #edge_alloc_result {
                         <#inner as #trait_path>::#method_edge(manager, lhs, rhs)
                     }
                 }
@@ -354,7 +357,7 @@ impl Method {
                         ::std::result::Result::Ok(#func)
                     }
                     #[inline]
-                    fn #method_edge<'__id>(manager: &#manager_ty, f: &#edge_ty, var: ::oxidd_core::VarNo) -> ::oxidd_core::util::AllocResult<#edge_ty> {
+                    fn #method_edge<'__id>(manager: &#manager_ty, f: #edge_ref_anon, var: ::oxidd_core::VarNo) -> #edge_alloc_result {
                         <#inner as #trait_path>::#method_edge(manager, f, var)
                     }
                 }
@@ -373,7 +376,7 @@ impl Method {
                         ::std::result::Result::Ok(#func)
                     }
                     #[inline]
-                    fn #method_edge<'__id>(manager: &#manager_ty, e0: &#edge_ty, e1: &#edge_ty, e2: &#edge_ty) -> ::oxidd_core::util::AllocResult<#edge_ty> {
+                    fn #method_edge<'__id>(manager: &#manager_ty, e0: #edge_ref_anon, e1: #edge_ref_anon, e2: #edge_ref_anon) -> #edge_alloc_result {
                         <#inner as #trait_path>::#method_edge(manager, e0, e1, e2)
                     }
                 }
@@ -460,11 +463,11 @@ pub fn derive_function_subst(input: syn::DeriveInput) -> TokenStream {
             #[inline]
             fn substitute_edge<'__id, '__a>(
                 manager: &'__a #manager_ty,
-                edge: &'__a #edge_ty,
+                edge: ::oxidd_core::util::Ref<'__a, #edge_ty>,
                 substitution: impl ::oxidd_core::util::Substitution<
-                    Replacement = ::oxidd_core::util::Borrowed<'__a, #edge_ty>,
+                    Replacement = ::oxidd_core::util::Ref<'__a, #edge_ty>,
                 >,
-            ) -> ::oxidd_core::util::AllocResult<#edge_ty> {
+            ) -> ::oxidd_core::util::AllocResult<::oxidd_core::util::Own<#edge_ty>> {
                 <#inner as #trait_path>::substitute_edge(manager, edge, substitution)
             }
         }
@@ -528,10 +531,10 @@ pub fn derive_boolean_function(input: syn::DeriveInput) -> TokenStream {
                 #[inline]
                 fn cofactors_edge<'__a, '__id>(
                     manager: &'__a #manager_ty,
-                    f: &'__a #edge_ty,
+                    f: ::oxidd_core::util::Ref<'__a, #edge_ty>,
                 ) -> ::std::option::Option<(
-                    ::oxidd_core::util::Borrowed<'__a, #edge_ty>,
-                    ::oxidd_core::util::Borrowed<'__a, #edge_ty>,
+                    ::oxidd_core::util::Ref<'__a, #edge_ty>,
+                    ::oxidd_core::util::Ref<'__a, #edge_ty>,
                 )> {
                     <#inner as #trait_path>::cofactors_edge(manager, f)
                 }
@@ -541,8 +544,8 @@ pub fn derive_boolean_function(input: syn::DeriveInput) -> TokenStream {
                     tag: ::oxidd_core::function::ETagOfFunc<'__id, Self>,
                     node: &'__a ::oxidd_core::function::INodeOfFunc<'__id, Self>,
                 ) -> (
-                    ::oxidd_core::util::Borrowed<'__a, #edge_ty>,
-                    ::oxidd_core::util::Borrowed<'__a, #edge_ty>,
+                    ::oxidd_core::util::Ref<'__a, #edge_ty>,
+                    ::oxidd_core::util::Ref<'__a, #edge_ty>,
                 ) {
                     <#inner as #trait_path>::cofactors_node(tag, node)
                 }
@@ -572,7 +575,7 @@ pub fn derive_boolean_function(input: syn::DeriveInput) -> TokenStream {
                 #[inline]
                 fn sat_count_edge<'__id, __N, __S>(
                     manager: &#manager_ty,
-                    edge: &#edge_ty,
+                    edge: ::oxidd_core::util::Ref<'_, #edge_ty>,
                     vars: ::oxidd_core::LevelNo,
                     cache: &mut ::oxidd_core::util::SatCountCache<__N, __S>,
                 ) -> __N
@@ -586,7 +589,11 @@ pub fn derive_boolean_function(input: syn::DeriveInput) -> TokenStream {
                 #[inline]
                 fn pick_cube(
                     &self,
-                    choice: impl for<'__id> ::std::ops::FnMut(&#manager_ty, &#edge_ty, ::oxidd_core::LevelNo) -> bool,
+                    choice: impl for<'__id> ::std::ops::FnMut(
+                        &#manager_ty,
+                        ::oxidd_core::util::Ref<'_, #edge_ty>,
+                        ::oxidd_core::LevelNo
+                    ) -> bool,
                 ) -> ::std::option::Option<::std::vec::Vec<::oxidd_core::util::OptBool>> {
                     <#inner as #trait_path>::pick_cube(&self.#field, choice)
                 }
@@ -594,8 +601,12 @@ pub fn derive_boolean_function(input: syn::DeriveInput) -> TokenStream {
                 #[inline]
                 fn pick_cube_edge<'__id>(
                     manager: &#manager_ty,
-                    edge: &#edge_ty,
-                    choice: impl ::std::ops::FnMut(&#manager_ty, &#edge_ty, ::oxidd_core::LevelNo) -> bool,
+                    edge: ::oxidd_core::util::Ref<'_, #edge_ty>,
+                    choice: impl ::std::ops::FnMut(
+                        &#manager_ty,
+                        ::oxidd_core::util::Ref<'_, #edge_ty>,
+                        ::oxidd_core::LevelNo
+                    ) -> bool,
                 ) -> ::std::option::Option<::std::vec::Vec<::oxidd_core::util::OptBool>>
                 {
                     <#inner as #trait_path>::pick_cube_edge(manager, edge, choice)
@@ -604,7 +615,11 @@ pub fn derive_boolean_function(input: syn::DeriveInput) -> TokenStream {
                 #[inline]
                 fn pick_cube_dd(
                     &self,
-                    choice: impl for<'__id> ::std::ops::FnMut(&#manager_ty, &#edge_ty, ::oxidd_core::LevelNo) -> bool,
+                    choice: impl for<'__id> ::std::ops::FnMut(
+                        &#manager_ty,
+                        ::oxidd_core::util::Ref<'_, #edge_ty>,
+                        ::oxidd_core::LevelNo
+                    ) -> bool,
                 ) -> ::oxidd_core::util::AllocResult<Self> {
                     let res = <#inner as #trait_path>::pick_cube_dd(&self.#field, choice)?;
                     Ok(#from_res)
@@ -613,9 +628,13 @@ pub fn derive_boolean_function(input: syn::DeriveInput) -> TokenStream {
                 #[inline]
                 fn pick_cube_dd_edge<'__id>(
                     manager: &#manager_ty,
-                    edge: &#edge_ty,
-                    choice: impl ::std::ops::FnMut(&#manager_ty, &#edge_ty, ::oxidd_core::LevelNo) -> bool,
-                ) -> ::oxidd_core::util::AllocResult<#edge_ty> {
+                    edge: ::oxidd_core::util::Ref<'_, #edge_ty>,
+                    choice: impl ::std::ops::FnMut(
+                        &#manager_ty,
+                        ::oxidd_core::util::Ref<'_, #edge_ty>,
+                        ::oxidd_core::LevelNo
+                    ) -> bool,
+                ) -> ::oxidd_core::util::AllocResult<::oxidd_core::util::Own<#edge_ty>> {
                     <#inner as #trait_path>::pick_cube_dd_edge(manager, edge, choice)
                 }
 
@@ -631,7 +650,7 @@ pub fn derive_boolean_function(input: syn::DeriveInput) -> TokenStream {
                 #[inline]
                 fn pick_cube_uniform_edge<'__id, __S: ::std::hash::BuildHasher>(
                     manager: &#manager_ty,
-                    edge: &#edge_ty,
+                    edge: ::oxidd_core::util::Ref<'_, #edge_ty>,
                     cache: &mut ::oxidd_core::util::SatCountCache<::oxidd_core::util::num::F64, __S>,
                     rng: &mut ::oxidd_core::util::Rng,
                 ) -> ::std::option::Option<::std::vec::Vec<::oxidd_core::util::OptBool>>
@@ -650,7 +669,7 @@ pub fn derive_boolean_function(input: syn::DeriveInput) -> TokenStream {
                 #[inline]
                 fn eval_edge<'__id>(
                     manager: &#manager_ty,
-                    edge: &#edge_ty,
+                    edge: ::oxidd_core::util::Ref<'_, #edge_ty>,
                     args: impl ::std::iter::IntoIterator<Item = (::oxidd_core::VarNo, bool)>,
                 ) -> bool {
                     <#inner as #trait_path>::eval_edge(manager, edge, args)
@@ -700,10 +719,10 @@ pub fn derive_boolean_function_quant(input: syn::DeriveInput) -> TokenStream {
                     fn #method_edge<'__id>(
                         manager: &#manager_ty,
                         op: ::oxidd_core::function::BooleanOperator,
-                        lhs: &#edge_ty,
-                        rhs: &#edge_ty,
-                        vars: &#edge_ty,
-                    ) -> ::oxidd_core::util::AllocResult<#edge_ty> {
+                        lhs: ::oxidd_core::util::Ref<'_, #edge_ty>,
+                        rhs: ::oxidd_core::util::Ref<'_, #edge_ty>,
+                        vars: ::oxidd_core::util::Ref<'_, #edge_ty>,
+                    ) -> ::oxidd_core::util::AllocResult<::oxidd_core::util::Own<#edge_ty>> {
                         <#inner as #trait_path>::#method_edge(manager, op, lhs, rhs, vars)
                     }
                 };
@@ -769,11 +788,17 @@ pub fn derive_pseudo_boolean_function(input: syn::DeriveInput) -> TokenStream {
                 type Number = <#inner as #trait_path>::Number;
 
                 #[inline]
-                fn constant<'__id>(manager: &#manager_ty, value: <Self as #trait_path>::Number) -> ::oxidd_core::util::AllocResult<Self> {
+                fn constant<'__id>(
+                    manager: &#manager_ty,
+                    value: <Self as #trait_path>::Number
+                ) -> ::oxidd_core::util::AllocResult<Self> {
                     ::std::result::Result::Ok(#constant_func)
                 }
                 #[inline]
-                fn constant_edge<'__id>(manager: &#manager_ty, value: <Self as #trait_path>::Number) -> ::oxidd_core::util::AllocResult<#edge_ty> {
+                fn constant_edge<'__id>(
+                    manager: &#manager_ty,
+                    value: <Self as #trait_path>::Number
+                ) -> ::oxidd_core::util::AllocResult<::oxidd_core::util::Own<#edge_ty>> {
                     <#inner as #trait_path>::constant_edge(manager, value)
                 }
 
@@ -787,7 +812,7 @@ pub fn derive_pseudo_boolean_function(input: syn::DeriveInput) -> TokenStream {
                 #[inline]
                 fn eval_edge<'__id>(
                     manager: &#manager_ty,
-                    edge: &#edge_ty,
+                    edge: ::oxidd_core::util::Ref<'_, #edge_ty>,
                     args: impl ::std::iter::IntoIterator<Item = (::oxidd_core::VarNo, bool)>,
                 ) -> Self::Number {
                     <#inner as #trait_path>::eval_edge(manager, edge, args)
@@ -857,11 +882,11 @@ pub fn derive_tvl_function(input: syn::DeriveInput) -> TokenStream {
                 #[inline]
                 fn cofactors_edge<'__a, '__id>(
                     manager: &'__a #manager_ty,
-                    f: &'__a #edge_ty,
+                    f: ::oxidd_core::util::Ref<'__a, #edge_ty>,
                 ) -> ::std::option::Option<(
-                    ::oxidd_core::util::Borrowed<'__a, #edge_ty>,
-                    ::oxidd_core::util::Borrowed<'__a, #edge_ty>,
-                    ::oxidd_core::util::Borrowed<'__a, #edge_ty>,
+                    ::oxidd_core::util::Ref<'__a, #edge_ty>,
+                    ::oxidd_core::util::Ref<'__a, #edge_ty>,
+                    ::oxidd_core::util::Ref<'__a, #edge_ty>,
                 )> {
                     <#inner as #trait_path>::cofactors_edge(manager, f)
                 }
@@ -876,7 +901,7 @@ pub fn derive_tvl_function(input: syn::DeriveInput) -> TokenStream {
                 #[inline]
                 fn eval_edge<'__id>(
                     manager: &#manager_ty,
-                    edge: &#edge_ty,
+                    edge: ::oxidd_core::util::Ref<'_, #edge_ty>,
                     args: impl ::std::iter::IntoIterator<Item = (::oxidd_core::VarNo, ::std::option::Option<bool>)>,
                 ) -> ::std::option::Option<bool> {
                     <#inner as #trait_path>::eval_edge(manager, edge, args)

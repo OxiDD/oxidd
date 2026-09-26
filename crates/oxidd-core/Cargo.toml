@@ -14,3 +14,10 @@ rust-version.workspace = true
 [dependencies]
 nanorand = { version = "0.8.0", default-features = false, features = ["wyrand"] }
 dashu-int = { version = "0.6.0", default-features = false }
+
+[features]
+## Check that `Own<H>` is never dropped via its `Drop` implementation. This is
+## done by adding a function call to a non-existing external function to the
+## `Drop` implementation. So if the check fails, there will be a weird linker
+## error. Using this feature in unoptimized builds may cause false positives.
+static_leak_check = []

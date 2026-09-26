@@ -6,10 +6,12 @@ use std::hash::{BuildHasher, Hash};
 
 use fixedbitset::FixedBitSet;
 
+use oxidd_core::function::OwnEdgeOfFunc;
+use oxidd_core::util::Own;
 use oxidd_core::{
-    ApplyCache, Edge, HasApplyCache, HasLevel, InnerNode, LevelNo, Manager, Node, Tag, VarNo,
+    ApplyCache, HasApplyCache, HasLevel, InnerNode, LevelNo, Manager, Node, Tag, VarNo,
     function::{BooleanFunction, BooleanVecSet, EdgeOfFunc, Function, INodeOfFunc},
-    util::{AllocResult, Borrowed, EdgeDropGuard, OptBool, SatCountCache, SatCountNumber},
+    util::{AllocResult, EdgeDropGuard, OptBool, Ref, SatCountCache, SatCountNumber},
 };
 use oxidd_derive::Function;
 use oxidd_dump::dot::DotStyle;
@@ -19,8 +21,8 @@ use crate::recursor::{Recursor, SequentialRecursor};
 #[cfg(feature = "statistics")]
 use super::STAT_COUNTERS;
 use super::{
-    HI, HasZBDDCache, LO, ZBDDOp, ZBDDTerminal, collect_children, reduce, reduce_borrowed, reduce1,
-    stat,
+    HI, HasZBDDCache, LO, ZBDDOp, ZBDDTerminal, collect_children, is_empty, reduce,
+    reduce_borrowed, reduce1, stat,
 };
 
 // spell-checker:ignore fnode,gnode,hnode,vnode
@@ -32,10 +34,10 @@ use super::{
 fn subset<M, R: Recursor<M>, const VAL: i8>(
     manager: &M,
     rec: R,
-    f: Borrowed<M::Edge>,
+    f: Ref<'_, M::Edge>,
     var: VarNo,
     var_level: LevelNo,
-) -> AllocResult<M::Edge>
+) -> AllocResult<Own<M::Edge>>
 where
     M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, ZBDDOp>,
     M::InnerNode: HasLevel,
@@ -51,7 +53,7 @@ where
     };
     stat!(call op);
 
-    let node = manager.get_node(&f);
+    let node = manager.get_node(f);
     let level = node.level();
     let node = match (node, level.cmp(&var_level)) {
         (Node::Inner(n), Ordering::Less) => n, // level above var_level
@@ -59,19 +61,19 @@ where
             if op == ZBDDOp::Change {
                 // The swap of `hi` and `lo` below is intentional
                 let (lo, hi) = collect_children(node);
-                return reduce_borrowed(manager, level, hi, manager.clone_edge(&lo), op);
+                return reduce_borrowed(manager, level, hi, manager.clone_edge(lo), op);
             }
-            return Ok(manager.clone_edge(&node.child((1 - VAL) as usize)));
+            return Ok(manager.clone_edge(node.child((1 - VAL) as usize)));
         }
         _ => {
             // var_level above level
             return match op {
-                ZBDDOp::Subset0 => Ok(manager.clone_edge(&f)),
+                ZBDDOp::Subset0 => Ok(manager.clone_edge(f)),
                 ZBDDOp::Subset1 => Ok(manager.get_terminal(ZBDDTerminal::Empty).unwrap()),
                 ZBDDOp::Change => reduce(
                     manager,
                     var_level,
-                    manager.clone_edge(&f),
+                    manager.clone_edge(f),
                     manager.get_terminal(ZBDDTerminal::Empty).unwrap(),
                     ZBDDOp::Change,
                 ),
@@ -82,10 +84,9 @@ where
 
     // Query apply cache
     stat!(cache_query op);
-    if let Some(([h], [])) =
-        manager
-            .apply_cache()
-            .get_extended(manager, op, (&[f.borrowed()], &[var]))
+    if let Some(([h], [])) = manager
+        .apply_cache()
+        .get_extended(manager, op, (&[f], &[var]))
     {
         stat!(cache_hit op);
         return Ok(h);
@@ -111,10 +112,10 @@ where
 fn restrict<M, R: Recursor<M>>(
     manager: &M,
     rec: R,
-    f: Borrowed<M::Edge>,
-    vars: Borrowed<M::Edge>,
+    f: Ref<'_, M::Edge>,
+    vars: Ref<'_, M::Edge>,
     level: LevelNo,
-) -> AllocResult<M::Edge>
+) -> AllocResult<Own<M::Edge>>
 where
     M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, ZBDDOp> + HasZBDDCache<M::Edge>,
     M::InnerNode: HasLevel,
@@ -128,19 +129,19 @@ where
 
     fn restrict_base<M>(
         manager: &M,
-        vars: Borrowed<M::Edge>,
+        vars: Ref<'_, M::Edge>,
         level: LevelNo,
-    ) -> AllocResult<M::Edge>
+    ) -> AllocResult<Own<M::Edge>>
     where
         M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, ZBDDOp> + HasZBDDCache<M::Edge>,
         M::InnerNode: HasLevel,
     {
-        Ok(match manager.get_node(&vars) {
+        Ok(match manager.get_node(vars) {
             Node::Inner(node) => {
                 let (hi, lo) = collect_children(node);
                 if hi != lo {
                     debug_assert!(
-                        manager.get_node(&lo).is_terminal(&Empty),
+                        manager.get_node(lo).is_terminal(&Empty),
                         "vars must be a conjunction of literals"
                     );
                     // select (zero-suppressed) LO branch
@@ -149,11 +150,11 @@ where
 
                 let node_level = node.level();
                 let mut res = restrict_base(manager, hi, node_level + 1)?;
-                if node_level > level && !manager.get_node(&res).is_terminal(&Empty) {
+                if node_level > level && !is_empty(manager, res.borrowed()) {
                     for l in (level..node_level).rev() {
                         res = oxidd_core::LevelView::get_or_insert(
                             &mut manager.level(l),
-                            M::InnerNode::new(l, [manager.clone_edge(&res), res]),
+                            M::InnerNode::new(l, [manager.clone_edge(res.borrowed()), res]),
                         )?;
                     }
                 }
@@ -169,17 +170,17 @@ where
         })
     }
 
-    let fnode = match manager.get_node(&f) {
+    let fnode = match manager.get_node(f) {
         Node::Inner(n) => n,
         Node::Terminal(t) => {
             return match t.borrow() {
-                Empty => Ok(manager.clone_edge(&f)),
+                Empty => Ok(manager.clone_edge(f)),
                 Base => restrict_base(manager, vars, level),
             };
         }
     };
 
-    let vnode = manager.get_node(&vars);
+    let vnode = manager.get_node(vars);
 
     // We only cache when both `f` and `vars` have a node at `level`.
     // Otherwise, the cached results may be wrong after reordering.
@@ -199,7 +200,7 @@ where
     let (vhi, vlo) = collect_children(vnode.unwrap_inner());
     if vhi != vlo {
         debug_assert!(
-            manager.get_node(&vlo).is_terminal(&Empty),
+            manager.get_node(vlo).is_terminal(&Empty),
             "vars must be a conjunction of literals"
         );
         // select HI branch
@@ -218,11 +219,7 @@ where
 
     // Query apply cache
     stat!(cache_query Restrict);
-    if let Some(res) =
-        manager
-            .apply_cache()
-            .get(manager, Restrict, &[f.borrowed(), vars.borrowed()])
-    {
+    if let Some(res) = manager.apply_cache().get(manager, Restrict, &[f, vars]) {
         stat!(cache_hit Restrict);
         return Ok(res);
     }
@@ -232,8 +229,8 @@ where
     let (hi, lo) = rec.binary_with_level(
         restrict,
         manager,
-        (fhi, vhi.borrowed(), level + 1),
-        (flo, vhi.borrowed(), level + 1),
+        (fhi, vhi, level + 1),
+        (flo, vhi, level + 1),
     )?;
 
     let res = reduce(manager, level, hi.into_edge(), lo.into_edge(), Restrict)?;
@@ -250,9 +247,9 @@ where
 fn apply_union<M, R: Recursor<M>>(
     manager: &M,
     rec: R,
-    f: Borrowed<M::Edge>,
-    g: Borrowed<M::Edge>,
-) -> AllocResult<M::Edge>
+    f: Ref<'_, M::Edge>,
+    g: Ref<'_, M::Edge>,
+) -> AllocResult<Own<M::Edge>>
 where
     M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, ZBDDOp>,
     M::InnerNode: HasLevel,
@@ -264,11 +261,11 @@ where
     stat!(call Union);
 
     let empty = EdgeDropGuard::new(manager, manager.get_terminal(ZBDDTerminal::Empty).unwrap());
-    if f == g || *g == *empty {
-        return Ok(manager.clone_edge(&f));
+    if f == g || g == empty.borrowed() {
+        return Ok(manager.clone_edge(f));
     }
-    if *f == *empty {
-        return Ok(manager.clone_edge(&g));
+    if f == empty.borrowed() {
+        return Ok(manager.clone_edge(g));
     }
 
     // Union is commutative, make the set `{f, g}` unique
@@ -276,23 +273,20 @@ where
 
     // Query apply cache
     stat!(cache_query Union);
-    if let Some(h) = manager
-        .apply_cache()
-        .get(manager, Union, &[f.borrowed(), g.borrowed()])
-    {
+    if let Some(h) = manager.apply_cache().get(manager, Union, &[f, g]) {
         stat!(cache_hit Union);
         return Ok(h);
     }
 
-    let fnode = manager.get_node(&f);
-    let gnode = manager.get_node(&g);
+    let fnode = manager.get_node(f);
+    let gnode = manager.get_node(g);
     let flevel = fnode.level();
     let glevel = gnode.level();
 
     let h = match flevel.cmp(&glevel) {
         Ordering::Less => {
             let (hi, flo) = collect_children(fnode.unwrap_inner());
-            let lo = apply_union(manager, rec, flo, g.borrowed())?;
+            let lo = apply_union(manager, rec, flo, g)?;
             reduce_borrowed(manager, flevel, hi, lo, Union)
         }
         Ordering::Equal => {
@@ -303,7 +297,7 @@ where
         }
         Ordering::Greater => {
             let (hi, glo) = collect_children(gnode.unwrap_inner());
-            let lo = apply_union(manager, rec, f.borrowed(), glo)?;
+            let lo = apply_union(manager, rec, f, glo)?;
             reduce_borrowed(manager, glevel, hi, lo, Union)
         }
     }?;
@@ -320,9 +314,9 @@ where
 fn apply_intsec<M, R: Recursor<M>>(
     manager: &M,
     rec: R,
-    f: Borrowed<M::Edge>,
-    g: Borrowed<M::Edge>,
-) -> AllocResult<M::Edge>
+    f: Ref<'_, M::Edge>,
+    g: Ref<'_, M::Edge>,
+) -> AllocResult<Own<M::Edge>>
 where
     M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, ZBDDOp>,
     M::InnerNode: HasLevel,
@@ -334,10 +328,10 @@ where
     stat!(call Intsec);
 
     if f == g {
-        return Ok(manager.clone_edge(&f));
+        return Ok(manager.clone_edge(f));
     }
     let empty = EdgeDropGuard::new(manager, manager.get_terminal(ZBDDTerminal::Empty).unwrap());
-    if *f == *empty || *g == *empty {
+    if f == empty.borrowed() || g == empty.borrowed() {
         return Ok(empty.into_edge());
     }
 
@@ -346,16 +340,13 @@ where
 
     // Query apply cache
     stat!(cache_query Intsec);
-    if let Some(h) = manager
-        .apply_cache()
-        .get(manager, Intsec, &[f.borrowed(), g.borrowed()])
-    {
+    if let Some(h) = manager.apply_cache().get(manager, Intsec, &[f, g]) {
         stat!(cache_hit Intsec);
         return Ok(h);
     }
 
-    let fnode = manager.get_node(&f);
-    let gnode = manager.get_node(&g);
+    let fnode = manager.get_node(f);
+    let gnode = manager.get_node(g);
     let flevel = fnode.level();
     let glevel = gnode.level();
 
@@ -363,7 +354,7 @@ where
         Ordering::Less => {
             // f above g
             let flo = fnode.unwrap_inner().child(LO);
-            apply_intsec(manager, rec, flo.borrowed(), g.borrowed())
+            apply_intsec(manager, rec, flo, g)
         }
         Ordering::Equal => {
             let (fhi, flo) = collect_children(fnode.unwrap_inner());
@@ -373,7 +364,7 @@ where
         }
         Ordering::Greater => {
             let glo = gnode.unwrap_inner().child(LO);
-            apply_intsec(manager, rec, f.borrowed(), glo.borrowed())
+            apply_intsec(manager, rec, f, glo)
         }
     }?;
 
@@ -389,9 +380,9 @@ where
 fn apply_diff<M, R: Recursor<M>>(
     manager: &M,
     rec: R,
-    f: Borrowed<M::Edge>,
-    g: Borrowed<M::Edge>,
-) -> AllocResult<M::Edge>
+    f: Ref<'_, M::Edge>,
+    g: Ref<'_, M::Edge>,
+) -> AllocResult<Own<M::Edge>>
 where
     M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, ZBDDOp>,
     M::InnerNode: HasLevel,
@@ -403,32 +394,29 @@ where
     stat!(call Diff);
 
     let empty = EdgeDropGuard::new(manager, manager.get_terminal(ZBDDTerminal::Empty).unwrap());
-    if f == g || *f == *empty {
+    if f == g || f == empty.borrowed() {
         return Ok(empty.into_edge());
     }
-    if *g == *empty {
-        return Ok(manager.clone_edge(&f));
+    if g == empty.borrowed() {
+        return Ok(manager.clone_edge(f));
     }
 
     // Query apply cache
     stat!(cache_query Diff);
-    if let Some(h) = manager
-        .apply_cache()
-        .get(manager, Diff, &[f.borrowed(), g.borrowed()])
-    {
+    if let Some(h) = manager.apply_cache().get(manager, Diff, &[f, g]) {
         stat!(cache_hit Diff);
         return Ok(h);
     }
 
-    let fnode = manager.get_node(&f);
-    let gnode = manager.get_node(&g);
+    let fnode = manager.get_node(f);
+    let gnode = manager.get_node(g);
     let flevel = fnode.level();
     let glevel = gnode.level();
 
     let h = match flevel.cmp(&glevel) {
         Ordering::Less => {
             let (hi, flo) = collect_children(fnode.unwrap_inner());
-            let lo = apply_diff(manager, rec, flo, g.borrowed())?;
+            let lo = apply_diff(manager, rec, flo, g)?;
             reduce_borrowed(manager, flevel, hi, lo, Diff)
         }
         Ordering::Equal => {
@@ -439,7 +427,7 @@ where
         }
         Ordering::Greater => {
             let glo = gnode.unwrap_inner().child(LO);
-            apply_diff(manager, rec, f.borrowed(), glo.borrowed())
+            apply_diff(manager, rec, f, glo)
         }
     }?;
 
@@ -451,22 +439,26 @@ where
     Ok(h)
 }
 
-fn apply_not<M, R: Recursor<M>>(manager: &M, rec: R, f: Borrowed<M::Edge>) -> AllocResult<M::Edge>
+fn apply_not<M, R: Recursor<M>>(
+    manager: &M,
+    rec: R,
+    f: Ref<'_, M::Edge>,
+) -> AllocResult<Own<M::Edge>>
 where
     M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, ZBDDOp> + HasZBDDCache<M::Edge>,
     M::InnerNode: HasLevel,
 {
     let taut = manager.zbdd_cache().tautology(0);
-    apply_diff(manager, rec, taut.borrowed(), f)
+    apply_diff(manager, rec, taut, f)
 }
 
 /// Recursively apply the symmetric difference operator to `f` and `g`
 fn apply_symm_diff<M, R: Recursor<M>>(
     manager: &M,
     rec: R,
-    f: Borrowed<M::Edge>,
-    g: Borrowed<M::Edge>,
-) -> AllocResult<M::Edge>
+    f: Ref<'_, M::Edge>,
+    g: Ref<'_, M::Edge>,
+) -> AllocResult<Own<M::Edge>>
 where
     M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, ZBDDOp>,
     M::InnerNode: HasLevel,
@@ -481,11 +473,11 @@ where
     if f == g {
         return Ok(empty.into_edge());
     }
-    if *f == *empty {
-        return Ok(manager.clone_edge(&g));
+    if f == empty.borrowed() {
+        return Ok(manager.clone_edge(g));
     }
-    if *g == *empty {
-        return Ok(manager.clone_edge(&f));
+    if g == empty.borrowed() {
+        return Ok(manager.clone_edge(f));
     }
 
     // Symmetric difference is commutative, make the set `{f, g}` unique
@@ -493,23 +485,20 @@ where
 
     // Query apply cache
     stat!(cache_query SymmDiff);
-    if let Some(h) = manager
-        .apply_cache()
-        .get(manager, SymmDiff, &[f.borrowed(), g.borrowed()])
-    {
+    if let Some(h) = manager.apply_cache().get(manager, SymmDiff, &[f, g]) {
         stat!(cache_hit SymmDiff);
         return Ok(h);
     }
 
-    let fnode = manager.get_node(&f);
-    let gnode = manager.get_node(&g);
+    let fnode = manager.get_node(f);
+    let gnode = manager.get_node(g);
     let flevel = fnode.level();
     let glevel = gnode.level();
 
     let h = match flevel.cmp(&glevel) {
         Ordering::Less => {
             let (hi, flo) = collect_children(fnode.unwrap_inner());
-            let lo = apply_symm_diff(manager, rec, flo, g.borrowed())?;
+            let lo = apply_symm_diff(manager, rec, flo, g)?;
             reduce_borrowed(manager, flevel, hi, lo, SymmDiff)
         }
         Ordering::Equal => {
@@ -520,7 +509,7 @@ where
         }
         Ordering::Greater => {
             let (hi, glo) = collect_children(gnode.unwrap_inner());
-            let lo = apply_symm_diff(manager, rec, f.borrowed(), glo.borrowed())?;
+            let lo = apply_symm_diff(manager, rec, f, glo)?;
             reduce_borrowed(manager, glevel, hi, lo, SymmDiff)
         }
     }?;
@@ -537,10 +526,10 @@ where
 fn apply_ite<M, R: Recursor<M>>(
     manager: &M,
     rec: R,
-    f: Borrowed<M::Edge>,
-    g: Borrowed<M::Edge>,
-    h: Borrowed<M::Edge>,
-) -> AllocResult<M::Edge>
+    f: Ref<'_, M::Edge>,
+    g: Ref<'_, M::Edge>,
+    h: Ref<'_, M::Edge>,
+) -> AllocResult<Own<M::Edge>>
 where
     M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, ZBDDOp> + HasZBDDCache<M::Edge>,
     M::InnerNode: HasLevel,
@@ -554,7 +543,7 @@ where
 
     // Terminal cases
     if g == h {
-        return Ok(manager.clone_edge(&g));
+        return Ok(manager.clone_edge(g));
     }
     if f == g {
         return apply_union(manager, rec, f, h);
@@ -563,20 +552,20 @@ where
         return apply_intsec(manager, rec, f, g);
     }
 
-    let fnode = manager.get_node(&f);
+    let fnode = manager.get_node(f);
     let flevel = fnode.level();
     if fnode.is_terminal(&Empty) {
-        return Ok(manager.clone_edge(&h));
+        return Ok(manager.clone_edge(h));
     }
 
-    let gnode = manager.get_node(&g);
+    let gnode = manager.get_node(g);
     let glevel = gnode.level();
     if gnode.is_terminal(&Empty) {
         // f < h = h \ f
         return apply_diff(manager, rec, h, f);
     }
 
-    let hnode = manager.get_node(&h);
+    let hnode = manager.get_node(h);
     let hlevel = hnode.level();
     if hnode.is_terminal(&Empty) {
         return apply_intsec(manager, rec, f, g);
@@ -585,21 +574,17 @@ where
     let ghlevel = std::cmp::min(glevel, hlevel);
     let level = std::cmp::min(flevel, ghlevel);
     let tautology = manager.zbdd_cache().tautology(level);
-    if *f == *tautology {
-        return Ok(manager.clone_edge(&g));
+    if f == tautology {
+        return Ok(manager.clone_edge(g));
     }
-    if *g == *tautology {
+    if g == tautology {
         return apply_union(manager, rec, f, h);
     }
     // if *h == *tautology { f → g }; we cannot handle this properly
 
     // Query apply cache
     stat!(cache_query Ite);
-    if let Some(res) =
-        manager
-            .apply_cache()
-            .get(manager, Ite, &[f.borrowed(), g.borrowed(), h.borrowed()])
-    {
+    if let Some(res) = manager.apply_cache().get(manager, Ite, &[f, g, h]) {
         stat!(cache_hit Ite);
         return Ok(res);
     }
@@ -609,43 +594,31 @@ where
             debug_assert!(hlevel < flevel || glevel < flevel);
             if glevel < hlevel {
                 let glo = gnode.unwrap_inner().child(LO);
-                apply_ite(manager, rec, f.borrowed(), glo.borrowed(), h.borrowed())
+                apply_ite(manager, rec, f, glo, h)
             } else {
                 let (hi, hlo) = collect_children(hnode.unwrap_inner());
                 let g = if glevel == hlevel {
                     gnode.unwrap_inner().child(LO)
                 } else {
-                    g.borrowed()
+                    g
                 };
-                let lo = apply_ite(manager, rec, f.borrowed(), g, hlo)?;
+                let lo = apply_ite(manager, rec, f, g, hlo)?;
                 reduce_borrowed(manager, level, hi, lo, Ite)
             }
         }
         Ordering::Less => {
             let flo = fnode.unwrap_inner().child(LO);
-            apply_ite(manager, rec, flo.borrowed(), g.borrowed(), h.borrowed())
+            apply_ite(manager, rec, flo, g, h)
         }
         Ordering::Equal => {
             debug_assert!(flevel == glevel || flevel == hlevel);
             let (fhi, flo) = collect_children(fnode.unwrap_inner());
             let (hi, lo) = if hlevel > flevel {
                 let (ghi, glo) = collect_children(gnode.unwrap_inner());
-                rec.binary_ternary(
-                    manager,
-                    apply_intsec,
-                    (fhi, ghi),
-                    apply_ite,
-                    (flo, glo, h.borrowed()),
-                )
+                rec.binary_ternary(manager, apply_intsec, (fhi, ghi), apply_ite, (flo, glo, h))
             } else if glevel > flevel {
                 let (hhi, hlo) = collect_children(hnode.unwrap_inner());
-                rec.binary_ternary(
-                    manager,
-                    apply_diff,
-                    (hhi, fhi),
-                    apply_ite,
-                    (flo, g.borrowed(), hlo),
-                )
+                rec.binary_ternary(manager, apply_diff, (hhi, fhi), apply_ite, (flo, g, hlo))
             } else {
                 debug_assert!(flevel == glevel && flevel == hlevel);
                 let (ghi, glo) = collect_children(gnode.unwrap_inner());
@@ -699,7 +672,7 @@ where
     fn singleton_edge<'id>(
         manager: &Self::Manager<'id>,
         var: VarNo,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         let hi = manager.get_terminal(ZBDDTerminal::Base).unwrap();
         let lo = manager.get_terminal(ZBDDTerminal::Empty).unwrap();
         let level = manager.var_to_level(var);
@@ -710,73 +683,73 @@ where
     }
 
     #[inline]
-    fn empty_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self> {
+    fn empty_edge<'id>(manager: &Self::Manager<'id>) -> OwnEdgeOfFunc<'id, Self> {
         manager.get_terminal(ZBDDTerminal::Empty).unwrap()
     }
 
     #[inline]
-    fn base_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self> {
+    fn base_edge<'id>(manager: &Self::Manager<'id>) -> OwnEdgeOfFunc<'id, Self> {
         manager.get_terminal(ZBDDTerminal::Base).unwrap()
     }
 
     #[inline]
     fn subset0_edge<'id>(
         manager: &Self::Manager<'id>,
-        set: &EdgeOfFunc<'id, Self>,
+        set: Ref<'_, EdgeOfFunc<'id, Self>>,
         var: VarNo,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         let rec = SequentialRecursor;
         let var_level = manager.var_to_level(var);
-        subset::<_, _, 0>(manager, rec, set.borrowed(), var, var_level)
+        subset::<_, _, 0>(manager, rec, set, var, var_level)
     }
 
     #[inline]
     fn subset1_edge<'id>(
         manager: &Self::Manager<'id>,
-        set: &EdgeOfFunc<'id, Self>,
+        set: Ref<'_, EdgeOfFunc<'id, Self>>,
         var: VarNo,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         let rec = SequentialRecursor;
         let var_level = manager.var_to_level(var);
-        subset::<_, _, 1>(manager, rec, set.borrowed(), var, var_level)
+        subset::<_, _, 1>(manager, rec, set, var, var_level)
     }
 
     #[inline]
     fn change_edge<'id>(
         manager: &Self::Manager<'id>,
-        set: &EdgeOfFunc<'id, Self>,
+        set: Ref<'_, EdgeOfFunc<'id, Self>>,
         var: VarNo,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         let rec = SequentialRecursor;
         let var_level = manager.var_to_level(var);
-        subset::<_, _, -1>(manager, rec, set.borrowed(), var, var_level)
+        subset::<_, _, -1>(manager, rec, set, var, var_level)
     }
 
     #[inline]
     fn union_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_union(manager, SequentialRecursor, lhs.borrowed(), rhs.borrowed())
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+        apply_union(manager, SequentialRecursor, lhs, rhs)
     }
 
     #[inline]
     fn intsec_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_intsec(manager, SequentialRecursor, lhs.borrowed(), rhs.borrowed())
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+        apply_intsec(manager, SequentialRecursor, lhs, rhs)
     }
 
     #[inline]
     fn diff_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_diff(manager, SequentialRecursor, lhs.borrowed(), rhs.borrowed())
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+        apply_diff(manager, SequentialRecursor, lhs, rhs)
     }
 }
 
@@ -790,7 +763,7 @@ where
     fn var_edge<'id>(
         manager: &Self::Manager<'id>,
         var: VarNo,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         let level = manager.var_to_level(var);
         let hi = manager.clone_edge(manager.zbdd_cache().tautology(level + 1));
         let lo = manager.get_terminal(ZBDDTerminal::Empty).unwrap();
@@ -803,11 +776,12 @@ where
         let levels = manager.levels().rev();
         // skip -> for level 0, we are already done
         for mut view in levels.skip((manager.num_levels() - level) as usize) {
-            // only use `oxidd_core::LevelView` here to mitigate confusion of Rust Analyzer
+            // only use `oxidd_core::LevelView` here to mitigate confusion of
+            // Rust Analyzer
             use oxidd_core::LevelView;
 
             let level = view.level_no();
-            let edge2 = manager.clone_edge(&edge);
+            let edge2 = manager.clone_edge(edge.borrowed());
             edge = view.get_or_insert(InnerNode::new(level, [edge, edge2]))?;
         }
 
@@ -815,126 +789,126 @@ where
     }
 
     #[inline]
-    fn f_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self> {
+    fn f_edge<'id>(manager: &Self::Manager<'id>) -> OwnEdgeOfFunc<'id, Self> {
         manager.get_terminal(ZBDDTerminal::Empty).unwrap()
     }
 
     #[inline]
-    fn t_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self> {
+    fn t_edge<'id>(manager: &Self::Manager<'id>) -> OwnEdgeOfFunc<'id, Self> {
         manager.clone_edge(manager.zbdd_cache().tautology(0))
     }
 
     #[inline]
     fn restrict_edge<'id>(
         manager: &Self::Manager<'id>,
-        root: &EdgeOfFunc<'id, Self>,
-        vars: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        root: Ref<'_, EdgeOfFunc<'id, Self>>,
+        vars: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         let rec = SequentialRecursor;
-        restrict(manager, rec, root.borrowed(), vars.borrowed(), 0)
+        restrict(manager, rec, root, vars, 0)
     }
 
     #[inline]
     fn not_edge<'id>(
         manager: &Self::Manager<'id>,
-        edge: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_not(manager, SequentialRecursor, edge.borrowed())
+        edge: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+        apply_not(manager, SequentialRecursor, edge)
     }
 
     #[inline]
     fn and_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_intsec(manager, SequentialRecursor, lhs.borrowed(), rhs.borrowed())
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+        apply_intsec(manager, SequentialRecursor, lhs, rhs)
     }
     #[inline]
     fn or_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_union(manager, SequentialRecursor, lhs.borrowed(), rhs.borrowed())
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+        apply_union(manager, SequentialRecursor, lhs, rhs)
     }
     #[inline]
     fn nand_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         let and = Self::and_edge(manager, lhs, rhs)?;
-        Self::not_edge(manager, &EdgeDropGuard::new(manager, and))
+        Self::not_edge(manager, EdgeDropGuard::new(manager, and).borrowed())
     }
     #[inline]
     fn nor_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         let or = Self::or_edge(manager, lhs, rhs)?;
-        Self::not_edge(manager, &EdgeDropGuard::new(manager, or))
+        Self::not_edge(manager, EdgeDropGuard::new(manager, or).borrowed())
     }
     #[inline]
     fn xor_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_symm_diff(manager, SequentialRecursor, lhs.borrowed(), rhs.borrowed())
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+        apply_symm_diff(manager, SequentialRecursor, lhs, rhs)
     }
     #[inline]
     fn equiv_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         let xor = Self::xor_edge(manager, lhs, rhs)?;
-        Self::not_edge(manager, &EdgeDropGuard::new(manager, xor))
+        Self::not_edge(manager, EdgeDropGuard::new(manager, xor).borrowed())
     }
     #[inline]
     fn imp_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         Self::ite_edge(manager, lhs, rhs, manager.zbdd_cache().tautology(0))
     }
     #[inline]
     fn imp_strict_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_diff(manager, SequentialRecursor, rhs.borrowed(), lhs.borrowed())
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+        apply_diff(manager, SequentialRecursor, rhs, lhs)
     }
 
     #[inline]
     fn ite_edge<'id>(
         manager: &Self::Manager<'id>,
-        f: &EdgeOfFunc<'id, Self>,
-        g: &EdgeOfFunc<'id, Self>,
-        h: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        f: Ref<'_, EdgeOfFunc<'id, Self>>,
+        g: Ref<'_, EdgeOfFunc<'id, Self>>,
+        h: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         let rec = SequentialRecursor;
-        apply_ite(manager, rec, f.borrowed(), g.borrowed(), h.borrowed())
+        apply_ite(manager, rec, f, g, h)
     }
 
     #[inline]
     fn sat_count_edge<'id, N: SatCountNumber, S: BuildHasher>(
         manager: &Self::Manager<'id>,
-        edge: &EdgeOfFunc<'id, Self>,
+        edge: Ref<'_, EdgeOfFunc<'id, Self>>,
         vars: LevelNo,
         cache: &mut SatCountCache<N, S>,
     ) -> N {
-        fn inner<M, N, S>(manager: &M, e: Borrowed<M::Edge>, cache: &mut SatCountCache<N, S>) -> N
+        fn inner<M, N, S>(manager: &M, e: Ref<'_, M::Edge>, cache: &mut SatCountCache<N, S>) -> N
         where
             M: Manager<Terminal = ZBDDTerminal>,
             N: SatCountNumber,
             S: BuildHasher,
         {
-            match manager.get_node(&e) {
+            match manager.get_node(e) {
                 Node::Inner(node) => {
                     let node_id = e.node_id();
                     let do_cache = cache.cache_all || node.ref_count() > 1;
@@ -958,42 +932,14 @@ where
 
         cache.clear_if_invalid(manager, vars);
 
-        inner(manager, edge.borrowed(), cache) >> (manager.num_levels() - vars)
+        inner(manager, edge, cache) >> (manager.num_levels() - vars)
     }
 
     fn pick_cube_edge<'id, 'a>(
         manager: &'a Self::Manager<'id>,
-        edge: &'a EdgeOfFunc<'id, Self>,
-        choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>, LevelNo) -> bool,
+        mut edge: Ref<'a, EdgeOfFunc<'id, Self>>,
+        mut choice: impl FnMut(&Self::Manager<'id>, Ref<'_, EdgeOfFunc<'id, Self>>, LevelNo) -> bool,
     ) -> Option<Vec<OptBool>> {
-        #[inline] // tail-recursive
-        fn inner<M: Manager<Terminal = ZBDDTerminal>>(
-            manager: &M,
-            edge: Borrowed<M::Edge>,
-            cube: &mut [OptBool],
-            mut choice: impl FnMut(&M, &M::Edge, LevelNo) -> bool,
-        ) where
-            M::InnerNode: HasLevel,
-        {
-            let Node::Inner(node) = manager.get_node(&edge) else {
-                return;
-            };
-            let level = node.level();
-            let (hi, lo) = collect_children(node);
-            let (val, next_edge) = if hi == lo {
-                (OptBool::None, hi)
-            } else {
-                let c = if manager.get_node(&lo).is_terminal(&ZBDDTerminal::Empty) {
-                    true
-                } else {
-                    choice(manager, &edge, level)
-                };
-                (OptBool::from(c), if c { hi } else { lo })
-            };
-            cube[manager.level_to_var(level) as usize] = val;
-            inner(manager, next_edge, cube, choice);
-        }
-
         match manager.get_node(edge) {
             Node::Inner(_) => {}
             Node::Terminal(t) => {
@@ -1005,35 +951,50 @@ where
         }
 
         let mut cube = vec![OptBool::False; manager.num_levels() as usize];
-        inner(manager, edge.borrowed(), &mut cube, choice);
+
+        while let Node::Inner(node) = manager.get_node(edge) {
+            let level = node.level();
+            let (hi, lo) = collect_children(node);
+            (cube[manager.level_to_var(level) as usize], edge) = if hi == lo {
+                (OptBool::None, hi)
+            } else {
+                let c = if manager.get_node(lo).is_terminal(&ZBDDTerminal::Empty) {
+                    true
+                } else {
+                    choice(manager, edge, level)
+                };
+                (OptBool::from(c), if c { hi } else { lo })
+            };
+        }
+
         Some(cube)
     }
 
     #[inline]
     fn pick_cube_dd_edge<'id>(
         manager: &Self::Manager<'id>,
-        edge: &EdgeOfFunc<'id, Self>,
-        choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>, LevelNo) -> bool,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        edge: Ref<'_, EdgeOfFunc<'id, Self>>,
+        choice: impl FnMut(&Self::Manager<'id>, Ref<'_, EdgeOfFunc<'id, Self>>, LevelNo) -> bool,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         fn inner<M: Manager<Terminal = ZBDDTerminal>>(
             manager: &M,
-            edge: Borrowed<M::Edge>,
-            mut choice: impl FnMut(&M, &M::Edge, LevelNo) -> bool,
-        ) -> AllocResult<M::Edge>
+            edge: Ref<'_, M::Edge>,
+            mut choice: impl FnMut(&M, Ref<'_, M::Edge>, LevelNo) -> bool,
+        ) -> AllocResult<Own<M::Edge>>
         where
             M::InnerNode: HasLevel,
         {
-            let Node::Inner(node) = manager.get_node(&edge) else {
-                return Ok(manager.clone_edge(&edge));
+            let Node::Inner(node) = manager.get_node(edge) else {
+                return Ok(manager.clone_edge(edge));
             };
 
             let level = node.level();
             let (hi, lo) = collect_children(node);
             let do_not_care = hi == lo;
-            let c = if hi == lo || manager.get_node(&lo).is_terminal(&ZBDDTerminal::Empty) {
+            let c = if hi == lo || manager.get_node(lo).is_terminal(&ZBDDTerminal::Empty) {
                 true
             } else {
-                choice(manager, &edge, level)
+                choice(manager, edge, level)
             };
 
             let sub = inner(manager, if c { hi } else { lo }, choice);
@@ -1043,7 +1004,7 @@ where
 
             let hi = EdgeDropGuard::new(manager, sub?);
             let lo = if do_not_care {
-                manager.clone_edge(&hi)
+                manager.clone_edge(hi.borrowed())
             } else {
                 manager.get_terminal(ZBDDTerminal::Empty)?
             };
@@ -1053,59 +1014,49 @@ where
             )
         }
 
-        inner(manager, edge.borrowed(), choice)
+        inner(manager, edge, choice)
     }
 
     #[inline]
     fn pick_cube_dd_set_edge<'id>(
         manager: &Self::Manager<'id>,
-        edge: &EdgeOfFunc<'id, Self>,
-        literal_set: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        #[inline] // tail-recursive
-        fn set_pop<'a, M: Manager>(
+        edge: Ref<'_, EdgeOfFunc<'id, Self>>,
+        literal_set: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+        fn inner<'a, M: Manager<Terminal = ZBDDTerminal>>(
             manager: &'a M,
-            edge: Borrowed<'a, M::Edge>,
-            until: LevelNo,
-        ) -> (Borrowed<'a, M::Edge>, Option<&'a M::InnerNode>)
+            edge: Ref<'a, M::Edge>,
+            mut literal_set: Ref<'a, M::Edge>,
+        ) -> AllocResult<Own<M::Edge>>
         where
             M::InnerNode: HasLevel,
         {
-            match manager.get_node(&edge) {
-                Node::Terminal(_) => (edge, None),
-                Node::Inner(node) => match node.level().cmp(&until) {
-                    Ordering::Less => set_pop(manager, node.child(HI), until),
-                    Ordering::Equal => (edge, Some(node)),
-                    Ordering::Greater => (edge, None),
-                },
-            }
-        }
-
-        fn inner<M: Manager<Terminal = ZBDDTerminal>>(
-            manager: &M,
-            edge: Borrowed<M::Edge>,
-            literal_set: Borrowed<M::Edge>,
-        ) -> AllocResult<M::Edge>
-        where
-            M::InnerNode: HasLevel,
-        {
-            let Node::Inner(node) = manager.get_node(&edge) else {
-                return Ok(manager.clone_edge(&edge));
+            let Node::Inner(node) = manager.get_node(edge) else {
+                return Ok(manager.clone_edge(edge));
             };
             let level = node.level();
 
-            let (literal_set, set_node) = set_pop(manager, literal_set, level);
+            let set_node = loop {
+                match manager.get_node(literal_set) {
+                    Node::Terminal(_) => break None,
+                    Node::Inner(node) => match node.level().cmp(&level) {
+                        Ordering::Less => literal_set = node.child(HI),
+                        Ordering::Equal => break Some(node),
+                        Ordering::Greater => break None,
+                    },
+                };
+            };
 
             let (hi, lo) = collect_children(node);
             let mut do_not_care = false;
-            let c = if manager.get_node(&lo).is_terminal(&ZBDDTerminal::Empty) {
+            let c = if manager.get_node(lo).is_terminal(&ZBDDTerminal::Empty) {
                 true // enforced (otherwise `cube → function` would not hold)
             } else if let Some(node) = set_node {
                 let (shi, slo) = collect_children(node);
                 if shi == slo {
                     do_not_care = hi == lo;
                 } else {
-                    debug_assert!(manager.get_node(&slo).is_terminal(&ZBDDTerminal::Empty));
+                    debug_assert!(manager.get_node(slo).is_terminal(&ZBDDTerminal::Empty));
                 }
                 true // either don't care or selected
             } else {
@@ -1119,7 +1070,7 @@ where
 
             let hi = EdgeDropGuard::new(manager, sub?);
             let lo = if do_not_care {
-                manager.clone_edge(&hi)
+                manager.clone_edge(hi.borrowed())
             } else {
                 manager.get_terminal(ZBDDTerminal::Empty)?
             };
@@ -1129,12 +1080,12 @@ where
             )
         }
 
-        inner(manager, edge.borrowed(), literal_set.borrowed())
+        inner(manager, edge, literal_set)
     }
 
-    fn eval_edge<'id>(
-        manager: &Self::Manager<'id>,
-        edge: &EdgeOfFunc<'id, Self>,
+    fn eval_edge<'id, 'a>(
+        manager: &'a Self::Manager<'id>,
+        mut edge: Ref<'a, EdgeOfFunc<'id, Self>>,
         args: impl IntoIterator<Item = (VarNo, bool)>,
     ) -> bool {
         // map from levels to values
@@ -1156,25 +1107,18 @@ where
         }
         debug_assert_eq!(values.count_ones(..), ones);
 
-        #[inline] // tail-recursive
-        fn inner<M>(manager: &M, edge: Borrowed<M::Edge>, values: &FixedBitSet, ones: usize) -> bool
-        where
-            M: Manager<Terminal = ZBDDTerminal>,
-            M::InnerNode: HasLevel,
-        {
-            match manager.get_node(&edge) {
+        loop {
+            match manager.get_node(edge) {
                 Node::Inner(node) => {
                     let level = node.level() as usize;
                     let val = values.contains(level);
                     // first child is the HI edge, hence the negation below
-                    let edge = node.child((!val) as usize);
-                    inner(manager, edge, values, ones - val as usize)
+                    edge = node.child((!val) as usize);
+                    ones -= val as usize;
                 }
-                Node::Terminal(t) => ones == 0 && *t.borrow() == ZBDDTerminal::Base,
+                Node::Terminal(t) => break ones == 0 && *t.borrow() == ZBDDTerminal::Base,
             }
         }
-
-        inner(manager, edge.borrowed(), &values, ones)
     }
 }
 
@@ -1224,27 +1168,26 @@ pub mod mt {
         fn singleton_edge<'id>(
             manager: &Self::Manager<'id>,
             var: VarNo,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             ZBDDFunction::<F>::singleton_edge(manager, var)
         }
 
         #[inline]
-        fn empty_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self> {
+        fn empty_edge<'id>(manager: &Self::Manager<'id>) -> OwnEdgeOfFunc<'id, Self> {
             manager.get_terminal(ZBDDTerminal::Empty).unwrap()
         }
 
         #[inline]
-        fn base_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self> {
+        fn base_edge<'id>(manager: &Self::Manager<'id>) -> OwnEdgeOfFunc<'id, Self> {
             manager.get_terminal(ZBDDTerminal::Base).unwrap()
         }
 
         #[inline]
         fn subset0_edge<'id>(
             manager: &Self::Manager<'id>,
-            set: &EdgeOfFunc<'id, Self>,
+            set: Ref<'_, EdgeOfFunc<'id, Self>>,
             var: VarNo,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let set = set.borrowed();
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             let rec = ParallelRecursor::new(manager);
             let var_level = manager.var_to_level(var);
             subset::<_, _, 0>(manager, rec, set, var, var_level)
@@ -1253,10 +1196,9 @@ pub mod mt {
         #[inline]
         fn subset1_edge<'id>(
             manager: &Self::Manager<'id>,
-            set: &EdgeOfFunc<'id, Self>,
+            set: Ref<'_, EdgeOfFunc<'id, Self>>,
             var: VarNo,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let set = set.borrowed();
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             let rec = ParallelRecursor::new(manager);
             let var_level = manager.var_to_level(var);
             subset::<_, _, 1>(manager, rec, set, var, var_level)
@@ -1265,10 +1207,9 @@ pub mod mt {
         #[inline]
         fn change_edge<'id>(
             manager: &Self::Manager<'id>,
-            set: &EdgeOfFunc<'id, Self>,
+            set: Ref<'_, EdgeOfFunc<'id, Self>>,
             var: VarNo,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let set = set.borrowed();
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             let rec = ParallelRecursor::new(manager);
             let var_level = manager.var_to_level(var);
             subset::<_, _, -1>(manager, rec, set, var, var_level)
@@ -1277,30 +1218,27 @@ pub mod mt {
         #[inline]
         fn union_edge<'id>(
             manager: &Self::Manager<'id>,
-            lhs: &EdgeOfFunc<'id, Self>,
-            rhs: &EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let (lhs, rhs) = (lhs.borrowed(), rhs.borrowed());
+            lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+            rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             apply_union(manager, ParallelRecursor::new(manager), lhs, rhs)
         }
 
         #[inline]
         fn intsec_edge<'id>(
             manager: &Self::Manager<'id>,
-            lhs: &EdgeOfFunc<'id, Self>,
-            rhs: &EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let (lhs, rhs) = (lhs.borrowed(), rhs.borrowed());
+            lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+            rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             apply_intsec(manager, ParallelRecursor::new(manager), lhs, rhs)
         }
 
         #[inline]
         fn diff_edge<'id>(
             manager: &Self::Manager<'id>,
-            lhs: &EdgeOfFunc<'id, Self>,
-            rhs: &EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let (lhs, rhs) = (lhs.borrowed(), rhs.borrowed());
+            lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+            rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             apply_diff(manager, ParallelRecursor::new(manager), lhs, rhs)
         }
     }
@@ -1318,66 +1256,62 @@ pub mod mt {
         fn var_edge<'id>(
             manager: &Self::Manager<'id>,
             var: VarNo,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             ZBDDFunction::<F>::var_edge(manager, var)
         }
 
         #[inline]
-        fn f_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self> {
+        fn f_edge<'id>(manager: &Self::Manager<'id>) -> OwnEdgeOfFunc<'id, Self> {
             manager.get_terminal(ZBDDTerminal::Empty).unwrap()
         }
 
         #[inline]
-        fn t_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self> {
+        fn t_edge<'id>(manager: &Self::Manager<'id>) -> OwnEdgeOfFunc<'id, Self> {
             manager.clone_edge(manager.zbdd_cache().tautology(0))
         }
 
         #[inline]
         fn restrict_edge<'id>(
             manager: &Self::Manager<'id>,
-            root: &EdgeOfFunc<'id, Self>,
-            vars: &EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            root: Ref<'_, EdgeOfFunc<'id, Self>>,
+            vars: Ref<'_, EdgeOfFunc<'id, Self>>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             let rec = ParallelRecursor::new(manager);
-            restrict(manager, rec, root.borrowed(), vars.borrowed(), 0)
+            restrict(manager, rec, root, vars, 0)
         }
 
         #[inline]
         fn not_edge<'id>(
             manager: &Self::Manager<'id>,
-            edge: &EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let edge = edge.borrowed();
+            edge: Ref<'_, EdgeOfFunc<'id, Self>>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             let rec = ParallelRecursor::new(manager);
             let taut = manager.zbdd_cache().tautology(0);
-            apply_diff(manager, rec, taut.borrowed(), edge)
+            apply_diff(manager, rec, taut, edge)
         }
 
         #[inline]
         fn and_edge<'id>(
             manager: &Self::Manager<'id>,
-            lhs: &EdgeOfFunc<'id, Self>,
-            rhs: &EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let (lhs, rhs) = (lhs.borrowed(), rhs.borrowed());
+            lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+            rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             apply_intsec(manager, ParallelRecursor::new(manager), lhs, rhs)
         }
         #[inline]
         fn or_edge<'id>(
             manager: &Self::Manager<'id>,
-            lhs: &EdgeOfFunc<'id, Self>,
-            rhs: &EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let (lhs, rhs) = (lhs.borrowed(), rhs.borrowed());
+            lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+            rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             apply_union(manager, ParallelRecursor::new(manager), lhs, rhs)
         }
         #[inline]
         fn nand_edge<'id>(
             manager: &Self::Manager<'id>,
-            lhs: &EdgeOfFunc<'id, Self>,
-            rhs: &EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let (lhs, rhs) = (lhs.borrowed(), rhs.borrowed());
+            lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+            rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             let rec = ParallelRecursor::new(manager);
             let and = EdgeDropGuard::new(manager, apply_intsec(manager, rec, lhs, rhs)?);
             apply_not(manager, rec, and.borrowed())
@@ -1385,10 +1319,9 @@ pub mod mt {
         #[inline]
         fn nor_edge<'id>(
             manager: &Self::Manager<'id>,
-            lhs: &EdgeOfFunc<'id, Self>,
-            rhs: &EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let (lhs, rhs) = (lhs.borrowed(), rhs.borrowed());
+            lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+            rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             let rec = ParallelRecursor::new(manager);
             let or = EdgeDropGuard::new(manager, apply_union(manager, rec, lhs, rhs)?);
             apply_not(manager, rec, or.borrowed())
@@ -1396,19 +1329,17 @@ pub mod mt {
         #[inline]
         fn xor_edge<'id>(
             manager: &Self::Manager<'id>,
-            lhs: &EdgeOfFunc<'id, Self>,
-            rhs: &EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let (lhs, rhs) = (lhs.borrowed(), rhs.borrowed());
+            lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+            rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             apply_symm_diff(manager, ParallelRecursor::new(manager), lhs, rhs)
         }
         #[inline]
         fn equiv_edge<'id>(
             manager: &Self::Manager<'id>,
-            lhs: &EdgeOfFunc<'id, Self>,
-            rhs: &EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let (lhs, rhs) = (lhs.borrowed(), rhs.borrowed());
+            lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+            rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             let rec = ParallelRecursor::new(manager);
             let xor = EdgeDropGuard::new(manager, apply_symm_diff(manager, rec, lhs, rhs)?);
             apply_not(manager, rec, xor.borrowed())
@@ -1416,39 +1347,36 @@ pub mod mt {
         #[inline]
         fn imp_edge<'id>(
             manager: &Self::Manager<'id>,
-            lhs: &EdgeOfFunc<'id, Self>,
-            rhs: &EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let (lhs, rhs) = (lhs.borrowed(), rhs.borrowed());
+            lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+            rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             let rec = ParallelRecursor::new(manager);
             let taut = manager.zbdd_cache().tautology(0);
-            apply_ite(manager, rec, lhs, rhs, taut.borrowed())
+            apply_ite(manager, rec, lhs, rhs, taut)
         }
         #[inline]
         fn imp_strict_edge<'id>(
             manager: &Self::Manager<'id>,
-            lhs: &EdgeOfFunc<'id, Self>,
-            rhs: &EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let (lhs, rhs) = (lhs.borrowed(), rhs.borrowed());
+            lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+            rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             apply_diff(manager, ParallelRecursor::new(manager), rhs, lhs)
         }
 
         #[inline]
         fn ite_edge<'id>(
             manager: &Self::Manager<'id>,
-            f: &EdgeOfFunc<'id, Self>,
-            g: &EdgeOfFunc<'id, Self>,
-            h: &EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let (f, g, h) = (f.borrowed(), g.borrowed(), h.borrowed());
+            f: Ref<'_, EdgeOfFunc<'id, Self>>,
+            g: Ref<'_, EdgeOfFunc<'id, Self>>,
+            h: Ref<'_, EdgeOfFunc<'id, Self>>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             apply_ite(manager, ParallelRecursor::new(manager), f, g, h)
         }
 
         #[inline]
         fn sat_count_edge<'id, N: SatCountNumber, S: std::hash::BuildHasher>(
             manager: &Self::Manager<'id>,
-            edge: &EdgeOfFunc<'id, Self>,
+            edge: Ref<'_, EdgeOfFunc<'id, Self>>,
             vars: LevelNo,
             cache: &mut SatCountCache<N, S>,
         ) -> N {
@@ -1458,32 +1386,32 @@ pub mod mt {
         #[inline]
         fn pick_cube_edge<'id>(
             manager: &Self::Manager<'id>,
-            edge: &EdgeOfFunc<'id, Self>,
-            choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>, LevelNo) -> bool,
+            edge: Ref<'_, EdgeOfFunc<'id, Self>>,
+            choice: impl FnMut(&Self::Manager<'id>, Ref<'_, EdgeOfFunc<'id, Self>>, LevelNo) -> bool,
         ) -> Option<Vec<OptBool>> {
             ZBDDFunction::<F>::pick_cube_edge(manager, edge, choice)
         }
         #[inline]
         fn pick_cube_dd_edge<'id>(
             manager: &Self::Manager<'id>,
-            edge: &EdgeOfFunc<'id, Self>,
-            choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>, LevelNo) -> bool,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            edge: Ref<'_, EdgeOfFunc<'id, Self>>,
+            choice: impl FnMut(&Self::Manager<'id>, Ref<'_, EdgeOfFunc<'id, Self>>, LevelNo) -> bool,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             ZBDDFunction::<F>::pick_cube_dd_edge(manager, edge, choice)
         }
         #[inline]
         fn pick_cube_dd_set_edge<'id>(
             manager: &Self::Manager<'id>,
-            edge: &EdgeOfFunc<'id, Self>,
-            literal_set: &EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            edge: Ref<'_, EdgeOfFunc<'id, Self>>,
+            literal_set: Ref<'_, EdgeOfFunc<'id, Self>>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             ZBDDFunction::<F>::pick_cube_dd_set_edge(manager, edge, literal_set)
         }
 
         #[inline]
         fn eval_edge<'id>(
             manager: &Self::Manager<'id>,
-            edge: &EdgeOfFunc<'id, Self>,
+            edge: Ref<'_, EdgeOfFunc<'id, Self>>,
             args: impl IntoIterator<Item = (VarNo, bool)>,
         ) -> bool {
             ZBDDFunction::<F>::eval_edge(manager, edge, args)

@@ -5,6 +5,7 @@ use std::marker::PhantomData;
 use oxidd_core::Countable;
 use oxidd_core::Tag;
 use oxidd_core::util::AllocResult;
+use oxidd_core::util::Own;
 
 use crate::manager::Edge;
 use crate::manager::InnerNodeCons;
@@ -23,22 +24,21 @@ impl<T: Countable, N, ET: Tag, const TERMINALS: usize>
     const CHECK_TERMINALS: () = assert!(TERMINALS > T::MAX_VALUE);
 }
 
-impl<'id, Terminal, InnerNode, EdgeTag, const TERMINALS: usize>
-    TerminalManager<'id, InnerNode, EdgeTag, TERMINALS>
-    for StaticTerminalManager<'id, Terminal, InnerNode, EdgeTag, TERMINALS>
+impl<'id, T, N, ET, const TERMINALS: usize> TerminalManager<'id, N, ET, TERMINALS>
+    for StaticTerminalManager<'id, T, N, ET, TERMINALS>
 where
-    Terminal: Countable + Eq + Hash,
-    InnerNode: NodeBase,
-    EdgeTag: Tag,
+    T: Countable + Eq + Hash,
+    N: NodeBase,
+    ET: Tag,
 {
-    type TerminalNode = Terminal;
+    type TerminalNode = T;
     type TerminalNodeRef<'a>
-        = Terminal
+        = T
     where
         Self: 'a;
 
     type Iterator<'a>
-        = StaticTerminalIterator<'id, InnerNode, EdgeTag>
+        = StaticTerminalIterator<'id, N, ET>
     where
         Self: 'a,
         'id: 'a;
@@ -50,12 +50,12 @@ where
 
     #[inline(always)]
     fn len(&self) -> usize {
-        Terminal::MAX_VALUE + 1
+        T::MAX_VALUE + 1
     }
 
     #[inline]
-    unsafe fn get_terminal(&self, id: usize) -> Terminal {
-        Terminal::from_usize(id)
+    unsafe fn get_terminal(&self, id: usize) -> T {
+        T::from_usize(id)
     }
 
     #[inline(always)]
@@ -69,12 +69,12 @@ where
     }
 
     #[inline]
-    fn get_edge(&self, terminal: Terminal) -> AllocResult<Edge<'id, InnerNode, EdgeTag>> {
+    fn get_edge(&self, terminal: T) -> AllocResult<Own<Edge<'id, N, ET>>> {
         let () = Self::CHECK_TERMINALS;
         // SAFETY: `terminal.as_usize() <= Terminal::MAX_VALUE` is guaranteed
         // and we checked `TERMINALS > Terminal::MAX_VALUE`. There are no
         // reference counters to update.
-        Ok(unsafe { Edge::from_terminal_id(terminal.as_usize() as u32) })
+        Ok(unsafe { Own::from_raw(Edge::from_terminal_id(terminal.as_usize() as u32)) })
     }
 
     #[inline]
@@ -82,7 +82,7 @@ where
     where
         Self: 'a,
     {
-        StaticTerminalIterator::new((Terminal::MAX_VALUE + 1) as u32)
+        StaticTerminalIterator::new((T::MAX_VALUE + 1) as u32)
     }
 
     #[inline(always)]
@@ -104,13 +104,13 @@ where
     type T<'id> = StaticTerminalManager<'id, T, NC::T<'id>, ET, TERMINALS>;
 }
 
-pub struct StaticTerminalIterator<'id, InnerNode, EdgeTag> {
+pub struct StaticTerminalIterator<'id, N, ET> {
     id: u32,
     count: u32,
-    phantom: PhantomData<Edge<'id, InnerNode, EdgeTag>>,
+    phantom: PhantomData<Edge<'id, N, ET>>,
 }
 
-impl<InnerNode, EdgeTag> StaticTerminalIterator<'_, InnerNode, EdgeTag> {
+impl<N, ET> StaticTerminalIterator<'_, N, ET> {
     #[inline(always)]
     pub fn new(count: u32) -> Self {
         Self {
@@ -121,10 +121,8 @@ impl<InnerNode, EdgeTag> StaticTerminalIterator<'_, InnerNode, EdgeTag> {
     }
 }
 
-impl<'id, InnerNode: NodeBase, EdgeTag: Tag> Iterator
-    for StaticTerminalIterator<'id, InnerNode, EdgeTag>
-{
-    type Item = Edge<'id, InnerNode, EdgeTag>;
+impl<'id, N: NodeBase, ET: Tag> Iterator for StaticTerminalIterator<'id, N, ET> {
+    type Item = Own<Edge<'id, N, ET>>;
 
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
@@ -134,7 +132,7 @@ impl<'id, InnerNode: NodeBase, EdgeTag: Tag> Iterator
             // SAFETY: `terminal.as_usize() <= Terminal::MAX_VALUE` is
             // guaranteed and we checked `TERMINALS > Terminal::MAX_VALUE`.
             // There are no reference counters to update.
-            Some(unsafe { Edge::from_terminal_id(current) })
+            Some(unsafe { Own::from_raw(Edge::from_terminal_id(current)) })
         } else {
             None
         }

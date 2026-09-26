@@ -7,7 +7,7 @@ pub use rustc_hash::FxHasher;
 
 pub use oxidd_core::error::OutOfMemory;
 pub use oxidd_core::util::{
-    AllocResult, Borrowed, IsFloatingPoint, OptBool, Rng, SatCountCache, SatCountNumber, num,
+    AllocResult, IsFloatingPoint, OptBool, Ref, Rng, SatCountCache, SatCountNumber, num,
 };
 
 // We have a few `allow(unused)` attributes here to not spam the user with
@@ -52,7 +52,7 @@ macro_rules! manager_data {
         {
             fn drop_with(
                 self,
-                drop_edge: impl Fn(<$dd$(<$($dd_gen),*>)? as $crate::util::type_cons::DD>::Edge<'id>),
+                drop_edge: impl Fn(::oxidd_core::util::Own<<$dd$(<$($dd_gen),*>)? as $crate::util::type_cons::DD>::Edge<'id>>),
             ) {
                 self.apply_cache.drop_with(drop_edge)
             }

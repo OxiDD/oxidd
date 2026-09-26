@@ -1,7 +1,7 @@
 use std::borrow::Borrow;
 use std::hash::Hash;
 
-use oxidd_core::util::AllocResult;
+use oxidd_core::util::{AllocResult, Own};
 
 use crate::manager::Edge;
 
@@ -33,7 +33,7 @@ pub trait TerminalManager<'id, N, ET, const TERMINALS: usize>: Sized {
         Self: 'a;
 
     /// Iterator over all terminal nodes (as [`Edge`]s), see [`Self::iter()`]
-    type Iterator<'a>: Iterator<Item = Edge<'id, N, ET>>
+    type Iterator<'a>: Iterator<Item = Own<Edge<'id, N, ET>>>
     where
         Self: 'a;
 
@@ -77,7 +77,7 @@ pub trait TerminalManager<'id, N, ET, const TERMINALS: usize>: Sized {
 
     /// Add a terminal to this manager (if it does not already exist) and return
     /// an [`Edge`] pointing to it
-    fn get_edge(&self, terminal: Self::TerminalNode) -> AllocResult<Edge<'id, N, ET>>;
+    fn get_edge(&self, terminal: Self::TerminalNode) -> AllocResult<Own<Edge<'id, N, ET>>>;
 
     /// Iterate over all terminals
     fn iter<'a>(&'a self) -> Self::Iterator<'a>

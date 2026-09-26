@@ -6,9 +6,9 @@
 use smallvec::SmallVec;
 
 use oxidd_core::error::OutOfMemory;
-use oxidd_core::util::{AbortOnDrop, Borrowed, DropWith};
+use oxidd_core::util::{AbortOnDrop, DropWith, Ref};
 use oxidd_core::{
-    DiagramRules, Edge, HasLevel, InnerNode, LevelNo, LevelView, Manager, Node, ReducedOrNew,
+    DiagramRules, HasLevel, InnerNode, LevelNo, LevelView, Manager, Node, ReducedOrNew,
 };
 
 mod set_var_order;
@@ -107,16 +107,15 @@ unsafe fn level_swap<M: Manager>(
 
         // TODO: Maybe use `N::ARITY` once `generic_const_exprs` becomes
         // stable, and `arrayvec` instead of `smallvec`?
-        let children: SmallVec<[Borrowed<M::Edge>; 2]> = node.children().collect();
+        let children: SmallVec<[Ref<'_, M::Edge>; 2]> = node.children().collect();
         debug_assert_eq!(children.len(), M::InnerNode::ARITY);
 
         if children
             .iter()
-            .all(|c| manager.get_node(c).level() != lower_no_pre)
+            .all(|c| manager.get_node(*c).level() != lower_no_pre)
         {
             // All children are below the lower level, we just move the node to
             // the lower level.
-            drop(children);
             let e = manager.clone_edge(e);
             // SAFETY: the caller will update level numbers accordingly
             unsafe { lower.insert_unchecked(e) };
@@ -134,7 +133,7 @@ unsafe fn level_swap<M: Manager>(
                 // A child of a node at the old upper level can only reference
                 // a node at the old lower, i.e., the new upper level, or any
                 // level below `lower_no`.
-                match manager.get_node(c) {
+                match manager.get_node(*c) {
                     Node::Inner(node) if node.level() == lower_no_pre => {
                         // We have exclusive access to the node
                         let children: SmallVec<[_; 2]> =
@@ -146,7 +145,7 @@ unsafe fn level_swap<M: Manager>(
                         debug_assert!(node.level() > lower_no);
                         // The child is below the lower level, so we always have
                         // this child
-                        (0..M::InnerNode::ARITY).map(|_| c.borrowed()).collect()
+                        (0..M::InnerNode::ARITY).map(|_| *c).collect()
                     }
                 }
             })
@@ -154,10 +153,11 @@ unsafe fn level_swap<M: Manager>(
 
         let new_children: SmallVec<[_; 2]> = (0..M::InnerNode::ARITY)
             .map(|i| {
+                // FIXME: allow implementing custom reduction rules
                 let res = <M::Rules as DiagramRules<_, _, _>>::reduce(
                     manager,
                     upper_no_pre,
-                    grandchildren.iter().map(|v| manager.clone_edge(&v[i])),
+                    grandchildren.iter().map(|v| manager.clone_edge(v[i])),
                 );
                 match res {
                     ReducedOrNew::Reduced(e) => e,
@@ -165,9 +165,10 @@ unsafe fn level_swap<M: Manager>(
                         node.drop_with_manager(manager);
                         manager.clone_edge(e)
                     } else {
-                        // SAFETY: the caller will update level numbers accordingly. For now, all
-                        // nodes at the new lower level (i.e., the old upper level) have
-                        // `upper_no_pre` as their level number.
+                        // SAFETY: the caller will update level numbers
+                        // accordingly. For now, all nodes at the new lower
+                        // level (i.e., the old upper level) have `upper_no_pre`
+                        // as their level number.
                         match unsafe { lower.get_or_insert_unchecked(node) } {
                             Ok(e) => e,
                             Err(OutOfMemory) => {
@@ -176,34 +177,31 @@ unsafe fn level_swap<M: Manager>(
                             }
                         }
                     }
-                    .with_tag_owned(tag),
+                    .with_tag(tag),
                 }
             })
             .collect();
 
         drop(grandchildren);
-        for child in children {
-            // Revisit the "old" children of `e`. If these are the only
-            // children, we may remove them, if they are on the old lower level.
-            // (A child might also be at some lower level, in which case the
-            // node could also be removed. However we must not access such a
-            // node.)
-            if let Node::Inner(child_node) = manager.get_node(&*child)
-                && child_node.level() == lower_no_pre
-                && child_node.ref_count() == 1
-            {
-                // The reference stems from the old `node`, whose children
-                // we replace below. Hence, we can remove child node.
-                upper.remove(child_node);
-            }
-        }
+        drop(children);
 
-        upper.insert(manager.clone_edge(e));
         for (i, child) in new_children.into_iter().enumerate() {
             // SAFETY: we have exclusive access to all nodes at the old upper
             // level and no child is borrowed.
-            manager.drop_edge(unsafe { node.set_child(i, child) });
+            let old = unsafe { node.set_child(i, child) };
+
+            if let Node::Inner(child_node) = manager.get_node(old.borrowed())
+                && child_node.level() == lower_no_pre
+            {
+                upper.try_remove(old);
+            } else {
+                // We may only access nodes at `lower` and `upper`. If a GC ran
+                // prior to reordering, then `old` should not be the last
+                // reference either.
+                manager.drop_edge(old);
+            }
         }
+        upper.insert(manager.clone_edge(e));
     }
 
     abort_on_panic.defuse();

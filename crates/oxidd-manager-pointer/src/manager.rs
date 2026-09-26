@@ -27,13 +27,12 @@ use std::sync::atomic::Ordering::{Acquire, Relaxed};
 use arcslab::{ArcSlab, ArcSlabRef, AtomicRefCounted, ExtHandle, IntHandle};
 use derive_where::derive_where;
 use fixedbitset::FixedBitSet;
-use parking_lot::Mutex;
-use parking_lot::MutexGuard;
+use parking_lot::{Mutex, MutexGuard};
 use rustc_hash::FxHasher;
 
 use oxidd_core::error::DuplicateVarName;
-use oxidd_core::function::EdgeOfFunc;
-use oxidd_core::util::{AbortOnDrop, AllocResult, Borrowed, DropWith, VarNameMap};
+use oxidd_core::function::{EdgeOfFunc, OwnEdgeOfFunc};
+use oxidd_core::util::{AbortOnDrop, AllocResult, DropWith, Own, Ref, VarNameMap};
 use oxidd_core::{
     DiagramRules, HasApplyCache, InnerNode, LevelNo, ManagerEventSubscriber, Node, Tag, VarNo,
 };
@@ -134,7 +133,7 @@ where
 
 #[repr(transparent)]
 #[must_use]
-#[derive_where(PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive_where(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Edge<'id, N, ET, const TAG_BITS: u32>(
     /// Points to an `InnerNode` (if `ptr & (1 << TAG_BITS) == 0`) or a terminal
     /// node (`ptr & (1 << TAG_BITS) == 1`)
@@ -224,19 +223,12 @@ where
             // and let the `ArcSlab` deallocate its pages.
             unsafe { ManuallyDrop::take(&mut self.data) }.drop_with(std::mem::forget);
         } else {
-            unsafe { ManuallyDrop::take(&mut self.data) }.drop_with(|edge| {
-                if edge.is_inner() {
-                    // SAFETY: `edge` points to an inner node
-                    unsafe { edge.drop_inner() };
-                } else {
-                    TM::drop_edge(edge);
-                }
-            });
+            unsafe { ManuallyDrop::take(&mut self.data) }.drop_with(Self::drop_edge_common);
 
             let unique_table = std::mem::take(&mut self.unique_table);
             for level in unique_table {
                 for edge in level.into_inner() {
-                    unsafe { Self::drop_from_unique_table(edge) };
+                    unsafe { Self::drop_edge_from_unique_table(edge) };
                 }
             }
         }
@@ -334,15 +326,18 @@ where
 fn add_node<'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32>(
     store: &ArcSlab<N, StoreInner<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>, PAGE_SIZE>,
     node: N,
-) -> AllocResult<[Edge<'id, N, ET, TAG_BITS>; 2]>
+) -> AllocResult<[Own<Edge<'id, N, ET, TAG_BITS>>; 2]>
 where
     N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>>,
     ET: Tag,
     TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
     MD: DropWith<Edge<'id, N, ET, TAG_BITS>>,
 {
+    debug_assert!(node.load_rc(Relaxed) >= 2);
     let ptr = IntHandle::into_raw(store.add_item(node)).cast();
-    Ok([Edge(ptr, PhantomData), Edge(ptr, PhantomData)])
+    let raw = Edge(ptr, PhantomData);
+    // SAFETY: the initial reference count is (at least) 2
+    Ok(unsafe { [Own::from_raw(raw), Own::from_raw(raw)] })
 }
 
 impl<'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32>
@@ -393,17 +388,57 @@ where
         unsafe { &raw const ((*store_inner).terminal_manager) }
     }
 
+    #[inline]
+    fn drop_edge_common(edge: Own<Edge<'id, N, ET, TAG_BITS>>) {
+        if edge.raw().is_inner() {
+            // SAFETY: `edge` points to an inner node
+            unsafe { Edge::drop_inner(edge) };
+        } else {
+            TM::drop_edge(edge);
+        }
+    }
+
+    /// Forcibly drop the last edge, i.e., one that comes from the unique table
+    ///
+    /// # Safety
+    ///
+    /// - `self` must be untagged and point to an inner node
+    /// - `self` must be the last reference to the node. Beware of relaxed
+    ///   memory (e.g., use [`Acquire`] ordering to check that `this` is the
+    ///   last reference).
+    #[inline]
+    unsafe fn force_drop_edge(edge: Own<Edge<'id, N, ET, TAG_BITS>>) {
+        let handle: IntHandle<'id, N, Self, PAGE_SIZE> = {
+            let raw = edge.into_raw();
+            debug_assert_eq!(raw.tag_bits(), 0);
+            let ptr: NonNull<N> = raw.0.cast();
+            // SAFETY: By the type invariant, `ptr` was created from an
+            // `IntHandle`, the caller ensures that the type/const arguments
+            // of `IntHandle` match. Due to lifetime restrictions the `ArcSlab`
+            // outlives the `IntHandle` we create.
+            unsafe { IntHandle::from_raw(ptr) }
+        };
+        // SAFETY: `handle` is the last reference
+        unsafe { IntHandle::force_into_inner(handle) }.drop_with(Self::drop_edge_common)
+    }
+
     /// Drop the given edge
     ///
-    /// This is just a wrapper around [`Edge::drop_inner_untagged`] with
-    /// less type parameters.
+    /// # Safety
     ///
-    /// SAFETY: `edge` must be untagged and point to an inner node
+    /// `edge` must be untagged and point to an inner node
     #[inline(always)]
-    unsafe fn drop_from_unique_table(edge: Edge<'id, N, ET, TAG_BITS>) {
-        // SAFETY: `edge` is untagged and points to an inner node, the type
-        // parameters match
-        unsafe { edge.drop_from_unique_table::<TM, R, MD, PAGE_SIZE>() }
+    unsafe fn drop_edge_from_unique_table(edge: Own<Edge<'id, N, ET, TAG_BITS>>) {
+        let handle: IntHandle<'id, N, Self, PAGE_SIZE> = {
+            debug_assert_eq!(edge.raw().tag_bits(), 0);
+            let ptr: NonNull<N> = edge.into_raw().0.cast();
+            // SAFETY: By the type invariant, `ptr` was created from an
+            // `IntHandle`, the caller ensures that the type/const arguments
+            // of `IntHandle` match. Due to lifetime restrictions the `ArcSlab`
+            // outlives the `IntHandle` we create.
+            unsafe { IntHandle::from_raw(ptr) }
+        };
+        IntHandle::drop_with(handle, |node| node.drop_with(Self::drop_edge_common))
     }
 }
 
@@ -434,7 +469,7 @@ impl<'id, N: NodeBase, ET: Tag, const TAG_BITS: u32> Edge<'id, N, ET, TAG_BITS> 
     const ALL_TAG_MASK: usize = (1 << Self::ALL_TAG_BITS) - 1;
 
     #[inline(always)]
-    pub fn as_ptr(&self) -> NonNull<()> {
+    pub fn as_ptr(self) -> NonNull<()> {
         self.0
     }
 
@@ -458,8 +493,9 @@ impl<'id, N: NodeBase, ET: Tag, const TAG_BITS: u32> Edge<'id, N, ET, TAG_BITS> 
     /// the pointer must be valid as defined by the `TerminalManager`
     /// implementation of the manager associated with the `'id` brand.
     #[inline(always)]
-    pub unsafe fn from_ptr(ptr: NonNull<()>) -> Self {
-        Self(ptr, PhantomData)
+    pub unsafe fn from_ptr(ptr: NonNull<()>) -> Own<Self> {
+        // SAFETY: the caller guarantees permission
+        unsafe { Own::from_raw(Self(ptr, PhantomData)) }
     }
 
     /// Get the address portion of the underlying pointer
@@ -468,16 +504,31 @@ impl<'id, N: NodeBase, ET: Tag, const TAG_BITS: u32> Edge<'id, N, ET, TAG_BITS> 
         self.0.as_ptr().addr()
     }
 
+    #[inline]
+    fn tag_bits(self) -> usize {
+        self.addr() & Self::ALL_TAG_MASK
+    }
+
     /// Get the inner node referenced by this edge
     ///
     /// # Safety
     ///
     /// `self` must be untagged and point to an inner node
     #[inline]
-    unsafe fn inner_node_unchecked(&self) -> &N {
-        debug_assert_eq!(self.addr() & Self::ALL_TAG_MASK, 0);
-        let ptr: NonNull<N> = self.0.cast();
+    unsafe fn inner_node_unchecked(this: Ref<'_, Self>) -> &N {
+        let raw = this.raw();
+        debug_assert_eq!(raw.tag_bits(), 0);
+        let ptr: NonNull<N> = raw.0.cast();
         unsafe { ptr.as_ref() }
+    }
+
+    /// Clone an edge pointing to an inner node
+    ///
+    /// SAFETY: `edge` must be untagged and point to an inner node
+    #[inline]
+    unsafe fn clone_inner_unchecked(edge: Ref<'_, Self>) -> Own<Self> {
+        unsafe { Self::inner_node_unchecked(edge) }.retain();
+        unsafe { Own::from_raw(Self(edge.raw().0, PhantomData)) }
     }
 
     /// Drop an edge pointing to an inner node, assuming that it isn't the last
@@ -489,123 +540,27 @@ impl<'id, N: NodeBase, ET: Tag, const TAG_BITS: u32> Edge<'id, N, ET, TAG_BITS> 
     /// There is a debug assertion that checks the aforementioned assumption. In
     /// release builds, this function will simply leak the node.
     ///
-    /// SAFETY: `self` must point to an inner node
+    /// SAFETY: `edge` must point to an inner node
     #[inline]
-    unsafe fn drop_inner(self) {
-        debug_assert!(self.is_inner());
-        let ptr: NonNull<N> = self.all_untagged_ptr().cast();
-        std::mem::forget(self);
+    unsafe fn drop_inner(edge: Own<Edge<'id, N, ET, TAG_BITS>>) {
+        let edge = edge.into_raw();
+        debug_assert!(edge.is_inner());
+        let ptr: NonNull<N> = edge.all_untagged_ptr().cast();
         // SAFETY: `self` points to an inner node and by the type invariant, we
         // have shared access. Also, `self` forgotten now.
         let _old_rc = unsafe { ptr.as_ref().release() };
         debug_assert!(_old_rc > 1);
     }
 
-    /// Drop an edge from the unique table
-    ///
-    /// Dropping an edge from the unique table corresponds to dropping the last
-    /// reference.
-    ///
-    /// # Safety
-    ///
-    /// - `self` must be untagged and point to an inner node
-    /// - `TM`, `R`, `MD` and `PAGE_SIZE` must be the types/values this edge has
-    ///   been created with
-    #[inline]
-    unsafe fn drop_from_unique_table<TM, R, MD, const PAGE_SIZE: usize>(self)
-    where
-        N: InnerNode<Self>,
-        TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
-        MD: DropWith<Edge<'id, N, ET, TAG_BITS>>,
-    {
-        let handle: IntHandle<
-            'id,
-            N,
-            Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>,
-            PAGE_SIZE,
-        > = {
-            debug_assert_eq!(self.addr() & Self::ALL_TAG_MASK, 0);
-            let ptr: NonNull<N> = self.0.cast();
-            std::mem::forget(self);
-            // SAFETY: By the type invariant, `ptr` was created from an
-            // `IntHandle`, the caller ensures that the type/const arguments
-            // of `IntHandle` match. Due to lifetime restrictions the `ArcSlab`
-            // outlives the `IntHandle` we create.
-            unsafe { IntHandle::from_raw(ptr) }
-        };
-        IntHandle::drop_with(handle, |node| {
-            node.drop_with(|edge| {
-                if edge.is_inner() {
-                    // SAFETY: `edge` points to an inner node
-                    unsafe { edge.drop_inner() };
-                } else {
-                    TM::drop_edge(edge);
-                }
-            })
-        })
-    }
-
-    /// Forcibly drop the last edge, i.e., one that comes from the unique table
-    ///
-    /// # Safety
-    ///
-    /// - `self` must be untagged and point to an inner node
-    /// - `self` must be the last reference to the node. Beware of relaxed
-    ///   memory (e.g., use [`Acquire`] ordering to check that `this` is the
-    ///   last reference).
-    /// - `TM`, `R`, `MD` and `PAGE_SIZE` must be the types/values this edge has
-    ///   been created with
-    #[inline]
-    unsafe fn force_drop<TM, R, MD, const PAGE_SIZE: usize>(self)
-    where
-        N: InnerNode<Self>,
-        TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
-        MD: DropWith<Edge<'id, N, ET, TAG_BITS>>,
-    {
-        let handle: IntHandle<
-            'id,
-            N,
-            Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>,
-            PAGE_SIZE,
-        > = {
-            debug_assert_eq!(self.addr() & Self::ALL_TAG_MASK, 0);
-            let ptr: NonNull<N> = self.0.cast();
-            std::mem::forget(self);
-            // SAFETY: By the type invariant, `ptr` was created from an
-            // `IntHandle`, the caller ensures that the type/const arguments
-            // of `IntHandle` match. Due to lifetime restrictions the `ArcSlab`
-            // outlives the `IntHandle` we create.
-            unsafe { IntHandle::from_raw(ptr) }
-        };
-        // SAFETY: `handle` is the last reference
-        unsafe { IntHandle::force_into_inner(handle) }.drop_with(|edge| {
-            if edge.is_inner() {
-                // SAFETY: `edge` points to an inner node
-                unsafe { edge.drop_inner() };
-            } else {
-                TM::drop_edge(edge);
-            }
-        })
-    }
-
-    /// Clone an edge pointing to an inner node
-    ///
-    /// SAFETY: `self` must be untagged and point to an inner node
-    #[inline]
-    unsafe fn clone_inner_unchecked(&self) -> Self {
-        unsafe { self.inner_node_unchecked() }.retain();
-        Self(self.0, PhantomData)
-    }
-
     /// Returns `true` if this edge points to an inner node
     #[inline]
-    pub fn is_inner(&self) -> bool {
+    pub fn is_inner(self) -> bool {
         (self.addr() & (1 << TAG_BITS)) == 0
     }
 
     /// Get the underlying pointer with all tag bits set to 0
     #[inline]
-    fn all_untagged_ptr(&self) -> NonNull<()> {
+    fn all_untagged_ptr(self) -> NonNull<()> {
         let ptr = self.0.as_ptr().map_addr(|p| p & !Self::ALL_TAG_MASK);
         // SAFETY: the (tagged) pointer is `>= (1 << ALL_TAG_BITS)`
         unsafe { NonNull::new_unchecked(ptr) }
@@ -613,34 +568,14 @@ impl<'id, N: NodeBase, ET: Tag, const TAG_BITS: u32> Edge<'id, N, ET, TAG_BITS> 
 
     /// Get the underlying pointer tagged with `tag`
     #[inline]
-    fn retag_ptr(&self, tag: ET) -> NonNull<()> {
+    fn retag_ptr(self, tag: ET) -> NonNull<()> {
         let tv = tag.as_usize();
         debug_assert!(tv <= ET::MAX_VALUE);
-        // Note that we assert `ET::MAX_VALUE <= Self::TAG_MASK` during the computation
-        // of `Self::TAG_MASK`
+        // Note that we assert `ET::MAX_VALUE <= Self::TAG_MASK` during the
+        // computation of `Self::TAG_MASK`
         let ptr = self.0.as_ptr().map_addr(|p| (p & !Self::TAG_MASK) | tv);
         // SAFETY: even an untagged pointer is non-null
         unsafe { NonNull::new_unchecked(ptr) }
-    }
-}
-
-impl<N, ET, const TAG_BITS: u32> Drop for Edge<'_, N, ET, TAG_BITS> {
-    #[inline(never)]
-    #[cold]
-    fn drop(&mut self) {
-        eprintln!(
-            "`Edge`s must not be dropped. Use `Manager::drop_edge()`. Backtrace:\n{}",
-            std::backtrace::Backtrace::capture()
-        );
-
-        #[cfg(feature = "static_leak_check")]
-        {
-            extern "C" {
-                #[link_name = "\n\n`Edge`s must not be dropped. Use `Manager::drop_edge()`.\n"]
-                fn trigger() -> !;
-            }
-            unsafe { trigger() }
-        }
     }
 }
 
@@ -680,10 +615,12 @@ where
         Self: 'a;
 
     #[inline]
-    fn get_node(&self, edge: &Self::Edge) -> Node<'_, Self> {
-        if edge.is_inner() {
-            let ptr: NonNull<Self::InnerNode> = edge.all_untagged_ptr().cast();
-            // SAFETY: dereferencing untagged edges pointing to inner nodes is safe
+    fn get_node<'a>(&'a self, edge: Ref<'a, Self::Edge>) -> Node<'a, Self> {
+        let raw = edge.raw();
+        if raw.is_inner() {
+            let ptr: NonNull<N> = raw.all_untagged_ptr().cast();
+            // SAFETY: dereferencing untagged edges pointing to inner nodes is
+            // safe
             Node::Inner(unsafe { ptr.as_ref() })
         } else {
             let terminal_manager = unsafe { &*self.terminal_manager() };
@@ -692,38 +629,35 @@ where
     }
 
     #[inline]
-    fn clone_edge(&self, edge: &Self::Edge) -> Self::Edge {
-        if edge.is_inner() {
-            let ptr: NonNull<Self::InnerNode> = edge.all_untagged_ptr().cast();
-            // SAFETY: dereferencing untagged edges pointing to inner nodes is safe
+    fn clone_edge(&self, edge: Ref<'_, Self::Edge>) -> Own<Self::Edge> {
+        let raw = edge.raw();
+        if raw.is_inner() {
+            let ptr: NonNull<N> = raw.all_untagged_ptr().cast();
+            // SAFETY: dereferencing untagged edges pointing to inner nodes is
+            // safe
             unsafe { ptr.as_ref() }.retain();
-            Edge(edge.0, PhantomData)
+            // SAFETY: we have incremented the reference counter above
+            unsafe { Own::from_raw(raw) }
         } else {
             TM::clone_edge(edge)
         }
     }
 
     #[inline]
-    fn drop_edge(&self, edge: Self::Edge) {
-        if edge.is_inner() {
-            // SAFETY: `edge` points to an inner node
-            unsafe { edge.drop_inner() };
-        } else {
-            TM::drop_edge(edge);
-        }
+    fn drop_edge(&self, edge: Own<Self::Edge>) {
+        Self::drop_edge_common(edge);
     }
 
     #[track_caller]
-    fn try_remove_node(&self, edge: Self::Edge, level: LevelNo) -> bool {
-        if !edge.is_inner() {
+    fn try_remove_node(&self, edge: Own<Self::Edge>, level: LevelNo) -> bool {
+        if !edge.raw().is_inner() {
             TM::drop_edge(edge);
             debug_assert_eq!(level, LevelNo::MAX, "`level` does not match");
             return false;
         }
 
-        let node_ptr: NonNull<Self::InnerNode> = edge.all_untagged_ptr().cast();
-        std::mem::forget(edge);
-        // SAFETY: `node_ptr` points to an inner node and by the type invariant
+        let node_ptr: NonNull<Self::InnerNode> = edge.into_raw().all_untagged_ptr().cast();
+        // SAFETY: `node_ptr` points to an inner node, and by the type invariant
         // of `Edge`, we have shared access.
         let node = unsafe { node_ptr.as_ref() };
         // SAFETY: `edge` is forgotten
@@ -754,17 +688,15 @@ where
             return false;
         }
 
-        // SAFETY: we checked that `reorder_gc_prepared` is true above
-        let Some(edge) = (unsafe { set.remove(node) }) else {
+        let Some(edge) = set.remove(node) else {
             return false;
         };
 
         // SAFETY: Since `rc` is 1, this is the last reference. We use `Acquire`
         // order above and `Release` order when decrementing reference counters,
         // so we have exclusive node access now. Additionally, `edge` is
-        // untagged and points to an inner node. The type/const arguments match
-        // the ones from the manager.
-        unsafe { edge.force_drop::<TM, R, MD, PAGE_SIZE>() };
+        // untagged and points to an inner node.
+        unsafe { Self::force_drop_edge(edge) };
 
         true
     }
@@ -945,7 +877,7 @@ where
     }
 
     #[inline]
-    fn get_terminal(&self, terminal: Self::Terminal) -> AllocResult<Self::Edge> {
+    fn get_terminal(&self, terminal: Self::Terminal) -> AllocResult<Own<Self::Edge>> {
         unsafe { TM::get(self.terminal_manager(), terminal) }
     }
 
@@ -1153,28 +1085,17 @@ impl<N: NodeBase, ET: Tag, const TAG_BITS: u32> oxidd_core::Edge for Edge<'_, N,
     type Tag = ET;
 
     #[inline]
-    fn borrowed(&self) -> Borrowed<'_, Self> {
-        Borrowed::new(Self(self.0, PhantomData))
+    fn with_tag(self, tag: Self::Tag) -> Self {
+        Self(self.retag_ptr(tag), PhantomData)
     }
 
     #[inline]
-    fn with_tag(&self, tag: Self::Tag) -> Borrowed<'_, Self> {
-        Borrowed::new(Self(self.retag_ptr(tag), PhantomData))
-    }
-
-    #[inline]
-    fn with_tag_owned(mut self, tag: Self::Tag) -> Self {
-        self.0 = self.retag_ptr(tag);
-        self
-    }
-
-    #[inline]
-    fn tag(&self) -> Self::Tag {
+    fn tag(self) -> Self::Tag {
         ET::from_usize(self.addr() & Self::TAG_MASK)
     }
 
     #[inline]
-    fn node_id(&self) -> oxidd_core::NodeID {
+    fn node_id(self) -> oxidd_core::NodeID {
         self.addr() & !Self::ALL_TAG_MASK
     }
 }
@@ -1192,7 +1113,7 @@ impl<N: NodeBase, ET: Tag, const TAG_BITS: u32> oxidd_core::Edge for Edge<'_, N,
 /// accordingly, this will simply leak all contained edges, not calling the
 /// `Edge`'s `Drop` implementation.
 struct LevelViewSet<'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32>(
-    RawTable<Edge<'id, N, ET, TAG_BITS>>,
+    RawTable<Own<Edge<'id, N, ET, TAG_BITS>>>,
     PhantomData<(TM, R, MD)>,
 );
 
@@ -1217,15 +1138,6 @@ where
         self.0.len()
     }
 
-    /// Get an equality function for entries
-    ///
-    /// SAFETY: The returned function must be called on untagged edges
-    /// referencing inner nodes only.
-    #[inline]
-    unsafe fn eq(node: &N) -> impl Fn(&Edge<'id, N, ET, TAG_BITS>) -> bool + '_ {
-        move |edge| unsafe { edge.inner_node_unchecked() == node }
-    }
-
     /// Reserve space for `additional` nodes on this level
     #[inline]
     fn reserve(&mut self, additional: usize) {
@@ -1235,11 +1147,14 @@ where
     }
 
     #[inline]
-    fn get(&self, node: &N) -> Option<&Edge<'id, N, ET, TAG_BITS>> {
+    fn get(&self, node: &N) -> Option<Ref<'_, Edge<'id, N, ET, TAG_BITS>>> {
         let hash = hash_node(node);
-        // SAFETY: The hash table only contains untagged edges referencing inner
-        // nodes.
-        self.0.get(hash, unsafe { Self::eq(node) })
+        let edge = self.0.get(hash, |edge| {
+            // SAFETY: The hash table only contains untagged edges referencing
+            // inner nodes.
+            (unsafe { Edge::inner_node_unchecked(edge.borrowed()) }) == node
+        })?;
+        Some(edge.borrowed())
     }
 
     /// Insert the given edge, assuming that the referenced node is already
@@ -1251,20 +1166,40 @@ where
     /// Panics if `edge` points to a terminal node. May furthermore panic if
     /// `edge` is tagged, depending on the configuration.
     #[inline]
-    fn insert(&mut self, edge: Edge<'id, N, ET, TAG_BITS>) -> bool {
-        assert_eq!(
-            edge.addr() & Edge::<N, ET, TAG_BITS>::ALL_TAG_MASK,
-            0,
-            "can only insert untagged edges pointing to inner nodes"
-        );
-        let edge = ManuallyDrop::new(edge);
-        let node = unsafe { edge.inner_node_unchecked() };
+    unsafe fn insert<const CHECKS: bool>(
+        &mut self,
+        edge: Own<Edge<'id, N, ET, TAG_BITS>>,
+        expected_level: LevelNo,
+    ) -> bool {
+        let mut raw = edge.into_raw();
+        if const { CHECKS || cfg!(debug_assertions) } {
+            assert_eq!(
+                raw.tag_bits(),
+                0,
+                "can only insert untagged edges pointing to inner nodes"
+            );
+        } else {
+            raw.0 = raw.all_untagged_ptr();
+        }
+
+        // SAFETY: we potentially change `edge`'s tag and forget the original
+        // `edge`
+        let edge = ManuallyDrop::new(unsafe { Own::from_raw(raw) });
+        let borrowed = edge.borrowed();
+
+        // SAFETY: `edge` is now untagged. It refers to an inner node as ensured
+        // by the caller or asserted, depending on `CHECKS`.
+        let node = unsafe { Edge::inner_node_unchecked(borrowed) };
+        if CHECKS {
+            node.assert_level_matches(expected_level);
+        }
+
         let hash = hash_node(node);
         // SAFETY (next 2): The hash table only contains untagged edges
         // referencing inner nodes.
         match self
             .0
-            .find_or_find_insert_slot(hash, unsafe { Self::eq(node) })
+            .find_or_find_insert_slot(hash, |e| std::ptr::eq(e.raw().0.as_ptr().cast(), node))
         {
             Ok(_) => {
                 // We need to drop `edge`. This simply amounts to decrementing
@@ -1278,13 +1213,11 @@ where
                 false
             }
             Err(slot) => {
+                let edge = ManuallyDrop::into_inner(edge);
                 // SAFETY: `slot` was returned by `find_or_find_insert_slot`.
                 // We have exclusive access to the hash table and did not modify
                 // it in between.
-                unsafe {
-                    self.0
-                        .insert_in_slot_unchecked(hash, slot, ManuallyDrop::into_inner(edge))
-                };
+                unsafe { self.0.insert_in_slot_unchecked(hash, slot, edge) };
                 true
             }
         }
@@ -1298,29 +1231,25 @@ where
     fn get_or_insert(
         &mut self,
         node: N,
-        insert: impl FnOnce(N) -> AllocResult<[Edge<'id, N, ET, TAG_BITS>; 2]>,
-    ) -> AllocResult<Edge<'id, N, ET, TAG_BITS>> {
+        insert: impl FnOnce(N) -> AllocResult<[Own<Edge<'id, N, ET, TAG_BITS>>; 2]>,
+    ) -> AllocResult<Own<Edge<'id, N, ET, TAG_BITS>>> {
         let hash = hash_node(&node);
-        // SAFETY (next 2): The hash table only contains untagged edges
-        // referencing inner nodes.
-        match self
-            .0
-            .find_or_find_insert_slot(hash, unsafe { Self::eq(&node) })
-        {
+        match self.0.find_or_find_insert_slot(hash, |edge| {
+            // SAFETY: The hash table only contains untagged edges referencing
+            // inner nodes.
+            *unsafe { Edge::inner_node_unchecked(edge.borrowed()) } == node
+        }) {
             Ok(slot) => {
-                node.drop_with(|edge| {
-                    if edge.is_inner() {
-                        // SAFETY: `edge` points to an inner node
-                        unsafe { edge.drop_inner() };
-                    } else {
-                        TM::drop_edge(edge);
-                    }
-                });
-                // SAFETY:
-                // - `slot` was returned by `find_or_find_insert_slot`. We have exclusive access
-                //   to the hash table and did not modify it in between.
-                // - All edges in the table are untagged and refer to inner nodes.
-                Ok(unsafe { self.0.get_at_slot_unchecked(slot).clone_inner_unchecked() })
+                node.drop_with(
+                    Manager::<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>::drop_edge_common,
+                );
+                // SAFETY: `slot` was returned by `find_or_find_insert_slot`. We
+                // have exclusive access to the hash table and
+                // did not modify it in between.
+                let edge = unsafe { self.0.get_at_slot_unchecked(slot) }.borrowed();
+                // SAFETY: All edges in the table are untagged and refer to
+                // inner nodes.
+                Ok(unsafe { Edge::clone_inner_unchecked(edge) })
             }
             Err(slot) => {
                 let [e1, e2] = insert(node)?;
@@ -1342,9 +1271,10 @@ where
     unsafe fn gc(&mut self) {
         self.0.retain(
             |edge| {
+                let edge = edge.borrowed();
                 // SAFETY: All edges in unique tables are untagged and point to
                 // inner nodes.
-                unsafe { edge.inner_node_unchecked() }.load_rc(Acquire) != 1
+                unsafe { Edge::inner_node_unchecked(edge) }.load_rc(Acquire) != 1
             },
             |edge| {
                 // SAFETY: Since `rc` is 1, this is the last reference. We use
@@ -1352,24 +1282,61 @@ where
                 // reference counters, so we have exclusive node access now.
                 // Additionally, `edge` is untagged and points to an inner node.
                 // The type/const arguments match the ones from the manager.
-                unsafe { edge.force_drop::<TM, R, MD, PAGE_SIZE>() };
+                unsafe { Manager::<N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>::force_drop_edge(edge) };
             },
         );
     }
 
-    /// Remove `node`
+    /// Remove `node` from the level view
     ///
-    /// Returns `Some(edge)` if `node` was present, `None` otherwise
+    /// Note that `node` must refer to the node in the node store, this method
+    /// uses referential equality.
     ///
-    /// SAFETY: There must not be any "weak" edges, i.e. edges where the
-    /// reference count is not materialized (apply cache implementations exploit
-    /// this).
+    /// Returns the edge from the unique table entry if `node` was found.
     #[inline]
-    unsafe fn remove(&mut self, node: &N) -> Option<Edge<'id, N, ET, TAG_BITS>> {
-        let hash = hash_node(node);
-        // SAFETY: The hash table only contains untagged edges referencing inner
-        // nodes.
-        self.0.remove_entry(hash, unsafe { Self::eq(node) })
+    fn remove(&mut self, node: &N) -> Option<Own<Edge<'id, N, ET, TAG_BITS>>> {
+        self.0.remove_entry(hash_node(node), |e| {
+            std::ptr::eq(e.raw().0.as_ptr().cast(), node)
+        })
+    }
+
+    /// Remove the node referenced by `edge` if it is contained in this level
+    /// view and `edge` is the only edge besides the one in the level view
+    /// referring to this node.
+    ///
+    /// Returns whether the node was removed
+    ///
+    /// # Safety
+    ///
+    /// `edge` must refer to an inner node. Further, there must not be any
+    /// "weak" edges, i.e., edges where the reference count is not materialized
+    /// (apply cache implementations exploit this).
+    #[inline]
+    unsafe fn try_remove(&mut self, edge: Own<Edge<'id, N, ET, TAG_BITS>>) -> bool {
+        let node_ptr: NonNull<N> = edge.into_raw().all_untagged_ptr().cast();
+        // SAFETY: `node_ptr` points to an inner node, and by the type invariant
+        // of `Own<Edge>`, we have shared access.
+        let node = unsafe { node_ptr.as_ref() };
+        // SAFETY: `edge` is forgotten
+        let old_rc = unsafe { node.release() };
+        debug_assert!(old_rc > 1);
+        if old_rc != 2 {
+            return false;
+        }
+
+        let Some(edge) = self.remove(node) else {
+            return false;
+        };
+
+        std::sync::atomic::fence(Acquire);
+
+        // SAFETY: Since `rc` is 1, this is the last reference. We use `Acquire`
+        // order above and `Release` order when decrementing reference
+        // counters, so we have exclusive node access now. Additionally,
+        // the caller guarantees that there are no weak edges.
+        unsafe { Manager::<N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>::force_drop_edge(edge) };
+
+        true
     }
 
     /// Iterate over all edges pointing to nodes in the set
@@ -1380,7 +1347,7 @@ where
 
     /// Iterator that consumes all [`Edge`]s in the set
     #[inline]
-    fn drain(&mut self) -> linear_hashtbl::raw::Drain<'_, Edge<'id, N, ET, TAG_BITS>> {
+    fn drain(&mut self) -> linear_hashtbl::raw::Drain<'_, Own<Edge<'id, N, ET, TAG_BITS>>> {
         self.0.drain()
     }
 }
@@ -1408,13 +1375,13 @@ impl<N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32> Default
 impl<'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32> IntoIterator
     for LevelViewSet<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
 {
-    type Item = Edge<'id, N, ET, TAG_BITS>;
+    type Item = Own<Edge<'id, N, ET, TAG_BITS>>;
 
     #[cfg(not(feature = "hugealloc"))]
-    type IntoIter = linear_hashtbl::raw::IntoIter<Edge<'id, N, ET, TAG_BITS>, usize>;
+    type IntoIter = linear_hashtbl::raw::IntoIter<Own<Edge<'id, N, ET, TAG_BITS>>, usize>;
     #[cfg(feature = "hugealloc")]
     type IntoIter =
-        linear_hashtbl::raw::IntoIter<Edge<'id, N, ET, TAG_BITS>, usize, hugealloc::HugeAlloc>;
+        linear_hashtbl::raw::IntoIter<Own<Edge<'id, N, ET, TAG_BITS>>, usize, hugealloc::HugeAlloc>;
 
     fn into_iter(self) -> Self::IntoIter {
         let this = ManuallyDrop::new(self);
@@ -1475,33 +1442,25 @@ where
     }
 
     #[inline]
-    fn get(&self, node: &N) -> Option<&Edge<'id, N, ET, TAG_BITS>> {
+    fn get(&self, node: &N) -> Option<Ref<'_, Edge<'id, N, ET, TAG_BITS>>> {
         self.set.get(node)
     }
 
     #[inline]
-    fn insert(&mut self, edge: Edge<'id, N, ET, TAG_BITS>) -> bool {
-        assert_eq!(
-            edge.addr() & Edge::<N, ET, TAG_BITS>::ALL_TAG_MASK,
-            0,
-            "can only insert untagged edges pointing to inner nodes"
-        );
-        unsafe { edge.inner_node_unchecked() }.assert_level_matches(self.level);
-        self.set.insert(edge)
+    fn insert(&mut self, edge: Own<Edge<'id, N, ET, TAG_BITS>>) -> bool {
+        // SAFETY: `CHECKS` is true
+        unsafe { self.set.insert::<true>(edge, self.level) }
     }
 
     #[inline]
-    unsafe fn insert_unchecked(&mut self, edge: Edge<'id, N, ET, TAG_BITS>) -> bool {
-        assert_eq!(
-            edge.addr() & Edge::<N, ET, TAG_BITS>::ALL_TAG_MASK,
-            0,
-            "can only insert untagged edges pointing to inner nodes"
-        );
-        self.set.insert(edge)
+    unsafe fn insert_unchecked(&mut self, edge: Own<Edge<'id, N, ET, TAG_BITS>>) -> bool {
+        // SAFETY: the caller ensures that `edge` points to an inner node at the
+        // respective level
+        unsafe { self.set.insert::<false>(edge, self.level) }
     }
 
     #[inline(always)]
-    fn get_or_insert(&mut self, node: N) -> AllocResult<Edge<'id, N, ET, TAG_BITS>> {
+    fn get_or_insert(&mut self, node: N) -> AllocResult<Own<Edge<'id, N, ET, TAG_BITS>>> {
         node.assert_level_matches(self.level);
         // No need to check if the children of `node` are stored in `self.store`
         // due to lifetime restrictions.
@@ -1512,7 +1471,7 @@ where
     unsafe fn get_or_insert_unchecked(
         &mut self,
         node: N,
-    ) -> AllocResult<Edge<'id, N, ET, TAG_BITS>> {
+    ) -> AllocResult<Own<Edge<'id, N, ET, TAG_BITS>>> {
         // No need to check if the children of `node` are stored in `self.store`
         // due to lifetime restrictions.
         LevelViewSet::get_or_insert(&mut *self.set, node, |node| add_node(self.store, node))
@@ -1527,19 +1486,19 @@ where
     }
 
     #[inline]
-    fn remove(&mut self, node: &N) -> bool {
-        if !self.allow_node_removal {
+    fn try_remove(&mut self, edge: Own<Edge<'id, N, ET, TAG_BITS>>) -> bool {
+        if !edge.raw().is_inner() {
+            TM::drop_edge(edge);
             return false;
         }
-        // SAFETY: By invariant, node removal is allowed.
-        match unsafe { self.set.remove(node) } {
-            Some(edge) => {
-                // SAFETY: `edge` is untagged, the type parameters match
-                unsafe { edge.drop_from_unique_table::<TM, R, MD, PAGE_SIZE>() };
-                true
-            }
-            None => false,
+        if !self.allow_node_removal {
+            // SAFETY: `edge` points to an inner node
+            unsafe { Edge::drop_inner(edge) };
+            return false;
         }
+        // SAFETY: `edge` refers to an inner node. By invariant, node removal is
+        // allowed.
+        unsafe { self.set.try_remove(edge) }
     }
 
     #[inline]
@@ -1623,33 +1582,25 @@ where
     }
 
     #[inline]
-    fn get(&self, node: &N) -> Option<&Edge<'id, N, ET, TAG_BITS>> {
+    fn get(&self, node: &N) -> Option<Ref<'_, Edge<'id, N, ET, TAG_BITS>>> {
         self.set.get(node)
     }
 
     #[inline]
-    fn insert(&mut self, edge: Edge<'id, N, ET, TAG_BITS>) -> bool {
-        assert_eq!(
-            edge.addr() & Edge::<N, ET, TAG_BITS>::ALL_TAG_MASK,
-            0,
-            "can only insert untagged edges pointing to inner nodes"
-        );
-        unsafe { edge.inner_node_unchecked() }.assert_level_matches(self.level);
-        self.set.insert(edge)
+    fn insert(&mut self, edge: Own<Edge<'id, N, ET, TAG_BITS>>) -> bool {
+        // SAFETY: `CHECKS` is true
+        unsafe { self.set.insert::<true>(edge, self.level) }
     }
 
     #[inline]
-    unsafe fn insert_unchecked(&mut self, edge: Edge<'id, N, ET, TAG_BITS>) -> bool {
-        assert_eq!(
-            edge.addr() & Edge::<N, ET, TAG_BITS>::ALL_TAG_MASK,
-            0,
-            "can only insert untagged edges pointing to inner nodes"
-        );
-        self.set.insert(edge)
+    unsafe fn insert_unchecked(&mut self, edge: Own<Edge<'id, N, ET, TAG_BITS>>) -> bool {
+        // SAFETY: the caller ensures that `edge` points to an inner node at the
+        // respective level
+        unsafe { self.set.insert::<false>(edge, self.level) }
     }
 
     #[inline(always)]
-    fn get_or_insert(&mut self, node: N) -> AllocResult<Edge<'id, N, ET, TAG_BITS>> {
+    fn get_or_insert(&mut self, node: N) -> AllocResult<Own<Edge<'id, N, ET, TAG_BITS>>> {
         node.assert_level_matches(self.level);
         // No need to check if the children of `node` are stored in `self.store`
         // due to lifetime restrictions.
@@ -1661,7 +1612,7 @@ where
     unsafe fn get_or_insert_unchecked(
         &mut self,
         node: N,
-    ) -> AllocResult<Edge<'id, N, ET, TAG_BITS>> {
+    ) -> AllocResult<Own<Edge<'id, N, ET, TAG_BITS>>> {
         // No need to check if the children of `node` are stored in `self.store`
         // due to lifetime restrictions.
         self.set
@@ -1675,17 +1626,15 @@ where
     }
 
     #[inline]
-    fn remove(&mut self, node: &N) -> bool {
-        // SAFETY: Called from inside the closure of `Manager::reorder()`, hence
-        // there are no "weak" edges.
-        match unsafe { self.set.remove(node) } {
-            Some(edge) => {
-                // SAFETY: `edge` is untagged, the type parameters match
-                unsafe { edge.drop_from_unique_table::<TM, R, MD, PAGE_SIZE>() };
-                true
-            }
-            None => false,
+    fn try_remove(&mut self, edge: Own<Edge<'id, N, ET, TAG_BITS>>) -> bool {
+        if !edge.raw().is_inner() {
+            TM::drop_edge(edge);
+            return false;
         }
+        // SAFETY: `edge` refers to an inner node. Called from inside the
+        // closure of `Manager::reorder()`, hence there are no "weak"
+        // edges.
+        unsafe { self.set.try_remove(edge) }
     }
 
     #[inline]
@@ -1722,7 +1671,11 @@ where
         for edge in self.set.drain() {
             // SAFETY: `edge` is untagged and points to an inner node, the type
             // parameters match
-            unsafe { edge.drop_from_unique_table::<TM, R, MD, PAGE_SIZE>() };
+            unsafe {
+                Manager::<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>::drop_edge_from_unique_table(
+                    edge,
+                )
+            };
         }
     }
 }
@@ -1731,17 +1684,17 @@ where
 
 /// Iterator over entries (as [`Edge`]s) of a level view
 pub struct LevelViewIter<'a, 'id, N, ET, const TAG_BITS: u32>(
-    linear_hashtbl::raw::Iter<'a, Edge<'id, N, ET, TAG_BITS>>,
+    linear_hashtbl::raw::Iter<'a, Own<Edge<'id, N, ET, TAG_BITS>>>,
 );
 
 impl<'a, 'id, InnerNode, ET, const TAG_BITS: u32> Iterator
     for LevelViewIter<'a, 'id, InnerNode, ET, TAG_BITS>
 {
-    type Item = &'a Edge<'id, InnerNode, ET, TAG_BITS>;
+    type Item = Ref<'a, Edge<'id, InnerNode, ET, TAG_BITS>>;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.next()
+        Some(self.0.next()?.borrowed())
     }
 
     #[inline]
@@ -1777,7 +1730,7 @@ impl<const PAGE_SIZE: usize, const TAG_BITS: u32> NodeSet<PAGE_SIZE, TAG_BITS> {
     const NODES_PER_PAGE: usize = PAGE_SIZE >> (TAG_BITS + 1);
 
     #[inline]
-    fn page_offset<InnerNode, ET>(edge: &Edge<'_, InnerNode, ET, TAG_BITS>) -> (usize, usize) {
+    fn page_offset<InnerNode, ET>(edge: Edge<'_, InnerNode, ET, TAG_BITS>) -> (usize, usize) {
         let node_id = edge.0.as_ptr().addr() >> TAG_BITS;
         let page = node_id / Self::NODES_PER_PAGE;
         let offset = node_id % Self::NODES_PER_PAGE;
@@ -1793,8 +1746,8 @@ impl<'id, InnerNode, ET, const PAGE_SIZE: usize, const TAG_BITS: u32>
         self.len
     }
 
-    fn insert(&mut self, edge: &Edge<'id, InnerNode, ET, TAG_BITS>) -> bool {
-        let (page, offset) = Self::page_offset(edge);
+    fn insert(&mut self, edge: Ref<'_, Edge<'id, InnerNode, ET, TAG_BITS>>) -> bool {
+        let (page, offset) = Self::page_offset(edge.raw());
         match self.data.entry(page) {
             std::collections::hash_map::Entry::Occupied(mut e) => {
                 let page = e.get_mut();
@@ -1817,16 +1770,16 @@ impl<'id, InnerNode, ET, const PAGE_SIZE: usize, const TAG_BITS: u32>
     }
 
     #[inline]
-    fn contains(&self, edge: &Edge<'id, InnerNode, ET, TAG_BITS>) -> bool {
-        let (page, offset) = Self::page_offset(edge);
+    fn contains(&self, edge: Ref<'_, Edge<'id, InnerNode, ET, TAG_BITS>>) -> bool {
+        let (page, offset) = Self::page_offset(edge.raw());
         match self.data.get(&page) {
             Some(page) => page.contains(offset),
             None => false,
         }
     }
 
-    fn remove(&mut self, edge: &Edge<'id, InnerNode, ET, TAG_BITS>) -> bool {
-        let (page, offset) = Self::page_offset(edge);
+    fn remove(&mut self, edge: Ref<'_, Edge<'id, InnerNode, ET, TAG_BITS>>) -> bool {
+        let (page, offset) = Self::page_offset(edge.raw());
         match self.data.get_mut(&page) {
             Some(page) if page.contains(offset) => {
                 page.remove(offset);
@@ -2056,15 +2009,14 @@ impl<
             PAGE_SIZE,
         >,
     > {
-        let edge: ManuallyDrop<Edge<'static, NC::T<'static>, ET, TAG_BITS>> =
-            ManuallyDrop::new(Edge(self.0, PhantomData));
+        let edge: Edge<'static, NC::T<'static>, ET, TAG_BITS> = Edge(self.0, PhantomData);
         if edge.is_inner() {
             let ptr: NonNull<NC::T<'static>> = edge.all_untagged_ptr().cast();
             let handle = ManuallyDrop::new(unsafe { ExtHandle::from_raw(ptr) });
             NonNull::from(ExtHandle::slab(&*handle))
         } else {
             let ptr = ArcSlab::from_data_ptr(StoreInner::from_terminal_manager_ptr(
-                TerminalManager::terminal_manager(&*edge).as_ptr(),
+                TerminalManager::terminal_manager(unsafe { Ref::from_raw(edge) }).as_ptr(),
             ));
             unsafe { NonNull::new_unchecked(ptr.cast_mut()) }
         }
@@ -2110,13 +2062,16 @@ impl<
 {
     #[inline]
     fn clone(&self) -> Self {
-        let mut edge: ManuallyDrop<Edge<'static, NC::T<'static>, ET, TAG_BITS>> =
-            ManuallyDrop::new(Edge(self.0, PhantomData));
+        let edge: Edge<'static, NC::T<'static>, ET, TAG_BITS> = Edge(self.0, PhantomData);
         if edge.is_inner() {
-            edge.0 = edge.all_untagged_ptr();
-            unsafe { edge.inner_node_unchecked() }.retain();
+            let ptr: NonNull<NC::T<'static>> = edge.all_untagged_ptr().cast();
+            // SAFETY: dereferencing untagged edges pointing to inner nodes is
+            // safe
+            unsafe { ptr.as_ref() }.retain();
         } else {
-            std::mem::forget(TMC::T::<'static>::clone_edge(&*edge));
+            std::mem::forget(TMC::T::<'static>::clone_edge(unsafe {
+                Ref::from_raw(edge)
+            }));
         }
         let store = self.store();
         unsafe { store.as_ref() }.retain();
@@ -2136,13 +2091,13 @@ impl<
 {
     fn drop(&mut self) {
         let store = self.store();
-        let edge: Edge<'static, NC::T<'static>, ET, TAG_BITS> = Edge(self.0, PhantomData);
-        if edge.is_inner() {
-            // SAFETY: `edge` points to an inner node
-            unsafe { edge.drop_inner() };
-        } else {
-            TMC::T::<'static>::drop_edge(edge);
-        }
+        // SAFETY: we are dropping `self`, so we can take an owned edge out
+        unsafe {
+            M::<'static, NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>::drop_edge_common(
+                Own::from_raw(Edge(self.0, PhantomData)),
+            )
+        };
+
         // We own a reference count, `store` is valid, and we do not use the
         // `store` pointer afterwards.
         unsafe { ArcSlab::release(store) };
@@ -2161,30 +2116,33 @@ unsafe impl<
 {
     const REPR_ID: &str = "<none>";
 
-    type Manager<'id> =
-        Manager<'id, NC::T<'id>, ET, TMC::T<'id>, RC::T<'id>, MDC::T<'id>, PAGE_SIZE, TAG_BITS>;
-
+    type Manager<'id> = M<'id, NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>;
     type ManagerRef = ManagerRef<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>;
 
     #[inline]
-    fn from_edge<'id>(manager: &Self::Manager<'id>, edge: EdgeOfFunc<'id, Self>) -> Self {
+    fn from_edge<'id>(manager: &Self::Manager<'id>, edge: OwnEdgeOfFunc<'id, Self>) -> Self {
         manager.store().retain();
-        Self(ManuallyDrop::new(edge).0, PhantomData)
+        Self(edge.into_raw().0, PhantomData)
     }
 
     #[inline]
-    fn as_edge<'id>(&self, manager: &Self::Manager<'id>) -> &EdgeOfFunc<'id, Self> {
+    fn as_edge<'id>(&self, manager: &Self::Manager<'id>) -> Ref<'_, EdgeOfFunc<'id, Self>> {
         assert!(std::ptr::eq(self.store().as_ptr().cast(), manager.store()));
-        // SAFETY: `Function` and `Edge` have the same representation
-        unsafe { std::mem::transmute(self) }
+        // SAFETY: a `Function` provides shared permission for the referenced
+        // node and the lifetime of the returned `Ref` is bounded by the
+        // lifetime of `self`
+        unsafe { Ref::from_raw(Edge(self.0, PhantomData)) }
     }
 
     #[inline]
-    fn into_edge<'id>(self, manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self> {
+    fn into_edge<'id>(self, manager: &Self::Manager<'id>) -> OwnEdgeOfFunc<'id, Self> {
         let store = manager.store();
         assert!(std::ptr::eq(self.store().as_ptr().cast(), store));
+        let this = ManuallyDrop::new(self);
+        // SAFETY: we are dropping the manager reference part of `this`
         unsafe { ArcSlab::release(NonNull::from(store)) };
-        Edge(ManuallyDrop::new(self).0, PhantomData)
+        // SAFETY: we are converting the owned `Function` into an `Own<Edge>`
+        unsafe { Own::from_raw(Edge(this.0, PhantomData)) }
     }
 
     #[inline]
@@ -2197,26 +2155,28 @@ unsafe impl<
     #[inline]
     fn with_manager_shared<F, T>(&self, f: F) -> T
     where
-        F: for<'id> FnOnce(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>) -> T,
+        F: for<'id> FnOnce(&Self::Manager<'id>, Ref<'_, EdgeOfFunc<'id, Self>>) -> T,
     {
-        let edge = ManuallyDrop::new(Edge(self.0, PhantomData));
         let store_ptr = self.store();
         f(
             &*unsafe { store_ptr.as_ref() }.data().manager.shared(),
-            &*edge,
+            // SAFETY: a `Function` provides shared permission for the referenced
+            // node
+            unsafe { Ref::from_raw(Edge(self.0, PhantomData)) },
         )
     }
 
     #[inline]
     fn with_manager_exclusive<F, T>(&self, f: F) -> T
     where
-        F: for<'id> FnOnce(&mut Self::Manager<'id>, &EdgeOfFunc<'id, Self>) -> T,
+        F: for<'id> FnOnce(&mut Self::Manager<'id>, Ref<'_, EdgeOfFunc<'id, Self>>) -> T,
     {
-        let edge = ManuallyDrop::new(Edge(self.0, PhantomData));
         let store_ptr = self.store();
         f(
             &mut *unsafe { store_ptr.as_ref() }.data().manager.exclusive(),
-            &*edge,
+            // SAFETY: a `Function` provides shared permission for the referenced
+            // node
+            unsafe { Ref::from_raw(Edge(self.0, PhantomData)) },
         )
     }
 }

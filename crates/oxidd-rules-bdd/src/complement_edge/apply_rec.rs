@@ -5,14 +5,13 @@ use std::hash::BuildHasher;
 use fixedbitset::FixedBitSet;
 
 use oxidd_core::{
-    ApplyCache, Edge, HasApplyCache, HasLevel, InnerNode, LevelNo, Manager, Node, NodeID, Tag,
-    VarNo,
+    ApplyCache, HasApplyCache, HasLevel, InnerNode, LevelNo, Manager, Node, NodeID, Tag, VarNo,
     function::{
         BooleanFunction, BooleanFunctionQuant, BooleanOperator, EdgeOfFunc, Function,
-        FunctionSubst, INodeOfFunc,
+        FunctionSubst, INodeOfFunc, OwnEdgeOfFunc,
     },
     util::{
-        AllocResult, Borrowed, EdgeDropGuard, EdgeVecDropGuard, OptBool, SatCountCache,
+        AllocResult, EdgeDropGuard, EdgeVecDropGuard, OptBool, Own, Ref, SatCountCache,
         SatCountNumber,
     },
 };
@@ -36,15 +35,12 @@ use super::{
 ///
 /// We use a `const` parameter `OP` to have specialized version of this function
 /// for each operator.
-///
-/// Using `Borrowed<M::Edge>` instead of `&M::Edge` means that we actually
-/// pass the edge by value, which saves a few indirections.
 fn apply_bin<M, R: Recursor<M>, const OP: u8>(
     manager: &M,
     rec: R,
-    f: Borrowed<M::Edge>,
-    g: Borrowed<M::Edge>,
-) -> AllocResult<M::Edge>
+    f: Ref<'_, M::Edge>,
+    g: Ref<'_, M::Edge>,
+) -> AllocResult<Own<M::Edge>>
 where
     M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal> + HasApplyCache<M, BCDDOp>,
     M::InnerNode: HasLevel,
@@ -55,27 +51,19 @@ where
     stat!(call OP);
 
     let (op, f, fnode, g, gnode) = if OP == BCDDOp::And as u8 {
-        match super::terminal_and(manager, &f, &g) {
-            NodesOrDone::Nodes(fnode, gnode) if f < g => {
-                (BCDDOp::And, f.borrowed(), fnode, g.borrowed(), gnode)
-            }
+        match super::terminal_and(manager, f, g) {
+            NodesOrDone::Nodes(fnode, gnode) if f < g => (BCDDOp::And, f, fnode, g, gnode),
             // `And` is commutative, hence we swap `f` and `g` in the apply
             // cache key if `f > g` to have a unique representation of the set
             // `{f, g}`.
-            NodesOrDone::Nodes(fnode, gnode) => {
-                (BCDDOp::And, g.borrowed(), gnode, f.borrowed(), fnode)
-            }
+            NodesOrDone::Nodes(fnode, gnode) => (BCDDOp::And, g, gnode, f, fnode),
             NodesOrDone::Done(h) => return Ok(h.into_edge()),
         }
     } else {
         assert_eq!(OP, BCDDOp::Xor as u8);
-        match super::terminal_xor(manager, &f, &g) {
-            NodesOrDone::Nodes(fnode, gnode) if f < g => {
-                (BCDDOp::Xor, f.borrowed(), fnode, g.borrowed(), gnode)
-            }
-            NodesOrDone::Nodes(fnode, gnode) => {
-                (BCDDOp::Xor, g.borrowed(), gnode, f.borrowed(), fnode)
-            }
+        match super::terminal_xor(manager, f, g) {
+            NodesOrDone::Nodes(fnode, gnode) if f < g => (BCDDOp::Xor, f, fnode, g, gnode),
+            NodesOrDone::Nodes(fnode, gnode) => (BCDDOp::Xor, g, gnode, f, fnode),
             NodesOrDone::Done(h) => {
                 return Ok(h.into_edge());
             }
@@ -84,10 +72,7 @@ where
 
     // Query apply cache
     stat!(cache_query OP);
-    if let Some(h) = manager
-        .apply_cache()
-        .get(manager, op, &[f.borrowed(), g.borrowed()])
-    {
+    if let Some(h) = manager.apply_cache().get(manager, op, &[f, g]) {
         stat!(cache_hit OP);
         return Ok(h);
     }
@@ -100,12 +85,12 @@ where
     let (ft, fe) = if flevel == level {
         collect_cofactors(f.tag(), fnode)
     } else {
-        (f.borrowed(), f.borrowed())
+        (f, f)
     };
     let (gt, ge) = if glevel == level {
         collect_cofactors(g.tag(), gnode)
     } else {
-        (g.borrowed(), g.borrowed())
+        (g, g)
     };
 
     let (t, e) = rec.binary(apply_bin::<M, R, OP>, manager, (ft, gt), (fe, ge))?;
@@ -125,9 +110,9 @@ where
 fn apply_and<M, R: Recursor<M>>(
     manager: &M,
     rec: R,
-    f: Borrowed<M::Edge>,
-    g: Borrowed<M::Edge>,
-) -> AllocResult<M::Edge>
+    f: Ref<'_, M::Edge>,
+    g: Ref<'_, M::Edge>,
+) -> AllocResult<Own<M::Edge>>
 where
     M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal> + HasApplyCache<M, BCDDOp>,
     M::InnerNode: HasLevel,
@@ -139,10 +124,10 @@ where
 fn apply_ite<M, R: Recursor<M>>(
     manager: &M,
     rec: R,
-    f: Borrowed<M::Edge>,
-    g: Borrowed<M::Edge>,
-    h: Borrowed<M::Edge>,
-) -> AllocResult<M::Edge>
+    f: Ref<'_, M::Edge>,
+    g: Ref<'_, M::Edge>,
+    h: Ref<'_, M::Edge>,
+) -> AllocResult<Own<M::Edge>>
 where
     M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal> + HasApplyCache<M, BCDDOp>,
     M::InnerNode: HasLevel,
@@ -157,7 +142,7 @@ where
     let hu = h.with_tag(EdgeTag::None);
     if gu == hu {
         return Ok(if g.tag() == h.tag() {
-            manager.clone_edge(&g)
+            manager.clone_edge(g)
         } else {
             not_owned(apply_bin::<M, R, { BCDDOp::Xor as u8 }>(
                 manager, rec, f, g,
@@ -167,9 +152,9 @@ where
     let fu = f.with_tag(EdgeTag::None);
     if fu == gu {
         return if f.tag() == g.tag() {
-            Ok(not_owned(apply_and(manager, rec, not(&f), not(&h))?)) // f ∨ h
+            Ok(not_owned(apply_and(manager, rec, not(f), not(h))?)) // f ∨ h
         } else {
-            apply_and(manager, rec, not(&f), h) // f < h
+            apply_and(manager, rec, not(f), h) // f < h
         };
     }
     if fu == hu {
@@ -177,29 +162,29 @@ where
             apply_and(manager, rec, f, g)
         } else {
             // f → g = ¬f ∨ g = ¬(f ∧ ¬g)
-            Ok(not_owned(apply_and(manager, rec, f, not(&g))?))
+            Ok(not_owned(apply_and(manager, rec, f, not(g))?))
         };
     }
-    let fnode = match manager.get_node(&f) {
+    let fnode = match manager.get_node(f) {
         Node::Inner(n) => n,
         Node::Terminal(_) => {
-            return Ok(manager.clone_edge(&*if f.tag() == EdgeTag::None { g } else { h }));
+            return Ok(manager.clone_edge(if f.tag() == EdgeTag::None { g } else { h }));
         }
     };
-    let (gnode, hnode) = match (manager.get_node(&g), manager.get_node(&h)) {
+    let (gnode, hnode) = match (manager.get_node(g), manager.get_node(h)) {
         (Node::Inner(gn), Node::Inner(hn)) => (gn, hn),
         (Node::Terminal(_), Node::Inner(_)) => {
             return if g.tag() == EdgeTag::None {
                 // f ∨ h
-                Ok(not_owned(apply_and(manager, rec, not(&f), not(&h))?))
+                Ok(not_owned(apply_and(manager, rec, not(f), not(h))?))
             } else {
-                apply_and(manager, rec, not(&f), h) // f < h
+                apply_and(manager, rec, not(f), h) // f < h
             };
         }
         (_gnode, Node::Terminal(_)) => {
             debug_assert!(_gnode.is_inner());
             return if h.tag() == EdgeTag::None {
-                Ok(not_owned(apply_and(manager, rec, f, not(&g))?)) // f → g
+                Ok(not_owned(apply_and(manager, rec, f, not(g))?)) // f → g
             } else {
                 apply_and(manager, rec, f, g)
             };
@@ -208,11 +193,7 @@ where
 
     // Query apply cache
     stat!(cache_query BCDDOp::Ite);
-    if let Some(res) = manager.apply_cache().get(
-        manager,
-        BCDDOp::Ite,
-        &[f.borrowed(), g.borrowed(), h.borrowed()],
-    ) {
+    if let Some(res) = manager.apply_cache().get(manager, BCDDOp::Ite, &[f, g, h]) {
         stat!(cache_hit BCDDOp::Ite);
         return Ok(res);
     }
@@ -227,17 +208,17 @@ where
     let (ft, fe) = if flevel == level {
         collect_cofactors(f.tag(), fnode)
     } else {
-        (f.borrowed(), f.borrowed())
+        (f, f)
     };
     let (gt, ge) = if glevel == level {
         collect_cofactors(g.tag(), gnode)
     } else {
-        (g.borrowed(), g.borrowed())
+        (g, g)
     };
     let (ht, he) = if hlevel == level {
         collect_cofactors(h.tag(), hnode)
     } else {
-        (h.borrowed(), h.borrowed())
+        (h, h)
     };
 
     let (t, e) = rec.ternary(apply_ite, manager, (ft, gt, ht), (fe, ge, he))?;
@@ -259,7 +240,7 @@ where
 /// edges.
 fn substitute_prepare<'a, M>(
     manager: &'a M,
-    pairs: impl Iterator<Item = (VarNo, Borrowed<'a, M::Edge>)>,
+    pairs: impl Iterator<Item = (VarNo, Ref<'a, M::Edge>)>,
 ) -> AllocResult<EdgeVecDropGuard<'a, M>>
 where
     M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag>,
@@ -285,7 +266,7 @@ where
         use oxidd_core::LevelView;
 
         res.push(if let Some(e) = e {
-            manager.clone_edge(&e)
+            manager.clone_edge(e)
         } else {
             let t = EdgeDropGuard::new(manager, get_terminal(manager, true));
             let e = EdgeDropGuard::new(manager, get_terminal(manager, false));
@@ -304,10 +285,10 @@ where
 fn substitute<M, R: Recursor<M>>(
     manager: &M,
     rec: R,
-    f: Borrowed<M::Edge>,
-    subst: &[M::Edge],
+    f: Ref<M::Edge>,
+    subst: &[Own<M::Edge>],
     cache_id: u32,
-) -> AllocResult<M::Edge>
+) -> AllocResult<Own<M::Edge>>
 where
     M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal> + HasApplyCache<M, BCDDOp>,
     M::InnerNode: HasLevel,
@@ -317,21 +298,21 @@ where
     }
     stat!(call BCDDOp::Substitute);
 
-    let Node::Inner(node) = manager.get_node(&f) else {
-        return Ok(manager.clone_edge(&f));
+    let Node::Inner(node) = manager.get_node(f) else {
+        return Ok(manager.clone_edge(f));
     };
     let level = node.level();
     if level as usize >= subst.len() {
-        return Ok(manager.clone_edge(&f));
+        return Ok(manager.clone_edge(f));
     }
 
     // Query apply cache
     stat!(cache_query BCDDOp::Substitute);
-    if let Some(([h], [])) = manager.apply_cache().get_extended(
-        manager,
-        BCDDOp::Substitute,
-        (&[f.borrowed()], &[cache_id]),
-    ) {
+    if let Some(([h], [])) =
+        manager
+            .apply_cache()
+            .get_extended(manager, BCDDOp::Substitute, (&[f], &[cache_id]))
+    {
         stat!(cache_hit BCDDOp::Substitute);
         return Ok(h);
     }
@@ -355,252 +336,183 @@ where
     manager.apply_cache().add_extended(
         manager,
         BCDDOp::Substitute,
-        (&[f.borrowed()], &[cache_id]),
+        (&[f], &[cache_id]),
         (&[res.borrowed()], &[]),
     );
 
     Ok(res)
 }
 
-fn restrict<M, R: Recursor<M>>(
-    manager: &M,
+fn restrict<'a, M, R: Recursor<M>>(
+    manager: &'a M,
     rec: R,
-    f: Borrowed<M::Edge>,
-    vars: Borrowed<M::Edge>,
-) -> AllocResult<M::Edge>
+    mut f: Ref<'a, M::Edge>,
+    mut vars: Ref<'a, M::Edge>,
+) -> AllocResult<Own<M::Edge>>
 where
     M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag> + HasApplyCache<M, BCDDOp>,
     M::InnerNode: HasLevel,
 {
+    use BCDDOp::Restrict;
     if rec.should_switch_to_sequential() {
         return restrict(manager, SequentialRecursor, f, vars);
     }
-    stat!(call BCDDOp::Restrict);
+    stat!(call Restrict);
 
-    let (Node::Inner(fnode), Node::Inner(vnode)) = (manager.get_node(&f), manager.get_node(&vars))
+    let (Node::Inner(mut fnode), Node::Inner(mut vnode)) =
+        (manager.get_node(f), manager.get_node(vars))
     else {
-        return Ok(manager.clone_edge(&f));
+        return Ok(manager.clone_edge(f));
     };
 
-    enum InnerResult<'a, M: Manager> {
-        Done(M::Edge),
-        Rec {
-            vars: Borrowed<'a, M::Edge>,
-            f: Borrowed<'a, M::Edge>,
-            f_neg: bool,
-            fnode: &'a M::InnerNode,
-        },
-    }
-
-    /// Tail-recursive part of [`restrict()`]. `f` is the function of which the
-    /// variables should be restricted to constant values according to `vars`.
-    ///
-    /// Invariant: `f` points to `fnode` at `flevel`, `vars` points to `vnode`
-    #[inline]
-    #[allow(clippy::too_many_arguments)]
-    fn inner<'a, M>(
-        manager: &'a M,
-        f: Borrowed<'a, M::Edge>,
-        f_neg: bool,
-        fnode: &'a M::InnerNode,
-        flevel: LevelNo,
-        vars: Borrowed<'a, M::Edge>,
-        vars_neg: bool,
-        vnode: &'a M::InnerNode,
-    ) -> InnerResult<'a, M>
-    where
-        M: Manager<EdgeTag = EdgeTag>,
-        M::InnerNode: HasLevel,
-    {
-        debug_assert!(std::ptr::eq(manager.get_node(&f).unwrap_inner(), fnode));
+    let mut f_tag = f.tag();
+    let mut flevel = fnode.level();
+    let mut vars_tag = vars.tag();
+    'l: loop {
+        debug_assert!(std::ptr::eq(manager.get_node(f).unwrap_inner(), fnode));
         debug_assert_eq!(fnode.level(), flevel);
-        debug_assert!(std::ptr::eq(manager.get_node(&vars).unwrap_inner(), vnode));
+        debug_assert!(std::ptr::eq(manager.get_node(vars).unwrap_inner(), vnode));
 
         let vlevel = vnode.level();
         if vlevel > flevel {
             // f above vars
-            return InnerResult::Rec {
-                vars: vars.edge_with_tag(if vars_neg {
-                    EdgeTag::Complemented
-                } else {
-                    EdgeTag::None
-                }),
-                f,
-                f_neg,
-                fnode,
-            };
+            vars = vars.with_tag(vars_tag);
+            break;
         }
 
-        let (f, complement) = 'ret_f: {
+        'ret_f: {
             let vt = vnode.child(0);
             if vlevel < flevel {
                 // vars above f
-                if let Node::Inner(n) = manager.get_node(&vt) {
+                if let Node::Inner(n) = manager.get_node(vt) {
                     debug_assert!(
-                        manager.get_node(&vnode.child(1)).is_any_terminal(),
+                        manager.get_node(vnode.child(1)).is_any_terminal(),
                         "vars must be a conjunction of literals (but both children are non-terminals)"
                     );
-
                     debug_assert_eq!(
                         vnode.child(1).tag(),
-                        if vars_neg {
-                            EdgeTag::None
-                        } else {
-                            EdgeTag::Complemented
-                        },
+                        !vars_tag,
                         "vars must be a conjunction of literals (but is of shape ¬x ∨ {}φ)",
-                        if vars_neg { "¬" } else { "" }
+                        vars_tag.as_neg_sign()
                     );
-                    // shape: x ∧ if vars_neg { ¬φ } else { φ }
-                    let vars_neg = vars_neg ^ (vt.tag() == EdgeTag::Complemented);
-                    return inner(manager, f, f_neg, fnode, flevel, vt, vars_neg, n);
+                    // shape: x ∧ if vars_tag == Complemented { ¬φ } else { φ }
+                    vars_tag ^= vt.tag();
+                    vars = vt;
+                    vnode = n;
+                    continue 'l;
                 }
                 // then edge of vars edge points to ⊤
-                if vars_neg {
+                if vars_tag == EdgeTag::Complemented {
                     // shape ¬x ∧ φ
                     let ve = vnode.child(1);
-                    if let Node::Inner(n) = manager.get_node(&ve) {
+                    if let Node::Inner(n) = manager.get_node(ve) {
                         // `vars` is currently negated, hence `!=`
-                        let vars_neg = ve.tag() != EdgeTag::Complemented;
-                        return inner(manager, f, f_neg, fnode, flevel, ve, vars_neg, n);
+                        vars_tag = !ve.tag();
+                        vars = ve;
+                        vnode = n;
+                        continue 'l;
                     }
                     // shape ¬x
                 } else {
                     debug_assert!(
-                        manager.get_node(&vnode.child(1)).is_any_terminal(),
+                        manager.get_node(vnode.child(1)).is_any_terminal(),
                         "vars must be a conjunction of literals (but is of shape x ∨ φ)"
                     );
                     // shape x
                 }
                 // `vars` is a single variable above `f` ⇒ return `f`
-                break 'ret_f (f, f_neg);
+                break 'ret_f;
             }
 
             debug_assert_eq!(vlevel, flevel);
             // top var at the level of f ⇒ select accordingly
-            let (f, vars, vars_neg, vnode) = if let Node::Inner(n) = manager.get_node(&vt) {
+            (vars, vnode) = if let Node::Inner(n) = manager.get_node(vt) {
                 debug_assert!(
-                    manager.get_node(&vnode.child(1)).is_any_terminal(),
+                    manager.get_node(vnode.child(1)).is_any_terminal(),
                     "vars must be a conjunction of literals (but both children are non-terminals)"
                 );
 
                 debug_assert_eq!(
                     vnode.child(1).tag(),
-                    if vars_neg {
-                        EdgeTag::None
-                    } else {
-                        EdgeTag::Complemented
-                    },
+                    !vars_tag,
                     "vars must be a conjunction of literals (but is of shape ¬x ∨ {}φ)",
-                    if vars_neg { "¬" } else { "" }
+                    vars_tag.as_neg_sign()
                 );
-                // shape: x ∧ if vars_neg { ¬φ } else { φ } ⇒ select then branch
-                let vars_neg = vars_neg ^ (vt.tag() == EdgeTag::Complemented);
-                (fnode.child(0), vt, vars_neg, n)
+                // shape: x ∧ if vars_tag == Complemented { ¬φ } else { φ }
+                // ⇒ select then branch
+                f = fnode.child(0);
+                f_tag ^= f.tag();
+                vars_tag ^= vt.tag();
+                (vt, n)
             } else {
                 // then edge of vars edge points to ⊤
 
-                if !vars_neg {
+                if vars_tag == EdgeTag::None {
                     debug_assert!(
-                        manager.get_node(&vnode.child(1)).is_any_terminal(),
+                        manager.get_node(vnode.child(1)).is_any_terminal(),
                         "vars must be a conjunction of literals (but is of shape x ∨ φ)"
                     );
 
                     // shape x ⇒ select then branch
-                    let f = fnode.child(0);
-                    let f_neg = f_neg ^ (f.tag() == EdgeTag::Complemented);
-                    break 'ret_f (f, f_neg);
+                    f = fnode.child(0);
+                    f_tag ^= f.tag();
+                    break 'ret_f;
                 }
 
                 // shape ¬x ∧ φ ⇒ select else branch
-                let f = fnode.child(1);
+                f = fnode.child(1);
+                f_tag ^= f.tag();
                 let ve = vnode.child(1);
-                if let Node::Inner(n) = manager.get_node(&ve) {
+                if let Node::Inner(n) = manager.get_node(ve) {
                     // `vars` is currently negated, hence `!=`
-                    let vars_neg = ve.tag() != EdgeTag::Complemented;
-                    (f, ve, vars_neg, n)
+                    vars_tag = !ve.tag();
+                    (ve, n)
                 } else {
                     // shape `¬x` ⇒ return
-                    let f_neg = f_neg ^ (f.tag() == EdgeTag::Complemented);
-                    break 'ret_f (f, f_neg);
+                    break 'ret_f;
                 }
             };
 
-            let f_neg = f_neg ^ (f.tag() == EdgeTag::Complemented);
-            if let Node::Inner(fnode) = manager.get_node(&f) {
-                let flevel = fnode.level();
-                return inner(manager, f, f_neg, fnode, flevel, vars, vars_neg, vnode);
+            if let Node::Inner(n) = manager.get_node(f) {
+                fnode = n;
+                flevel = fnode.level();
+                continue 'l;
             }
-            (f, f_neg)
         };
 
-        InnerResult::Done(manager.clone_edge(&f).with_tag_owned(if complement {
-            EdgeTag::Complemented
-        } else {
-            EdgeTag::None
-        }))
+        return Ok(manager.clone_edge(f).with_tag(f_tag));
     }
 
-    let inner_res = {
-        let f_neg = f.tag() == EdgeTag::Complemented;
-        let flevel = fnode.level();
-        let vars_neg = vars.tag() == EdgeTag::Complemented;
-        inner(manager, f, f_neg, fnode, flevel, vars, vars_neg, vnode)
-    };
-    match inner_res {
-        InnerResult::Done(result) => Ok(result),
-        InnerResult::Rec {
-            vars,
-            f,
-            f_neg,
-            fnode,
-        } => {
-            // f above top-most restrict variable
-            let f_untagged = f.with_tag(EdgeTag::None);
-            let f_tag = if f_neg {
-                EdgeTag::Complemented
-            } else {
-                EdgeTag::None
-            };
+    // f above top-most restrict variable
 
-            // Query apply cache
-            stat!(cache_query BCDDOp::Restrict);
-            if let Some(result) = manager.apply_cache().get(
-                manager,
-                BCDDOp::Restrict,
-                &[f_untagged.borrowed(), vars.borrowed()],
-            ) {
-                stat!(cache_hit BCDDOp::Restrict);
-                let result_tag = result.tag();
-                return Ok(result.with_tag_owned(result_tag ^ f_tag));
-            }
+    let f_untagged = f.with_tag(EdgeTag::None);
 
-            let (t, e) = rec.binary(
-                restrict,
-                manager,
-                (fnode.child(0), vars.borrowed()),
-                (fnode.child(1), vars.borrowed()),
-            )?;
-
-            let result = reduce(
-                manager,
-                fnode.level(),
-                t.into_edge(),
-                e.into_edge(),
-                BCDDOp::Restrict,
-            )?;
-
-            manager.apply_cache().add(
-                manager,
-                BCDDOp::Restrict,
-                &[f_untagged, vars],
-                result.borrowed(),
-            );
-
-            let result_tag = result.tag();
-            Ok(result.with_tag_owned(result_tag ^ f_tag))
-        }
+    // Query apply cache
+    stat!(cache_query Restrict);
+    if let Some(result) = manager
+        .apply_cache()
+        .get(manager, Restrict, &[f_untagged, vars])
+    {
+        stat!(cache_hit Restrict);
+        let result_tag = result.tag();
+        return Ok(result.with_tag(result_tag ^ f_tag));
     }
+
+    let (t, e) = rec.binary(
+        restrict,
+        manager,
+        (fnode.child(0), vars),
+        (fnode.child(1), vars),
+    )?;
+
+    let result = reduce(manager, flevel, t.into_edge(), e.into_edge(), Restrict)?;
+
+    manager
+        .apply_cache()
+        .add(manager, Restrict, &[f_untagged, vars], result.borrowed());
+
+    let result_tag = result.tag();
+    Ok(result.with_tag(result_tag ^ f_tag))
 }
 
 /// Compute the quantification `Q` over `vars`
@@ -610,9 +522,9 @@ where
 fn quant<M, R: Recursor<M>, const Q: u8>(
     manager: &M,
     rec: R,
-    f: Borrowed<M::Edge>,
-    vars: Borrowed<M::Edge>,
-) -> AllocResult<M::Edge>
+    f: Ref<'_, M::Edge>,
+    vars: Ref<'_, M::Edge>,
+) -> AllocResult<Own<M::Edge>>
 where
     M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag> + HasApplyCache<M, BCDDOp>,
     M::InnerNode: HasLevel,
@@ -629,12 +541,12 @@ where
 
     stat!(call operator);
     // Terminal cases
-    let fnode = match manager.get_node(&f) {
+    let fnode = match manager.get_node(f) {
         Node::Inner(n) => n,
         Node::Terminal(_) => {
             return Ok(
-                if operator != BCDDOp::Unique || manager.get_node(&vars).is_any_terminal() {
-                    manager.clone_edge(&f)
+                if operator != BCDDOp::Unique || manager.get_node(vars).is_any_terminal() {
+                    manager.clone_edge(f)
                 } else {
                     get_terminal(manager, false)
                 },
@@ -654,53 +566,45 @@ where
         // handle this below.
         vars
     };
-    let vnode = match manager.get_node(&vars) {
+    let vnode = match manager.get_node(vars) {
         Node::Inner(n) => n,
-        Node::Terminal(_) => return Ok(manager.clone_edge(&f)),
+        Node::Terminal(_) => return Ok(manager.clone_edge(f)),
     };
     let vlevel = vnode.level();
     if operator == BCDDOp::Unique && vlevel < flevel {
-        // `vnode` above `fnode`, i.e., the variable does not occur in `f` (see above)
+        // `vnode` above `fnode`, i.e., the variable does not occur in `f` (see
+        // above)
         return Ok(get_terminal(manager, false));
     }
     debug_assert!(flevel <= vlevel);
-    let vars = vars.borrowed();
 
     // Query apply cache
     stat!(cache_query operator);
-    if let Some(res) =
-        manager
-            .apply_cache()
-            .get(manager, operator, &[f.borrowed(), vars.borrowed()])
-    {
+    if let Some(res) = manager.apply_cache().get(manager, operator, &[f, vars]) {
         stat!(cache_hit operator);
         return Ok(res);
     }
 
-    let (ft, fe) = collect_cofactors(f.tag(), fnode);
-    let vt = if vlevel == flevel {
-        vnode.child(0)
-    } else {
-        vars.borrowed()
-    };
-    let (t, e) = rec.binary(
-        quant::<M, R, Q>,
-        manager,
-        (ft, vt.borrowed()),
-        (fe, vt.borrowed()),
-    )?;
+    let res = {
+        let (ft, fe) = collect_cofactors(f.tag(), fnode);
+        let vt = if vlevel == flevel {
+            vnode.child(0)
+        } else {
+            vars
+        };
+        let (t, e) = rec.binary(quant::<M, R, Q>, manager, (ft, vt), (fe, vt))?;
 
-    let res = if flevel == vlevel {
-        match operator {
-            BCDDOp::Forall => apply_and(manager, rec, t.borrowed(), e.borrowed())?,
-            BCDDOp::Exists => not_owned(apply_and(manager, rec, not(&t), not(&e))?),
-            BCDDOp::Unique => {
-                apply_bin::<M, R, { BCDDOp::Xor as u8 }>(manager, rec, t.borrowed(), e.borrowed())?
+        if flevel == vlevel {
+            let (t, e) = (t.borrowed(), e.borrowed());
+            match operator {
+                BCDDOp::Forall => apply_and(manager, rec, t, e)?,
+                BCDDOp::Exists => not_owned(apply_and(manager, rec, not(t), not(e))?),
+                BCDDOp::Unique => apply_bin::<M, R, { BCDDOp::Xor as u8 }>(manager, rec, t, e)?,
+                _ => unreachable!(),
             }
-            _ => unreachable!(),
+        } else {
+            reduce(manager, flevel, t.into_edge(), e.into_edge(), operator)?
         }
-    } else {
-        reduce(manager, flevel, t.into_edge(), e.into_edge(), operator)?
     };
 
     manager
@@ -725,10 +629,10 @@ where
 fn apply_quant<'a, M, R: Recursor<M>, const Q: u8, const OP: u8>(
     manager: &'a M,
     rec: R,
-    f: Borrowed<M::Edge>,
-    g: Borrowed<M::Edge>,
-    vars: Borrowed<M::Edge>,
-) -> AllocResult<M::Edge>
+    f: Ref<'_, M::Edge>,
+    g: Ref<'_, M::Edge>,
+    vars: Ref<'_, M::Edge>,
+) -> AllocResult<Own<M::Edge>>
 where
     M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag> + HasApplyCache<M, BCDDOp>,
     M::InnerNode: HasLevel,
@@ -742,22 +646,22 @@ where
     stat!(call operator);
     // Handle the terminal cases
     let (f, fnode, g, gnode) = if OP == BCDDOp::And as u8 || OP == BCDDOp::UniqueNand as u8 {
-        match super::terminal_and(manager, &f, &g) {
-            NodesOrDone::Nodes(fnode, gnode) if f < g => (f.borrowed(), fnode, g.borrowed(), gnode),
+        match super::terminal_and(manager, f, g) {
+            NodesOrDone::Nodes(fnode, gnode) if f < g => (f, fnode, g, gnode),
             // `And` is commutative, hence we swap `f` and `g` in the apply
             // cache key if `f > g` to have a unique representation of the set
             // `{f, g}`.
-            NodesOrDone::Nodes(fnode, gnode) => (g.borrowed(), gnode, f.borrowed(), fnode),
+            NodesOrDone::Nodes(fnode, gnode) => (g, gnode, f, fnode),
             NodesOrDone::Done(h) if OP == BCDDOp::UniqueNand as u8 => {
-                return quant::<M, R, Q>(manager, rec, not(&h), vars);
+                return quant::<M, R, Q>(manager, rec, not(h.borrowed()), vars);
             }
             NodesOrDone::Done(h) => return quant::<M, R, Q>(manager, rec, h.borrowed(), vars),
         }
     } else {
         assert_eq!(OP, BCDDOp::Xor as u8);
-        match super::terminal_xor(manager, &f, &g) {
-            NodesOrDone::Nodes(fnode, gnode) if f < g => (f.borrowed(), fnode, g.borrowed(), gnode),
-            NodesOrDone::Nodes(fnode, gnode) => (g.borrowed(), gnode, f.borrowed(), fnode),
+        match super::terminal_xor(manager, f, g) {
+            NodesOrDone::Nodes(fnode, gnode) if f < g => (f, fnode, g, gnode),
+            NodesOrDone::Nodes(fnode, gnode) => (g, gnode, f, fnode),
             NodesOrDone::Done(h) => return quant::<M, R, Q>(manager, rec, h.borrowed(), vars),
         }
     };
@@ -773,12 +677,12 @@ where
         crate::set_pop(manager, vars, min_level)
     } else {
         // No need to pop variables here. If the variable is above `min_level`,
-        // i.e., does not occur in `f` or `g`, then the result is `f ⊕ f ≡ ⊥`. We
-        // handle this below.
+        // i.e., does not occur in `f` or `g`, then the result is `f ⊕ f ≡ ⊥`.
+        // We handle this below.
         vars
     };
 
-    let vnode = match manager.get_node(&vars) {
+    let vnode = match manager.get_node(vars) {
         Node::Inner(n) => n,
         // Empty variable set: just apply operation
         Node::Terminal(_) if OP == BCDDOp::UniqueNand as u8 => {
@@ -789,8 +693,8 @@ where
 
     let vlevel = vnode.level();
     if vlevel < min_level && Q == BCDDOp::Unique as u8 {
-        // `vnode` above `fnode` and `gnode`, i.e., the variable does not occur in `f`
-        // or `g` (see above)
+        // `vnode` above `fnode` and `gnode`, i.e., the variable does not occur
+        // in `f` or `g` (see above)
         return Ok(get_terminal(manager, false));
     }
 
@@ -804,11 +708,7 @@ where
 
     // Query the cache
     stat!(cache_query operator);
-    if let Some(res) = manager.apply_cache().get(
-        manager,
-        operator,
-        &[f.borrowed(), g.borrowed(), vars.borrowed()],
-    ) {
+    if let Some(res) = manager.apply_cache().get(manager, operator, &[f, g, vars]) {
         stat!(cache_hit operator);
         return Ok(res);
     }
@@ -816,40 +716,43 @@ where
     let vt = if vlevel == min_level {
         vnode.child(0)
     } else {
-        vars.borrowed()
+        vars
     };
 
     let (ft, fe) = if flevel <= glevel {
         collect_cofactors(f.tag(), fnode)
     } else {
-        (f.borrowed(), f.borrowed())
+        (f, f)
     };
 
     let (gt, ge) = if flevel >= glevel {
         collect_cofactors(g.tag(), gnode)
     } else {
-        (g.borrowed(), g.borrowed())
+        (g, g)
     };
 
-    let (t, e) = rec.ternary(
-        apply_quant::<M, R, Q, OP>,
-        manager,
-        (ft, gt, vt.borrowed()),
-        (fe, ge, vt.borrowed()),
-    )?;
+    let res = {
+        let (t, e) = rec.ternary(
+            apply_quant::<M, R, Q, OP>,
+            manager,
+            (ft, gt, vt),
+            (fe, ge, vt),
+        )?;
 
-    let res = if min_level == vlevel {
-        if Q == BCDDOp::Forall as u8 {
-            apply_and(manager, rec, t.borrowed(), e.borrowed())?
-        } else if Q == BCDDOp::Exists as u8 {
-            not_owned(apply_and(manager, rec, not(&t), not(&e))?)
-        } else if Q == BCDDOp::Unique as u8 {
-            apply_bin::<M, R, { BCDDOp::Xor as u8 }>(manager, rec, t.borrowed(), e.borrowed())?
+        if min_level == vlevel {
+            let (t, e) = (t.borrowed(), e.borrowed());
+            if Q == BCDDOp::Forall as u8 {
+                apply_and(manager, rec, t, e)?
+            } else if Q == BCDDOp::Exists as u8 {
+                not_owned(apply_and(manager, rec, not(t), not(e))?)
+            } else if Q == BCDDOp::Unique as u8 {
+                apply_bin::<M, R, { BCDDOp::Xor as u8 }>(manager, rec, t, e)?
+            } else {
+                unreachable!()
+            }
         } else {
-            unreachable!()
+            reduce(manager, min_level, t.into_edge(), e.into_edge(), operator)?
         }
-    } else {
-        reduce(manager, min_level, t.into_edge(), e.into_edge(), operator)?
     };
 
     manager
@@ -869,10 +772,10 @@ fn apply_quant_dispatch<'a, M, R: Recursor<M>, const Q: u8, const QN: u8>(
     manager: &'a M,
     rec: R,
     op: BooleanOperator,
-    f: Borrowed<M::Edge>,
-    g: Borrowed<M::Edge>,
-    vars: Borrowed<M::Edge>,
-) -> AllocResult<M::Edge>
+    f: Ref<'_, M::Edge>,
+    g: Ref<'_, M::Edge>,
+    vars: Ref<'_, M::Edge>,
+) -> AllocResult<Own<M::Edge>>
 where
     M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag> + HasApplyCache<M, BCDDOp>,
     M::InnerNode: HasLevel,
@@ -891,7 +794,7 @@ where
     match op {
         And => apply_quant::<M, R, Q, OA>(manager, rec, f, g, vars),
         Or => {
-            let tmp = apply_quant::<M, R, QN, OA>(manager, rec, not(&f), not(&g), vars)?;
+            let tmp = apply_quant::<M, R, QN, OA>(manager, rec, not(f), not(g), vars)?;
             Ok(not_owned(tmp))
         }
         Xor => apply_quant::<M, R, Q, OX>(manager, rec, f, g, vars),
@@ -903,12 +806,12 @@ where
             let tmp = apply_quant::<M, R, QN, OA>(manager, rec, f, g, vars)?;
             Ok(not_owned(tmp))
         }
-        Nor => apply_quant::<M, R, Q, OA>(manager, rec, not(&f), not(&g), vars),
+        Nor => apply_quant::<M, R, Q, OA>(manager, rec, not(f), not(g), vars),
         Imp => {
-            let tmp = apply_quant::<M, R, QN, OA>(manager, rec, f, not(&g), vars)?;
+            let tmp = apply_quant::<M, R, QN, OA>(manager, rec, f, not(g), vars)?;
             Ok(not_owned(tmp))
         }
-        ImpStrict => apply_quant::<M, R, Q, OA>(manager, rec, not(&f), g, vars),
+        ImpStrict => apply_quant::<M, R, Q, OA>(manager, rec, not(f), g, vars),
     }
 }
 
@@ -920,10 +823,10 @@ fn apply_quant_unique_dispatch<'a, M, R: Recursor<M>>(
     manager: &'a M,
     rec: R,
     op: BooleanOperator,
-    f: Borrowed<M::Edge>,
-    g: Borrowed<M::Edge>,
-    vars: Borrowed<M::Edge>,
-) -> AllocResult<M::Edge>
+    f: Ref<'_, M::Edge>,
+    g: Ref<'_, M::Edge>,
+    vars: Ref<'_, M::Edge>,
+) -> AllocResult<Own<M::Edge>>
 where
     M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag> + HasApplyCache<M, BCDDOp>,
     M::InnerNode: HasLevel,
@@ -936,13 +839,13 @@ where
 
     match op {
         And => apply_quant::<M, R, Q, OA>(manager, rec, f, g, vars),
-        Or => apply_quant::<M, R, Q, ONA>(manager, rec, not(&f), not(&g), vars),
+        Or => apply_quant::<M, R, Q, ONA>(manager, rec, not(f), not(g), vars),
         Xor => apply_quant::<M, R, Q, OX>(manager, rec, f, g, vars),
-        Equiv => apply_quant::<M, R, Q, OX>(manager, rec, not(&f), g, vars),
+        Equiv => apply_quant::<M, R, Q, OX>(manager, rec, not(f), g, vars),
         Nand => apply_quant::<M, R, Q, ONA>(manager, rec, f, g, vars),
-        Nor => apply_quant::<M, R, Q, OA>(manager, rec, not(&f), not(&g), vars),
-        Imp => apply_quant::<M, R, Q, ONA>(manager, rec, f, not(&g), vars),
-        ImpStrict => apply_quant::<M, R, Q, OA>(manager, rec, not(&f), g, vars),
+        Nor => apply_quant::<M, R, Q, OA>(manager, rec, not(f), not(g), vars),
+        Imp => apply_quant::<M, R, Q, ONA>(manager, rec, f, not(g), vars),
+        ImpStrict => apply_quant::<M, R, Q, OA>(manager, rec, not(f), g, vars),
     }
 }
 
@@ -981,14 +884,12 @@ where
 {
     fn substitute_edge<'id, 'a>(
         manager: &'a Self::Manager<'id>,
-        edge: &'a EdgeOfFunc<'id, Self>,
-        substitution: impl oxidd_core::util::Substitution<
-            Replacement = Borrowed<'a, EdgeOfFunc<'id, Self>>,
-        >,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        edge: Ref<'a, EdgeOfFunc<'id, Self>>,
+        substitution: impl oxidd_core::util::Substitution<Replacement = Ref<'a, EdgeOfFunc<'id, Self>>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         let rec = SequentialRecursor;
         let subst = substitute_prepare(manager, substitution.pairs())?;
-        substitute(manager, rec, edge.borrowed(), &subst, substitution.id())
+        substitute(manager, rec, edge, &subst, substitution.id())
     }
 }
 
@@ -1001,7 +902,7 @@ where
     fn var_edge<'id>(
         manager: &Self::Manager<'id>,
         var: VarNo,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         let t = get_terminal(manager, true);
         let e = get_terminal(manager, false);
         let level = manager.var_to_level(var);
@@ -1012,134 +913,123 @@ where
     }
 
     #[inline]
-    fn f_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self> {
+    fn f_edge<'id>(manager: &Self::Manager<'id>) -> OwnEdgeOfFunc<'id, Self> {
         get_terminal(manager, false)
     }
     #[inline]
-    fn t_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self> {
+    fn t_edge<'id>(manager: &Self::Manager<'id>) -> OwnEdgeOfFunc<'id, Self> {
         get_terminal(manager, true)
     }
 
     #[inline]
     fn restrict_edge<'id>(
         manager: &Self::Manager<'id>,
-        root: &EdgeOfFunc<'id, Self>,
-        vars: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        root: Ref<'_, EdgeOfFunc<'id, Self>>,
+        vars: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         let rec = SequentialRecursor;
-        restrict(manager, rec, root.borrowed(), vars.borrowed())
+        restrict(manager, rec, root, vars)
     }
 
     #[inline]
     fn not_edge<'id>(
         manager: &Self::Manager<'id>,
-        edge: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        edge: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         Ok(not_owned(manager.clone_edge(edge)))
     }
     #[inline]
     fn not_edge_owned<'id>(
         _manager: &Self::Manager<'id>,
-        edge: EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        edge: OwnEdgeOfFunc<'id, Self>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         Ok(not_owned(edge))
     }
 
     #[inline]
     fn and_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         let rec = SequentialRecursor;
-        apply_and(manager, rec, lhs.borrowed(), rhs.borrowed())
+        apply_and(manager, rec, lhs, rhs)
     }
     #[inline]
     fn or_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         Ok(not_owned(Self::nor_edge(manager, lhs, rhs)?))
     }
     #[inline]
     fn nand_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         Ok(not_owned(Self::and_edge(manager, lhs, rhs)?))
     }
     #[inline]
     fn nor_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         let rec = SequentialRecursor;
         apply_and(manager, rec, not(lhs), not(rhs))
     }
     #[inline]
     fn xor_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         let rec = SequentialRecursor;
-        apply_bin::<_, _, { BCDDOp::Xor as u8 }>(manager, rec, lhs.borrowed(), rhs.borrowed())
+        apply_bin::<_, _, { BCDDOp::Xor as u8 }>(manager, rec, lhs, rhs)
     }
     #[inline]
     fn equiv_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         Ok(not_owned(Self::xor_edge(manager, lhs, rhs)?))
     }
     #[inline]
     fn imp_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         let rec = SequentialRecursor;
-        Ok(not_owned(apply_and(
-            manager,
-            rec,
-            lhs.borrowed(),
-            not(rhs),
-        )?))
+        Ok(not_owned(apply_and(manager, rec, lhs, not(rhs))?))
     }
     #[inline]
     fn imp_strict_edge<'id>(
         manager: &Self::Manager<'id>,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         let rec = SequentialRecursor;
-        apply_and(manager, rec, not(lhs), rhs.borrowed())
+        apply_and(manager, rec, not(lhs), rhs)
     }
 
     #[inline]
     fn ite_edge<'id>(
         manager: &Self::Manager<'id>,
-        if_edge: &EdgeOfFunc<'id, Self>,
-        then_edge: &EdgeOfFunc<'id, Self>,
-        else_edge: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-        apply_ite(
-            manager,
-            SequentialRecursor,
-            if_edge.borrowed(),
-            then_edge.borrowed(),
-            else_edge.borrowed(),
-        )
+        if_edge: Ref<'_, EdgeOfFunc<'id, Self>>,
+        then_edge: Ref<'_, EdgeOfFunc<'id, Self>>,
+        else_edge: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+        apply_ite(manager, SequentialRecursor, if_edge, then_edge, else_edge)
     }
 
     #[inline]
     fn sat_count_edge<'id, N: SatCountNumber, S: BuildHasher>(
         manager: &Self::Manager<'id>,
-        edge: &EdgeOfFunc<'id, Self>,
+        edge: Ref<'_, EdgeOfFunc<'id, Self>>,
         vars: LevelNo,
         cache: &mut SatCountCache<N, S>,
     ) -> N {
@@ -1172,7 +1062,7 @@ where
         // explicitly.
         fn inner<M, N, S>(
             manager: &M,
-            e: Borrowed<M::Edge>,
+            e: Ref<'_, M::Edge>,
             terminal_val: &N,
             cache: &mut SatCountCache<N, S>,
         ) -> N
@@ -1182,7 +1072,7 @@ where
             S: BuildHasher,
         {
             let tag = e.tag();
-            let node = match manager.get_node(&e) {
+            let node = match manager.get_node(e) {
                 Node::Inner(node) => node,
                 Node::Terminal(_) if tag == EdgeTag::None => return terminal_val.clone(),
                 Node::Terminal(_) => return N::from(0u32),
@@ -1208,12 +1098,13 @@ where
         let scale_exp = (-N::MIN_EXP) as u32;
         let terminal_val = N::from(1u32)
             << if vars >= scale_exp {
-                // scale down to increase the precision if we have many variables
+                // scale down to increase the precision if we have many
+                // variables
                 vars - scale_exp
             } else {
                 vars
             };
-        let res = inner(manager, edge.borrowed(), &terminal_val, cache);
+        let res = inner(manager, edge, &terminal_val, cache);
         if vars >= scale_exp {
             res << scale_exp // scale up again
         } else {
@@ -1222,37 +1113,11 @@ where
     }
 
     #[inline]
-    fn pick_cube_edge<'id>(
-        manager: &Self::Manager<'id>,
-        edge: &EdgeOfFunc<'id, Self>,
-        choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>, LevelNo) -> bool,
+    fn pick_cube_edge<'id, 'a>(
+        manager: &'a Self::Manager<'id>,
+        mut edge: Ref<'a, EdgeOfFunc<'id, Self>>,
+        mut choice: impl FnMut(&Self::Manager<'id>, Ref<'_, EdgeOfFunc<'id, Self>>, LevelNo) -> bool,
     ) -> Option<Vec<OptBool>> {
-        #[inline] // this function is tail-recursive
-        fn inner<M: Manager<EdgeTag = EdgeTag>>(
-            manager: &M,
-            edge: Borrowed<M::Edge>,
-            cube: &mut [OptBool],
-            mut choice: impl FnMut(&M, &M::Edge, LevelNo) -> bool,
-        ) where
-            M::InnerNode: HasLevel,
-        {
-            let Node::Inner(node) = manager.get_node(&edge) else {
-                return;
-            };
-            let tag = edge.tag();
-            let level = node.level();
-            let (t, e) = collect_cofactors(tag, node);
-            let c = if is_false(manager, &t) {
-                false
-            } else if is_false(manager, &e) {
-                true
-            } else {
-                choice(manager, &edge, level)
-            };
-            cube[manager.level_to_var(level) as usize] = OptBool::from(c);
-            inner(manager, if c { t } else { e }, cube, choice);
-        }
-
         if manager.get_node(edge).is_any_terminal() {
             return match edge.tag() {
                 EdgeTag::None => Some(vec![OptBool::None; manager.num_levels() as usize]),
@@ -1261,68 +1126,83 @@ where
         }
 
         let mut cube = vec![OptBool::None; manager.num_levels() as usize];
-        inner(manager, edge.borrowed(), &mut cube, choice);
+
+        while let Node::Inner(node) = manager.get_node(edge) {
+            let tag = edge.tag();
+            let level = node.level();
+            let (t, e) = collect_cofactors(tag, node);
+            let c = if is_false(manager, t) {
+                false
+            } else if is_false(manager, e) {
+                true
+            } else {
+                choice(manager, edge, level)
+            };
+            cube[manager.level_to_var(level) as usize] = OptBool::from(c);
+            edge = if c { t } else { e };
+        }
+
         Some(cube)
     }
 
     #[inline]
     fn pick_cube_dd_edge<'id>(
         manager: &Self::Manager<'id>,
-        edge: &EdgeOfFunc<'id, Self>,
-        choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>, LevelNo) -> bool,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        edge: Ref<'_, EdgeOfFunc<'id, Self>>,
+        choice: impl FnMut(&Self::Manager<'id>, Ref<'_, EdgeOfFunc<'id, Self>>, LevelNo) -> bool,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         fn inner<M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal>>(
             manager: &M,
-            edge: Borrowed<M::Edge>,
-            mut choice: impl FnMut(&M, &M::Edge, LevelNo) -> bool,
-        ) -> AllocResult<M::Edge>
+            edge: Ref<'_, M::Edge>,
+            mut choice: impl FnMut(&M, Ref<'_, M::Edge>, LevelNo) -> bool,
+        ) -> AllocResult<Own<M::Edge>>
         where
             M::InnerNode: HasLevel,
         {
-            let Node::Inner(node) = manager.get_node(&edge) else {
-                return Ok(manager.clone_edge(&edge));
+            let Node::Inner(node) = manager.get_node(edge) else {
+                return Ok(manager.clone_edge(edge));
             };
 
             let (t, e) = collect_cofactors(edge.tag(), node);
             let level = node.level();
-            let c = if is_false(manager, &t) {
+            let c = if is_false(manager, t) {
                 false
-            } else if is_false(manager, &e) {
+            } else if is_false(manager, e) {
                 true
             } else {
-                choice(manager, &edge, level)
+                choice(manager, edge, level)
             };
 
             let sub = inner(manager, if c { t } else { e }, choice)?;
             add_literal_to_cube(manager, sub, level, c)
         }
 
-        inner(manager, edge.borrowed(), choice)
+        inner(manager, edge, choice)
     }
 
     fn pick_cube_dd_set_edge<'id>(
         manager: &Self::Manager<'id>,
-        edge: &EdgeOfFunc<'id, Self>,
-        literal_set: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        edge: Ref<'_, EdgeOfFunc<'id, Self>>,
+        literal_set: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         fn inner<M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal>>(
             manager: &M,
-            edge: Borrowed<M::Edge>,
-            literal_set: Borrowed<M::Edge>,
-        ) -> AllocResult<M::Edge>
+            edge: Ref<'_, M::Edge>,
+            literal_set: Ref<'_, M::Edge>,
+        ) -> AllocResult<Own<M::Edge>>
         where
             M::InnerNode: HasLevel,
         {
-            let Node::Inner(node) = manager.get_node(&edge) else {
-                return Ok(manager.clone_edge(&edge));
+            let Node::Inner(node) = manager.get_node(edge) else {
+                return Ok(manager.clone_edge(edge));
             };
             let level = node.level();
 
             let literal_set = crate::set_pop(manager, literal_set, level);
-            let (literal_set, c) = match manager.get_node(&literal_set) {
+            let (literal_set, c) = match manager.get_node(literal_set) {
                 Node::Inner(node) if node.level() == level => {
                     let (t, e) = collect_cofactors(literal_set.tag(), node);
-                    if is_false(manager, &e) {
+                    if is_false(manager, e) {
                         (e, true)
                     } else {
                         (t, false)
@@ -1332,9 +1212,9 @@ where
             };
 
             let (t, e) = collect_cofactors(edge.tag(), node);
-            let c = if is_false(manager, &t) {
+            let c = if is_false(manager, t) {
                 false
-            } else if is_false(manager, &e) {
+            } else if is_false(manager, e) {
                 true
             } else {
                 c
@@ -1344,13 +1224,13 @@ where
             add_literal_to_cube(manager, sub, level, c)
         }
 
-        inner(manager, edge.borrowed(), literal_set.borrowed())
+        inner(manager, edge, literal_set)
     }
 
     #[inline]
-    fn eval_edge<'id>(
-        manager: &Self::Manager<'id>,
-        edge: &EdgeOfFunc<'id, Self>,
+    fn eval_edge<'id, 'a>(
+        manager: &'a Self::Manager<'id>,
+        mut edge: Ref<'a, EdgeOfFunc<'id, Self>>,
         args: impl IntoIterator<Item = (VarNo, bool)>,
     ) -> bool {
         // `choices` maps levels to the child number to choose
@@ -1360,28 +1240,16 @@ where
             choices.set(manager.var_to_level(var) as usize, !val);
         }
 
-        #[inline] // this function is tail-recursive
-        fn inner<M>(
-            manager: &M,
-            edge: Borrowed<M::Edge>,
-            complement: bool,
-            choices: &FixedBitSet,
-        ) -> bool
-        where
-            M: Manager<EdgeTag = EdgeTag>,
-            M::InnerNode: HasLevel,
-        {
-            let complement = complement ^ (edge.tag() == EdgeTag::Complemented);
-            match manager.get_node(&edge) {
+        let mut complement = false;
+        loop {
+            complement ^= edge.tag() == EdgeTag::Complemented;
+            match manager.get_node(edge) {
                 Node::Inner(node) => {
-                    let edge = node.child(choices.contains(node.level() as usize) as usize);
-                    inner(manager, edge, complement, choices)
+                    edge = node.child(choices.contains(node.level() as usize) as usize);
                 }
-                Node::Terminal(_) => !complement,
+                Node::Terminal(_) => break !complement,
             }
         }
-
-        inner(manager, edge.borrowed(), false, &choices)
     }
 }
 
@@ -1394,75 +1262,74 @@ where
     #[inline]
     fn forall_edge<'id>(
         manager: &Self::Manager<'id>,
-        root: &EdgeOfFunc<'id, Self>,
-        vars: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        root: Ref<'_, EdgeOfFunc<'id, Self>>,
+        vars: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         let rec = SequentialRecursor;
-        quant::<_, _, { BCDDOp::Forall as u8 }>(manager, rec, root.borrowed(), vars.borrowed())
+        quant::<_, _, { BCDDOp::Forall as u8 }>(manager, rec, root, vars)
     }
     #[inline]
     fn exists_edge<'id>(
         manager: &Self::Manager<'id>,
-        root: &EdgeOfFunc<'id, Self>,
-        vars: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        root: Ref<'_, EdgeOfFunc<'id, Self>>,
+        vars: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         let rec = SequentialRecursor;
-        quant::<_, _, { BCDDOp::Exists as u8 }>(manager, rec, root.borrowed(), vars.borrowed())
+        quant::<_, _, { BCDDOp::Exists as u8 }>(manager, rec, root, vars)
     }
     #[inline]
     fn unique_edge<'id>(
         manager: &Self::Manager<'id>,
-        root: &EdgeOfFunc<'id, Self>,
-        vars: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        root: Ref<'_, EdgeOfFunc<'id, Self>>,
+        vars: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         let rec = SequentialRecursor;
-        quant::<_, _, { BCDDOp::Unique as u8 }>(manager, rec, root.borrowed(), vars.borrowed())
+        quant::<_, _, { BCDDOp::Unique as u8 }>(manager, rec, root, vars)
     }
 
     #[inline]
     fn apply_forall_edge<'id>(
         manager: &Self::Manager<'id>,
         op: BooleanOperator,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-        vars: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        vars: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         apply_quant_dispatch::<_, _, { BCDDOp::Forall as u8 }, { BCDDOp::Exists as u8 }>(
             manager,
             SequentialRecursor,
             op,
-            lhs.borrowed(),
-            rhs.borrowed(),
-            vars.borrowed(),
+            lhs,
+            rhs,
+            vars,
         )
     }
     #[inline]
     fn apply_exists_edge<'id>(
         manager: &Self::Manager<'id>,
         op: BooleanOperator,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-        vars: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        vars: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         apply_quant_dispatch::<_, _, { BCDDOp::Exists as u8 }, { BCDDOp::Forall as u8 }>(
             manager,
             SequentialRecursor,
             op,
-            lhs.borrowed(),
-            rhs.borrowed(),
-            vars.borrowed(),
+            lhs,
+            rhs,
+            vars,
         )
     }
     #[inline]
     fn apply_unique_edge<'id>(
         manager: &Self::Manager<'id>,
         op: BooleanOperator,
-        lhs: &EdgeOfFunc<'id, Self>,
-        rhs: &EdgeOfFunc<'id, Self>,
-        vars: &EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        vars: Ref<'_, EdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         let rec = SequentialRecursor;
-        let (lhs, rhs, vars) = (lhs.borrowed(), rhs.borrowed(), vars.borrowed());
         apply_quant_unique_dispatch(manager, rec, op, lhs, rhs, vars)
     }
 }
@@ -1511,13 +1378,12 @@ pub mod mt {
     {
         fn substitute_edge<'id, 'a>(
             manager: &'a Self::Manager<'id>,
-            edge: &'a EdgeOfFunc<'id, Self>,
+            edge: Ref<'a, EdgeOfFunc<'id, Self>>,
             substitution: impl oxidd_core::util::Substitution<
-                Replacement = Borrowed<'a, EdgeOfFunc<'id, Self>>,
+                Replacement = Ref<'a, EdgeOfFunc<'id, Self>>,
             >,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             let subst = substitute_prepare(manager, substitution.pairs())?;
-            let edge = edge.borrowed();
             let cache_id = substitution.id();
             let rec = ParallelRecursor::new(manager);
             substitute(manager, rec, edge, &subst, cache_id)
@@ -1536,59 +1402,57 @@ pub mod mt {
         fn var_edge<'id>(
             manager: &Self::Manager<'id>,
             var: VarNo,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             BCDDFunction::<F>::var_edge(manager, var)
         }
 
         #[inline]
-        fn f_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self> {
+        fn f_edge<'id>(manager: &Self::Manager<'id>) -> OwnEdgeOfFunc<'id, Self> {
             get_terminal(manager, false)
         }
         #[inline]
-        fn t_edge<'id>(manager: &Self::Manager<'id>) -> EdgeOfFunc<'id, Self> {
+        fn t_edge<'id>(manager: &Self::Manager<'id>) -> OwnEdgeOfFunc<'id, Self> {
             get_terminal(manager, true)
         }
 
         #[inline]
         fn restrict_edge<'id>(
             manager: &Self::Manager<'id>,
-            root: &EdgeOfFunc<'id, Self>,
-            vars: &EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let (root, vars) = (root.borrowed(), vars.borrowed());
+            root: Ref<'_, EdgeOfFunc<'id, Self>>,
+            vars: Ref<'_, EdgeOfFunc<'id, Self>>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             restrict(manager, ParallelRecursor::new(manager), root, vars)
         }
 
         #[inline]
         fn not_edge<'id>(
             manager: &Self::Manager<'id>,
-            edge: &EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            edge: Ref<'_, EdgeOfFunc<'id, Self>>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             Ok(not_owned(manager.clone_edge(edge)))
         }
         #[inline]
         fn not_edge_owned<'id>(
             _manager: &Self::Manager<'id>,
-            edge: EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            edge: OwnEdgeOfFunc<'id, Self>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             Ok(not_owned(edge))
         }
 
         #[inline]
         fn and_edge<'id>(
             manager: &Self::Manager<'id>,
-            lhs: &EdgeOfFunc<'id, Self>,
-            rhs: &EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let (lhs, rhs) = (lhs.borrowed(), rhs.borrowed());
+            lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+            rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             apply_and(manager, ParallelRecursor::new(manager), lhs, rhs)
         }
         #[inline]
         fn or_edge<'id>(
             manager: &Self::Manager<'id>,
-            lhs: &EdgeOfFunc<'id, Self>,
-            rhs: &EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+            rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             let (nl, nr) = (not(lhs), not(rhs));
             let nor = apply_and(manager, ParallelRecursor::new(manager), nl, nr)?;
             Ok(not_owned(nor))
@@ -1596,39 +1460,36 @@ pub mod mt {
         #[inline]
         fn nand_edge<'id>(
             manager: &Self::Manager<'id>,
-            lhs: &EdgeOfFunc<'id, Self>,
-            rhs: &EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let (lhs, rhs) = (lhs.borrowed(), rhs.borrowed());
+            lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+            rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             let and = apply_and(manager, ParallelRecursor::new(manager), lhs, rhs)?;
             Ok(not_owned(and))
         }
         #[inline]
         fn nor_edge<'id>(
             manager: &Self::Manager<'id>,
-            lhs: &EdgeOfFunc<'id, Self>,
-            rhs: &EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+            rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             let (nl, nr) = (not(lhs), not(rhs));
             apply_and(manager, ParallelRecursor::new(manager), nl, nr)
         }
         #[inline]
         fn xor_edge<'id>(
             manager: &Self::Manager<'id>,
-            lhs: &EdgeOfFunc<'id, Self>,
-            rhs: &EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let (lhs, rhs) = (lhs.borrowed(), rhs.borrowed());
+            lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+            rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             let rec = ParallelRecursor::new(manager);
             apply_bin::<_, _, { BCDDOp::Xor as u8 }>(manager, rec, lhs, rhs)
         }
         #[inline]
         fn equiv_edge<'id>(
             manager: &Self::Manager<'id>,
-            lhs: &EdgeOfFunc<'id, Self>,
-            rhs: &EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let (lhs, rhs) = (lhs.borrowed(), rhs.borrowed());
+            lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+            rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             let rec = ParallelRecursor::new(manager);
             Ok(not_owned(apply_bin::<_, _, { BCDDOp::Xor as u8 }>(
                 manager, rec, lhs, rhs,
@@ -1637,39 +1498,38 @@ pub mod mt {
         #[inline]
         fn imp_edge<'id>(
             manager: &Self::Manager<'id>,
-            lhs: &EdgeOfFunc<'id, Self>,
-            rhs: &EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+            rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             // a → b ≡ ¬a ∨ b ≡ ¬(a ∧ ¬b)
-            let (lhs, nr) = (lhs.borrowed(), not(rhs));
+            let (lhs, nr) = (lhs, not(rhs));
             let not_imp = apply_and(manager, ParallelRecursor::new(manager), lhs, nr)?;
             Ok(not_owned(not_imp))
         }
         #[inline]
         fn imp_strict_edge<'id>(
             manager: &Self::Manager<'id>,
-            lhs: &EdgeOfFunc<'id, Self>,
-            rhs: &EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let (nl, rhs) = (not(lhs), rhs.borrowed());
+            lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+            rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+            let (nl, rhs) = (not(lhs), rhs);
             apply_and(manager, ParallelRecursor::new(manager), nl, rhs)
         }
 
         #[inline]
         fn ite_edge<'id>(
             manager: &Self::Manager<'id>,
-            f: &EdgeOfFunc<'id, Self>,
-            g: &EdgeOfFunc<'id, Self>,
-            h: &EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let (f, g, h) = (f.borrowed(), g.borrowed(), h.borrowed());
+            f: Ref<'_, EdgeOfFunc<'id, Self>>,
+            g: Ref<'_, EdgeOfFunc<'id, Self>>,
+            h: Ref<'_, EdgeOfFunc<'id, Self>>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             apply_ite(manager, ParallelRecursor::new(manager), f, g, h)
         }
 
         #[inline]
         fn sat_count_edge<'id, N: SatCountNumber, S: std::hash::BuildHasher>(
             manager: &Self::Manager<'id>,
-            edge: &EdgeOfFunc<'id, Self>,
+            edge: Ref<'_, EdgeOfFunc<'id, Self>>,
             vars: LevelNo,
             cache: &mut SatCountCache<N, S>,
         ) -> N {
@@ -1679,32 +1539,32 @@ pub mod mt {
         #[inline]
         fn pick_cube_edge<'id>(
             manager: &Self::Manager<'id>,
-            edge: &EdgeOfFunc<'id, Self>,
-            choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>, LevelNo) -> bool,
+            edge: Ref<'_, EdgeOfFunc<'id, Self>>,
+            choice: impl FnMut(&Self::Manager<'id>, Ref<'_, EdgeOfFunc<'id, Self>>, LevelNo) -> bool,
         ) -> Option<Vec<OptBool>> {
             BCDDFunction::<F>::pick_cube_edge(manager, edge, choice)
         }
         #[inline]
         fn pick_cube_dd_edge<'id>(
             manager: &Self::Manager<'id>,
-            edge: &EdgeOfFunc<'id, Self>,
-            choice: impl FnMut(&Self::Manager<'id>, &EdgeOfFunc<'id, Self>, LevelNo) -> bool,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            edge: Ref<'_, EdgeOfFunc<'id, Self>>,
+            choice: impl FnMut(&Self::Manager<'id>, Ref<'_, EdgeOfFunc<'id, Self>>, LevelNo) -> bool,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             BCDDFunction::<F>::pick_cube_dd_edge(manager, edge, choice)
         }
         #[inline]
         fn pick_cube_dd_set_edge<'id>(
             manager: &Self::Manager<'id>,
-            edge: &EdgeOfFunc<'id, Self>,
-            literal_set: &EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            edge: Ref<'_, EdgeOfFunc<'id, Self>>,
+            literal_set: Ref<'_, EdgeOfFunc<'id, Self>>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             BCDDFunction::<F>::pick_cube_dd_set_edge(manager, edge, literal_set)
         }
 
         #[inline]
         fn eval_edge<'id>(
             manager: &Self::Manager<'id>,
-            edge: &EdgeOfFunc<'id, Self>,
+            edge: Ref<'_, EdgeOfFunc<'id, Self>>,
             args: impl IntoIterator<Item = (VarNo, bool)>,
         ) -> bool {
             BCDDFunction::<F>::eval_edge(manager, edge, args)
@@ -1722,30 +1582,27 @@ pub mod mt {
         #[inline]
         fn forall_edge<'id>(
             manager: &Self::Manager<'id>,
-            root: &EdgeOfFunc<'id, Self>,
-            vars: &EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let (root, vars) = (root.borrowed(), vars.borrowed());
+            root: Ref<'_, EdgeOfFunc<'id, Self>>,
+            vars: Ref<'_, EdgeOfFunc<'id, Self>>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             let rec = ParallelRecursor::new(manager);
             quant::<_, _, { BCDDOp::Forall as u8 }>(manager, rec, root, vars)
         }
         #[inline]
         fn exists_edge<'id>(
             manager: &Self::Manager<'id>,
-            root: &EdgeOfFunc<'id, Self>,
-            vars: &EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let (root, vars) = (root.borrowed(), vars.borrowed());
+            root: Ref<'_, EdgeOfFunc<'id, Self>>,
+            vars: Ref<'_, EdgeOfFunc<'id, Self>>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             let rec = ParallelRecursor::new(manager);
             quant::<_, _, { BCDDOp::Exists as u8 }>(manager, rec, root, vars)
         }
         #[inline]
         fn unique_edge<'id>(
             manager: &Self::Manager<'id>,
-            root: &EdgeOfFunc<'id, Self>,
-            vars: &EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let (root, vars) = (root.borrowed(), vars.borrowed());
+            root: Ref<'_, EdgeOfFunc<'id, Self>>,
+            vars: Ref<'_, EdgeOfFunc<'id, Self>>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             let rec = ParallelRecursor::new(manager);
             quant::<_, _, { BCDDOp::Unique as u8 }>(manager, rec, root, vars)
         }
@@ -1754,47 +1611,36 @@ pub mod mt {
         fn apply_forall_edge<'id>(
             manager: &Self::Manager<'id>,
             op: BooleanOperator,
-            lhs: &EdgeOfFunc<'id, Self>,
-            rhs: &EdgeOfFunc<'id, Self>,
-            vars: &EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let (lhs, rhs, vars) = (lhs.borrowed(), rhs.borrowed(), vars.borrowed());
+            lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+            rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+            vars: Ref<'_, EdgeOfFunc<'id, Self>>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+            let rec = ParallelRecursor::new(manager);
             apply_quant_dispatch::<_, _, { BCDDOp::Forall as u8 }, { BCDDOp::Exists as u8 }>(
-                manager,
-                ParallelRecursor::new(manager),
-                op,
-                lhs,
-                rhs,
-                vars,
+                manager, rec, op, lhs, rhs, vars,
             )
         }
         #[inline]
         fn apply_exists_edge<'id>(
             manager: &Self::Manager<'id>,
             op: BooleanOperator,
-            lhs: &EdgeOfFunc<'id, Self>,
-            rhs: &EdgeOfFunc<'id, Self>,
-            vars: &EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let (lhs, rhs, vars) = (lhs.borrowed(), rhs.borrowed(), vars.borrowed());
+            lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+            rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+            vars: Ref<'_, EdgeOfFunc<'id, Self>>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+            let rec = ParallelRecursor::new(manager);
             apply_quant_dispatch::<_, _, { BCDDOp::Exists as u8 }, { BCDDOp::Forall as u8 }>(
-                manager,
-                ParallelRecursor::new(manager),
-                op,
-                lhs,
-                rhs,
-                vars,
+                manager, rec, op, lhs, rhs, vars,
             )
         }
         #[inline]
         fn apply_unique_edge<'id>(
             manager: &Self::Manager<'id>,
             op: BooleanOperator,
-            lhs: &EdgeOfFunc<'id, Self>,
-            rhs: &EdgeOfFunc<'id, Self>,
-            vars: &EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
-            let (lhs, rhs, vars) = (lhs.borrowed(), rhs.borrowed(), vars.borrowed());
+            lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+            rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
+            vars: Ref<'_, EdgeOfFunc<'id, Self>>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             let rec = ParallelRecursor::new(manager);
             apply_quant_unique_dispatch(manager, rec, op, lhs, rhs, vars)
         }
