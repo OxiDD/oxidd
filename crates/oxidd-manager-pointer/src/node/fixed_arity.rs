@@ -76,7 +76,7 @@ impl<ET: Tag, const TAG_BITS: u32, const ARITY: usize> Hash
     #[inline(always)]
     fn hash<H: Hasher>(&self, state: &mut H) {
         // SAFETY: we have shared access to the node
-        unsafe { &*self.children.get() }.hash(state);
+        crate::util::hash_children(unsafe { &*self.children.get() }, state)
     }
 }
 

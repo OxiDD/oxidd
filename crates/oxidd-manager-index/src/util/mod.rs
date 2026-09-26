@@ -1,10 +1,17 @@
+use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 mod var_level_map;
 pub use var_level_map::VarLevelMap;
 pub mod rwlock;
+
+#[inline(always)]
+pub fn hash_children<E: Hash, H: Hasher>(children: impl IntoIterator<Item = E>, state: &mut H) {
+    for child in children {
+        child.hash(state);
+    }
+}
 
 /// Invariant lifetime
 pub type Invariant<'id> = PhantomData<fn(&'id ()) -> &'id ()>;

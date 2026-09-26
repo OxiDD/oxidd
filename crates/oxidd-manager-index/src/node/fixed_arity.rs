@@ -43,7 +43,7 @@ impl<ET: Tag, const ARITY: usize> Hash for NodeWithLevel<'_, ET, ARITY> {
     #[inline(always)]
     fn hash<H: Hasher>(&self, state: &mut H) {
         // SAFETY: we have shared access to the node
-        unsafe { &*self.children.get() }.hash(state);
+        crate::util::hash_children(unsafe { &*self.children.get() }, state);
     }
 }
 
