@@ -75,3 +75,20 @@ fn reorder_nonempty_bdd() -> AllocResult<()> {
 
     Ok(())
 }
+
+#[test]
+fn reorder_drops_child_referenced_only_by_parent() -> AllocResult<()> {
+    let mref = oxidd::bdd::new_manager(1024, 128, 1);
+    mref.with_manager_exclusive(|manager| manager.add_vars(2));
+
+    let _conj = mref.with_manager_shared(|manager| {
+        let x0 = BDDFunction::var(manager, 0)?;
+        let x1 = BDDFunction::var(manager, 1)?;
+        x0.and(&x1)
+    })?;
+    // Only `conj` is still alive; the node for `x1 ∧ x2` is referenced by the
+    // root node of `conj` alone.
+
+    mref.with_manager_exclusive(|manager| set_var_order(manager, &[1, 0]));
+    Ok(())
+}
