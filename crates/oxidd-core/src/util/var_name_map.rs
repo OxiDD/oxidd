@@ -242,7 +242,8 @@ impl VarNameMap {
                     let present_var = *entry.get();
                     // SAFETY:
                     // 1. `name` has been created from a `Box<str>` above
-                    // 2. `name` was not added to the map, so it is the only reference
+                    // 2. `name` was not added to the map, so it is the only
+                    //    reference
                     // 3. `str` is `Send`
                     let name: Box<str> = unsafe { Unowned::into_box(name) };
                     return Err(DuplicateVarName {
@@ -281,7 +282,8 @@ impl VarNameMap {
             Entry::Occupied(entry) => {
                 // SAFETY:
                 // 1. `name` has been created from a `Box<str>` above
-                // 2. `name` was not added to the map, so it is the only reference
+                // 2. `name` was not added to the map, so it is the only
+                //    reference
                 // 3. `str` is `Send`
                 drop(unsafe { Unowned::into_box(name) });
                 (*entry.get(), true)
@@ -345,7 +347,8 @@ impl VarNameMap {
             Entry::Occupied(entry) => {
                 // SAFETY:
                 // 1. `name` has been created from a `Box<str>` above
-                // 2. `name` was not added to the map, so it is the only reference
+                // 2. `name` was not added to the map, so it is the only
+                //    reference
                 // 3. `str` is `Send`
                 let name = unsafe { Unowned::into_box(name) };
                 let present_var = *entry.get();
@@ -363,11 +366,12 @@ impl VarNameMap {
                 entry.insert(var);
                 if !prev.is_empty() {
                     // SAFETY:
-                    // 1. By the type invariant and since `prev` is not empty, it `prev` has been
-                    //    created from a `Box<str>`
-                    // 2. `prev` was removed from `self.names`, and its copy in `index` has been
-                    //    dropped since `entry.insert(var)`. By the type invariant, it follows that
-                    //    `prev` is the only reference.
+                    // 1. By the type invariant and since `prev` is not empty,
+                    //    it `prev` has been created from a `Box<str>`
+                    // 2. `prev` was removed from `self.names`, and its copy in
+                    //    `index` has been dropped since `entry.insert(var)`. By
+                    //    the type invariant, it follows that `prev` is the only
+                    //    reference.
                     // 3. `str` is `Send`
                     drop(unsafe { Unowned::into_box(prev) });
                 }

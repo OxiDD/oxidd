@@ -765,7 +765,8 @@ impl StubGen {
                     },
                     Parameter::name_only("/"),
                 ];
-                // TODO: should we check that this signature agrees with the Rust signature?
+                // TODO: should we check that this signature agrees with the
+                // Rust signature?
 
                 (p, r)
             }

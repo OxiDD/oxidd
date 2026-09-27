@@ -90,7 +90,8 @@ where
                     (input, (t, tree_max_var)) =
                         terminated(util::tree(true, true), eol)(next_input)?;
 
-                    // The variable order tree takes precedence (and determines the linear order)
+                    // The variable order tree takes precedence (and determines
+                    // the linear order)
                     vars.order.clear();
                     vars.order.reserve(tree_max_var.1 + 1);
                     t.flatten_into(&mut vars.order);
@@ -171,7 +172,8 @@ where
                 }
             }
 
-            // cleanup: we used `Some(String::new())` to mark unnamed variables as present
+            // cleanup: we used `Some(String::new())` to mark unnamed variables
+            // as present
             while let Some(name) = vars.names.last() {
                 if !name.as_ref().is_some_and(String::is_empty) {
                     break;
@@ -242,9 +244,10 @@ where
                                     (num_nodes.0, "number of nodes given here"),
                                 ]);
                             }
-                            // In contrast to the original c2d format, we do not enforce a
-                            // topological order on the input. We just collect the node IDs now and
-                            // map them to `Literal`s later.
+                            // In contrast to the original c2d format, we do not
+                            // enforce a topological order on the input. We just
+                            // collect the node IDs now and map them to
+                            // `Literal`s later.
                             circuit.push_gate_input(Literal(child.1 as usize));
                         }
                         gate_spans.push(&input[..input.offset(inp)]);

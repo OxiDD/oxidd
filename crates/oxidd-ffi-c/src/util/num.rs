@@ -78,7 +78,8 @@ impl Drop for natural_t {
     fn drop(&mut self) {
         if !self.ptr.is_null() {
             let slice = std::ptr::slice_from_raw_parts_mut(self.ptr, self.len as usize);
-            // SAFETY: ptr is not null, thus the pointer is valid and we own the slice
+            // SAFETY: ptr is not null, thus the pointer is valid and we own the
+            // slice
             drop(unsafe { Box::from_raw(slice) });
         }
     }

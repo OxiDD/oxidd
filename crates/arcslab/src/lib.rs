@@ -214,7 +214,8 @@ impl<I, D, const PAGE_SIZE: usize> ArcSlab<I, D, PAGE_SIZE> {
         let mut boxed = Box::new(MaybeUninit::<ArcSlab<I, D, PAGE_SIZE>>::uninit());
         let ptr = boxed.as_mut_ptr();
         let non_null_ptr = NonNull::new(ptr).unwrap();
-        let _ = Box::into_raw(boxed); // we need `ptr: *mut ArcSlab<..>` instead of `*mut MaybeUninit<..>`
+        let _ = Box::into_raw(boxed); // we need `ptr: *mut ArcSlab<..>` instead
+                                      // of `*mut MaybeUninit<..>`
 
         /// Helper function to create a mutable `MaybeUninit<T>` reference from
         /// a raw `T` pointer.

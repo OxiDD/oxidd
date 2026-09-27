@@ -636,8 +636,8 @@ fn main() {
         DDType::BDD => {
             let mref =
                 oxidd::bdd::new_manager(inner_node_capacity, cli.apply_cache_capacity, cli.threads);
-            // Run all operations from within the worker pool to reduce the number of
-            // context switches
+            // Run all operations from within the worker pool to reduce the
+            // number of context switches
             mref.clone()
                 .workers()
                 .install(move || bool_dd_main::<oxidd::bdd::BDDFunction, _>(&cli, mref))

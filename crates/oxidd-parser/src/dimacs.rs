@@ -191,7 +191,8 @@ where
                     (input, (t, tree_max_var)) =
                         terminated(util::tree(true, true), eol)(next_input)?;
 
-                    // The variable order tree takes precedence (and determines the linear order)
+                    // The variable order tree takes precedence (and determines
+                    // the linear order)
                     vars.order.clear();
                     vars.order.reserve(tree_max_var.1 + 1);
                     t.flatten_into(&mut vars.order);
@@ -287,7 +288,8 @@ where
                 }
             }
 
-            // cleanup: we used `Some(String::new())` to mark unnamed variables as present
+            // cleanup: we used `Some(String::new())` to mark unnamed variables
+            // as present
             while let Some(name) = vars.names.last() {
                 if !name.as_ref().is_some_and(String::is_empty) {
                     break;
@@ -447,8 +449,8 @@ mod cnf {
 
             let num_gates = circuit.num_gates();
             if num_gates != num_clauses {
-                // The last clause may or may not be terminated by 0. In case it is, we called
-                // `push_clause()` once too often.
+                // The last clause may or may not be terminated by 0. In case it
+                // is, we called `push_clause()` once too often.
                 if num_gates == num_clauses + 1 && circuit.last_gate().unwrap().inputs.is_empty() {
                     circuit.pop_gate();
                 } else {

@@ -64,7 +64,8 @@ mod index {
     //#[cfg(not(feature = "multi-threading"))]
     type FunctionInner = oxidd_rules_tdd::TDDFunction<<TDD as DD>::Function>;
     //#[cfg(feature = "multi-threading")]
-    //type FunctionInner = oxidd_rules_tdd::TDDFunctionMT<<TDD as DD>::Function>;
+    //type FunctionInner
+    //    = oxidd_rules_tdd::TDDFunctionMT<<TDD as DD>::Function>;
 
     /// Function of three-valued logic represented as TDD
     #[derive(
@@ -117,7 +118,8 @@ mod pointer {
     //#[cfg(not(feature = "multi-threading"))]
     type FunctionInner = oxidd_rules_tdd::TDDFunction<<TDD as DD>::Function>;
     //#[cfg(feature = "multi-threading")]
-    //type FunctionInner = oxidd_rules_tdd::TDDFunctionMT<<TDD as DD>::Function>;
+    //type FunctionInner
+    //    = oxidd_rules_tdd::TDDFunctionMT<<TDD as DD>::Function>;
 
     /// Function of three-valued logic represented as TDD
     #[derive(

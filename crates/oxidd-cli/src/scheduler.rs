@@ -370,8 +370,8 @@ fn compute_users(
         users.resize_last(count, User(0));
     }
 
-    // Fill in the users. We do this from back to front for each gate, decrementing
-    // the respective element of `use_counts`.
+    // Fill in the users. We do this from back to front for each gate,
+    // decrementing the respective element of `use_counts`.
 
     for (i, &root) in roots.iter().enumerate() {
         if let Some(g) = root.get_gate_no() {

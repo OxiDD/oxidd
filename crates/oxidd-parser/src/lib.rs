@@ -1007,7 +1007,8 @@ impl Circuit {
                     GateKind::And | GateKind::Or => {
                         for (i, &l) in inputs.iter().enumerate() {
                             if input_set.contains(map(!l)) {
-                                // found complement literal -> clear `input_set` and return ⊥/⊤
+                                // found complement literal
+                                // -> clear `input_set` and return ⊥/⊤
                                 for &l in &inputs[..i] {
                                     input_set.remove(map(l));
                                 }

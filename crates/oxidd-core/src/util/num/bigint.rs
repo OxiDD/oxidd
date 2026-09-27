@@ -358,7 +358,8 @@ impl Drop for Natural {
     fn drop(&mut self) {
         if self.ptr != DANGLING {
             let slice = std::ptr::slice_from_raw_parts_mut(self.ptr.as_ptr(), self.len as usize);
-            // SAFETY: ptr is not dangling, thus the pointer is valid and we own the slice
+            // SAFETY: ptr is not dangling, thus the pointer is valid and we own
+            // the slice
             drop(unsafe { Box::from_raw(slice) });
         }
     }

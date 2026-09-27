@@ -444,13 +444,14 @@ where
                 ]);
             }
         } else {
-            // There may be undefined literals in the ASCII format (see the tests below).
-            // Since the numeric values of the `Literal` type do not match the `AIGLiteral`
-            // values anyway, we just map the literals into a contiguous space. `aig.map`
-            // maps variables to non-negated literals.
-            // Due to possible forward-references, we can only map the `AIGLiteral`s to
-            // `Literal`s once all definitions are read. Hence, we write intermediate values
-            // (`Literal(_.0)`) to the respective fields of `aig`.
+            // There may be undefined literals in the ASCII format (see the
+            // tests below). Since the numeric values of the `Literal` type do
+            // not match the `AIGLiteral` values anyway, we just map the
+            // literals into a contiguous space. `aig.map` maps variables to
+            // non-negated literals. Due to possible forward-references, we can
+            // only map the `AIGLiteral`s to `Literal`s once all definitions are
+            // read. Hence, we write intermediate values (`Literal(_.0)`) to the
+            // respective fields of `aig`.
             aig.map = vec![Literal::UNDEF; h.vars.1 + 1];
             aig.map[0] = Literal::FALSE;
 
@@ -589,7 +590,8 @@ where
         let (input, _) = alt((preceded(tag("c"), rest), eof))(input)?;
 
         if h.binary.1 {
-            // collect he map for binary mode at the very end since it cannot fail
+            // collect he map for binary mode at the very end since it cannot
+            // fail
             debug_assert!(aig.map.is_empty());
             aig.map.reserve(var_count);
             aig.map
@@ -861,9 +863,9 @@ mod tests {
 
     #[test]
     fn aag_half_adder() {
-        // Since we do not normalize the parsed AIG and also include a literal map, it
-        // is difficult to compare the ASCII and binary versions of this example
-        // directly. Hence, we have two test cases here.
+        // Since we do not normalize the parsed AIG and also include a literal
+        // map, it is difficult to compare the ASCII and binary versions of this
+        // example directly. Hence, we have two test cases here.
         let aag = b"aag 7 2 0 2 3\n\
             2\n\
             4\n\
