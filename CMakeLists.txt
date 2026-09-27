@@ -24,7 +24,7 @@ set(OXIDD_CARGO_PROFILE "release" CACHE STRING
 set_property(CACHE OXIDD_CARGO_PROFILE PROPERTY STRINGS
     "dev" "release" "release-with-debug")
 
-option(OXIDD_STATISTICS "Enable statistics (will harm performance)" ON)
+option(OXIDD_STATISTICS "Enable statistics (will harm performance)" OFF)
 
 option(OXIDD_COMPAT_ENABLE_TL_EXPECTED
     "Enable the tl-expected library for compatibility purposes. `std::expected` was introduced in C++23. When using an older C++ standard or standard library, the tl-expected library will be used as a fallback."
