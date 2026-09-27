@@ -151,7 +151,7 @@ where
     /// - there is at least one operand,
     /// - there are at most `KIND_COUNT` operands and values of each kind, and
     /// - the count of operands and values is at most `ENTRY_CAP`.
-    #[inline]
+    #[inline(always)]
     #[allow(clippy::type_complexity)]
     fn get<const E: usize, const N: usize>(
         &self,
@@ -204,11 +204,21 @@ where
 
         let (edge_values, remaining) = data.as_slice().split_at(E);
         let numeric_values = &remaining[..N];
+
+        // `std::array::from_fn` is not always inlined properly, so we use a
+        // hand-rolled implementation
+        let mut edges = MaybeUninit::uninit();
+        // SAFETY: essentially the `AsMut` impl stabilized in Rust 1.95
+        let edges_mut = unsafe { &mut *(&raw mut edges as *mut [MaybeUninit<Own<M::Edge>>; E]) };
+        for (dst, src) in edges_mut.iter_mut().zip(edge_values) {
+            // SAFETY: The next `E` values in `data` are edges. We still have
+            // permission to recreate the `Ref`s from "weak" edges.
+            dst.write(manager.clone_edge(unsafe { Ref::from_raw(src.edge) }));
+        }
+
         Some((
-            // SAFETY: The next `E` values in `data` are edges
-            std::array::from_fn(|i| {
-                manager.clone_edge(unsafe { Ref::from_raw(edge_values[i].edge) })
-            }),
+            // SAFETY: `edges` is fully initialized above
+            unsafe { edges.assume_init() },
             // SAFETY: The final `N` values in `data` are numeric
             std::array::from_fn(|i| unsafe { numeric_values[i].numeric }),
         ))
@@ -386,8 +396,7 @@ where
             || total_operands + (N + E) > ENTRY_CAP
             || operands.0.len() > KIND_COUNT
             || operands.1.len() > KIND_COUNT
-            || N > KIND_COUNT
-            || E > KIND_COUNT
+            || const { N > KIND_COUNT || E > KIND_COUNT }
         {
             return None;
         }
