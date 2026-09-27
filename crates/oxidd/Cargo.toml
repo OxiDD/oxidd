@@ -116,6 +116,9 @@ dot-export = ["oxidd-dump/dot"]
 ## Visualization using OxiDD-vis
 visualize = ["oxidd-dump/visualize"]
 
+[[example]]
+name = "bdd_simple"
+required-features = ["bdd"]
 
 [[example]]
 name = "tdd"

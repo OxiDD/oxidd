@@ -1,6 +1,6 @@
 //! Tests for BooleanFunction implementations
 
-#![cfg_attr(miri, allow(unused))]
+#![cfg_attr(any(miri, not(feature = "bdd"), not(feature = "zbdd")), allow(unused))]
 
 mod util;
 
@@ -8,9 +8,12 @@ use std::fmt;
 
 use rustc_hash::FxHashMap;
 
+#[cfg(feature = "bcdd")]
 use oxidd::bcdd::BCDDFunction;
+#[cfg(feature = "bdd")]
 use oxidd::bdd::BDDFunction;
 use oxidd::util::OptBool;
+#[cfg(feature = "zbdd")]
 use oxidd::zbdd::ZBDDFunction;
 use oxidd::{
     BooleanFunction, BooleanFunctionQuant, BooleanOperator, BooleanVecSet, Function, FunctionSubst,
@@ -22,6 +25,7 @@ use crate::util::debug::ColumnData;
 // spell-checker:ignore nvars,mref
 
 #[test]
+#[cfg(feature = "bdd")]
 fn bdd_node_count() {
     let mref = oxidd::bdd::new_manager(1024, 128, 2);
 
@@ -46,6 +50,7 @@ fn bdd_node_count() {
 }
 
 #[test]
+#[cfg(feature = "bcdd")]
 fn bcdd_node_count() {
     let mref = oxidd::bcdd::new_manager(1024, 128, 2);
 
@@ -70,6 +75,7 @@ fn bcdd_node_count() {
 }
 
 #[test]
+#[cfg(feature = "zbdd")]
 fn zbdd_node_count() {
     let mref = oxidd::zbdd::new_manager(1024, 128, 2);
 
@@ -94,6 +100,7 @@ fn zbdd_node_count() {
 }
 
 #[test]
+#[cfg(feature = "bdd")]
 fn bdd_cofactors() {
     let mref = oxidd::bdd::new_manager(1024, 128, 2);
 
@@ -134,6 +141,7 @@ fn bdd_cofactors() {
 }
 
 #[test]
+#[cfg(feature = "bcdd")]
 fn bcdd_cofactors() {
     let mref = oxidd::bcdd::new_manager(1024, 128, 2);
 
@@ -172,6 +180,7 @@ fn bcdd_cofactors() {
 }
 
 #[test]
+#[cfg(feature = "zbdd")]
 fn zbdd_cofactors() {
     let mref = oxidd::zbdd::new_manager(1024, 128, 2);
 
@@ -503,23 +512,27 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
             }
 
             for assignment in 0..num_assignments {
-                // At first, we test `pick_cube()` and `pick_cube_dd()`, specifically that:
+                // At first, we test `pick_cube()` and `pick_cube_dd()`,
+                // specifically that:
                 //
-                // - The closure is called as specified (at most once for each level, `edge`
-                //   points to a node at that level)
+                // - The closure is called as specified (at most once for each
+                //   level, `edge` points to a node at that level)
                 // - The special case where `f` is ⊥ is handled correctly
-                // - In all other cases, the results of `pick_cube()` and `pick_cube_dd()`
-                //   * are equivalent (and the result of `pick_cube_dd()` can thus be
-                //     represented as a conjunction of literals)
+                // - In all other cases, the results of `pick_cube()` and
+                //   `pick_cube_dd()`
+                //   * are equivalent (and the result of `pick_cube_dd()` can
+                //     thus be represented as a conjunction of literals)
                 //   * imply the function
-                // - If the choice function was called for some level, the respective choice is
-                //   taken into account
-                // - Whenever there is a choice for a variable, either the choice function is
-                //   called or the cube is independent of that variable (don't care)
+                // - If the choice function was called for some level, the
+                //   respective choice is taken into account
+                // - Whenever there is a choice for a variable, either the
+                //   choice function is called or the cube is independent of
+                //   that variable (don't care)
                 //
-                // We do not (yet) check that don't cares are preserved, since that would
-                // require taking the variable order into account. It is not clear to me whether
-                // this would work for kinds of DDs without a linear variable order.
+                // We do not (yet) check that don't cares are preserved, since
+                // that would require taking the variable order into account. It
+                // is not clear to me whether this would work for kinds of DDs
+                // without a linear variable order.
 
                 let mut choice_requested = 0u32;
                 let cube = f.pick_cube(|manager, edge, level| {
@@ -696,7 +709,8 @@ impl<'a, B: BooleanFunction> TestAllBooleanFunctions<'a, B> {
 
                             // If the variable was selected to be the opposite
                             // of the request, then the reason must be that the
-                            // cube would not have implied the function. We test this now.
+                            // cube would not have implied the function. We test
+                            // this now.
                             let flipped = if selected {
                                 actual >> (1 << var)
                             } else {
@@ -879,8 +893,8 @@ impl<B: BooleanFunctionQuant> TestAllBooleanFunctions<'_, B> {
                     &[var_set],
                 );
 
-                // Apply and quantification algorithms. Here, we only compare the naive and
-                // optimized implementations.
+                // Apply and quantification algorithms. Here, we only compare
+                // the naive and optimized implementations.
                 let f_explicit = f_explicit as ExplicitBFunc;
                 for (g_explicit, g) in self.boolean_functions.iter().enumerate() {
                     let g_explicit = g_explicit as ExplicitBFunc;
@@ -968,6 +982,7 @@ where
 }
 
 #[test]
+#[cfg(feature = "bdd")]
 #[cfg_attr(miri, ignore)]
 fn bdd_all_boolean_functions_2vars_t1() {
     let mref = setup_manager(oxidd::bdd::new_manager, 1, 2);
@@ -978,6 +993,7 @@ fn bdd_all_boolean_functions_2vars_t1() {
 }
 
 #[test]
+#[cfg(feature = "bdd")]
 #[cfg_attr(miri, ignore)]
 fn bdd_all_boolean_functions_2vars_t2() {
     let mref = setup_manager(oxidd::bdd::new_manager, 2, 2);
@@ -988,6 +1004,7 @@ fn bdd_all_boolean_functions_2vars_t2() {
 }
 
 #[test]
+#[cfg(feature = "bcdd")]
 #[cfg_attr(miri, ignore)]
 fn bcdd_all_boolean_functions_2vars_t1() {
     let mref = setup_manager(oxidd::bcdd::new_manager, 1, 2);
@@ -998,6 +1015,7 @@ fn bcdd_all_boolean_functions_2vars_t1() {
 }
 
 #[test]
+#[cfg(feature = "bcdd")]
 #[cfg_attr(miri, ignore)]
 fn bcdd_all_boolean_functions_2vars_t2() {
     let mref = setup_manager(oxidd::bcdd::new_manager, 2, 2);
@@ -1008,6 +1026,7 @@ fn bcdd_all_boolean_functions_2vars_t2() {
 }
 
 #[test]
+#[cfg(feature = "zbdd")]
 #[cfg_attr(miri, ignore)]
 fn zbdd_all_boolean_functions_2vars_t1() {
     let mref = setup_manager(oxidd::zbdd::new_manager, 1, 2);
@@ -1017,6 +1036,7 @@ fn zbdd_all_boolean_functions_2vars_t1() {
 }
 
 #[test]
+#[cfg(feature = "zbdd")]
 #[cfg_attr(miri, ignore)]
 fn zbdd_all_boolean_functions_2vars_t2() {
     let mref = setup_manager(oxidd::zbdd::new_manager, 2, 2);

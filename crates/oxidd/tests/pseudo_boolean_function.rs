@@ -1,4 +1,5 @@
 //! Tests for `PseudoBooleanFunction` implementations
+#![cfg(feature = "mtbdd")]
 
 use oxidd::mtbdd::MTBDDFunction;
 use oxidd::mtbdd::terminal::I64;

@@ -1,3 +1,4 @@
+#![cfg(feature = "bdd")]
 // spell-checker:ignore nvars,mref
 
 use oxidd::{
