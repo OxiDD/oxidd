@@ -201,7 +201,13 @@ unsafe fn level_swap<M: Manager>(
                 manager.drop_edge(old);
             }
         }
-        upper.insert(manager.clone_edge(e));
+
+        // SAFETY: we move `node` to the new upper, i.e., the old lower level
+        unsafe { node.set_level(lower_no_pre) };
+
+        // SAFETY: `e` refers to an inner node, the level number matches the
+        // reordering invariants (although not `upper.level_no()`).
+        unsafe { upper.insert_unchecked(manager.clone_edge(e)) };
     }
 
     abort_on_panic.defuse();
