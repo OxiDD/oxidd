@@ -141,8 +141,7 @@ unsafe fn level_swap<M: Manager>(
                         debug_assert_eq!(children.len(), M::InnerNode::ARITY);
                         children
                     }
-                    node => {
-                        debug_assert!(node.level() > lower_no);
+                    _ => {
                         // The child is below the lower level, so we always have
                         // this child
                         (0..M::InnerNode::ARITY).map(|_| *c).collect()

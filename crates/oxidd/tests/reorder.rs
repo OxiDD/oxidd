@@ -36,11 +36,12 @@ fn reorder_nonempty_bdd() -> AllocResult<()> {
     let mref = oxidd::bdd::new_manager(1024, 128, 2);
     mref.with_manager_exclusive(|manager| manager.add_vars(5));
 
-    let [x1, x3, conj] = mref.with_manager_shared(|manager| {
+    let [x1, x3, x4, f] = mref.with_manager_shared(|manager| {
         let x1 = BDDFunction::var(manager, 1)?;
         let x3 = BDDFunction::var(manager, 3)?;
-        let conj = x1.and(&x3)?;
-        Ok([x1, x3, conj])
+        let x4 = BDDFunction::var(manager, 4)?;
+        let f = x1.ite(&x3, &x4)?;
+        Ok([x1, x3, x4, f])
     })?;
 
     let check = |order| {
@@ -59,19 +60,26 @@ fn reorder_nonempty_bdd() -> AllocResult<()> {
         });
 
         // semantics
-        for x1v in [false, true] {
-            assert_eq!(x1.eval([(1, x1v)]), x1v);
-            for x3v in [false, true] {
-                assert_eq!(conj.eval([(1, x1v), (3, x3v)]), x1v && x3v);
+        for a in [false, true] {
+            assert_eq!(x1.eval([(1, a)]), a);
+            assert_eq!(x3.eval([(3, a)]), a);
+            assert_eq!(x4.eval([(4, a)]), a);
+            for b in [false, true] {
+                for c in [false, true] {
+                    assert_eq!(f.eval([(1, a), (3, b), (4, c)]), if a { b } else { c });
+                }
             }
-        }
-        for x3v in [false, true] {
-            assert_eq!(x3.eval([(3, x3v)]), x3v);
         }
     };
 
     check(&[0, 1, 2, 3, 4]);
     mref.with_manager_exclusive(|manager| set_var_order(manager, &[2, 3, 1]));
+    check(&[0, 2, 3, 1, 4]);
+    mref.with_manager_exclusive(|manager| set_var_order(manager, &[1, 4, 3]));
+    check(&[0, 2, 1, 4, 3]);
+    mref.with_manager_exclusive(|manager| set_var_order(manager, &[4, 1]));
+    check(&[0, 2, 4, 1, 3]);
+    mref.with_manager_exclusive(|manager| set_var_order(manager, &[3, 1, 4]));
     check(&[0, 2, 3, 1, 4]);
 
     Ok(())
