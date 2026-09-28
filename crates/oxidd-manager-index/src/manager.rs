@@ -2236,6 +2236,7 @@ impl<
 > From<&'a M<'id, NC, ET, TMC, RC, MDC, TERMINALS>>
     for ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS>
 {
+    #[inline]
     fn from(manager: &'a M<'id, NC, ET, TMC, RC, MDC, TERMINALS>) -> Self {
         let ptr: *const M<'static, NC, ET, TMC, RC, MDC, TERMINALS> =
             std::ptr::from_ref(manager).cast();
@@ -2544,16 +2545,7 @@ unsafe impl<
 
     #[inline]
     fn from_edge<'id>(manager: &Self::Manager<'id>, edge: OwnEdgeOfFunc<'id, Self>) -> Self {
-        let ptr: *const Self::Manager<'static> = std::ptr::from_ref(manager).cast();
-        // SAFETY:
-        // - We just changed "identifier" lifetimes.
-        // - The pointer was obtained via `Arc::into_raw()`, and since we have a
-        //   `&Manager` reference, the counter is at least 1.
-        let store = ManagerRef(unsafe {
-            let manager = &*ptr;
-            Arc::increment_strong_count(manager.store);
-            Arc::from_raw(manager.store)
-        });
+        let store = Self::ManagerRef::from(manager);
         // Avoid transmuting `edge` for changing lifetimes
         let edge = Edge(edge.into_raw().0, PhantomData);
         Self { store, edge }
