@@ -2373,6 +2373,12 @@ pub fn new_manager<
             let store = &*gc_mref.0;
             loop {
                 let mut lock = store.gc_signal.0.lock();
+                // The signal may be set to quit before the garbage collection
+                // thread spawns or while the garbage collection is in progress.
+                // In that case we would miss the notification on the `CondVar`.
+                if *lock == GCSignal::Quit {
+                    break;
+                }
                 store.gc_signal.1.wait(&mut lock);
                 if *lock == GCSignal::Quit {
                     break;
