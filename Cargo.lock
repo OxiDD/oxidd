@@ -509,7 +509,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "oxidd"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "cfg-if",
  "derive-where",
@@ -530,7 +530,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-cache"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "allocator-api2",
  "document-features",
@@ -544,7 +544,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-cli"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "clap",
  "csv",
@@ -562,7 +562,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-core"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "dashu-int",
  "nanorand",
@@ -570,7 +570,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-derive"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "oxidd-core",
  "oxidd-test-utils",
@@ -583,7 +583,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-dump"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "document-features",
  "fixedbitset",
@@ -595,7 +595,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-ffi-c"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "libc",
  "oxidd",
@@ -607,7 +607,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-ffi-python"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "byte-slice-cast",
@@ -624,7 +624,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-manager-index"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "allocator-api2",
  "crossbeam-utils",
@@ -641,7 +641,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-manager-pointer"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "allocator-api2",
  "arcslab",
@@ -672,7 +672,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-reorder"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "fixedbitset",
  "oxidd-core",
@@ -684,7 +684,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-rules-bdd"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "document-features",
  "fixedbitset",
@@ -695,7 +695,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-rules-mtbdd"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "document-features",
  "fixedbitset",
@@ -706,7 +706,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-rules-tdd"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "document-features",
  "oxidd-core",
@@ -716,7 +716,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-rules-zbdd"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "document-features",
  "fixedbitset",
@@ -727,7 +727,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-test-utils"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "oxidd-core",
  "rayon",
