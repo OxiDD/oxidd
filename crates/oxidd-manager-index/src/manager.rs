@@ -115,8 +115,18 @@ pub trait ManagerDataCons<
 /// "Signals" used to communicate with the garbage collection thread
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum GCSignal {
-    RunGc,
+    RunGC,
     Quit,
+}
+
+struct GCSignalSender(Arc<(Mutex<GCSignal>, Condvar)>);
+
+impl Drop for GCSignalSender {
+    fn drop(&mut self) {
+        let inner = &*self.0;
+        *inner.0.lock() = GCSignal::Quit;
+        inner.1.notify_one();
+    }
 }
 
 pub struct Store<'id, N, ET, TM, R, MD, const TERMINALS: usize>
@@ -130,7 +140,7 @@ where
     manager: RwLock<Manager<'id, N, ET, TM, R, MD, TERMINALS>>,
     terminal_manager: TM,
     state: CachePadded<Mutex<SharedStoreState>>,
-    gc_signal: (Mutex<GCSignal>, Condvar),
+    gc_signal: GCSignalSender,
     workers: crate::workers::Workers,
 }
 
@@ -620,7 +630,7 @@ where
         shared.node_count += delta as i64;
         if shared.gc_state == GCState::Init && shared.node_count >= shared.gc_hwm as i64 {
             shared.gc_state = GCState::Triggered;
-            self.gc_signal.1.notify_one();
+            self.gc_signal.0.1.notify_one();
         }
 
         if local.current_store.get() == addr(self) {
@@ -2107,26 +2117,6 @@ impl<
     RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
     MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
     const TERMINALS: usize,
-> Drop for ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS>
-{
-    fn drop(&mut self) {
-        if Arc::strong_count(&self.0) == 2 {
-            // This is the second last reference. The last reference belongs to
-            // the gc thread. Terminate it.
-            let gc_signal = &self.0.gc_signal;
-            *gc_signal.0.lock() = GCSignal::Quit;
-            gc_signal.1.notify_one();
-        }
-    }
-}
-
-impl<
-    NC: InnerNodeCons<ET>,
-    ET: Tag,
-    TMC: TerminalManagerCons<NC, ET, TERMINALS>,
-    RC: DiagramRulesCons<NC, ET, TMC, MDC, TERMINALS>,
-    MDC: ManagerDataCons<NC, ET, TMC, RC, TERMINALS>,
-    const TERMINALS: usize,
 > ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS>
 {
     /// Convert `self` into a raw pointer, e.g., for usage in a foreign function
@@ -2323,6 +2313,7 @@ pub fn new_manager<
     let gc_lwm = inner_node_capacity / 100 * 90;
     let gc_hwm = inner_node_capacity / 100 * 95;
 
+    let gc_signal = Arc::new((Mutex::new(GCSignal::RunGC), Condvar::new()));
     let arc = Arc::new(Store {
         inner_nodes: SlotSlice::new_boxed(inner_node_capacity),
         state: CachePadded::new(Mutex::new(SharedStoreState {
@@ -2349,7 +2340,7 @@ pub fn new_manager<
             reorder_gc_prepared: false,
         }),
         terminal_manager: TMC::T::<'static>::with_capacity(terminal_node_capacity),
-        gc_signal: (Mutex::new(GCSignal::RunGc), Condvar::new()),
+        gc_signal: GCSignalSender(gc_signal.clone()),
         workers: crate::workers::Workers::new(threads),
     });
 
@@ -2364,34 +2355,38 @@ pub fn new_manager<
     });
 
     // spell-checker:ignore mref
-    let gc_mref: ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS> = ManagerRef(arc.clone());
+    let gc_ref = Arc::downgrade(&arc);
     std::thread::Builder::new()
         .name("oxidd mi gc".to_string())
         .spawn(move || {
             // The worker is dedicated to this store.
             LOCAL_STORE_STATE.with(|state| state.current_store.set(store_addr));
 
-            let store = &*gc_mref.0;
             loop {
-                let mut lock = store.gc_signal.0.lock();
-                // The signal may be set to quit before the garbage collection
+                let mut lock = gc_signal.0.lock();
+                // The signal may be set to "quit" before the garbage collection
                 // thread spawns or while the garbage collection is in progress.
                 // In that case we would miss the notification on the `CondVar`.
                 if *lock == GCSignal::Quit {
                     break;
                 }
-                store.gc_signal.1.wait(&mut lock);
+                gc_signal.1.wait(&mut lock);
                 if *lock == GCSignal::Quit {
                     break;
                 }
                 drop(lock);
 
+                let Some(arc) = gc_ref.upgrade() else {
+                    break;
+                };
+                let mref: ManagerRef<NC, ET, TMC, RC, MDC, TERMINALS> = ManagerRef(arc);
+
                 // parking_lot `Condvar`s have no spurious wakeups -> run gc now
-                oxidd_core::ManagerRef::with_manager_shared(&gc_mref, |manager| {
+                oxidd_core::ManagerRef::with_manager_shared(&mref, |manager| {
                     oxidd_core::Manager::gc(manager);
                 });
 
-                let mut shared = store.state.lock();
+                let mut shared = mref.0.state.lock();
                 LOCAL_STORE_STATE.with(|local| {
                     if local.next_free.get() != 0 {
                         shared.node_count += local.node_count_delta.replace(0) as i64;
