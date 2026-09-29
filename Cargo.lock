@@ -624,7 +624,7 @@ dependencies = [
 
 [[package]]
 name = "oxidd-manager-index"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "allocator-api2",
  "crossbeam-utils",
