@@ -38,7 +38,7 @@ impl<ET: Tag, V: Hash, const ARITY: usize> Hash for NodeWithLevel<'_, ET, V, ARI
     #[inline(always)]
     fn hash<H: Hasher>(&self, state: &mut H) {
         // SAFETY: we have shared access to the node
-    crate::util::hash_children(unsafe { &*self.children.get() }, state);
+        crate::util::hash_children(unsafe { &*self.children.get() }, state);
         self.value.hash(state);
     }
 }
@@ -106,7 +106,7 @@ impl<'id, ET: Tag, V: Eq + Hash, const ARITY: usize> InnerNode<manager::Edge<'id
     #[inline(always)]
     fn new(
         level: LevelNo,
-    children: impl IntoIterator<Item = Own<manager::Edge<'id, Self, ET>>>,
+        children: impl IntoIterator<Item = Own<manager::Edge<'id, Self, ET>>>,
         value: V,
     ) -> Self {
         let mut it = children.into_iter();

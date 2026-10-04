@@ -110,7 +110,7 @@ fn reduce1<M: Manager<Terminal = ZBDDTerminal, InnerNodeValue = ()>>(
         M::InnerNode::new(
             level,
             [manager.clone_edge(child.borrowed()), child.into_edge()],
-        (),
+            (),
         ),
     )
 }
@@ -129,7 +129,7 @@ fn reduce_borrowed<M: Manager<Terminal = ZBDDTerminal, InnerNodeValue = ()>>(
         return Ok(lo.into_edge());
     }
     ReducedOrNew::New(
-    M::InnerNode::new(level, [manager.clone_edge(hi), lo.into_edge()], ()),
+        M::InnerNode::new(level, [manager.clone_edge(hi), lo.into_edge()], ()),
         Default::default(),
     )
     .then_insert(manager, level)

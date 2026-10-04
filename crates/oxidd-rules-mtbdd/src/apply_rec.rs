@@ -338,7 +338,7 @@ where
         lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
         rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
-    apply_bin::<_, { MTBDDOp::Add as u8 }>(manager, lhs, rhs)
+        apply_bin::<_, { MTBDDOp::Add as u8 }>(manager, lhs, rhs)
     }
 
     #[inline]
@@ -347,7 +347,7 @@ where
         lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
         rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
-    apply_bin::<_, { MTBDDOp::Sub as u8 }>(manager, lhs, rhs)
+        apply_bin::<_, { MTBDDOp::Sub as u8 }>(manager, lhs, rhs)
     }
 
     #[inline]
@@ -356,7 +356,7 @@ where
         lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
         rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
-    apply_bin::<_, { MTBDDOp::Mul as u8 }>(manager, lhs, rhs)
+        apply_bin::<_, { MTBDDOp::Mul as u8 }>(manager, lhs, rhs)
     }
 
     #[inline]
@@ -365,7 +365,7 @@ where
         lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
         rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
-    apply_bin::<_, { MTBDDOp::Div as u8 }>(manager, lhs, rhs)
+        apply_bin::<_, { MTBDDOp::Div as u8 }>(manager, lhs, rhs)
     }
 
     #[inline]
@@ -374,7 +374,7 @@ where
         lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
         rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
-    apply_bin::<_, { MTBDDOp::Min as u8 }>(manager, lhs, rhs)
+        apply_bin::<_, { MTBDDOp::Min as u8 }>(manager, lhs, rhs)
     }
 
     #[inline]
@@ -383,7 +383,7 @@ where
         lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
         rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
-    apply_bin::<_, { MTBDDOp::Max as u8 }>(manager, lhs, rhs)
+        apply_bin::<_, { MTBDDOp::Max as u8 }>(manager, lhs, rhs)
     }
 
     #[inline]

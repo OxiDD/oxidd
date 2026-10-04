@@ -228,11 +228,7 @@ where
     let tt = t.tag();
     let (node, tag) = if tt == EdgeTag::Complemented {
         let et = e.tag();
-    let node = M::InnerNode::new(
-        level,
-        [t.with_tag(EdgeTag::None), e.with_tag(!et)],
-        (),
-    );
+        let node = M::InnerNode::new(level, [t.with_tag(EdgeTag::None), e.with_tag(!et)], ());
         (node, EdgeTag::Complemented)
     } else {
         (M::InnerNode::new(level, [t, e], ()), EdgeTag::None)

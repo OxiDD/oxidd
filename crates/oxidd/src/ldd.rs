@@ -30,8 +30,8 @@ pub fn new_manager(
         }
     };
 
-    // All LDD nodes reside on a single level (level 0); ensure it exists so that
-    // node creation via `Manager::level(0)` is valid.
+    // All LDD nodes reside on a single level (level 0); ensure it exists so
+    // that node creation via `Manager::level(0)` is valid.
     #[cfg(any(feature = "manager-pointer", feature = "manager-index"))]
     {
         use ::oxidd_core::{Manager, ManagerRef};

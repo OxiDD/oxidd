@@ -229,8 +229,8 @@ pub(crate) fn project<M: LDDManager, R: Recursor<M>>(
     let (set_down, set_right) = collect_children(set_node);
 
     let result = if *proj_value == M::InnerNodeValue::false_value() {
-        // This position is not in the projection: skip it and compute the union of the
-        // right and down branches.
+        // This position is not in the projection: skip it and compute the union
+        // of the right and down branches.
         let (right_result, down_result) =
             rec.binary(project, manager, (set_right, proj), (set_down, proj_down))?;
         apply_union(
@@ -249,7 +249,8 @@ pub(crate) fn project<M: LDDManager, R: Recursor<M>>(
             .get_node(down_result.borrowed())
             .is_terminal(&LDDTerminal::Empty)
         {
-            // The down sub-result is empty — nothing to insert, return right only.
+            // The down sub-result is empty — nothing to insert, return right
+            // only.
             Ok(right_result.into_edge())
         } else {
             make_node(
@@ -505,7 +506,8 @@ pub(crate) fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
     let (meta_down, _meta_right) = collect_children(meta_node);
 
     let result = if *meta_value == M::InnerNodeValue::false_value() {
-        // 0: not in relation — keep all set values, advance meta into next level.
+        // 0: not in relation — keep all set values, advance meta into next
+        // level.
         let set_node = match manager.get_node(set) {
             Node::Inner(n) => n.borrow(),
             _ => unreachable!("set must have as many levels as meta"),
@@ -534,7 +536,8 @@ pub(crate) fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
             )?
         }
     } else if *meta_value == M::InnerNodeValue::read_only_value() {
-        // 1: read only — match set and rel values; keep matched values in output.
+        // 1: read only — match set and rel values; keep matched values in
+        // output.
         let set_node = match manager.get_node(set) {
             Node::Inner(n) => n.borrow(),
             _ => unreachable!("set must have as many levels as meta"),
