@@ -346,8 +346,8 @@ macro_rules! ldd_function_methods {
                             let right = children.next().unwrap();
                             Some((
                                 value,
-                                Self::from_edge(manager, manager.clone_edge(&down)),
-                                Self::from_edge(manager, manager.clone_edge(&right)),
+                                Self::from_edge(manager, manager.clone_edge(down)),
+                                Self::from_edge(manager, manager.clone_edge(right)),
                             ))
                         }
                     }
@@ -374,7 +374,7 @@ macro_rules! ldd_function_methods {
             /// Returns a stable identifier for the root node of `self`, suitable
             /// for distinguishing nodes (e.g. when emitting DOT output).
             pub fn id(&self) -> ::oxidd_core::NodeID {
-                use ::oxidd_core::{Edge, ManagerRef, function::Function};
+                use ::oxidd_core::{ManagerRef, function::Function};
                 self.manager_ref()
                     .with_manager_shared(|manager| self.as_edge(manager).node_id())
             }

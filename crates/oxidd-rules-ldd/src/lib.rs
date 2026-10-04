@@ -3,8 +3,8 @@
 use std::{collections::HashMap, hash::Hash};
 
 use oxidd_core::{
-    function::{EdgeOfFunc, Function},
-    util::{AllocResult, Borrowed, EdgeDropGuard},
+    function::{EdgeOfFunc, Function, OwnEdgeOfFunc},
+    util::{AllocResult, EdgeDropGuard, Own, Ref},
     DiagramRules, Edge, HasApplyCache, HasLevel, InnerNode, LevelNo, Manager, ManagerRef,
     ReducedOrNew,
 };
@@ -163,9 +163,7 @@ where
         manager: &<LDDFunction<F> as Function>::Manager<'id>,
         read_proj: &[u32],
         write_proj: &[u32],
-    ) -> AllocResult<
-        RelationProductMeta<<<LDDFunction<F> as Function>::Manager<'id> as Manager>::Edge>,
-    > {
+    ) -> AllocResult<RelationProductMeta<OwnEdgeOfFunc<'id, Self>>> {
         relation_product_meta(manager, read_proj, write_proj)
     }
 
@@ -202,16 +200,16 @@ where
     pub fn singleton_edge<'id>(
         manager: &<LDDFunction<F> as Function>::Manager<'id>,
         vector: &[<<LDDFunction<F> as Function>::Manager<'id> as Manager>::InnerNodeValue],
-    ) -> AllocResult<<<LDDFunction<F> as Function>::Manager<'id> as Manager>::Edge> {
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         singleton(manager, vector)
     }
 
     #[inline]
     pub fn union_edge<'id>(
         manager: &<LDDFunction<F> as Function>::Manager<'id>,
-        f: EdgeOfFunc<'id, Self>,
-        g: EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        f: OwnEdgeOfFunc<'id, Self>,
+        g: OwnEdgeOfFunc<'id, Self>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         let f = EdgeDropGuard::new(manager, f);
         let g = EdgeDropGuard::new(manager, g);
         apply_union(manager, SequentialRecursor, f.borrowed(), g.borrowed())
@@ -221,9 +219,9 @@ where
     #[inline]
     pub fn intersect_edge<'id>(
         manager: &<LDDFunction<F> as Function>::Manager<'id>,
-        a: EdgeOfFunc<'id, Self>,
-        b: EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        a: OwnEdgeOfFunc<'id, Self>,
+        b: OwnEdgeOfFunc<'id, Self>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         let a = EdgeDropGuard::new(manager, a);
         let b = EdgeDropGuard::new(manager, b);
         apply_intersect(manager, SequentialRecursor, a.borrowed(), b.borrowed())
@@ -234,9 +232,9 @@ where
     #[inline]
     pub fn minus_edge<'id>(
         manager: &<LDDFunction<F> as Function>::Manager<'id>,
-        a: EdgeOfFunc<'id, Self>,
-        b: EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        a: OwnEdgeOfFunc<'id, Self>,
+        b: OwnEdgeOfFunc<'id, Self>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         let a = EdgeDropGuard::new(manager, a);
         let b = EdgeDropGuard::new(manager, b);
         apply_minus(manager, SequentialRecursor, a.borrowed(), b.borrowed())
@@ -248,10 +246,10 @@ where
     #[inline]
     pub fn relational_product_edge<'id>(
         manager: &<LDDFunction<F> as Function>::Manager<'id>,
-        set: EdgeOfFunc<'id, Self>,
-        rel: EdgeOfFunc<'id, Self>,
-        meta: EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        set: OwnEdgeOfFunc<'id, Self>,
+        rel: OwnEdgeOfFunc<'id, Self>,
+        meta: OwnEdgeOfFunc<'id, Self>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         let set = EdgeDropGuard::new(manager, set);
         let rel = EdgeDropGuard::new(manager, rel);
         let meta = EdgeDropGuard::new(manager, meta);
@@ -273,11 +271,11 @@ where
     #[inline]
     pub fn relational_predecessor_edge<'id>(
         manager: &<LDDFunction<F> as Function>::Manager<'id>,
-        set: EdgeOfFunc<'id, Self>,
-        rel: EdgeOfFunc<'id, Self>,
-        meta: EdgeOfFunc<'id, Self>,
-        universe: EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        set: OwnEdgeOfFunc<'id, Self>,
+        rel: OwnEdgeOfFunc<'id, Self>,
+        meta: OwnEdgeOfFunc<'id, Self>,
+        universe: OwnEdgeOfFunc<'id, Self>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         let set = EdgeDropGuard::new(manager, set);
         let rel = EdgeDropGuard::new(manager, rel);
         let meta = EdgeDropGuard::new(manager, meta);
@@ -297,7 +295,7 @@ where
     #[inline]
     pub fn len_edge<'id>(
         manager: &<LDDFunction<F> as Function>::Manager<'id>,
-        set: EdgeOfFunc<'id, Self>,
+        set: OwnEdgeOfFunc<'id, Self>,
     ) -> usize {
         let set = EdgeDropGuard::new(manager, set);
         len(manager, set.borrowed(), &mut HashMap::new())
@@ -309,7 +307,7 @@ where
     pub fn projection_meta<'id>(
         manager: &<LDDFunction<F> as Function>::Manager<'id>,
         proj: &[u32],
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         compute_proj(manager, proj)
     }
 
@@ -318,9 +316,9 @@ where
     #[inline]
     pub fn project_edge<'id>(
         manager: &<LDDFunction<F> as Function>::Manager<'id>,
-        set: EdgeOfFunc<'id, Self>,
-        proj: EdgeOfFunc<'id, Self>,
-    ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        set: OwnEdgeOfFunc<'id, Self>,
+        proj: OwnEdgeOfFunc<'id, Self>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         let set = EdgeDropGuard::new(manager, set);
         let proj = EdgeDropGuard::new(manager, proj);
         project(manager, SequentialRecursor, set.borrowed(), proj.borrowed())
@@ -478,7 +476,7 @@ pub mod mt {
             manager: &<Self as Function>::Manager<'id>,
             read_proj: &[u32],
             write_proj: &[u32],
-        ) -> AllocResult<RelationProductMeta<EdgeOfFunc<'id, Self>>> {
+        ) -> AllocResult<RelationProductMeta<OwnEdgeOfFunc<'id, Self>>> {
             relation_product_meta(manager, read_proj, write_proj)
         }
 
@@ -514,7 +512,7 @@ pub mod mt {
         pub fn singleton_edge<'id>(
             manager: &<Self as Function>::Manager<'id>,
             vector: &[<<Self as Function>::Manager<'id> as Manager>::InnerNodeValue],
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             singleton(manager, vector)
         }
 
@@ -522,9 +520,9 @@ pub mod mt {
         #[inline]
         pub fn union_edge<'id>(
             manager: &<Self as Function>::Manager<'id>,
-            f: EdgeOfFunc<'id, Self>,
-            g: EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            f: OwnEdgeOfFunc<'id, Self>,
+            g: OwnEdgeOfFunc<'id, Self>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             let f = EdgeDropGuard::new(manager, f);
             let g = EdgeDropGuard::new(manager, g);
             apply_union(
@@ -539,9 +537,9 @@ pub mod mt {
         #[inline]
         pub fn intersect_edge<'id>(
             manager: &<Self as Function>::Manager<'id>,
-            a: EdgeOfFunc<'id, Self>,
-            b: EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            a: OwnEdgeOfFunc<'id, Self>,
+            b: OwnEdgeOfFunc<'id, Self>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             let a = EdgeDropGuard::new(manager, a);
             let b = EdgeDropGuard::new(manager, b);
             apply_intersect(
@@ -556,9 +554,9 @@ pub mod mt {
         #[inline]
         pub fn minus_edge<'id>(
             manager: &<Self as Function>::Manager<'id>,
-            a: EdgeOfFunc<'id, Self>,
-            b: EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            a: OwnEdgeOfFunc<'id, Self>,
+            b: OwnEdgeOfFunc<'id, Self>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             let a = EdgeDropGuard::new(manager, a);
             let b = EdgeDropGuard::new(manager, b);
             apply_minus(
@@ -573,10 +571,10 @@ pub mod mt {
         #[inline]
         pub fn relational_product_edge<'id>(
             manager: &<Self as Function>::Manager<'id>,
-            set: EdgeOfFunc<'id, Self>,
-            rel: EdgeOfFunc<'id, Self>,
-            meta: EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            set: OwnEdgeOfFunc<'id, Self>,
+            rel: OwnEdgeOfFunc<'id, Self>,
+            meta: OwnEdgeOfFunc<'id, Self>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             let set = EdgeDropGuard::new(manager, set);
             let rel = EdgeDropGuard::new(manager, rel);
             let meta = EdgeDropGuard::new(manager, meta);
@@ -593,11 +591,11 @@ pub mod mt {
         #[inline]
         pub fn relational_predecessor_edge<'id>(
             manager: &<Self as Function>::Manager<'id>,
-            set: EdgeOfFunc<'id, Self>,
-            rel: EdgeOfFunc<'id, Self>,
-            meta: EdgeOfFunc<'id, Self>,
-            universe: EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            set: OwnEdgeOfFunc<'id, Self>,
+            rel: OwnEdgeOfFunc<'id, Self>,
+            meta: OwnEdgeOfFunc<'id, Self>,
+            universe: OwnEdgeOfFunc<'id, Self>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             let set = EdgeDropGuard::new(manager, set);
             let rel = EdgeDropGuard::new(manager, rel);
             let meta = EdgeDropGuard::new(manager, meta);
@@ -616,7 +614,7 @@ pub mod mt {
         #[inline]
         pub fn len_edge<'id>(
             manager: &<Self as Function>::Manager<'id>,
-            set: EdgeOfFunc<'id, Self>,
+            set: OwnEdgeOfFunc<'id, Self>,
         ) -> usize {
             let set = EdgeDropGuard::new(manager, set);
             len(manager, set.borrowed(), &mut HashMap::new())
@@ -627,7 +625,7 @@ pub mod mt {
         pub fn projection_meta<'id>(
             manager: &<Self as Function>::Manager<'id>,
             proj: &[u32],
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             compute_proj(manager, proj)
         }
 
@@ -635,9 +633,9 @@ pub mod mt {
         #[inline]
         pub fn project_edge<'id>(
             manager: &<Self as Function>::Manager<'id>,
-            set: EdgeOfFunc<'id, Self>,
-            proj: EdgeOfFunc<'id, Self>,
-        ) -> AllocResult<EdgeOfFunc<'id, Self>> {
+            set: OwnEdgeOfFunc<'id, Self>,
+            proj: OwnEdgeOfFunc<'id, Self>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             let set = EdgeDropGuard::new(manager, set);
             let proj = EdgeDropGuard::new(manager, proj);
             project(
@@ -760,7 +758,7 @@ impl<E: Edge, N: InnerNode<E, Value: LDDValue>> DiagramRules<E, N, LDDTerminal> 
     fn reduce<M: Manager<Edge = E, InnerNode = N>>(
         _manager: &M,
         _level: LevelNo,
-        _children: impl IntoIterator<Item = E>,
+        _children: impl IntoIterator<Item = Own<E>>,
     ) -> ReducedOrNew<E, N> {
         unimplemented!("Missing the value to construct a new node");
     }
@@ -771,7 +769,7 @@ impl<E: Edge, N: InnerNode<E, Value: LDDValue>> DiagramRules<E, N, LDDTerminal> 
     }
 
     #[inline(always)]
-    fn cofactor(_tag: E::Tag, node: &N, n: usize) -> Borrowed<'_, E> {
+    fn cofactor(_tag: E::Tag, node: &N, n: usize) -> Ref<'_, E> {
         node.child(n)
     }
 }
