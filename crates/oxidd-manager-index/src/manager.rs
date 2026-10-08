@@ -2344,15 +2344,18 @@ pub fn new_manager<
         workers: crate::workers::Workers::new(threads),
     });
 
-    let mut manager = arc.manager.exclusive();
-    manager.store = Arc::as_ptr(&arc);
-    drop(manager);
-
     let store_addr = addr(&*arc);
     arc.workers.pool.spawn_broadcast(move |_| {
         // The workers are dedicated to this store.
         LOCAL_STORE_STATE.with(|state| state.current_store.set(store_addr))
     });
+
+    let local_guard = arc.prepare_local_state();
+    let mut manager = arc.manager.exclusive();
+    manager.store = Arc::as_ptr(&arc);
+    manager.init(); // initialize the manager data
+    drop(manager);
+    drop(local_guard);
 
     // spell-checker:ignore mref
     let gc_ref = Arc::downgrade(&arc);
@@ -2401,11 +2404,6 @@ pub fn new_manager<
             }
         })
         .unwrap();
-
-    // initialize the manager data
-    let local_guard = arc.prepare_local_state();
-    arc.manager.exclusive().init();
-    drop(local_guard);
 
     ManagerRef(arc)
 }
