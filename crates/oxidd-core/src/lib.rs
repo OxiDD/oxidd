@@ -934,10 +934,10 @@ pub trait ManagerEventSubscriber<M: Manager> {
 
     /// Initialization
     ///
-    /// This is an alternative to [`Self::post_reorder()`] with a mutable
-    /// reference to the manager as an argument. Since `self` may be a
-    /// substructure of `manager`, the method cannot provide mutable references
-    /// to both `self` and `manager`.
+    /// This is an alternative to [`Self::init()`] with a mutable reference to
+    /// the manager as an argument. Since `self` may be a substructure of
+    /// `manager`, the method cannot provide mutable references to both `self`
+    /// and `manager`.
     #[inline(always)]
     #[allow(unused_variables)]
     fn init_mut(manager: &mut M) {}
