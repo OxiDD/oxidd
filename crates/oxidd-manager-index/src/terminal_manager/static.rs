@@ -1,61 +1,41 @@
-use std::hash::Hash;
 use std::iter::FusedIterator;
 use std::marker::PhantomData;
 
 use oxidd_core::Countable;
-use oxidd_core::Tag;
-use oxidd_core::util::AllocResult;
-use oxidd_core::util::Own;
+use oxidd_core::util::{AllocResult, Own};
 
-use crate::manager::Edge;
-use crate::manager::InnerNodeCons;
-use crate::manager::TerminalManagerCons;
-use crate::node::NodeBase;
+use crate::{DiagramInfo, manager::Edge, terminal_manager::TerminalManager};
 
-use super::TerminalManager;
+pub struct StaticTerminalManager<'id, DI, const TERMINALS: usize>(PhantomData<(&'id (), DI)>);
 
-pub struct StaticTerminalManager<'id, T, N, ET, const TERMINALS: usize>(
-    PhantomData<(&'id (), T, N, ET)>,
-);
-
-impl<T: Countable, N, ET: Tag, const TERMINALS: usize>
-    StaticTerminalManager<'_, T, N, ET, TERMINALS>
-{
-    const CHECK_TERMINALS: () = assert!(TERMINALS > T::MAX_VALUE);
-}
-
-impl<'id, T, N, ET, const TERMINALS: usize> TerminalManager<'id, N, ET, TERMINALS>
-    for StaticTerminalManager<'id, T, N, ET, TERMINALS>
+impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> TerminalManager<'id, DI, TERMINALS>
+    for StaticTerminalManager<'id, DI, TERMINALS>
 where
-    T: Countable + Eq + Hash,
-    N: NodeBase,
-    ET: Tag,
+    DI::TerminalNode: Countable,
 {
-    type TerminalNode = T;
     type TerminalNodeRef<'a>
-        = T
+        = DI::TerminalNode
     where
         Self: 'a;
 
     type Iterator<'a>
-        = StaticTerminalIterator<'id, N, ET>
+        = StaticTerminalIterator<'id, DI, TERMINALS>
     where
         Self: 'a,
         'id: 'a;
 
     fn with_capacity(_capacity: u32) -> Self {
-        let () = Self::CHECK_TERMINALS;
         Self(PhantomData)
     }
 
     #[inline(always)]
     fn len(&self) -> usize {
-        T::MAX_VALUE + 1
+        DI::TerminalNode::MAX_VALUE + 1
     }
 
     #[inline]
-    unsafe fn get_terminal(&self, id: usize) -> T {
-        T::from_usize(id)
+    unsafe fn get_terminal(&self, id: usize) -> DI::TerminalNode {
+        DI::TerminalNode::from_usize(id)
     }
 
     #[inline(always)]
@@ -69,20 +49,17 @@ where
     }
 
     #[inline]
-    fn get_edge(&self, terminal: T) -> AllocResult<Own<Edge<'id, N, ET>>> {
-        let () = Self::CHECK_TERMINALS;
+    fn get_edge(&self, terminal: DI::TerminalNode) -> AllocResult<Own<Edge<'id, DI, TERMINALS>>> {
+        const { assert!(TERMINALS > DI::TerminalNode::MAX_VALUE) };
         // SAFETY: `terminal.as_usize() <= Terminal::MAX_VALUE` is guaranteed
-        // and we checked `TERMINALS > Terminal::MAX_VALUE`. There are no
-        // reference counters to update.
+        // and we checked `TERMINALS > DI::TerminalNode::MAX_VALUE`. There are
+        // no reference counters to update.
         Ok(unsafe { Own::from_raw(Edge::from_terminal_id(terminal.as_usize() as u32)) })
     }
 
     #[inline]
-    fn iter<'a>(&'a self) -> Self::Iterator<'a>
-    where
-        Self: 'a,
-    {
-        StaticTerminalIterator::new((T::MAX_VALUE + 1) as u32)
+    fn iter<'a>(&'a self) -> Self::Iterator<'a> {
+        StaticTerminalIterator::new((DI::TerminalNode::MAX_VALUE + 1) as u32)
     }
 
     #[inline(always)]
@@ -91,26 +68,13 @@ where
     }
 }
 
-pub struct StaticTerminalManagerCons<Terminal>(PhantomData<Terminal>);
-
-impl<T, NC, ET, const TERMINALS: usize> TerminalManagerCons<NC, ET, TERMINALS>
-    for StaticTerminalManagerCons<T>
-where
-    T: Countable + Hash + Eq + Send + Sync,
-    NC: InnerNodeCons<ET>,
-    ET: Tag + Send + Sync,
-{
-    type TerminalNode = T;
-    type T<'id> = StaticTerminalManager<'id, T, NC::T<'id>, ET, TERMINALS>;
-}
-
-pub struct StaticTerminalIterator<'id, N, ET> {
+pub struct StaticTerminalIterator<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> {
     id: u32,
     count: u32,
-    phantom: PhantomData<Edge<'id, N, ET>>,
+    phantom: PhantomData<Edge<'id, DI, TERMINALS>>,
 }
 
-impl<N, ET> StaticTerminalIterator<'_, N, ET> {
+impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> StaticTerminalIterator<'_, DI, TERMINALS> {
     #[inline(always)]
     pub fn new(count: u32) -> Self {
         Self {
@@ -121,8 +85,10 @@ impl<N, ET> StaticTerminalIterator<'_, N, ET> {
     }
 }
 
-impl<'id, N: NodeBase, ET: Tag> Iterator for StaticTerminalIterator<'id, N, ET> {
-    type Item = Own<Edge<'id, N, ET>>;
+impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Iterator
+    for StaticTerminalIterator<'id, DI, TERMINALS>
+{
+    type Item = Own<Edge<'id, DI, TERMINALS>>;
 
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
@@ -145,13 +111,13 @@ impl<'id, N: NodeBase, ET: Tag> Iterator for StaticTerminalIterator<'id, N, ET> 
     }
 }
 
-impl<InnerNode: NodeBase, EdgeTag: Tag> FusedIterator
-    for StaticTerminalIterator<'_, InnerNode, EdgeTag>
+impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> FusedIterator
+    for StaticTerminalIterator<'_, DI, TERMINALS>
 {
 }
 
-impl<InnerNode: NodeBase, EdgeTag: Tag> ExactSizeIterator
-    for StaticTerminalIterator<'_, InnerNode, EdgeTag>
+impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> ExactSizeIterator
+    for StaticTerminalIterator<'_, DI, TERMINALS>
 {
     #[inline(always)]
     fn len(&self) -> usize {

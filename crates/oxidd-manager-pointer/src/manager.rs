@@ -1,18 +1,4 @@
 //! Pointer-Based Manager Implementation
-//!
-//! Abbreviations of generics:
-//!
-//! | Abbreviation | Meaning                           |
-//! | ------------ | --------------------------------- |
-//! | `N`          | Inner Node                        |
-//! | `ET`         | Edge Tag                          |
-//! | `TM`         | Terminal Manager                  |
-//! | `R`          | Diagram Rules                     |
-//! | `MD`         | Manager Data                      |
-//! | `NC`         | Inner Node Type Constructor       |
-//! | `TMC`        | Terminal Manager Type Constructor |
-//! | `RC`         | Diagram Rules Type Constructor    |
-//! | `OP`         | Operation                         |
 
 use std::collections::HashMap;
 use std::hash::{BuildHasherDefault, Hasher};
@@ -34,9 +20,10 @@ use oxidd_core::error::DuplicateVarName;
 use oxidd_core::function::{EdgeOfFunc, OwnEdgeOfFunc};
 use oxidd_core::util::{AbortOnDrop, AllocResult, DropWith, Own, Ref, VarNameMap};
 use oxidd_core::{
-    DiagramRules, HasApplyCache, InnerNode, LevelNo, ManagerEventSubscriber, Node, Tag, VarNo,
+    Countable, HasApplyCache, InnerNode, LevelNo, ManagerEventSubscriber, Node, VarNo,
 };
 
+use crate::DiagramInfo;
 use crate::node::NodeBase;
 use crate::terminal_manager::TerminalManager;
 use crate::util::{Invariant, TryLock, VarLevelMap, rwlock::RwLock};
@@ -46,179 +33,77 @@ type RawTable<T> = linear_hashtbl::raw::RawTable<T, usize>;
 #[cfg(feature = "hugealloc")]
 type RawTable<T> = linear_hashtbl::raw::RawTable<T, usize, hugealloc::HugeAlloc>;
 
-// === Type Constructors =======================================================
-
-/// Inner node type constructor
-pub trait InnerNodeCons<ET: Tag, const TAG_BITS: u32> {
-    type T<'id>: NodeBase + InnerNode<Edge<'id, Self::T<'id>, ET, TAG_BITS>>;
-}
-
-/// Terminal manager type constructor
-pub trait TerminalManagerCons<
-    NC: InnerNodeCons<ET, TAG_BITS>,
-    ET: Tag,
-    RC: DiagramRulesCons<NC, ET, Self, MDC, PAGE_SIZE, TAG_BITS>,
-    MDC: ManagerDataCons<NC, ET, Self, RC, PAGE_SIZE, TAG_BITS>,
-    const PAGE_SIZE: usize,
-    const TAG_BITS: u32,
->: Sized
-{
-    type TerminalNode;
-    type T<'id>: TerminalManager<
-            'id,
-            NC::T<'id>,
-            ET,
-            MDC::T<'id>,
-            PAGE_SIZE,
-            TAG_BITS,
-            TerminalNode = Self::TerminalNode,
-        >;
-}
-
-/// Diagram rules type constructor
-pub trait DiagramRulesCons<
-    NC: InnerNodeCons<ET, TAG_BITS>,
-    ET: Tag,
-    TMC: TerminalManagerCons<NC, ET, Self, MDC, PAGE_SIZE, TAG_BITS>,
-    MDC: ManagerDataCons<NC, ET, TMC, Self, PAGE_SIZE, TAG_BITS>,
-    const PAGE_SIZE: usize,
-    const TAG_BITS: u32,
->: Sized
-{
-    type T<'id>: DiagramRules<
-        Edge<'id, NC::T<'id>, ET, TAG_BITS>,
-        NC::T<'id>,
-        <TMC::T<'id> as TerminalManager<'id, NC::T<'id>, ET, MDC::T<'id>, PAGE_SIZE, TAG_BITS>>::TerminalNode,
-    >;
-}
-
-/// Manager data type constructor
-pub trait ManagerDataCons<
-    NC: InnerNodeCons<ET, TAG_BITS>,
-    ET: Tag,
-    TMC: TerminalManagerCons<NC, ET, RC, Self, PAGE_SIZE, TAG_BITS>,
-    RC: DiagramRulesCons<NC, ET, TMC, Self, PAGE_SIZE, TAG_BITS>,
-    const PAGE_SIZE: usize,
-    const TAG_BITS: u32,
->: Sized
-{
-    type T<'id>: DropWith<Edge<'id, NC::T<'id>, ET, TAG_BITS>>
-        + ManagerEventSubscriber<
-            Manager<
-                'id,
-                NC::T<'id>,
-                ET,
-                TMC::T<'id>,
-                RC::T<'id>,
-                Self::T<'id>,
-                PAGE_SIZE,
-                TAG_BITS,
-            >,
-        >;
-}
-
 // === Manager & Edges =========================================================
 
-pub struct StoreInner<'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32>
+pub struct StoreInner<'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32>
 where
-    N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>>,
-    ET: Tag,
-    TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
-    MD: DropWith<Edge<'id, N, ET, TAG_BITS>>,
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
 {
-    manager: RwLock<Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>>,
-    terminal_manager: TM,
+    manager: RwLock<Manager<'id, DI, PAGE_SIZE, TAG_BITS>>,
+    terminal_manager: DI::TerminalManager<'id>,
     workers: crate::workers::Workers,
 }
 
 #[repr(transparent)]
 #[must_use]
 #[derive_where(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Edge<'id, N, ET, const TAG_BITS: u32>(
+pub struct Edge<'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32>(
     /// Points to an `InnerNode` (if `ptr & (1 << TAG_BITS) == 0`) or a terminal
     /// node (`ptr & (1 << TAG_BITS) == 1`)
     ///
     /// SAFETY invariant: The pointer (as integer) is `>= 1 << (TAG_BITS + 1)`
     /// (i.e. the pointer with all tags removed is still non-null)
     NonNull<()>,
-    #[derive_where(skip)] PhantomData<(Invariant<'id>, N, ET)>,
-);
+    #[derive_where(skip)] PhantomData<(Invariant<'id>, DI)>,
+)
+where
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>;
 
-unsafe impl<N: Send + Sync, ET: Send + Sync, const TAG_BITS: u32> Send
-    for Edge<'_, N, ET, TAG_BITS>
+unsafe impl<DI: DiagramInfo<PAGE_SIZE, TAG_BITS>, const PAGE_SIZE: usize, const TAG_BITS: u32> Send
+    for Edge<'_, DI, PAGE_SIZE, TAG_BITS>
 {
 }
-unsafe impl<N: Send + Sync, ET: Send + Sync, const TAG_BITS: u32> Sync
-    for Edge<'_, N, ET, TAG_BITS>
+unsafe impl<DI: DiagramInfo<PAGE_SIZE, TAG_BITS>, const PAGE_SIZE: usize, const TAG_BITS: u32> Sync
+    for Edge<'_, DI, PAGE_SIZE, TAG_BITS>
 {
 }
 
 #[repr(C)]
-pub struct Manager<'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32>
+pub struct Manager<'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32>
 where
-    N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>>,
-    ET: Tag,
-    TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
-    MD: DropWith<Edge<'id, N, ET, TAG_BITS>>,
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
 {
-    unique_table: Vec<Mutex<LevelViewSet<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>>>,
+    unique_table: Vec<Mutex<LevelViewSet<'id, DI, PAGE_SIZE, TAG_BITS>>>,
     var_level_map: VarLevelMap,
     var_name_map: VarNameMap,
-    data: ManuallyDrop<MD>,
-    store_inner: *const StoreInner<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>,
+    data: ManuallyDrop<DI::ManagerData<'id>>,
+    store_inner: *const StoreInner<'id, DI, PAGE_SIZE, TAG_BITS>,
     gc_count: AtomicU64,
     reorder_count: u64,
     gc_ongoing: TryLock,
     reorder_gc_prepared: bool,
-    phantom: PhantomData<(TM, R)>,
 }
 
-type M<'id, NC, ET, TMC, RC, MDC, const PAGE_SIZE: usize, const TAG_BITS: u32> = Manager<
-    'id,
-    <NC as InnerNodeCons<ET, TAG_BITS>>::T<'id>,
-    ET,
-    <TMC as TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>>::T<'id>,
-    <RC as DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>>::T<'id>,
-    <MDC as ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>>::T<'id>,
-    PAGE_SIZE,
-    TAG_BITS,
->;
-
-unsafe impl<
-    'id,
-    N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>> + Send + Sync,
-    ET: Tag + Send + Sync,
-    TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS> + Send + Sync,
-    R,
-    MD: DropWith<Edge<'id, N, ET, TAG_BITS>> + Send + Sync,
-    const PAGE_SIZE: usize,
-    const TAG_BITS: u32,
-> Send for Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
-{
-}
-unsafe impl<
-    'id,
-    N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>> + Send + Sync,
-    ET: Tag + Send + Sync,
-    TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS> + Send + Sync,
-    R,
-    MD: DropWith<Edge<'id, N, ET, TAG_BITS>> + Send + Sync,
-    const PAGE_SIZE: usize,
-    const TAG_BITS: u32,
-> Sync for Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
-{
-}
-
-impl<'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32> Drop
-    for Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
+unsafe impl<'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32> Send
+    for Manager<'id, DI, PAGE_SIZE, TAG_BITS>
 where
-    N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>>,
-    ET: Tag,
-    TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
-    MD: DropWith<Edge<'id, N, ET, TAG_BITS>>,
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
+{
+}
+unsafe impl<'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32> Sync
+    for Manager<'id, DI, PAGE_SIZE, TAG_BITS>
+where
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
+{
+}
+
+impl<'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32> Drop
+    for Manager<'id, DI, PAGE_SIZE, TAG_BITS>
+where
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
 {
     fn drop(&mut self) {
-        if !N::needs_drop() {
+        if !DI::InnerNode::<'id>::needs_drop() {
             // There is no need to free nodes, so we can just forget all edges
             // and let the `ArcSlab` deallocate its pages.
             unsafe { ManuallyDrop::take(&mut self.data) }.drop_with(std::mem::forget);
@@ -238,39 +123,16 @@ where
 #[repr(transparent)]
 #[derive_where(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ManagerRef<
-    NC: InnerNodeCons<ET, TAG_BITS>,
-    ET: Tag,
-    TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
-    RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
-    MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
     const PAGE_SIZE: usize,
     const TAG_BITS: u32,
->(
-    ArcSlabRef<
-        NC::T<'static>,
-        StoreInner<
-            'static,
-            NC::T<'static>,
-            ET,
-            TMC::T<'static>,
-            RC::T<'static>,
-            MDC::T<'static>,
-            PAGE_SIZE,
-            TAG_BITS,
-        >,
-        PAGE_SIZE,
-    >,
-);
+>(ArcSlabRef<DI::InnerNode<'static>, StoreInner<'static, DI, PAGE_SIZE, TAG_BITS>, PAGE_SIZE>);
 
-impl<'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32>
-    StoreInner<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
+impl<'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32> StoreInner<'id, DI, PAGE_SIZE, TAG_BITS>
 where
-    N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>>,
-    ET: Tag,
-    TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
-    MD: DropWith<Edge<'id, N, ET, TAG_BITS>>,
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
 {
-    unsafe fn init_in(slot: *mut Self, data: MD, threads: u32) {
+    unsafe fn init_in(slot: *mut Self, data: DI::ManagerData<'id>, threads: u32) {
         let data = RwLock::new(Manager {
             unique_table: Vec::new(),
             var_level_map: VarLevelMap::new(),
@@ -281,27 +143,17 @@ where
             reorder_count: 0,
             gc_ongoing: TryLock::new(),
             reorder_gc_prepared: false,
-            phantom: PhantomData,
         });
         unsafe { std::ptr::write(&raw mut ((*slot).manager), data) };
 
-        unsafe { TM::new_in(&raw mut ((*slot).terminal_manager)) };
+        unsafe { DI::TerminalManager::<'id>::new_in(&raw mut ((*slot).terminal_manager)) };
 
         let workers = crate::workers::Workers::new(threads);
         unsafe { std::ptr::write(&raw mut ((*slot).workers), workers) };
     }
-}
 
-impl<'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32>
-    StoreInner<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
-where
-    N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>>,
-    ET: Tag,
-    TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
-    MD: DropWith<Edge<'id, N, ET, TAG_BITS>>,
-{
     #[inline(always)]
-    fn from_terminal_manager_ptr(ptr: *const TM) -> *const Self {
+    fn from_terminal_manager_ptr(ptr: *const DI::TerminalManager<'id>) -> *const Self {
         let byte_offset = const { std::mem::offset_of!(Self, terminal_manager) as isize };
         // SAFETY: For all uses of this function, `ptr` points to a terminal
         // manager contained in a `StoreInner` allocation
@@ -309,9 +161,7 @@ where
     }
 
     #[inline(always)]
-    fn from_manager_ptr(
-        ptr: *const RwLock<Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>>,
-    ) -> *const Self {
+    fn from_manager_ptr(ptr: *const RwLock<Manager<'id, DI, PAGE_SIZE, TAG_BITS>>) -> *const Self {
         let byte_offset = const { std::mem::offset_of!(Self, manager) as isize };
         // SAFETY: For all uses of this function, `ptr` points to the manager
         // field contained in a `StoreInner` allocation
@@ -323,15 +173,12 @@ where
 ///
 /// The caller should ensure that no node is inserted twice
 #[inline]
-fn add_node<'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32>(
-    store: &ArcSlab<N, StoreInner<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>, PAGE_SIZE>,
-    node: N,
-) -> AllocResult<[Own<Edge<'id, N, ET, TAG_BITS>>; 2]>
+fn add_node<'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32>(
+    store: &ArcSlab<DI::InnerNode<'id>, StoreInner<'id, DI, PAGE_SIZE, TAG_BITS>, PAGE_SIZE>,
+    node: DI::InnerNode<'id>,
+) -> AllocResult<[Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>; 2]>
 where
-    N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>>,
-    ET: Tag,
-    TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
-    MD: DropWith<Edge<'id, N, ET, TAG_BITS>>,
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
 {
     debug_assert!(node.load_rc(Relaxed) >= 2);
     let ptr = IntHandle::into_raw(store.add_item(node)).cast();
@@ -340,20 +187,16 @@ where
     Ok(unsafe { [Own::from_raw(raw), Own::from_raw(raw)] })
 }
 
-impl<'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32>
-    Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
+impl<'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32> Manager<'id, DI, PAGE_SIZE, TAG_BITS>
 where
-    N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>>,
-    ET: Tag,
-    TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
-    MD: DropWith<Edge<'id, N, ET, TAG_BITS>>,
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
 {
     /// Get the pointer to `StoreInner` for this manager
     ///
     /// This method must not be called during of store and manager. After
     /// initialization, the returned pointer is safe to dereference.
     #[inline(always)]
-    fn store_inner_ptr(&self) -> *const StoreInner<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS> {
+    fn store_inner_ptr(&self) -> *const StoreInner<'id, DI, PAGE_SIZE, TAG_BITS> {
         let store_inner = self.store_inner;
         // We can simply get the store pointer by subtracting the offset of
         // `Manager` in `Store`. The only issue is that this violates Rust's
@@ -376,25 +219,25 @@ where
     #[inline(always)]
     fn store(
         &self,
-    ) -> &ArcSlab<N, StoreInner<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>, PAGE_SIZE> {
+    ) -> &ArcSlab<DI::InnerNode<'id>, StoreInner<'id, DI, PAGE_SIZE, TAG_BITS>, PAGE_SIZE> {
         let ptr = ArcSlab::from_data_ptr(self.store_inner_ptr());
         // SAFETY: After initialization, the pointer is guaranteed to be valid
         unsafe { &*ptr }
     }
 
     #[inline]
-    fn terminal_manager(&self) -> *const TM {
+    fn terminal_manager(&self) -> *const DI::TerminalManager<'id> {
         let store_inner = self.store_inner_ptr();
         unsafe { &raw const ((*store_inner).terminal_manager) }
     }
 
     #[inline]
-    fn drop_edge_common(edge: Own<Edge<'id, N, ET, TAG_BITS>>) {
+    fn drop_edge_common(edge: Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>) {
         if edge.raw().is_inner() {
             // SAFETY: `edge` points to an inner node
             unsafe { Edge::drop_inner(edge) };
         } else {
-            TM::drop_edge(edge);
+            DI::TerminalManager::<'id>::drop_edge(edge);
         }
     }
 
@@ -407,11 +250,11 @@ where
     ///   memory (e.g., use [`Acquire`] ordering to check that `this` is the
     ///   last reference).
     #[inline]
-    unsafe fn force_drop_edge(edge: Own<Edge<'id, N, ET, TAG_BITS>>) {
-        let handle: IntHandle<'id, N, Self, PAGE_SIZE> = {
+    unsafe fn force_drop_edge(edge: Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>) {
+        let handle: IntHandle<'id, DI::InnerNode<'id>, Self, PAGE_SIZE> = {
             let raw = edge.into_raw();
             debug_assert_eq!(raw.tag_bits(), 0);
-            let ptr: NonNull<N> = raw.0.cast();
+            let ptr: NonNull<DI::InnerNode<'id>> = raw.0.cast();
             // SAFETY: By the type invariant, `ptr` was created from an
             // `IntHandle`, the caller ensures that the type/const arguments
             // of `IntHandle` match. Due to lifetime restrictions the `ArcSlab`
@@ -428,10 +271,10 @@ where
     ///
     /// `edge` must be untagged and point to an inner node
     #[inline(always)]
-    unsafe fn drop_edge_from_unique_table(edge: Own<Edge<'id, N, ET, TAG_BITS>>) {
-        let handle: IntHandle<'id, N, Self, PAGE_SIZE> = {
+    unsafe fn drop_edge_from_unique_table(edge: Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>) {
+        let handle: IntHandle<'id, DI::InnerNode<'id>, Self, PAGE_SIZE> = {
             debug_assert_eq!(edge.raw().tag_bits(), 0);
-            let ptr: NonNull<N> = edge.into_raw().0.cast();
+            let ptr: NonNull<DI::InnerNode<'id>> = edge.into_raw().0.cast();
             // SAFETY: By the type invariant, `ptr` was created from an
             // `IntHandle`, the caller ensures that the type/const arguments
             // of `IntHandle` match. Due to lifetime restrictions the `ArcSlab`
@@ -442,24 +285,30 @@ where
     }
 }
 
-impl<'id, N: NodeBase, ET: Tag, const TAG_BITS: u32> Edge<'id, N, ET, TAG_BITS> {
+impl<'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32> Edge<'id, DI, PAGE_SIZE, TAG_BITS>
+where
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
+{
     /// Mask corresponding to `TAG_BITS`
     const TAG_MASK: usize = {
-        assert!(ET::MAX_VALUE < (1 << TAG_BITS), "`TAG_BITS` is too small");
+        assert!(
+            DI::EdgeTag::MAX_VALUE < (1 << TAG_BITS),
+            "`TAG_BITS` is too small"
+        );
         // The mask we compute below has potentially less bits set than
         // `(1 << TAG_BITS) - 1`. If `ET::MAX_VALUE + 1` is a power of two, all
         // all bit patterns after applying the mask actually correspond to valid
         // bit patterns for the `ET`, so the compiler may optimize an
         // `assert!(value <= Self::MAX_VALUE)` in the `Tag::from_usize()`
         // implementation away, which would otherwise be required for safety.
-        (ET::MAX_VALUE + 1).next_power_of_two() - 1
+        (DI::EdgeTag::MAX_VALUE + 1).next_power_of_two() - 1
     };
 
     /// `TAG_BITS` (for the user-defined edge tag) plus 1 for the distinction
     /// between inner and terminal nodes
     const ALL_TAG_BITS: u32 = {
         assert!(
-            align_of::<N>() >= 1 << (TAG_BITS + 1),
+            align_of::<DI::InnerNode<'id>>() >= 1 << (TAG_BITS + 1),
             "`TAG_BITS` is too large"
         );
         TAG_BITS + 1
@@ -515,10 +364,10 @@ impl<'id, N: NodeBase, ET: Tag, const TAG_BITS: u32> Edge<'id, N, ET, TAG_BITS> 
     ///
     /// `self` must be untagged and point to an inner node
     #[inline]
-    unsafe fn inner_node_unchecked(this: Ref<'_, Self>) -> &N {
+    unsafe fn inner_node_unchecked(this: Ref<'_, Self>) -> &DI::InnerNode<'id> {
         let raw = this.raw();
         debug_assert_eq!(raw.tag_bits(), 0);
-        let ptr: NonNull<N> = raw.0.cast();
+        let ptr: NonNull<DI::InnerNode<'id>> = raw.0.cast();
         unsafe { ptr.as_ref() }
     }
 
@@ -542,10 +391,10 @@ impl<'id, N: NodeBase, ET: Tag, const TAG_BITS: u32> Edge<'id, N, ET, TAG_BITS> 
     ///
     /// SAFETY: `edge` must point to an inner node
     #[inline]
-    unsafe fn drop_inner(edge: Own<Edge<'id, N, ET, TAG_BITS>>) {
+    unsafe fn drop_inner(edge: Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>) {
         let edge = edge.into_raw();
         debug_assert!(edge.is_inner());
-        let ptr: NonNull<N> = edge.all_untagged_ptr().cast();
+        let ptr: NonNull<DI::InnerNode<'id>> = edge.all_untagged_ptr().cast();
         // SAFETY: `self` points to an inner node and by the type invariant, we
         // have shared access. Also, `self` forgotten now.
         let _old_rc = unsafe { ptr.as_ref().release() };
@@ -568,9 +417,9 @@ impl<'id, N: NodeBase, ET: Tag, const TAG_BITS: u32> Edge<'id, N, ET, TAG_BITS> 
 
     /// Get the underlying pointer tagged with `tag`
     #[inline]
-    fn retag_ptr(self, tag: ET) -> NonNull<()> {
+    fn retag_ptr(self, tag: DI::EdgeTag) -> NonNull<()> {
         let tv = tag.as_usize();
-        debug_assert!(tv <= ET::MAX_VALUE);
+        debug_assert!(tv <= DI::EdgeTag::MAX_VALUE);
         // Note that we assert `ET::MAX_VALUE <= Self::TAG_MASK` during the
         // computation of `Self::TAG_MASK`
         let ptr = self.0.as_ptr().map_addr(|p| (p & !Self::TAG_MASK) | tv);
@@ -579,38 +428,37 @@ impl<'id, N: NodeBase, ET: Tag, const TAG_BITS: u32> Edge<'id, N, ET, TAG_BITS> 
     }
 }
 
-unsafe impl<'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32> oxidd_core::Manager
-    for Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
+unsafe impl<'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32> oxidd_core::Manager
+    for Manager<'id, DI, PAGE_SIZE, TAG_BITS>
 where
-    N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>>,
-    ET: Tag,
-    TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
-    R: DiagramRules<Edge<'id, N, ET, TAG_BITS>, N, TM::TerminalNode>,
-    MD: DropWith<Edge<'id, N, ET, TAG_BITS>> + ManagerEventSubscriber<Self>,
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
 {
-    type Edge = Edge<'id, N, ET, TAG_BITS>;
-    type EdgeTag = ET;
-    type InnerNode = N;
-    type Terminal = TM::TerminalNode;
+    type Edge = Edge<'id, DI, PAGE_SIZE, TAG_BITS>;
+    type EdgeTag = DI::EdgeTag;
+    type InnerNode = DI::InnerNode<'id>;
+    type Terminal = DI::TerminalNode;
     type TerminalRef<'a>
-        = TM::TerminalNodeRef<'a>
+        =
+        <DI::TerminalManager<'id> as TerminalManager<'id, DI, PAGE_SIZE, TAG_BITS>>::TerminalNodeRef<
+            'a,
+        >
     where
         Self: 'a;
-    type Rules = R;
+    type Rules = DI::DiagramRules<'id>;
 
     type TerminalIterator<'a>
-        = TM::Iterator<'a>
+        = <DI::TerminalManager<'id> as TerminalManager<'id, DI, PAGE_SIZE, TAG_BITS>>::Iterator<'a>
     where
         Self: 'a;
 
     type NodeSet = NodeSet<PAGE_SIZE, TAG_BITS>;
 
     type LevelView<'a>
-        = LevelView<'a, 'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
+        = LevelView<'a, 'id, DI, PAGE_SIZE, TAG_BITS>
     where
         Self: 'a;
     type LevelIterator<'a>
-        = LevelIter<'a, 'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
+        = LevelIter<'a, 'id, DI, PAGE_SIZE, TAG_BITS>
     where
         Self: 'a;
 
@@ -618,7 +466,7 @@ where
     fn get_node<'a>(&'a self, edge: Ref<'a, Self::Edge>) -> Node<'a, Self> {
         let raw = edge.raw();
         if raw.is_inner() {
-            let ptr: NonNull<N> = raw.all_untagged_ptr().cast();
+            let ptr: NonNull<Self::InnerNode> = raw.all_untagged_ptr().cast();
             // SAFETY: dereferencing untagged edges pointing to inner nodes is
             // safe
             Node::Inner(unsafe { ptr.as_ref() })
@@ -632,14 +480,14 @@ where
     fn clone_edge(&self, edge: Ref<'_, Self::Edge>) -> Own<Self::Edge> {
         let raw = edge.raw();
         if raw.is_inner() {
-            let ptr: NonNull<N> = raw.all_untagged_ptr().cast();
+            let ptr: NonNull<Self::InnerNode> = raw.all_untagged_ptr().cast();
             // SAFETY: dereferencing untagged edges pointing to inner nodes is
             // safe
             unsafe { ptr.as_ref() }.retain();
             // SAFETY: we have incremented the reference counter above
             unsafe { Own::from_raw(raw) }
         } else {
-            TM::clone_edge(edge)
+            DI::TerminalManager::<'id>::clone_edge(edge)
         }
     }
 
@@ -651,7 +499,7 @@ where
     #[track_caller]
     fn try_remove_node(&self, edge: Own<Self::Edge>, level: LevelNo) -> bool {
         if !edge.raw().is_inner() {
-            TM::drop_edge(edge);
+            DI::TerminalManager::<'id>::drop_edge(edge);
             debug_assert_eq!(level, LevelNo::MAX, "`level` does not match");
             return false;
         }
@@ -723,7 +571,7 @@ where
         let range = len as VarNo..new_len as VarNo;
 
         self.data.pre_reorder(self);
-        MD::pre_reorder_mut(self);
+        DI::ManagerData::<'id>::pre_reorder_mut(self);
 
         self.unique_table
             .resize_with(new_len as usize, || Mutex::new(LevelViewSet::default()));
@@ -735,7 +583,7 @@ where
         debug_assert_eq!(new_len, self.var_name_map.len());
 
         self.data.post_reorder(self);
-        MD::post_reorder_mut(self);
+        DI::ManagerData::<'id>::post_reorder_mut(self);
 
         range
     }
@@ -746,7 +594,7 @@ where
         names: impl IntoIterator<Item = S>,
     ) -> Result<Range<VarNo>, DuplicateVarName> {
         self.data.pre_reorder(self);
-        MD::pre_reorder_mut(self);
+        DI::ManagerData::<'id>::pre_reorder_mut(self);
 
         let len = self.var_name_map.len();
         let mut guard = scopeguard::guard(self, |this| {
@@ -764,7 +612,7 @@ where
             debug_assert_eq!(new_len, this.var_name_map.len());
 
             this.data.post_reorder(this);
-            MD::post_reorder_mut(this);
+            DI::ManagerData::<'id>::post_reorder_mut(this);
         });
 
         let mut names = names.into_iter();
@@ -789,7 +637,7 @@ where
         }
 
         self.data.pre_reorder(self);
-        MD::pre_reorder_mut(self);
+        DI::ManagerData::<'id>::pre_reorder_mut(self);
 
         let n = map.len();
         self.unique_table
@@ -802,7 +650,7 @@ where
         debug_assert_eq!(n, self.var_name_map.len());
 
         self.data.post_reorder(self);
-        MD::post_reorder_mut(self);
+        DI::ManagerData::<'id>::post_reorder_mut(self);
 
         Ok(0..n)
     }
@@ -878,7 +726,7 @@ where
 
     #[inline]
     fn get_terminal(&self, terminal: Self::Terminal) -> AllocResult<Own<Self::Edge>> {
-        unsafe { TM::get(self.terminal_manager(), terminal) }
+        unsafe { DI::TerminalManager::<'id>::get(self.terminal_manager(), terminal) }
     }
 
     #[inline]
@@ -889,7 +737,7 @@ where
 
     #[inline]
     fn terminals(&self) -> Self::TerminalIterator<'_> {
-        unsafe { TM::iter(self.terminal_manager()) }
+        unsafe { DI::TerminalManager::<'id>::iter(self.terminal_manager()) }
     }
 
     fn gc(&self) -> usize {
@@ -935,12 +783,12 @@ where
         self.data.pre_gc(self);
         self.reorder_gc_prepared = true;
         self.data.pre_reorder(self);
-        MD::pre_reorder_mut(self);
+        DI::ManagerData::<'id>::pre_reorder_mut(self);
 
         let res = f(self);
 
         self.data.post_reorder(self);
-        MD::post_reorder_mut(self);
+        DI::ManagerData::<'id>::post_reorder_mut(self);
         self.reorder_gc_prepared = false;
         // SAFETY: We called `pre_gc()` and the reordering is done.
         unsafe { self.data.post_gc(self) };
@@ -965,14 +813,10 @@ where
     }
 }
 
-impl<'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32> oxidd_core::HasWorkers
-    for Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
+impl<'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32> oxidd_core::HasWorkers
+    for Manager<'id, DI, PAGE_SIZE, TAG_BITS>
 where
-    N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>> + Send + Sync,
-    ET: Tag + Send + Sync,
-    TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS> + Send + Sync,
-    R: DiagramRules<Edge<'id, N, ET, TAG_BITS>, N, TM::TerminalNode>,
-    MD: DropWith<Edge<'id, N, ET, TAG_BITS>> + ManagerEventSubscriber<Self> + Send + Sync,
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
 {
     type WorkerPool = crate::workers::Workers;
 
@@ -982,33 +826,26 @@ where
     }
 }
 
-pub struct LevelIter<'a, 'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32>
+pub struct LevelIter<'a, 'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32>
 where
-    N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>>,
-    ET: Tag,
-    TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
-    MD: DropWith<Edge<'id, N, ET, TAG_BITS>>,
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
 {
-    store: &'a ArcSlab<N, StoreInner<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>, PAGE_SIZE>,
+    store: &'a ArcSlab<DI::InnerNode<'id>, StoreInner<'id, DI, PAGE_SIZE, TAG_BITS>, PAGE_SIZE>,
     var_level_map: &'a VarLevelMap,
     /// SAFETY invariant: If set to true, a garbage collection is prepared
     /// (i.e., there are no "weak" edges).
     allow_node_removal: bool,
     level_front: LevelNo,
     level_back: LevelNo,
-    it: std::slice::Iter<'a, Mutex<LevelViewSet<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>>>,
+    it: std::slice::Iter<'a, Mutex<LevelViewSet<'id, DI, PAGE_SIZE, TAG_BITS>>>,
 }
 
-impl<'a, 'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32> Iterator
-    for LevelIter<'a, 'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
+impl<'a, 'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32> Iterator
+    for LevelIter<'a, 'id, DI, PAGE_SIZE, TAG_BITS>
 where
-    N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>>,
-    ET: Tag,
-    TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
-    R: DiagramRules<Edge<'id, N, ET, TAG_BITS>, N, TM::TerminalNode>,
-    MD: DropWith<Edge<'id, N, ET, TAG_BITS>>,
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
 {
-    type Item = LevelView<'a, 'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>;
+    type Item = LevelView<'a, 'id, DI, PAGE_SIZE, TAG_BITS>;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -1030,14 +867,10 @@ where
     }
 }
 
-impl<'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32> ExactSizeIterator
-    for LevelIter<'_, 'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
+impl<'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32> ExactSizeIterator
+    for LevelIter<'_, 'id, DI, PAGE_SIZE, TAG_BITS>
 where
-    N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>>,
-    ET: Tag,
-    TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
-    R: DiagramRules<Edge<'id, N, ET, TAG_BITS>, N, TM::TerminalNode>,
-    MD: DropWith<Edge<'id, N, ET, TAG_BITS>>,
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
 {
     #[inline]
     fn len(&self) -> usize {
@@ -1045,27 +878,18 @@ where
     }
 }
 
-impl<'a, 'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32> FusedIterator
-    for LevelIter<'a, 'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
+impl<'a, 'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32> FusedIterator
+    for LevelIter<'a, 'id, DI, PAGE_SIZE, TAG_BITS>
 where
-    N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>>,
-    ET: Tag,
-    TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
-    R: DiagramRules<Edge<'id, N, ET, TAG_BITS>, N, TM::TerminalNode>,
-    MD: DropWith<Edge<'id, N, ET, TAG_BITS>>,
-    std::slice::Iter<'a, Mutex<LevelViewSet<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>>>:
-        FusedIterator,
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
+    std::slice::Iter<'a, Mutex<LevelViewSet<'id, DI, PAGE_SIZE, TAG_BITS>>>: FusedIterator,
 {
 }
 
-impl<'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32> DoubleEndedIterator
-    for LevelIter<'_, 'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
+impl<'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32> DoubleEndedIterator
+    for LevelIter<'_, 'id, DI, PAGE_SIZE, TAG_BITS>
 where
-    N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>>,
-    ET: Tag,
-    TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
-    R: DiagramRules<Edge<'id, N, ET, TAG_BITS>, N, TM::TerminalNode>,
-    MD: DropWith<Edge<'id, N, ET, TAG_BITS>>,
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
 {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
@@ -1081,8 +905,10 @@ where
     }
 }
 
-impl<N: NodeBase, ET: Tag, const TAG_BITS: u32> oxidd_core::Edge for Edge<'_, N, ET, TAG_BITS> {
-    type Tag = ET;
+impl<DI: DiagramInfo<PAGE_SIZE, TAG_BITS>, const PAGE_SIZE: usize, const TAG_BITS: u32>
+    oxidd_core::Edge for Edge<'_, DI, PAGE_SIZE, TAG_BITS>
+{
+    type Tag = DI::EdgeTag;
 
     #[inline]
     fn with_tag(self, tag: Self::Tag) -> Self {
@@ -1091,7 +917,7 @@ impl<N: NodeBase, ET: Tag, const TAG_BITS: u32> oxidd_core::Edge for Edge<'_, N,
 
     #[inline]
     fn tag(self) -> Self::Tag {
-        ET::from_usize(self.addr() & Self::TAG_MASK)
+        DI::EdgeTag::from_usize(self.addr() & Self::TAG_MASK)
     }
 
     #[inline]
@@ -1112,10 +938,11 @@ impl<N: NodeBase, ET: Tag, const TAG_BITS: u32> oxidd_core::Edge for Edge<'_, N,
 /// Because a [`LevelViewSet`] on its own is not sufficient to drop nodes
 /// accordingly, this will simply leak all contained edges, not calling the
 /// `Edge`'s `Drop` implementation.
-struct LevelViewSet<'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32>(
-    RawTable<Own<Edge<'id, N, ET, TAG_BITS>>>,
-    PhantomData<(TM, R, MD)>,
-);
+struct LevelViewSet<'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32>(
+    RawTable<Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>>,
+)
+where
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>;
 
 #[inline]
 fn hash_node<N: NodeBase>(node: &N) -> u64 {
@@ -1124,13 +951,10 @@ fn hash_node<N: NodeBase>(node: &N) -> u64 {
     hasher.finish()
 }
 
-impl<'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32>
-    LevelViewSet<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
+impl<'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32>
+    LevelViewSet<'id, DI, PAGE_SIZE, TAG_BITS>
 where
-    N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>>,
-    ET: Tag,
-    TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
-    MD: DropWith<Edge<'id, N, ET, TAG_BITS>>,
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
 {
     /// Get the number of nodes on this level
     #[inline]
@@ -1147,7 +971,10 @@ where
     }
 
     #[inline]
-    fn get(&self, node: &N) -> Option<Ref<'_, Edge<'id, N, ET, TAG_BITS>>> {
+    fn get(
+        &self,
+        node: &DI::InnerNode<'id>,
+    ) -> Option<Ref<'_, Edge<'id, DI, PAGE_SIZE, TAG_BITS>>> {
         let hash = hash_node(node);
         let edge = self.0.get(hash, |edge| {
             // SAFETY: The hash table only contains untagged edges referencing
@@ -1168,7 +995,7 @@ where
     #[inline]
     unsafe fn insert<const CHECKS: bool>(
         &mut self,
-        edge: Own<Edge<'id, N, ET, TAG_BITS>>,
+        edge: Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>,
         expected_level: LevelNo,
     ) -> bool {
         let mut raw = edge.into_raw();
@@ -1230,9 +1057,11 @@ where
     #[inline]
     fn get_or_insert(
         &mut self,
-        node: N,
-        insert: impl FnOnce(N) -> AllocResult<[Own<Edge<'id, N, ET, TAG_BITS>>; 2]>,
-    ) -> AllocResult<Own<Edge<'id, N, ET, TAG_BITS>>> {
+        node: DI::InnerNode<'id>,
+        insert: impl FnOnce(
+            DI::InnerNode<'id>,
+        ) -> AllocResult<[Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>; 2]>,
+    ) -> AllocResult<Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>> {
         let hash = hash_node(&node);
         match self.0.find_or_find_insert_slot(hash, |edge| {
             // SAFETY: The hash table only contains untagged edges referencing
@@ -1240,9 +1069,7 @@ where
             *unsafe { Edge::inner_node_unchecked(edge.borrowed()) } == node
         }) {
             Ok(slot) => {
-                node.drop_with(
-                    Manager::<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>::drop_edge_common,
-                );
+                node.drop_with(Manager::<'id, DI, PAGE_SIZE, TAG_BITS>::drop_edge_common);
                 // SAFETY: `slot` was returned by `find_or_find_insert_slot`. We
                 // have exclusive access to the hash table and
                 // did not modify it in between.
@@ -1282,7 +1109,7 @@ where
                 // reference counters, so we have exclusive node access now.
                 // Additionally, `edge` is untagged and points to an inner node.
                 // The type/const arguments match the ones from the manager.
-                unsafe { Manager::<N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>::force_drop_edge(edge) };
+                unsafe { Manager::<DI, PAGE_SIZE, TAG_BITS>::force_drop_edge(edge) };
             },
         );
     }
@@ -1294,7 +1121,10 @@ where
     ///
     /// Returns the edge from the unique table entry if `node` was found.
     #[inline]
-    fn remove(&mut self, node: &N) -> Option<Own<Edge<'id, N, ET, TAG_BITS>>> {
+    fn remove(
+        &mut self,
+        node: &DI::InnerNode<'id>,
+    ) -> Option<Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>> {
         self.0.remove_entry(hash_node(node), |e| {
             std::ptr::eq(e.raw().0.as_ptr().cast(), node)
         })
@@ -1312,8 +1142,8 @@ where
     /// "weak" edges, i.e., edges where the reference count is not materialized
     /// (apply cache implementations exploit this).
     #[inline]
-    unsafe fn try_remove(&mut self, edge: Own<Edge<'id, N, ET, TAG_BITS>>) -> bool {
-        let node_ptr: NonNull<N> = edge.into_raw().all_untagged_ptr().cast();
+    unsafe fn try_remove(&mut self, edge: Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>) -> bool {
+        let node_ptr: NonNull<DI::InnerNode<'id>> = edge.into_raw().all_untagged_ptr().cast();
         // SAFETY: `node_ptr` points to an inner node, and by the type invariant
         // of `Own<Edge>`, we have shared access.
         let node = unsafe { node_ptr.as_ref() };
@@ -1334,26 +1164,28 @@ where
         // order above and `Release` order when decrementing reference
         // counters, so we have exclusive node access now. Additionally,
         // the caller guarantees that there are no weak edges.
-        unsafe { Manager::<N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>::force_drop_edge(edge) };
+        unsafe { Manager::<DI, PAGE_SIZE, TAG_BITS>::force_drop_edge(edge) };
 
         true
     }
 
     /// Iterate over all edges pointing to nodes in the set
     #[inline]
-    fn iter(&self) -> LevelViewIter<'_, 'id, N, ET, TAG_BITS> {
+    fn iter(&self) -> LevelViewIter<'_, 'id, DI, PAGE_SIZE, TAG_BITS> {
         LevelViewIter(self.0.iter())
     }
 
     /// Iterator that consumes all [`Edge`]s in the set
     #[inline]
-    fn drain(&mut self) -> linear_hashtbl::raw::Drain<'_, Own<Edge<'id, N, ET, TAG_BITS>>> {
+    fn drain(&mut self) -> linear_hashtbl::raw::Drain<'_, Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>> {
         self.0.drain()
     }
 }
 
-impl<N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32> Drop
-    for LevelViewSet<'_, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
+impl<DI, const PAGE_SIZE: usize, const TAG_BITS: u32> Drop
+    for LevelViewSet<'_, DI, PAGE_SIZE, TAG_BITS>
+where
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
 {
     #[inline]
     fn drop(&mut self) {
@@ -1363,25 +1195,32 @@ impl<N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32> Drop
     }
 }
 
-impl<N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32> Default
-    for LevelViewSet<'_, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
+impl<DI, const PAGE_SIZE: usize, const TAG_BITS: u32> Default
+    for LevelViewSet<'_, DI, PAGE_SIZE, TAG_BITS>
+where
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
 {
     #[inline]
     fn default() -> Self {
-        Self(Default::default(), PhantomData)
+        Self(Default::default())
     }
 }
 
-impl<'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32> IntoIterator
-    for LevelViewSet<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
+impl<'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32> IntoIterator
+    for LevelViewSet<'id, DI, PAGE_SIZE, TAG_BITS>
+where
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
 {
-    type Item = Own<Edge<'id, N, ET, TAG_BITS>>;
+    type Item = Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>;
 
     #[cfg(not(feature = "hugealloc"))]
-    type IntoIter = linear_hashtbl::raw::IntoIter<Own<Edge<'id, N, ET, TAG_BITS>>, usize>;
+    type IntoIter = linear_hashtbl::raw::IntoIter<Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>, usize>;
     #[cfg(feature = "hugealloc")]
-    type IntoIter =
-        linear_hashtbl::raw::IntoIter<Own<Edge<'id, N, ET, TAG_BITS>>, usize, hugealloc::HugeAlloc>;
+    type IntoIter = linear_hashtbl::raw::IntoIter<
+        Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>,
+        usize,
+        hugealloc::HugeAlloc,
+    >;
 
     fn into_iter(self) -> Self::IntoIter {
         let this = ManuallyDrop::new(self);
@@ -1392,39 +1231,31 @@ impl<'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32> IntoIte
 }
 
 /// Level view provided by the unique table
-pub struct LevelView<'a, 'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32>
+pub struct LevelView<'a, 'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32>
 where
-    N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>>,
-    ET: Tag,
-    TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
-    MD: DropWith<Edge<'id, N, ET, TAG_BITS>>,
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
 {
-    store: &'a ArcSlab<N, StoreInner<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>, PAGE_SIZE>,
+    store: &'a ArcSlab<DI::InnerNode<'id>, StoreInner<'id, DI, PAGE_SIZE, TAG_BITS>, PAGE_SIZE>,
     var_level_map: &'a VarLevelMap,
     /// SAFETY invariant: If set to true, a garbage collection is prepared
     /// (i.e., there are no "weak" edges).
     allow_node_removal: bool,
     level: LevelNo,
-    set: MutexGuard<'a, LevelViewSet<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>>,
+    set: MutexGuard<'a, LevelViewSet<'id, DI, PAGE_SIZE, TAG_BITS>>,
 }
 
-unsafe impl<'a, 'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32>
-    oxidd_core::LevelView<Edge<'id, N, ET, TAG_BITS>, N>
-    for LevelView<'a, 'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
+unsafe impl<'a, 'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32>
+    oxidd_core::LevelView<Edge<'id, DI, PAGE_SIZE, TAG_BITS>, DI::InnerNode<'id>>
+    for LevelView<'a, 'id, DI, PAGE_SIZE, TAG_BITS>
 where
-    N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>>,
-    ET: Tag,
-    TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
-    R: DiagramRules<Edge<'id, N, ET, TAG_BITS>, N, TM::TerminalNode>,
-    MD: DropWith<Edge<'id, N, ET, TAG_BITS>>
-        + ManagerEventSubscriber<Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>>,
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
 {
     type Iterator<'b>
-        = LevelViewIter<'b, 'id, N, ET, TAG_BITS>
+        = LevelViewIter<'b, 'id, DI, PAGE_SIZE, TAG_BITS>
     where
         Self: 'b;
 
-    type Taken = TakenLevelView<'a, 'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>;
+    type Taken = TakenLevelView<'a, 'id, DI, PAGE_SIZE, TAG_BITS>;
 
     #[inline(always)]
     fn len(&self) -> usize {
@@ -1442,25 +1273,31 @@ where
     }
 
     #[inline]
-    fn get(&self, node: &N) -> Option<Ref<'_, Edge<'id, N, ET, TAG_BITS>>> {
+    fn get(
+        &self,
+        node: &DI::InnerNode<'id>,
+    ) -> Option<Ref<'_, Edge<'id, DI, PAGE_SIZE, TAG_BITS>>> {
         self.set.get(node)
     }
 
     #[inline]
-    fn insert(&mut self, edge: Own<Edge<'id, N, ET, TAG_BITS>>) -> bool {
+    fn insert(&mut self, edge: Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>) -> bool {
         // SAFETY: `CHECKS` is true
         unsafe { self.set.insert::<true>(edge, self.level) }
     }
 
     #[inline]
-    unsafe fn insert_unchecked(&mut self, edge: Own<Edge<'id, N, ET, TAG_BITS>>) -> bool {
+    unsafe fn insert_unchecked(&mut self, edge: Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>) -> bool {
         // SAFETY: the caller ensures that `edge` points to an inner node at the
         // respective level
         unsafe { self.set.insert::<false>(edge, self.level) }
     }
 
     #[inline(always)]
-    fn get_or_insert(&mut self, node: N) -> AllocResult<Own<Edge<'id, N, ET, TAG_BITS>>> {
+    fn get_or_insert(
+        &mut self,
+        node: DI::InnerNode<'id>,
+    ) -> AllocResult<Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>> {
         node.assert_level_matches(self.level);
         // No need to check if the children of `node` are stored in `self.store`
         // due to lifetime restrictions.
@@ -1470,8 +1307,8 @@ where
     #[inline(always)]
     unsafe fn get_or_insert_unchecked(
         &mut self,
-        node: N,
-    ) -> AllocResult<Own<Edge<'id, N, ET, TAG_BITS>>> {
+        node: DI::InnerNode<'id>,
+    ) -> AllocResult<Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>> {
         // No need to check if the children of `node` are stored in `self.store`
         // due to lifetime restrictions.
         LevelViewSet::get_or_insert(&mut *self.set, node, |node| add_node(self.store, node))
@@ -1486,9 +1323,9 @@ where
     }
 
     #[inline]
-    fn try_remove(&mut self, edge: Own<Edge<'id, N, ET, TAG_BITS>>) -> bool {
+    fn try_remove(&mut self, edge: Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>) -> bool {
         if !edge.raw().is_inner() {
-            TM::drop_edge(edge);
+            DI::TerminalManager::<'id>::drop_edge(edge);
             return false;
         }
         if !self.allow_node_removal {
@@ -1535,32 +1372,24 @@ where
 // Note that due to lifetime restrictions there is no way to have a
 // non-empty `TakenLevelView` when the associated `Manager` has
 // `reorder_gc_prepared` set to `false`.
-pub struct TakenLevelView<'a, 'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32>
+pub struct TakenLevelView<'a, 'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32>
 where
-    N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>>,
-    ET: Tag,
-    TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
-    MD: DropWith<Edge<'id, N, ET, TAG_BITS>>,
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
 {
-    store: &'a ArcSlab<N, StoreInner<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>, PAGE_SIZE>,
+    store: &'a ArcSlab<DI::InnerNode<'id>, StoreInner<'id, DI, PAGE_SIZE, TAG_BITS>, PAGE_SIZE>,
     var_level_map: &'a VarLevelMap,
     level: LevelNo,
-    set: LevelViewSet<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>,
+    set: LevelViewSet<'id, DI, PAGE_SIZE, TAG_BITS>,
 }
 
-unsafe impl<'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32>
-    oxidd_core::LevelView<Edge<'id, N, ET, TAG_BITS>, N>
-    for TakenLevelView<'_, 'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
+unsafe impl<'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32>
+    oxidd_core::LevelView<Edge<'id, DI, PAGE_SIZE, TAG_BITS>, DI::InnerNode<'id>>
+    for TakenLevelView<'_, 'id, DI, PAGE_SIZE, TAG_BITS>
 where
-    N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>>,
-    ET: Tag,
-    TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
-    R: DiagramRules<Edge<'id, N, ET, TAG_BITS>, N, TM::TerminalNode>,
-    MD: DropWith<Edge<'id, N, ET, TAG_BITS>>
-        + ManagerEventSubscriber<Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>>,
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
 {
     type Iterator<'b>
-        = LevelViewIter<'b, 'id, N, ET, TAG_BITS>
+        = LevelViewIter<'b, 'id, DI, PAGE_SIZE, TAG_BITS>
     where
         Self: 'b;
 
@@ -1582,25 +1411,31 @@ where
     }
 
     #[inline]
-    fn get(&self, node: &N) -> Option<Ref<'_, Edge<'id, N, ET, TAG_BITS>>> {
+    fn get(
+        &self,
+        node: &DI::InnerNode<'id>,
+    ) -> Option<Ref<'_, Edge<'id, DI, PAGE_SIZE, TAG_BITS>>> {
         self.set.get(node)
     }
 
     #[inline]
-    fn insert(&mut self, edge: Own<Edge<'id, N, ET, TAG_BITS>>) -> bool {
+    fn insert(&mut self, edge: Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>) -> bool {
         // SAFETY: `CHECKS` is true
         unsafe { self.set.insert::<true>(edge, self.level) }
     }
 
     #[inline]
-    unsafe fn insert_unchecked(&mut self, edge: Own<Edge<'id, N, ET, TAG_BITS>>) -> bool {
+    unsafe fn insert_unchecked(&mut self, edge: Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>) -> bool {
         // SAFETY: the caller ensures that `edge` points to an inner node at the
         // respective level
         unsafe { self.set.insert::<false>(edge, self.level) }
     }
 
     #[inline(always)]
-    fn get_or_insert(&mut self, node: N) -> AllocResult<Own<Edge<'id, N, ET, TAG_BITS>>> {
+    fn get_or_insert(
+        &mut self,
+        node: DI::InnerNode<'id>,
+    ) -> AllocResult<Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>> {
         node.assert_level_matches(self.level);
         // No need to check if the children of `node` are stored in `self.store`
         // due to lifetime restrictions.
@@ -1611,8 +1446,8 @@ where
     #[inline(always)]
     unsafe fn get_or_insert_unchecked(
         &mut self,
-        node: N,
-    ) -> AllocResult<Own<Edge<'id, N, ET, TAG_BITS>>> {
+        node: DI::InnerNode<'id>,
+    ) -> AllocResult<Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>> {
         // No need to check if the children of `node` are stored in `self.store`
         // due to lifetime restrictions.
         self.set
@@ -1626,9 +1461,9 @@ where
     }
 
     #[inline]
-    fn try_remove(&mut self, edge: Own<Edge<'id, N, ET, TAG_BITS>>) -> bool {
+    fn try_remove(&mut self, edge: Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>) -> bool {
         if !edge.raw().is_inner() {
-            TM::drop_edge(edge);
+            DI::TerminalManager::<'id>::drop_edge(edge);
             return false;
         }
         // SAFETY: `edge` refers to an inner node. Called from inside the
@@ -1659,23 +1494,16 @@ where
     }
 }
 
-impl<'id, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32> Drop
-    for TakenLevelView<'_, 'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
+impl<'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32> Drop
+    for TakenLevelView<'_, 'id, DI, PAGE_SIZE, TAG_BITS>
 where
-    N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>>,
-    ET: Tag,
-    TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
-    MD: DropWith<Edge<'id, N, ET, TAG_BITS>>,
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
 {
     fn drop(&mut self) {
         for edge in self.set.drain() {
             // SAFETY: `edge` is untagged and points to an inner node, the type
             // parameters match
-            unsafe {
-                Manager::<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>::drop_edge_from_unique_table(
-                    edge,
-                )
-            };
+            unsafe { Manager::<'id, DI, PAGE_SIZE, TAG_BITS>::drop_edge_from_unique_table(edge) };
         }
     }
 }
@@ -1683,14 +1511,18 @@ where
 // --- Level Views: Iterator ---------------------------------------------------
 
 /// Iterator over entries (as [`Edge`]s) of a level view
-pub struct LevelViewIter<'a, 'id, N, ET, const TAG_BITS: u32>(
-    linear_hashtbl::raw::Iter<'a, Own<Edge<'id, N, ET, TAG_BITS>>>,
-);
+pub struct LevelViewIter<'a, 'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32>(
+    linear_hashtbl::raw::Iter<'a, Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>>,
+)
+where
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>;
 
-impl<'a, 'id, InnerNode, ET, const TAG_BITS: u32> Iterator
-    for LevelViewIter<'a, 'id, InnerNode, ET, TAG_BITS>
+impl<'a, 'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32> Iterator
+    for LevelViewIter<'a, 'id, DI, PAGE_SIZE, TAG_BITS>
+where
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
 {
-    type Item = Ref<'a, Edge<'id, InnerNode, ET, TAG_BITS>>;
+    type Item = Ref<'a, Edge<'id, DI, PAGE_SIZE, TAG_BITS>>;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -1703,14 +1535,21 @@ impl<'a, 'id, InnerNode, ET, const TAG_BITS: u32> Iterator
     }
 }
 
-impl<N, ET, const TAG_BITS: u32> ExactSizeIterator for LevelViewIter<'_, '_, N, ET, TAG_BITS> {
+impl<'a, 'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32> ExactSizeIterator
+    for LevelViewIter<'a, 'id, DI, PAGE_SIZE, TAG_BITS>
+where
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
+{
     #[inline(always)]
     fn len(&self) -> usize {
         self.0.len()
     }
 }
-impl<'a, 'id, N, ET, const TAG_BITS: u32> FusedIterator for LevelViewIter<'a, 'id, N, ET, TAG_BITS> where
-    linear_hashtbl::raw::Iter<'a, Edge<'id, N, ET, TAG_BITS>, u32>: FusedIterator
+impl<'a, 'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32> FusedIterator
+    for LevelViewIter<'a, 'id, DI, PAGE_SIZE, TAG_BITS>
+where
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
+    linear_hashtbl::raw::Iter<'a, Edge<'id, DI, PAGE_SIZE, TAG_BITS>, u32>: FusedIterator,
 {
 }
 
@@ -1730,7 +1569,10 @@ impl<const PAGE_SIZE: usize, const TAG_BITS: u32> NodeSet<PAGE_SIZE, TAG_BITS> {
     const NODES_PER_PAGE: usize = PAGE_SIZE >> (TAG_BITS + 1);
 
     #[inline]
-    fn page_offset<InnerNode, ET>(edge: Edge<'_, InnerNode, ET, TAG_BITS>) -> (usize, usize) {
+    fn page_offset<DI>(edge: Edge<'_, DI, PAGE_SIZE, TAG_BITS>) -> (usize, usize)
+    where
+        DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
+    {
         let node_id = edge.0.as_ptr().addr() >> TAG_BITS;
         let page = node_id / Self::NODES_PER_PAGE;
         let offset = node_id % Self::NODES_PER_PAGE;
@@ -1738,15 +1580,15 @@ impl<const PAGE_SIZE: usize, const TAG_BITS: u32> NodeSet<PAGE_SIZE, TAG_BITS> {
     }
 }
 
-impl<'id, InnerNode, ET, const PAGE_SIZE: usize, const TAG_BITS: u32>
-    oxidd_core::util::NodeSet<Edge<'id, InnerNode, ET, TAG_BITS>> for NodeSet<PAGE_SIZE, TAG_BITS>
+impl<'id, DI: DiagramInfo<PAGE_SIZE, TAG_BITS>, const PAGE_SIZE: usize, const TAG_BITS: u32>
+    oxidd_core::util::NodeSet<Edge<'id, DI, PAGE_SIZE, TAG_BITS>> for NodeSet<PAGE_SIZE, TAG_BITS>
 {
     #[inline(always)]
     fn len(&self) -> usize {
         self.len
     }
 
-    fn insert(&mut self, edge: Ref<'_, Edge<'id, InnerNode, ET, TAG_BITS>>) -> bool {
+    fn insert(&mut self, edge: Ref<'_, Edge<'id, DI, PAGE_SIZE, TAG_BITS>>) -> bool {
         let (page, offset) = Self::page_offset(edge.raw());
         match self.data.entry(page) {
             std::collections::hash_map::Entry::Occupied(mut e) => {
@@ -1770,7 +1612,7 @@ impl<'id, InnerNode, ET, const PAGE_SIZE: usize, const TAG_BITS: u32>
     }
 
     #[inline]
-    fn contains(&self, edge: Ref<'_, Edge<'id, InnerNode, ET, TAG_BITS>>) -> bool {
+    fn contains(&self, edge: Ref<'_, Edge<'id, DI, PAGE_SIZE, TAG_BITS>>) -> bool {
         let (page, offset) = Self::page_offset(edge.raw());
         match self.data.get(&page) {
             Some(page) => page.contains(offset),
@@ -1778,7 +1620,7 @@ impl<'id, InnerNode, ET, const PAGE_SIZE: usize, const TAG_BITS: u32>
         }
     }
 
-    fn remove(&mut self, edge: Ref<'_, Edge<'id, InnerNode, ET, TAG_BITS>>) -> bool {
+    fn remove(&mut self, edge: Ref<'_, Edge<'id, DI, PAGE_SIZE, TAG_BITS>>) -> bool {
         let (page, offset) = Self::page_offset(edge.raw());
         match self.data.get_mut(&page) {
             Some(page) if page.contains(offset) => {
@@ -1793,15 +1635,8 @@ impl<'id, InnerNode, ET, const PAGE_SIZE: usize, const TAG_BITS: u32>
 
 // === `ManagerRef` & Creation =================================================
 
-impl<
-    NC: InnerNodeCons<ET, TAG_BITS>,
-    ET: Tag,
-    TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
-    RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
-    MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
-    const PAGE_SIZE: usize,
-    const TAG_BITS: u32,
-> ManagerRef<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
+impl<DI: DiagramInfo<PAGE_SIZE, TAG_BITS>, const PAGE_SIZE: usize, const TAG_BITS: u32>
+    ManagerRef<DI, PAGE_SIZE, TAG_BITS>
 {
     /// Convert `self` into a raw pointer, e.g. for usage in a foreign function
     /// interface.
@@ -1830,40 +1665,24 @@ impl<
     }
 }
 
-impl<
-    'a,
-    'id,
-    NC: InnerNodeCons<ET, TAG_BITS>,
-    ET: Tag,
-    TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
-    RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
-    MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
-    const PAGE_SIZE: usize,
-    const TAG_BITS: u32,
-> From<&'a M<'id, NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>>
-    for ManagerRef<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
+impl<'a, 'id, DI: DiagramInfo<PAGE_SIZE, TAG_BITS>, const PAGE_SIZE: usize, const TAG_BITS: u32>
+    From<&'a Manager<'id, DI, PAGE_SIZE, TAG_BITS>> for ManagerRef<DI, PAGE_SIZE, TAG_BITS>
 {
     #[inline]
-    fn from(manager: &'a M<'id, NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>) -> Self {
+    fn from(manager: &'a Manager<'id, DI, PAGE_SIZE, TAG_BITS>) -> Self {
         manager.store().retain();
-        let store_ptr: *const ArcSlab<NC::T<'id>, _, PAGE_SIZE> =
-            ArcSlab::<NC::T<'id>, _, PAGE_SIZE>::from_data_ptr(manager.store_inner_ptr());
-        let store_ptr: *mut ArcSlab<NC::T<'static>, _, PAGE_SIZE> = store_ptr.cast_mut().cast();
+        let store_ptr: *const ArcSlab<DI::InnerNode<'id>, _, PAGE_SIZE> =
+            ArcSlab::<DI::InnerNode<'id>, _, PAGE_SIZE>::from_data_ptr(manager.store_inner_ptr());
+        let store_ptr: *mut ArcSlab<DI::InnerNode<'static>, _, PAGE_SIZE> =
+            store_ptr.cast_mut().cast();
         Self(unsafe { ArcSlabRef::from_raw(NonNull::new_unchecked(store_ptr)) })
     }
 }
 
-impl<
-    NC: InnerNodeCons<ET, TAG_BITS>,
-    ET: Tag,
-    TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
-    RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
-    MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
-    const PAGE_SIZE: usize,
-    const TAG_BITS: u32,
-> oxidd_core::ManagerRef for ManagerRef<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
+impl<DI: DiagramInfo<PAGE_SIZE, TAG_BITS>, const PAGE_SIZE: usize, const TAG_BITS: u32>
+    oxidd_core::ManagerRef for ManagerRef<DI, PAGE_SIZE, TAG_BITS>
 {
-    type Manager<'id> = M<'id, NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>;
+    type Manager<'id> = Manager<'id, DI, PAGE_SIZE, TAG_BITS>;
 
     #[inline]
     fn with_manager_shared<F, T>(&self, f: F) -> T
@@ -1882,19 +1701,10 @@ impl<
     }
 }
 
-impl<
-    NC: InnerNodeCons<ET, TAG_BITS>,
-    ET: Tag + Sync + Send,
-    TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
-    RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
-    MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
-    const PAGE_SIZE: usize,
-    const TAG_BITS: u32,
-> oxidd_core::HasWorkers for ManagerRef<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
+impl<DI, const PAGE_SIZE: usize, const TAG_BITS: u32> oxidd_core::HasWorkers
+    for ManagerRef<DI, PAGE_SIZE, TAG_BITS>
 where
-    NC::T<'static>: Send + Sync,
-    TMC::T<'static>: Send + Sync,
-    MDC::T<'static>: Send + Sync,
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
 {
     type WorkerPool = crate::workers::Workers;
 
@@ -1905,21 +1715,16 @@ where
 }
 
 /// Create a new manager
-pub fn new_manager<
-    NC: InnerNodeCons<ET, TAG_BITS>,
-    ET: Tag,
-    TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
-    RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
-    MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
-    const PAGE_SIZE: usize,
-    const TAG_BITS: u32,
->(
-    data: MDC::T<'static>,
+pub fn new_manager<DI, const PAGE_SIZE: usize, const TAG_BITS: u32>(
+    data: DI::ManagerData<'static>,
     threads: u32,
-) -> ManagerRef<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS> {
+) -> ManagerRef<DI, PAGE_SIZE, TAG_BITS>
+where
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
+{
     // Evaluate a few constants for assertions
-    let _ = Edge::<'static, NC::T<'static>, ET, TAG_BITS>::TAG_MASK;
-    let _ = Edge::<'static, NC::T<'static>, ET, TAG_BITS>::ALL_TAG_BITS;
+    let _ = Edge::<'static, DI, PAGE_SIZE, TAG_BITS>::TAG_MASK;
+    let _ = Edge::<'static, DI, PAGE_SIZE, TAG_BITS>::ALL_TAG_BITS;
 
     let arc = unsafe { ArcSlab::new_with(|slot| StoreInner::init_in(slot, data, threads)) };
 
@@ -1927,8 +1732,8 @@ pub fn new_manager<
     {
         let guard = &mut arc.data().manager.exclusive();
         let manager = &mut *guard;
-        MDC::T::<'static>::init(&manager.data, manager);
-        MDC::T::<'static>::init_mut(manager);
+        DI::ManagerData::<'static>::init(&manager.data, manager);
+        DI::ManagerData::<'static>::init_mut(manager);
     }
 
     ManagerRef(arc)
@@ -1939,79 +1744,33 @@ pub fn new_manager<
 #[repr(transparent)]
 #[derive_where(PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Function<
-    NC: InnerNodeCons<ET, TAG_BITS>,
-    ET: Tag,
-    TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
-    RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
-    MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
     const PAGE_SIZE: usize,
     const TAG_BITS: u32,
->(NonNull<()>, PhantomData<(NC, ET, TMC, RC, MDC)>);
+>(NonNull<()>, PhantomData<DI>);
 
-unsafe impl<
-    NC: InnerNodeCons<ET, TAG_BITS>,
-    ET: Tag,
-    TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
-    RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
-    MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
-    const PAGE_SIZE: usize,
-    const TAG_BITS: u32,
-> Send for Function<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
-where
-    for<'id> NC::T<'id>: Send + Sync,
-    for<'id> TMC::T<'id>: Send + Sync,
-    for<'id> MDC::T<'id>: Send + Sync,
+unsafe impl<DI: DiagramInfo<PAGE_SIZE, TAG_BITS>, const PAGE_SIZE: usize, const TAG_BITS: u32> Send
+    for Function<DI, PAGE_SIZE, TAG_BITS>
 {
 }
 
-unsafe impl<
-    NC: InnerNodeCons<ET, TAG_BITS>,
-    ET: Tag,
-    TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
-    RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
-    MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
-    const PAGE_SIZE: usize,
-    const TAG_BITS: u32,
-> Sync for Function<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
-where
-    for<'id> NC::T<'id>: Send + Sync,
-    for<'id> TMC::T<'id>: Send + Sync,
-    for<'id> MDC::T<'id>: Send + Sync,
+unsafe impl<DI: DiagramInfo<PAGE_SIZE, TAG_BITS>, const PAGE_SIZE: usize, const TAG_BITS: u32> Sync
+    for Function<DI, PAGE_SIZE, TAG_BITS>
 {
 }
 
-impl<
-    NC: InnerNodeCons<ET, TAG_BITS>,
-    ET: Tag,
-    TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
-    RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
-    MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
-    const PAGE_SIZE: usize,
-    const TAG_BITS: u32,
-> Function<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
+impl<DI: DiagramInfo<PAGE_SIZE, TAG_BITS>, const PAGE_SIZE: usize, const TAG_BITS: u32>
+    Function<DI, PAGE_SIZE, TAG_BITS>
 {
     #[inline]
     fn store(
         &self,
     ) -> NonNull<
-        ArcSlab<
-            NC::T<'static>,
-            StoreInner<
-                'static,
-                NC::T<'static>,
-                ET,
-                TMC::T<'static>,
-                RC::T<'static>,
-                MDC::T<'static>,
-                PAGE_SIZE,
-                TAG_BITS,
-            >,
-            PAGE_SIZE,
-        >,
+        ArcSlab<DI::InnerNode<'static>, StoreInner<'static, DI, PAGE_SIZE, TAG_BITS>, PAGE_SIZE>,
     > {
-        let edge: Edge<'static, NC::T<'static>, ET, TAG_BITS> = Edge(self.0, PhantomData);
+        let edge: Edge<'static, DI, PAGE_SIZE, TAG_BITS> = Edge(self.0, PhantomData);
         if edge.is_inner() {
-            let ptr: NonNull<NC::T<'static>> = edge.all_untagged_ptr().cast();
+            let ptr: NonNull<DI::InnerNode<'static>> = edge.all_untagged_ptr().cast();
             let handle = ManuallyDrop::new(unsafe { ExtHandle::from_raw(ptr) });
             NonNull::from(ExtHandle::slab(&*handle))
         } else {
@@ -2050,26 +1809,19 @@ impl<
     }
 }
 
-impl<
-    NC: InnerNodeCons<ET, TAG_BITS>,
-    ET: Tag,
-    TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
-    RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
-    MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
-    const PAGE_SIZE: usize,
-    const TAG_BITS: u32,
-> Clone for Function<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
+impl<DI: DiagramInfo<PAGE_SIZE, TAG_BITS>, const PAGE_SIZE: usize, const TAG_BITS: u32> Clone
+    for Function<DI, PAGE_SIZE, TAG_BITS>
 {
     #[inline]
     fn clone(&self) -> Self {
-        let edge: Edge<'static, NC::T<'static>, ET, TAG_BITS> = Edge(self.0, PhantomData);
+        let edge: Edge<'static, DI, PAGE_SIZE, TAG_BITS> = Edge(self.0, PhantomData);
         if edge.is_inner() {
-            let ptr: NonNull<NC::T<'static>> = edge.all_untagged_ptr().cast();
+            let ptr: NonNull<DI::InnerNode<'static>> = edge.all_untagged_ptr().cast();
             // SAFETY: dereferencing untagged edges pointing to inner nodes is
             // safe
             unsafe { ptr.as_ref() }.retain();
         } else {
-            std::mem::forget(TMC::T::<'static>::clone_edge(unsafe {
+            std::mem::forget(DI::TerminalManager::<'static>::clone_edge(unsafe {
                 Ref::from_raw(edge)
             }));
         }
@@ -2079,23 +1831,17 @@ impl<
     }
 }
 
-impl<
-    NC: InnerNodeCons<ET, TAG_BITS>,
-    ET: Tag,
-    TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
-    RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
-    MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
-    const PAGE_SIZE: usize,
-    const TAG_BITS: u32,
-> Drop for Function<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
+impl<DI: DiagramInfo<PAGE_SIZE, TAG_BITS>, const PAGE_SIZE: usize, const TAG_BITS: u32> Drop
+    for Function<DI, PAGE_SIZE, TAG_BITS>
 {
     fn drop(&mut self) {
         let store = self.store();
         // SAFETY: we are dropping `self`, so we can take an owned edge out
         unsafe {
-            M::<'static, NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>::drop_edge_common(
-                Own::from_raw(Edge(self.0, PhantomData)),
-            )
+            Manager::<'static, DI, PAGE_SIZE, TAG_BITS>::drop_edge_common(Own::from_raw(Edge(
+                self.0,
+                PhantomData,
+            )))
         };
 
         // We own a reference count, `store` is valid, and we do not use the
@@ -2104,20 +1850,13 @@ impl<
     }
 }
 
-unsafe impl<
-    NC: InnerNodeCons<ET, TAG_BITS>,
-    ET: Tag,
-    TMC: TerminalManagerCons<NC, ET, RC, MDC, PAGE_SIZE, TAG_BITS>,
-    RC: DiagramRulesCons<NC, ET, TMC, MDC, PAGE_SIZE, TAG_BITS>,
-    MDC: ManagerDataCons<NC, ET, TMC, RC, PAGE_SIZE, TAG_BITS>,
-    const PAGE_SIZE: usize,
-    const TAG_BITS: u32,
-> oxidd_core::function::Function for Function<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>
+unsafe impl<DI: DiagramInfo<PAGE_SIZE, TAG_BITS>, const PAGE_SIZE: usize, const TAG_BITS: u32>
+    oxidd_core::function::Function for Function<DI, PAGE_SIZE, TAG_BITS>
 {
     const REPR_ID: &str = "<none>";
 
-    type Manager<'id> = M<'id, NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>;
-    type ManagerRef = ManagerRef<NC, ET, TMC, RC, MDC, PAGE_SIZE, TAG_BITS>;
+    type Manager<'id> = Manager<'id, DI, PAGE_SIZE, TAG_BITS>;
+    type ManagerRef = ManagerRef<DI, PAGE_SIZE, TAG_BITS>;
 
     #[inline]
     fn from_edge<'id>(manager: &Self::Manager<'id>, edge: OwnEdgeOfFunc<'id, Self>) -> Self {
@@ -2183,19 +1922,13 @@ unsafe impl<
 
 // === Additional Trait Implementations ========================================
 
-impl<
-    'id,
-    N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>>,
-    ET: Tag,
-    TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
-    R: DiagramRules<Edge<'id, N, ET, TAG_BITS>, N, TM::TerminalNode>,
-    MD: HasApplyCache<Self, O> + ManagerEventSubscriber<Self> + DropWith<Edge<'id, N, ET, TAG_BITS>>,
-    O: Copy,
-    const PAGE_SIZE: usize,
-    const TAG_BITS: u32,
-> HasApplyCache<Self, O> for Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
+impl<'id, DI, O: Copy, const PAGE_SIZE: usize, const TAG_BITS: u32> HasApplyCache<Self, O>
+    for Manager<'id, DI, PAGE_SIZE, TAG_BITS>
+where
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
+    DI::ManagerData<'id>: HasApplyCache<Self, O>,
 {
-    type ApplyCache = MD::ApplyCache;
+    type ApplyCache = <DI::ManagerData<'id> as HasApplyCache<Self, O>>::ApplyCache;
 
     #[inline]
     fn apply_cache(&self) -> &Self::ApplyCache {
@@ -2208,13 +1941,11 @@ impl<
     }
 }
 
-impl<'id, T, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32> AsRef<T>
-    for Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
+impl<'id, DI, T, const PAGE_SIZE: usize, const TAG_BITS: u32> AsRef<T>
+    for Manager<'id, DI, PAGE_SIZE, TAG_BITS>
 where
-    N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>>,
-    ET: Tag,
-    TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
-    MD: DropWith<Edge<'id, N, ET, TAG_BITS>> + AsRef<T>,
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
+    DI::ManagerData<'id>: AsRef<T>,
 {
     #[inline(always)]
     fn as_ref(&self) -> &T {
@@ -2222,13 +1953,11 @@ where
     }
 }
 
-impl<'id, T, N, ET, TM, R, MD, const PAGE_SIZE: usize, const TAG_BITS: u32> AsMut<T>
-    for Manager<'id, N, ET, TM, R, MD, PAGE_SIZE, TAG_BITS>
+impl<'id, DI, T, const PAGE_SIZE: usize, const TAG_BITS: u32> AsMut<T>
+    for Manager<'id, DI, PAGE_SIZE, TAG_BITS>
 where
-    N: NodeBase + InnerNode<Edge<'id, N, ET, TAG_BITS>>,
-    ET: Tag,
-    TM: TerminalManager<'id, N, ET, MD, PAGE_SIZE, TAG_BITS>,
-    MD: DropWith<Edge<'id, N, ET, TAG_BITS>> + AsMut<T>,
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
+    DI::ManagerData<'id>: AsMut<T>,
 {
     #[inline(always)]
     fn as_mut(&mut self) -> &mut T {

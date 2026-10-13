@@ -44,24 +44,27 @@ pub fn print_stats() {
 
 #[cfg(all(feature = "manager-index", not(feature = "manager-pointer")))]
 mod index {
-    use std::hash::Hash;
+    use std::{hash::Hash, marker::PhantomData};
 
     use oxidd_core::function::NumberBase;
-    use oxidd_manager_index::node::fixed_arity::NodeWithLevelCons;
-    use oxidd_manager_index::terminal_manager::DynamicTerminalManagerCons;
-    use oxidd_rules_mtbdd::MTBDDOp;
-    use oxidd_rules_mtbdd::MTBDDRules;
+    use oxidd_rules_mtbdd::{MTBDDOp, MTBDDRules};
 
-    use crate::util::type_cons::DD;
+    use crate::util::type_cons::{DD, IndexDD};
 
-    crate::util::dd_index_based!(MTBDD<T> {
-        node: NodeWithLevelCons<2>,
-        edge_tag: (),
-        terminal_manager: DynamicTerminalManagerCons<T>,
-        rules: MTBDDRulesCons for MTBDDRules,
-        manager_data: MTBDDManagerDataCons for MTBDDManagerData<T>,
-        terminals: 0x2000000, // up to 0.78125 % terminal nodes
-    } where T: Eq + Hash + Send + Sync);
+    const TERMINALS: usize = 0x2000000; // up to 0.78125 % terminal nodes
+
+    pub struct MTBDDInfo<T>(PhantomData<T>);
+    impl<T: Eq + Hash + Send + Sync> oxidd_manager_index::DiagramInfo<TERMINALS> for MTBDDInfo<T> {
+        type EdgeTag = ();
+        type InnerNode<'id> =
+            oxidd_manager_index::node::fixed_arity::NodeWithLevel<'id, Self, 2, TERMINALS>;
+        type TerminalNode = T;
+        type TerminalManager<'id> =
+            oxidd_manager_index::terminal_manager::DynamicTerminalManager<'id, Self, TERMINALS>;
+        type DiagramRules<'id> = MTBDDRules;
+        type ManagerData<'id> = MTBDDManagerData<'id, T>;
+    }
+    type MTBDD<T> = IndexDD<MTBDDInfo<T>, TERMINALS>;
 
     crate::util::manager_data!(MTBDDManagerData<T> for MTBDD<T>, operator: MTBDDOp, cache_entry_capacity: 3, where T: Eq + Hash + Send + Sync);
 

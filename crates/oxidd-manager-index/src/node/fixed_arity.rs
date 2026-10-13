@@ -6,33 +6,38 @@ use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering::{Relaxed, Release};
 
 use oxidd_core::util::{DropWith, EdgeRefIter, Own, Ref};
-use oxidd_core::{AtomicLevelNo, HasLevel, InnerNode, LevelNo, Tag};
+use oxidd_core::{AtomicLevelNo, HasLevel, InnerNode, LevelNo};
 
-use crate::manager;
-use crate::manager::InnerNodeCons;
+use crate::{DiagramInfo, manager::Edge, node::NodeBase};
 
-use super::NodeBase;
-
-pub struct NodeWithLevel<'id, ET, const ARITY: usize> {
+pub struct NodeWithLevel<
+    'id,
+    DI: DiagramInfo<TERMINALS>,
+    const ARITY: usize,
+    const TERMINALS: usize,
+> {
     rc: AtomicU32,
     level: AtomicLevelNo,
-    children: UnsafeCell<[Own<manager::Edge<'id, Self, ET>>; ARITY]>,
+    children: UnsafeCell<[Own<Edge<'id, DI, TERMINALS>>; ARITY]>,
 }
 
-impl<'id, ET: Tag, const ARITY: usize> NodeWithLevel<'id, ET, ARITY> {
-    const UNINIT_EDGE: MaybeUninit<Own<manager::Edge<'id, Self, ET>>> = MaybeUninit::uninit();
-}
-
-impl<ET: Tag, const ARITY: usize> PartialEq for NodeWithLevel<'_, ET, ARITY> {
+impl<DI: DiagramInfo<TERMINALS>, const ARITY: usize, const TERMINALS: usize> PartialEq
+    for NodeWithLevel<'_, DI, ARITY, TERMINALS>
+{
     #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
         // SAFETY: we have shared access to the node
         unsafe { *self.children.get() == *other.children.get() }
     }
 }
-impl<ET: Tag, const ARITY: usize> Eq for NodeWithLevel<'_, ET, ARITY> {}
+impl<DI: DiagramInfo<TERMINALS>, const ARITY: usize, const TERMINALS: usize> Eq
+    for NodeWithLevel<'_, DI, ARITY, TERMINALS>
+{
+}
 
-impl<ET: Tag, const ARITY: usize> Hash for NodeWithLevel<'_, ET, ARITY> {
+impl<DI: DiagramInfo<TERMINALS>, const ARITY: usize, const TERMINALS: usize> Hash
+    for NodeWithLevel<'_, DI, ARITY, TERMINALS>
+{
     #[inline(always)]
     fn hash<H: Hasher>(&self, state: &mut H) {
         // SAFETY: we have shared access to the node
@@ -47,7 +52,9 @@ impl<ET: Tag, const ARITY: usize> Hash for NodeWithLevel<'_, ET, ARITY> {
 //   order
 // - No other functions modify the reference counter.
 // - `Self::load_rc()` loads the reference counter with the given `order`
-unsafe impl<ET: Tag, const ARITY: usize> NodeBase for NodeWithLevel<'_, ET, ARITY> {
+unsafe impl<DI: DiagramInfo<TERMINALS>, const ARITY: usize, const TERMINALS: usize> NodeBase
+    for NodeWithLevel<'_, DI, ARITY, TERMINALS>
+{
     #[inline(always)]
     fn retain(&self) {
         if self.rc.fetch_add(1, Relaxed) > (u32::MAX >> 1) {
@@ -71,27 +78,27 @@ unsafe impl<ET: Tag, const ARITY: usize> NodeBase for NodeWithLevel<'_, ET, ARIT
     }
 }
 
-impl<'id, ET: Tag, const ARITY: usize> DropWith<manager::Edge<'id, Self, ET>>
-    for NodeWithLevel<'id, ET, ARITY>
+impl<'id, DI: DiagramInfo<TERMINALS>, const ARITY: usize, const TERMINALS: usize>
+    DropWith<Edge<'id, DI, TERMINALS>> for NodeWithLevel<'id, DI, ARITY, TERMINALS>
 {
     #[inline]
-    fn drop_with(self, drop_edge: impl Fn(Own<manager::Edge<'id, Self, ET>>)) {
+    fn drop_with(self, drop_edge: impl Fn(Own<Edge<'id, DI, TERMINALS>>)) {
         for c in self.children.into_inner() {
             drop_edge(c);
         }
     }
 }
 
-impl<'id, ET: Tag, const ARITY: usize> InnerNode<manager::Edge<'id, Self, ET>>
-    for NodeWithLevel<'id, ET, ARITY>
+impl<'id, DI: DiagramInfo<TERMINALS>, const ARITY: usize, const TERMINALS: usize>
+    InnerNode<Edge<'id, DI, TERMINALS>> for NodeWithLevel<'id, DI, ARITY, TERMINALS>
 {
     const ARITY: usize = ARITY;
 
     type ChildrenIter<'a>
         = EdgeRefIter<
         'a,
-        manager::Edge<'id, Self, ET>,
-        std::slice::Iter<'a, Own<manager::Edge<'id, Self, ET>>>,
+        Edge<'id, DI, TERMINALS>,
+        std::slice::Iter<'a, Own<Edge<'id, DI, TERMINALS>>>,
     >
     where
         Self: 'a;
@@ -99,33 +106,25 @@ impl<'id, ET: Tag, const ARITY: usize> InnerNode<manager::Edge<'id, Self, ET>>
     #[inline(always)]
     fn new(
         level: LevelNo,
-        children: impl IntoIterator<Item = Own<manager::Edge<'id, Self, ET>>>,
+        children: impl IntoIterator<Item = Own<Edge<'id, DI, TERMINALS>>>,
     ) -> Self {
         let mut it = children.into_iter();
-        let mut children = [Self::UNINIT_EDGE; ARITY];
+        let mut children = MaybeUninit::uninit();
 
-        for slot in &mut children {
+        // SAFETY: essentially the `AsMut` impl stabilized in Rust 1.95
+        let children_mut = unsafe {
+            &mut *(&raw mut children as *mut [MaybeUninit<Own<Edge<'id, DI, TERMINALS>>>; ARITY])
+        };
+        for slot in children_mut {
             slot.write(it.next().unwrap());
         }
         debug_assert!(it.next().is_none());
 
-        // SAFETY:
-        // - all elements are initialized
-        // - we effectively move out of `children`; the old `children` are not
-        //   dropped since they are `MaybeUninit`
-        //
-        // TODO: replace this by `MaybeUninit::transpose()` /
-        // `MaybeUninit::array_assume_init()` once stable
-        let children = unsafe {
-            std::ptr::read(
-                (&raw const children).cast::<[Own<manager::Edge<'id, Self, ET>>; ARITY]>(),
-            )
-        };
-
         Self {
             rc: AtomicU32::new(2),
             level: AtomicLevelNo::new(level),
-            children: UnsafeCell::new(children),
+            // SAFETY: all elements are initialized
+            children: UnsafeCell::new(unsafe { children.assume_init() }),
         }
     }
 
@@ -150,7 +149,7 @@ impl<'id, ET: Tag, const ARITY: usize> InnerNode<manager::Edge<'id, Self, ET>>
     }
 
     #[inline(always)]
-    fn child(&self, n: usize) -> Ref<'_, manager::Edge<'id, Self, ET>> {
+    fn child(&self, n: usize) -> Ref<'_, Edge<'id, DI, TERMINALS>> {
         // SAFETY: we have shared access to the node
         let children = unsafe { &*self.children.get() };
         children[n].borrowed()
@@ -160,8 +159,8 @@ impl<'id, ET: Tag, const ARITY: usize> InnerNode<manager::Edge<'id, Self, ET>>
     unsafe fn set_child(
         &self,
         n: usize,
-        child: Own<manager::Edge<'id, Self, ET>>,
-    ) -> Own<manager::Edge<'id, Self, ET>> {
+        child: Own<Edge<'id, DI, TERMINALS>>,
+    ) -> Own<Edge<'id, DI, TERMINALS>> {
         // SAFETY: we have exclusive access to the node and no child is
         // referenced
         let children = unsafe { &mut *self.children.get() };
@@ -175,7 +174,9 @@ impl<'id, ET: Tag, const ARITY: usize> InnerNode<manager::Edge<'id, Self, ET>>
     }
 }
 
-unsafe impl<ET, const ARITY: usize> HasLevel for NodeWithLevel<'_, ET, ARITY> {
+unsafe impl<DI: DiagramInfo<TERMINALS>, const ARITY: usize, const TERMINALS: usize> HasLevel
+    for NodeWithLevel<'_, DI, ARITY, TERMINALS>
+{
     #[inline(always)]
     fn level(&self) -> LevelNo {
         self.level.load(Relaxed)
@@ -187,10 +188,11 @@ unsafe impl<ET, const ARITY: usize> HasLevel for NodeWithLevel<'_, ET, ARITY> {
     }
 }
 
-unsafe impl<ET: Send + Sync, const ARITY: usize> Send for NodeWithLevel<'_, ET, ARITY> {}
-unsafe impl<ET: Send + Sync, const ARITY: usize> Sync for NodeWithLevel<'_, ET, ARITY> {}
-
-pub struct NodeWithLevelCons<const ARITY: usize>;
-impl<ET: Tag + Send + Sync, const ARITY: usize> InnerNodeCons<ET> for NodeWithLevelCons<ARITY> {
-    type T<'id> = NodeWithLevel<'id, ET, ARITY>;
+unsafe impl<DI: DiagramInfo<TERMINALS>, const ARITY: usize, const TERMINALS: usize> Send
+    for NodeWithLevel<'_, DI, ARITY, TERMINALS>
+{
+}
+unsafe impl<DI: DiagramInfo<TERMINALS>, const ARITY: usize, const TERMINALS: usize> Sync
+    for NodeWithLevel<'_, DI, ARITY, TERMINALS>
+{
 }

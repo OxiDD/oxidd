@@ -94,22 +94,25 @@ mod index {
 
 #[cfg(feature = "manager-pointer")]
 mod pointer {
-    use oxidd_manager_pointer::node::fixed_arity::NodeWithLevelCons;
-    use oxidd_manager_pointer::terminal_manager::StaticTerminalManagerCons;
-    use oxidd_rules_tdd::TDDOp;
-    use oxidd_rules_tdd::TDDRules;
-    use oxidd_rules_tdd::TDDTerminal;
+    use oxidd_manager_pointer::node::fixed_arity::NodeWithLevel;
+    use oxidd_manager_pointer::terminal_manager::StaticTerminalManager;
+    use oxidd_rules_tdd::{TDDOp, TDDRules, TDDTerminal};
 
-    use crate::util::type_cons::DD;
+    use crate::PAGE_SIZE;
+    use crate::util::type_cons::{DD, PointerDD};
 
-    crate::util::dd_pointer_based!(TDD {
-        node: NodeWithLevelCons<3>,
-        edge_tag: (),
-        terminal_manager: StaticTerminalManagerCons<TDDTerminal>,
-        rules: TDDRulesCons for TDDRules,
-        manager_data: TDDManagerDataCons for TDDManagerData,
-        tag_bits: 2,
-    });
+    const TAG_BITS: u32 = 0;
+
+    pub struct TDDInfo;
+    impl oxidd_manager_pointer::DiagramInfo<PAGE_SIZE, TAG_BITS> for TDDInfo {
+        type EdgeTag = ();
+        type InnerNode<'id> = NodeWithLevel<'id, Self, PAGE_SIZE, TAG_BITS, 3>;
+        type TerminalNode = TDDTerminal;
+        type TerminalManager<'id> = StaticTerminalManager<'id, Self, PAGE_SIZE, TAG_BITS>;
+        type DiagramRules<'id> = TDDRules;
+        type ManagerData<'id> = TDDManagerData<'id>;
+    }
+    type TDD = PointerDD<TDDInfo, PAGE_SIZE, TAG_BITS>;
 
     crate::util::manager_data!(TDDManagerData for TDD, operator: TDDOp, cache_entry_capacity: 4);
 

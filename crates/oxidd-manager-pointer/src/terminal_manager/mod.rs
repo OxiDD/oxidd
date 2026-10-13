@@ -1,10 +1,9 @@
 use std::borrow::Borrow;
-use std::hash::Hash;
 use std::ptr::NonNull;
 
 use oxidd_core::util::{AllocResult, Own, Ref};
 
-use crate::manager::Edge;
+use crate::{DiagramInfo, manager::Edge};
 
 mod r#static;
 pub use r#static::*;
@@ -15,18 +14,20 @@ pub use r#static::*;
 ///
 /// [`TerminalManager::new_in()`] must properly initialize the given slot and
 /// return a reference to the initialized slot.
-pub unsafe trait TerminalManager<'id, N, ET, MD, const PAGE_SIZE: usize, const TAG_BITS: u32>:
-    Sized
+pub unsafe trait TerminalManager<
+    'id,
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
+    const PAGE_SIZE: usize,
+    const TAG_BITS: u32,
+>: Sized
 {
-    type TerminalNode: Eq + Hash;
-    type TerminalNodeRef<'a>: Borrow<Self::TerminalNode> + Copy
+    type TerminalNodeRef<'a>: Borrow<DI::TerminalNode> + Copy
     where
         Self: 'a,
         'id: 'a,
-        N: 'a,
-        ET: 'a;
+        DI: 'a;
 
-    type Iterator<'a>: Iterator<Item = Own<Edge<'id, N, ET, TAG_BITS>>>
+    type Iterator<'a>: Iterator<Item = Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>>
     where
         Self: 'a;
 
@@ -41,7 +42,7 @@ pub unsafe trait TerminalManager<'id, N, ET, MD, const PAGE_SIZE: usize, const T
     unsafe fn new_in(slot: *mut Self);
 
     /// Get a pointer to the terminal store
-    fn terminal_manager(edge: Ref<'_, Edge<'id, N, ET, TAG_BITS>>) -> NonNull<Self>;
+    fn terminal_manager(edge: Ref<'_, Edge<'id, DI, PAGE_SIZE, TAG_BITS>>) -> NonNull<Self>;
 
     /// Get the number of currently stored terminals
     #[must_use]
@@ -56,14 +57,16 @@ pub unsafe trait TerminalManager<'id, N, ET, MD, const PAGE_SIZE: usize, const T
     /// Dereference the given `edge`
     fn deref_edge<'a>(
         &'a self,
-        edge: Ref<'a, Edge<'id, N, ET, TAG_BITS>>,
+        edge: Ref<'a, Edge<'id, DI, PAGE_SIZE, TAG_BITS>>,
     ) -> Self::TerminalNodeRef<'a>;
 
     /// Clone the given `edge`
-    fn clone_edge(edge: Ref<'_, Edge<'id, N, ET, TAG_BITS>>) -> Own<Edge<'id, N, ET, TAG_BITS>>;
+    fn clone_edge(
+        edge: Ref<'_, Edge<'id, DI, PAGE_SIZE, TAG_BITS>>,
+    ) -> Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>;
 
     /// Drop the given `edge`
-    fn drop_edge(edge: Own<Edge<'id, N, ET, TAG_BITS>>);
+    fn drop_edge(edge: Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>);
 
     /// Add a terminal to this manager (if it does not already exist) and return
     /// an [`Edge`] pointing to it
@@ -75,8 +78,8 @@ pub unsafe trait TerminalManager<'id, N, ET, MD, const PAGE_SIZE: usize, const T
     /// allocation.
     unsafe fn get(
         this: *const Self,
-        terminal: Self::TerminalNode,
-    ) -> AllocResult<Own<Edge<'id, N, ET, TAG_BITS>>>;
+        terminal: DI::TerminalNode,
+    ) -> AllocResult<Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>>;
 
     /// Iterate over all terminals
     ///

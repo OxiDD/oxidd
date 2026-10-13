@@ -40,23 +40,24 @@ pub fn new_manager(
 
 #[cfg(all(feature = "manager-index", not(feature = "manager-pointer")))]
 mod index {
-    use oxidd_manager_index::node::fixed_arity::NodeWithLevelCons;
-    use oxidd_manager_index::terminal_manager::StaticTerminalManagerCons;
-    use oxidd_rules_bdd::complement_edge::BCDDOp;
-    use oxidd_rules_bdd::complement_edge::BCDDRules;
-    use oxidd_rules_bdd::complement_edge::BCDDTerminal;
-    use oxidd_rules_bdd::complement_edge::EdgeTag;
+    use oxidd_rules_bdd::complement_edge::{BCDDOp, BCDDRules, BCDDTerminal, EdgeTag};
 
-    use crate::util::type_cons::DD;
+    use crate::util::type_cons::{DD, IndexDD};
 
-    crate::util::dd_index_based!(BCDD {
-        node: NodeWithLevelCons<2>,
-        edge_tag: EdgeTag,
-        terminal_manager: StaticTerminalManagerCons<BCDDTerminal>,
-        rules: BCDDRulesCons for BCDDRules,
-        manager_data: BCDDManagerDataCons for BCDDManagerData,
-        terminals: 1,
-    });
+    const TERMINALS: usize = 1;
+
+    pub struct BCDDInfo;
+    impl oxidd_manager_index::DiagramInfo<TERMINALS> for BCDDInfo {
+        type EdgeTag = EdgeTag;
+        type InnerNode<'id> =
+            oxidd_manager_index::node::fixed_arity::NodeWithLevel<'id, Self, 2, TERMINALS>;
+        type TerminalNode = BCDDTerminal;
+        type TerminalManager<'id> =
+            oxidd_manager_index::terminal_manager::StaticTerminalManager<'id, Self, TERMINALS>;
+        type DiagramRules<'id> = BCDDRules;
+        type ManagerData<'id> = BCDDManagerData<'id>;
+    }
+    type BCDD = IndexDD<BCDDInfo, TERMINALS>;
 
     crate::util::manager_data!(BCDDManagerData for BCDD, operator: BCDDOp, cache_entry_capacity: 4);
 
@@ -90,23 +91,25 @@ mod index {
 
 #[cfg(feature = "manager-pointer")]
 mod pointer {
-    use oxidd_manager_pointer::node::fixed_arity::NodeWithLevelCons;
-    use oxidd_manager_pointer::terminal_manager::StaticTerminalManagerCons;
-    use oxidd_rules_bdd::complement_edge::BCDDOp;
-    use oxidd_rules_bdd::complement_edge::BCDDRules;
-    use oxidd_rules_bdd::complement_edge::BCDDTerminal;
-    use oxidd_rules_bdd::complement_edge::EdgeTag;
+    use oxidd_manager_pointer::node::fixed_arity::NodeWithLevel;
+    use oxidd_manager_pointer::terminal_manager::StaticTerminalManager;
+    use oxidd_rules_bdd::complement_edge::{BCDDOp, BCDDRules, BCDDTerminal, EdgeTag};
 
-    use crate::util::type_cons::DD;
+    use crate::PAGE_SIZE;
+    use crate::util::type_cons::{DD, PointerDD};
 
-    crate::util::dd_pointer_based!(BCDD {
-        node: NodeWithLevelCons<2>,
-        edge_tag: EdgeTag,
-        terminal_manager: StaticTerminalManagerCons<BCDDTerminal>,
-        rules: BCDDRulesCons for BCDDRules,
-        manager_data: BCDDManagerDataCons for BCDDManagerData,
-        tag_bits: 2,
-    });
+    const TAG_BITS: u32 = 1;
+
+    pub struct BCDDInfo;
+    impl oxidd_manager_pointer::DiagramInfo<PAGE_SIZE, TAG_BITS> for BCDDInfo {
+        type EdgeTag = EdgeTag;
+        type InnerNode<'id> = NodeWithLevel<'id, Self, PAGE_SIZE, TAG_BITS, 2>;
+        type TerminalNode = BCDDTerminal;
+        type TerminalManager<'id> = StaticTerminalManager<'id, Self, PAGE_SIZE, TAG_BITS>;
+        type DiagramRules<'id> = BCDDRules;
+        type ManagerData<'id> = BCDDManagerData<'id>;
+    }
+    type BCDD = PointerDD<BCDDInfo, PAGE_SIZE, TAG_BITS>;
 
     crate::util::manager_data!(BCDDManagerData for BCDD, operator: BCDDOp, cache_entry_capacity: 4);
 

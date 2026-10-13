@@ -11,21 +11,17 @@ use linear_hashtbl::raw::RawTable;
 use parking_lot::{Mutex, MutexGuard};
 use rustc_hash::FxHasher;
 
-use oxidd_core::Tag;
 use oxidd_core::error::OutOfMemory;
 use oxidd_core::util::{AllocResult, Own};
 
-use crate::manager::{Edge, InnerNodeCons, TerminalManagerCons};
-use crate::node::NodeBase;
+use crate::{DiagramInfo, manager::Edge, terminal_manager::TerminalManager};
 
-use super::TerminalManager;
-
-pub struct DynamicTerminalManager<'id, T, N, ET, const TERMINALS: usize> {
-    store: Box<[UnsafeCell<Slot<T>>]>,
-    state: CachePadded<Mutex<State<'id, N, ET>>>,
+pub struct DynamicTerminalManager<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> {
+    store: Box<[UnsafeCell<Slot<DI::TerminalNode>>]>,
+    state: CachePadded<Mutex<State<'id, DI, TERMINALS>>>,
 }
 
-struct State<'id, N, ET> {
+struct State<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> {
     /// Next free index in the `store` of `DynamicTerminalManager`
     ///
     /// SAFETY invariant: Unless `next_free` is out of bounds for the store
@@ -38,7 +34,7 @@ struct State<'id, N, ET> {
     /// The hash values are those of the referenced terminal values.
     unique_table: RawTable<u32, u32>,
 
-    phantom: PhantomData<Edge<'id, N, ET>>,
+    phantom: PhantomData<Edge<'id, DI, TERMINALS>>,
 }
 
 union Slot<T> {
@@ -73,28 +69,23 @@ fn hash<T: Hash>(terminal: &T) -> u64 {
     hasher.finish()
 }
 
-impl<T, N, ET, const TERMINALS: usize> DynamicTerminalManager<'_, T, N, ET, TERMINALS> {
+impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> DynamicTerminalManager<'_, DI, TERMINALS> {
     const CHECK_TERMINALS: () = assert!(
         TERMINALS < (1 << (u32::BITS - 1)),
         "`TERMINALS` is too large"
     );
 }
 
-impl<'id, T, N, ET, const TERMINALS: usize> TerminalManager<'id, N, ET, TERMINALS>
-    for DynamicTerminalManager<'id, T, N, ET, TERMINALS>
-where
-    T: Eq + Hash,
-    N: NodeBase,
-    ET: Tag,
+impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> TerminalManager<'id, DI, TERMINALS>
+    for DynamicTerminalManager<'id, DI, TERMINALS>
 {
-    type TerminalNode = T;
     type TerminalNodeRef<'a>
-        = &'a T
+        = &'a DI::TerminalNode
     where
         Self: 'a;
 
     type Iterator<'a>
-        = DynamicTerminalIterator<'a, 'id, T, N, ET>
+        = DynamicTerminalIterator<'a, 'id, DI, TERMINALS>
     where
         Self: 'a,
         'id: 'a;
@@ -126,7 +117,7 @@ where
     }
 
     #[inline]
-    unsafe fn get_terminal(&self, id: usize) -> &T {
+    unsafe fn get_terminal(&self, id: usize) -> &DI::TerminalNode {
         // SAFETY: Since `id` is a valid terminal ID, it is
         // `<= self.store.len()`. Furthermore, we have shared access to the
         // referenced `Slot` and the slot is a `node`.
@@ -154,7 +145,7 @@ where
     }
 
     #[inline]
-    fn get_edge(&self, terminal: T) -> AllocResult<Own<Edge<'id, N, ET>>> {
+    fn get_edge(&self, terminal: DI::TerminalNode) -> AllocResult<Own<Edge<'id, DI, TERMINALS>>> {
         let mut state = self.state.lock();
         let hash = hash(&terminal);
         let id = match state.unique_table.find_or_find_insert_slot(
@@ -200,10 +191,7 @@ where
     }
 
     #[inline]
-    fn iter<'a>(&'a self) -> Self::Iterator<'a>
-    where
-        Self: 'a,
-    {
+    fn iter<'a>(&'a self) -> Self::Iterator<'a> {
         let state = self.state.lock();
         let len = state.unique_table.len();
         DynamicTerminalIterator {
@@ -248,37 +236,26 @@ where
     }
 }
 
-unsafe impl<T: Send + Sync, N: Send + Sync, ET: Send + Sync, const TERMINALS: usize> Send
-    for DynamicTerminalManager<'_, T, N, ET, TERMINALS>
+unsafe impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Send
+    for DynamicTerminalManager<'_, DI, TERMINALS>
 {
 }
-unsafe impl<T: Send + Sync, N: Send + Sync, ET: Send + Sync, const TERMINALS: usize> Sync
-    for DynamicTerminalManager<'_, T, N, ET, TERMINALS>
+unsafe impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Sync
+    for DynamicTerminalManager<'_, DI, TERMINALS>
 {
 }
 
-pub struct DynamicTerminalManagerCons<T>(PhantomData<T>);
-
-impl<
-    T: Hash + Eq + Send + Sync,
-    NC: InnerNodeCons<ET>,
-    ET: Tag + Send + Sync,
-    const TERMINALS: usize,
-> TerminalManagerCons<NC, ET, TERMINALS> for DynamicTerminalManagerCons<T>
-{
-    type TerminalNode = T;
-    type T<'id> = DynamicTerminalManager<'id, T, NC::T<'id>, ET, TERMINALS>;
-}
-
-pub struct DynamicTerminalIterator<'a, 'id, T, N, ET> {
-    store: &'a [UnsafeCell<Slot<T>>],
-    state: MutexGuard<'a, State<'id, N, ET>>,
+pub struct DynamicTerminalIterator<'a, 'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> {
+    store: &'a [UnsafeCell<Slot<DI::TerminalNode>>],
+    state: MutexGuard<'a, State<'id, DI, TERMINALS>>,
     next_slot: usize,
     len: usize,
 }
 
-impl<'id, T, N: NodeBase, ET: Tag> Iterator for DynamicTerminalIterator<'_, 'id, T, N, ET> {
-    type Item = Own<Edge<'id, N, ET>>;
+impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Iterator
+    for DynamicTerminalIterator<'_, 'id, DI, TERMINALS>
+{
+    type Item = Own<Edge<'id, DI, TERMINALS>>;
 
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
@@ -309,9 +286,14 @@ impl<'id, T, N: NodeBase, ET: Tag> Iterator for DynamicTerminalIterator<'_, 'id,
     }
 }
 
-impl<T, N: NodeBase, ET: Tag> FusedIterator for DynamicTerminalIterator<'_, '_, T, N, ET> {}
+impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> FusedIterator
+    for DynamicTerminalIterator<'_, '_, DI, TERMINALS>
+{
+}
 
-impl<T, N: NodeBase, ET: Tag> ExactSizeIterator for DynamicTerminalIterator<'_, '_, T, N, ET> {
+impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> ExactSizeIterator
+    for DynamicTerminalIterator<'_, '_, DI, TERMINALS>
+{
     #[inline(always)]
     fn len(&self) -> usize {
         self.len

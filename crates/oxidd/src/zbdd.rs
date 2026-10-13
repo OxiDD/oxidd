@@ -134,22 +134,24 @@ pub fn print_stats() {
 
 #[cfg(all(feature = "manager-index", not(feature = "manager-pointer")))]
 mod index {
-    use oxidd_manager_index::node::fixed_arity::NodeWithLevelCons;
-    use oxidd_manager_index::terminal_manager::StaticTerminalManagerCons;
-    use oxidd_rules_zbdd::ZBDDOp;
-    use oxidd_rules_zbdd::ZBDDRules;
-    use oxidd_rules_zbdd::ZBDDTerminal;
+    use oxidd_rules_zbdd::{ZBDDOp, ZBDDRules, ZBDDTerminal};
 
-    use crate::util::type_cons::DD;
+    use crate::util::type_cons::{DD, IndexDD};
 
-    crate::util::dd_index_based!(ZBDD {
-        node: NodeWithLevelCons<2>,
-        edge_tag: (),
-        terminal_manager: StaticTerminalManagerCons<ZBDDTerminal>,
-        rules: ZBDDRulesCons for ZBDDRules,
-        manager_data: ZBDDManagerDataCons for ZBDDManagerData,
-        terminals: 2,
-    });
+    const TERMINALS: usize = 2;
+
+    pub struct ZBDDInfo;
+    impl oxidd_manager_index::DiagramInfo<TERMINALS> for ZBDDInfo {
+        type EdgeTag = ();
+        type InnerNode<'id> =
+            oxidd_manager_index::node::fixed_arity::NodeWithLevel<'id, Self, 2, TERMINALS>;
+        type TerminalNode = ZBDDTerminal;
+        type TerminalManager<'id> =
+            oxidd_manager_index::terminal_manager::StaticTerminalManager<'id, Self, TERMINALS>;
+        type DiagramRules<'id> = ZBDDRules;
+        type ManagerData<'id> = ZBDDManagerData<'id>;
+    }
+    type ZBDD = IndexDD<ZBDDInfo, TERMINALS>;
 
     manager_data!(ZBDDManagerData for ZBDD, operator: ZBDDOp, cache_entry_capacity: 4);
 
@@ -182,22 +184,25 @@ mod index {
 
 #[cfg(feature = "manager-pointer")]
 mod pointer {
-    use oxidd_manager_pointer::node::fixed_arity::NodeWithLevelCons;
-    use oxidd_manager_pointer::terminal_manager::StaticTerminalManagerCons;
-    use oxidd_rules_zbdd::ZBDDOp;
-    use oxidd_rules_zbdd::ZBDDRules;
-    use oxidd_rules_zbdd::ZBDDTerminal;
+    use oxidd_manager_pointer::node::fixed_arity::NodeWithLevel;
+    use oxidd_manager_pointer::terminal_manager::StaticTerminalManager;
+    use oxidd_rules_zbdd::{ZBDDOp, ZBDDRules, ZBDDTerminal};
 
-    use crate::util::type_cons::DD;
+    use crate::PAGE_SIZE;
+    use crate::util::type_cons::{DD, PointerDD};
 
-    crate::util::dd_pointer_based!(ZBDD {
-        node: NodeWithLevelCons<2>,
-        edge_tag: (),
-        terminal_manager: StaticTerminalManagerCons<ZBDDTerminal>,
-        rules: ZBDDRulesCons for ZBDDRules,
-        manager_data: ZBDDManagerDataCons for ZBDDManagerData,
-        tag_bits: 2,
-    });
+    const TAG_BITS: u32 = 0;
+
+    pub struct ZBDDInfo;
+    impl oxidd_manager_pointer::DiagramInfo<PAGE_SIZE, TAG_BITS> for ZBDDInfo {
+        type EdgeTag = ();
+        type InnerNode<'id> = NodeWithLevel<'id, Self, PAGE_SIZE, TAG_BITS, 2>;
+        type TerminalNode = ZBDDTerminal;
+        type TerminalManager<'id> = StaticTerminalManager<'id, Self, PAGE_SIZE, TAG_BITS>;
+        type DiagramRules<'id> = ZBDDRules;
+        type ManagerData<'id> = ZBDDManagerData<'id>;
+    }
+    type ZBDD = PointerDD<ZBDDInfo, PAGE_SIZE, TAG_BITS>;
 
     manager_data!(ZBDDManagerData for ZBDD, operator: ZBDDOp, cache_entry_capacity: 4);
 

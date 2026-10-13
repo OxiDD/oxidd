@@ -1,9 +1,8 @@
 use std::borrow::Borrow;
-use std::hash::Hash;
 
 use oxidd_core::util::{AllocResult, Own};
 
-use crate::manager::Edge;
+use crate::{DiagramInfo, manager::Edge};
 
 mod dynamic;
 mod r#static;
@@ -19,21 +18,19 @@ pub use r#static::*;
 /// created by the [`get_edge()`][TerminalManager::get_edge()] and
 /// [`iter()`][TerminalManager::iter()] methods via
 /// [`Edge::from_terminal_id()`].
-pub trait TerminalManager<'id, N, ET, const TERMINALS: usize>: Sized {
-    /// The terminal node type
-    type TerminalNode: Eq + Hash;
+pub trait TerminalManager<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize>: Sized {
     /// References to [`Self::TerminalNode`]s
     ///
     /// Should either be a `&'a Self::Terminal` or just `Self::Terminal`. The
     /// latter is useful for the [`StaticTerminalManager`] which doesn't
     /// actually store nodes but performs the mapping between edges and terminal
     /// nodes on the fly.
-    type TerminalNodeRef<'a>: Borrow<Self::TerminalNode> + Copy
+    type TerminalNodeRef<'a>: Borrow<DI::TerminalNode> + Copy
     where
         Self: 'a;
 
     /// Iterator over all terminal nodes (as [`Edge`]s), see [`Self::iter()`]
-    type Iterator<'a>: Iterator<Item = Own<Edge<'id, N, ET>>>
+    type Iterator<'a>: Iterator<Item = Own<Edge<'id, DI, TERMINALS>>>
     where
         Self: 'a;
 
@@ -77,12 +74,10 @@ pub trait TerminalManager<'id, N, ET, const TERMINALS: usize>: Sized {
 
     /// Add a terminal to this manager (if it does not already exist) and return
     /// an [`Edge`] pointing to it
-    fn get_edge(&self, terminal: Self::TerminalNode) -> AllocResult<Own<Edge<'id, N, ET>>>;
+    fn get_edge(&self, terminal: DI::TerminalNode) -> AllocResult<Own<Edge<'id, DI, TERMINALS>>>;
 
     /// Iterate over all terminals
-    fn iter<'a>(&'a self) -> Self::Iterator<'a>
-    where
-        Self: 'a;
+    fn iter<'a>(&'a self) -> Self::Iterator<'a>;
 
     /// Garbage collection: remove unused terminals
     fn gc(&self) -> u32;

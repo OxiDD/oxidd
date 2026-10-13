@@ -8,28 +8,25 @@ use std::sync::atomic::Ordering::{Relaxed, Release};
 use arcslab::AtomicRefCounted;
 
 use oxidd_core::util::{DropWith, EdgeRefIter, Own, Ref};
-use oxidd_core::{AtomicLevelNo, HasLevel, InnerNode, LevelNo, Tag};
+use oxidd_core::{AtomicLevelNo, HasLevel, InnerNode, LevelNo};
 
-use crate::manager;
-use crate::manager::InnerNodeCons;
+use crate::{DiagramInfo, manager::Edge};
 
 use super::NodeBase;
 
-pub struct NodeWithLevel<'id, ET, const TAG_BITS: u32, const ARITY: usize> {
+pub struct NodeWithLevel<'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32, const ARITY: usize>
+where
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
+{
     rc: AtomicUsize,
     level: AtomicLevelNo,
-    children: UnsafeCell<[Own<manager::Edge<'id, Self, ET, TAG_BITS>>; ARITY]>,
+    children: UnsafeCell<[Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>; ARITY]>,
 }
 
-impl<'id, ET: Tag, const TAG_BITS: u32, const ARITY: usize>
-    NodeWithLevel<'id, ET, TAG_BITS, ARITY>
-{
-    const UNINIT_EDGE: MaybeUninit<Own<manager::Edge<'id, Self, ET, TAG_BITS>>> =
-        MaybeUninit::uninit();
-}
-
-unsafe impl<ET, const TAG_BITS: u32, const ARITY: usize> AtomicRefCounted
-    for NodeWithLevel<'_, ET, TAG_BITS, ARITY>
+unsafe impl<DI, const PAGE_SIZE: usize, const TAG_BITS: u32, const ARITY: usize> AtomicRefCounted
+    for NodeWithLevel<'_, DI, PAGE_SIZE, TAG_BITS, ARITY>
+where
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
 {
     #[inline(always)]
     fn retain(&self) {
@@ -49,8 +46,10 @@ unsafe impl<ET, const TAG_BITS: u32, const ARITY: usize> AtomicRefCounted
     }
 }
 
-impl<ET: Tag, const TAG_BITS: u32, const ARITY: usize> PartialEq
-    for NodeWithLevel<'_, ET, TAG_BITS, ARITY>
+impl<DI, const PAGE_SIZE: usize, const TAG_BITS: u32, const ARITY: usize> PartialEq
+    for NodeWithLevel<'_, DI, PAGE_SIZE, TAG_BITS, ARITY>
+where
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
 {
     #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
@@ -58,13 +57,17 @@ impl<ET: Tag, const TAG_BITS: u32, const ARITY: usize> PartialEq
         unsafe { *self.children.get() == *other.children.get() }
     }
 }
-impl<ET: Tag, const TAG_BITS: u32, const ARITY: usize> Eq
-    for NodeWithLevel<'_, ET, TAG_BITS, ARITY>
+impl<DI, const PAGE_SIZE: usize, const TAG_BITS: u32, const ARITY: usize> Eq
+    for NodeWithLevel<'_, DI, PAGE_SIZE, TAG_BITS, ARITY>
+where
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
 {
 }
 
-impl<ET: Tag, const TAG_BITS: u32, const ARITY: usize> Hash
-    for NodeWithLevel<'_, ET, TAG_BITS, ARITY>
+impl<DI, const PAGE_SIZE: usize, const TAG_BITS: u32, const ARITY: usize> Hash
+    for NodeWithLevel<'_, DI, PAGE_SIZE, TAG_BITS, ARITY>
+where
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
 {
     #[inline(always)]
     fn hash<H: Hasher>(&self, state: &mut H) {
@@ -75,8 +78,10 @@ impl<ET: Tag, const TAG_BITS: u32, const ARITY: usize> Hash
 
 // SAFETY: The reference counter is initialized to 2, `load_rc` uses the given
 // ordering.
-unsafe impl<ET: Tag, const TAG_BITS: u32, const ARITY: usize> NodeBase
-    for NodeWithLevel<'_, ET, TAG_BITS, ARITY>
+unsafe impl<DI, const PAGE_SIZE: usize, const TAG_BITS: u32, const ARITY: usize> NodeBase
+    for NodeWithLevel<'_, DI, PAGE_SIZE, TAG_BITS, ARITY>
+where
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
 {
     #[inline(always)]
     fn needs_drop() -> bool {
@@ -89,27 +94,33 @@ unsafe impl<ET: Tag, const TAG_BITS: u32, const ARITY: usize> NodeBase
     }
 }
 
-impl<'id, ET: Tag, const TAG_BITS: u32, const ARITY: usize>
-    DropWith<manager::Edge<'id, Self, ET, TAG_BITS>> for NodeWithLevel<'id, ET, TAG_BITS, ARITY>
+impl<'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32, const ARITY: usize>
+    DropWith<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>
+    for NodeWithLevel<'id, DI, PAGE_SIZE, TAG_BITS, ARITY>
+where
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
 {
     #[inline]
-    fn drop_with(self, drop_edge: impl Fn(Own<manager::Edge<'id, Self, ET, TAG_BITS>>)) {
+    fn drop_with(self, drop_edge: impl Fn(Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>)) {
         for c in self.children.into_inner() {
             drop_edge(c);
         }
     }
 }
 
-impl<'id, ET: Tag, const TAG_BITS: u32, const ARITY: usize>
-    InnerNode<manager::Edge<'id, Self, ET, TAG_BITS>> for NodeWithLevel<'id, ET, TAG_BITS, ARITY>
+impl<'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32, const ARITY: usize>
+    InnerNode<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>
+    for NodeWithLevel<'id, DI, PAGE_SIZE, TAG_BITS, ARITY>
+where
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
 {
     const ARITY: usize = 2;
 
     type ChildrenIter<'a>
         = EdgeRefIter<
         'a,
-        manager::Edge<'id, Self, ET, TAG_BITS>,
-        std::slice::Iter<'a, Own<manager::Edge<'id, Self, ET, TAG_BITS>>>,
+        Edge<'id, DI, PAGE_SIZE, TAG_BITS>,
+        std::slice::Iter<'a, Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>>,
     >
     where
         Self: 'a;
@@ -117,34 +128,26 @@ impl<'id, ET: Tag, const TAG_BITS: u32, const ARITY: usize>
     #[inline(always)]
     fn new(
         level: LevelNo,
-        children: impl IntoIterator<Item = Own<manager::Edge<'id, Self, ET, TAG_BITS>>>,
+        children: impl IntoIterator<Item = Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>>,
     ) -> Self {
         let mut it = children.into_iter();
-        let mut children = [Self::UNINIT_EDGE; ARITY];
+        let mut children = MaybeUninit::uninit();
 
-        for slot in &mut children {
+        // SAFETY: essentially the `AsMut` impl stabilized in Rust 1.95
+        let children_mut = unsafe {
+            &mut *(&raw mut children
+                as *mut [MaybeUninit<Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>>; ARITY])
+        };
+        for slot in children_mut {
             slot.write(it.next().unwrap());
         }
         debug_assert!(it.next().is_none());
 
-        // SAFETY:
-        // - all elements are initialized
-        // - we effectively move out of `children`; the old `children` are not
-        //   dropped since they are `MaybeUninit`
-        //
-        // TODO: replace this by `MaybeUninit::transpose()` /
-        // `MaybeUninit::array_assume_init()` once stable
-        let children = unsafe {
-            std::ptr::read(
-                (&raw const children)
-                    .cast::<[Own<manager::Edge<'id, Self, ET, TAG_BITS>>; ARITY]>(),
-            )
-        };
-
         Self {
             rc: AtomicUsize::new(2),
             level: AtomicLevelNo::new(level),
-            children: UnsafeCell::new(children),
+            // SAFETY: all elements are initialized
+            children: UnsafeCell::new(unsafe { children.assume_init() }),
         }
     }
 
@@ -169,7 +172,7 @@ impl<'id, ET: Tag, const TAG_BITS: u32, const ARITY: usize>
     }
 
     #[inline(always)]
-    fn child(&self, n: usize) -> Ref<'_, manager::Edge<'id, Self, ET, TAG_BITS>> {
+    fn child(&self, n: usize) -> Ref<'_, Edge<'id, DI, PAGE_SIZE, TAG_BITS>> {
         // SAFETY: we have shared access to the node
         let children = unsafe { &*self.children.get() };
         children[n].borrowed()
@@ -179,8 +182,8 @@ impl<'id, ET: Tag, const TAG_BITS: u32, const ARITY: usize>
     unsafe fn set_child(
         &self,
         n: usize,
-        child: Own<manager::Edge<'id, Self, ET, TAG_BITS>>,
-    ) -> Own<manager::Edge<'id, Self, ET, TAG_BITS>> {
+        child: Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>,
+    ) -> Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>> {
         // SAFETY: we have exclusive access to the node and no child is
         // referenced
         let children = unsafe { &mut *self.children.get() };
@@ -194,8 +197,10 @@ impl<'id, ET: Tag, const TAG_BITS: u32, const ARITY: usize>
     }
 }
 
-unsafe impl<ET, const TAG_BITS: u32, const ARITY: usize> HasLevel
-    for NodeWithLevel<'_, ET, TAG_BITS, ARITY>
+unsafe impl<DI, const PAGE_SIZE: usize, const TAG_BITS: u32, const ARITY: usize> HasLevel
+    for NodeWithLevel<'_, DI, PAGE_SIZE, TAG_BITS, ARITY>
+where
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
 {
     #[inline(always)]
     fn level(&self) -> LevelNo {
@@ -208,18 +213,15 @@ unsafe impl<ET, const TAG_BITS: u32, const ARITY: usize> HasLevel
     }
 }
 
-unsafe impl<ET: Send + Sync, const TAG_BITS: u32, const ARITY: usize> Send
-    for NodeWithLevel<'_, ET, TAG_BITS, ARITY>
+unsafe impl<DI, const PAGE_SIZE: usize, const TAG_BITS: u32, const ARITY: usize> Send
+    for NodeWithLevel<'_, DI, PAGE_SIZE, TAG_BITS, ARITY>
+where
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
 {
 }
-unsafe impl<ET: Send + Sync, const TAG_BITS: u32, const ARITY: usize> Sync
-    for NodeWithLevel<'_, ET, TAG_BITS, ARITY>
+unsafe impl<DI, const PAGE_SIZE: usize, const TAG_BITS: u32, const ARITY: usize> Sync
+    for NodeWithLevel<'_, DI, PAGE_SIZE, TAG_BITS, ARITY>
+where
+    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
 {
-}
-
-pub struct NodeWithLevelCons<const ARITY: usize>;
-impl<ET: Tag, const TAG_BITS: u32, const ARITY: usize> InnerNodeCons<ET, TAG_BITS>
-    for NodeWithLevelCons<ARITY>
-{
-    type T<'id> = NodeWithLevel<'id, ET, TAG_BITS, ARITY>;
 }
