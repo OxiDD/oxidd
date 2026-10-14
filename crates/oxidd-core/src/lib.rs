@@ -13,7 +13,6 @@
 
 #![warn(missing_docs)]
 #![deny(unsafe_op_in_unsafe_fn)]
-#![allow(clippy::double_must_use)]
 // Explicitly writing out `'id` lifetimes possibly makes some code easier to
 // read.
 #![allow(clippy::needless_lifetimes)]
@@ -233,7 +232,6 @@ pub trait InnerNode<E: Edge>: Sized + Eq + Hash + DropWith<E> {
     fn assert_level_matches(&self, level: LevelNo);
 
     /// Get the children of this node as an iterator
-    #[must_use]
     fn children(&self) -> Self::ChildrenIter<'_>;
 
     /// Get the `n`-th child of this node
@@ -654,7 +652,6 @@ pub unsafe trait Manager: Sized {
     fn get_node<'a>(&'a self, edge: Ref<'a, Self::Edge>) -> Node<'a, Self>;
 
     /// Clone `edge`
-    #[must_use]
     fn clone_edge(&self, edge: Ref<'_, Self::Edge>) -> Own<Self::Edge>;
 
     /// Drop `edge`
@@ -814,7 +811,6 @@ pub unsafe trait Manager: Sized {
     unsafe fn level_unchecked(&self, no: LevelNo) -> Self::LevelView<'_>;
 
     /// Iterate over the levels from top to bottom
-    #[must_use]
     fn levels(&self) -> Self::LevelIterator<'_>;
 
     /// Get an edge for the given terminal
@@ -823,7 +819,6 @@ pub unsafe trait Manager: Sized {
     /// table. In particular, this means that calling this function while
     /// holding a terminal iterator ([`Manager::terminals()`]) may cause a
     /// deadlock.
-    #[must_use]
     fn get_terminal(&self, terminal: Self::Terminal) -> AllocResult<Own<Self::Edge>>;
 
     /// Get the number of terminals
@@ -842,7 +837,6 @@ pub unsafe trait Manager: Sized {
     ///
     /// Locking behavior: May acquire a lock for the internal terminal unique
     /// table.
-    #[must_use]
     fn terminals(&self) -> Self::TerminalIterator<'_>;
 
     /// Perform garbage collection
@@ -1099,7 +1093,6 @@ pub unsafe trait LevelView<E: Edge, N: InnerNode<E>> {
     /// - `N` implements [`HasLevel`] and
     ///   [`HasLevel::level(node)`][HasLevel::level()] returns a different
     ///   level.
-    #[must_use]
     fn get_or_insert(&mut self, node: N) -> AllocResult<Own<E>>;
 
     /// Get the edge corresponding to `level` and `node` if present, or insert
@@ -1114,7 +1107,6 @@ pub unsafe trait LevelView<E: Edge, N: InnerNode<E>> {
     /// this level. During reordering, this requirement does not need to be
     /// fulfilled immediately, but must hold at the end of the reordering
     /// process.
-    #[must_use]
     unsafe fn get_or_insert_unchecked(&mut self, node: N) -> AllocResult<Own<E>>;
 
     /// Perform garbage collection on this level
@@ -1144,7 +1136,6 @@ pub unsafe trait LevelView<E: Edge, N: InnerNode<E>> {
     unsafe fn swap(&mut self, other: &mut Self);
 
     /// Iterate over all the edges at this level
-    #[must_use]
     fn iter(&self) -> Self::Iterator<'_>;
 
     /// If a reordering operation is in progress: Clear this level, returning a

@@ -204,7 +204,6 @@ pub trait FunctionSubst: Function {
     }
 
     /// `Edge` version of [`Self::substitute()`]
-    #[must_use]
     fn substitute_edge<'id, 'a>(
         manager: &'a Self::Manager<'id>,
         edge: Ref<'a, EdgeOfFunc<'id, Self>>,
@@ -508,7 +507,6 @@ pub trait BooleanFunction: Function {
     /// Restrict a set of `vars` to constant values, edge version
     ///
     /// See [`Self::restrict()`] for more details.
-    #[must_use]
     fn restrict_edge<'id>(
         manager: &Self::Manager<'id>,
         root: Ref<'_, EdgeOfFunc<'id, Self>>,
@@ -516,7 +514,6 @@ pub trait BooleanFunction: Function {
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>>;
 
     /// Compute the negation `¬edge`, edge version
-    #[must_use]
     fn not_edge<'id>(
         manager: &Self::Manager<'id>,
         edge: Ref<'_, EdgeOfFunc<'id, Self>>,
@@ -527,7 +524,6 @@ pub trait BooleanFunction: Function {
     /// Compared to [`Self::not_edge()`], this method does not need to clone the
     /// edge, so when the implementation is using (e.g.) complemented edges,
     /// this might be a little bit faster than [`Self::not_edge()`].
-    #[must_use]
     fn not_edge_owned<'id>(
         manager: &Self::Manager<'id>,
         edge: OwnEdgeOfFunc<'id, Self>,
@@ -537,56 +533,48 @@ pub trait BooleanFunction: Function {
     }
 
     /// Compute the conjunction `lhs ∧ rhs`, edge version
-    #[must_use]
     fn and_edge<'id>(
         manager: &Self::Manager<'id>,
         lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
         rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>>;
     /// Compute the disjunction `lhs ∨ rhs`, edge version
-    #[must_use]
     fn or_edge<'id>(
         manager: &Self::Manager<'id>,
         lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
         rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>>;
     /// Compute the negated conjunction `lhs ⊼ rhs`, edge version
-    #[must_use]
     fn nand_edge<'id>(
         manager: &Self::Manager<'id>,
         lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
         rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>>;
     /// Compute the negated disjunction `lhs ⊽ rhs`, edge version
-    #[must_use]
     fn nor_edge<'id>(
         manager: &Self::Manager<'id>,
         lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
         rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>>;
     /// Compute the exclusive disjunction `lhs ⊕ rhs`, edge version
-    #[must_use]
     fn xor_edge<'id>(
         manager: &Self::Manager<'id>,
         lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
         rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>>;
     /// Compute the equivalence `lhs ↔ rhs`, edge version
-    #[must_use]
     fn equiv_edge<'id>(
         manager: &Self::Manager<'id>,
         lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
         rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>>;
     /// Compute the implication `lhs → rhs`, edge version
-    #[must_use]
     fn imp_edge<'id>(
         manager: &Self::Manager<'id>,
         lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
         rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>>;
     /// Compute the strict implication `lhs < rhs`, edge version
-    #[must_use]
     fn imp_strict_edge<'id>(
         manager: &Self::Manager<'id>,
         lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
@@ -637,7 +625,6 @@ pub trait BooleanFunction: Function {
     /// This is equivalent to `(self ∧ then_case) ∨ (¬self ∧ else_case)` but
     /// possibly more efficient than computing all the
     /// conjunctions/disjunctions.
-    #[must_use]
     fn ite_edge<'id>(
         manager: &Self::Manager<'id>,
         if_edge: Ref<'_, EdgeOfFunc<'id, Self>>,
@@ -1073,7 +1060,6 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     /// version
     ///
     /// See [`Self::forall()`] for more details.
-    #[must_use]
     fn forall_edge<'id>(
         manager: &Self::Manager<'id>,
         root: Ref<'_, EdgeOfFunc<'id, Self>>,
@@ -1084,7 +1070,6 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     /// version
     ///
     /// See [`Self::exists()`] for more details.
-    #[must_use]
     fn exists_edge<'id>(
         manager: &Self::Manager<'id>,
         root: Ref<'_, EdgeOfFunc<'id, Self>>,
@@ -1094,7 +1079,6 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     /// Compute the unique quantification of `root` over `vars`, edge version
     ///
     /// See [`Self::unique()`] for more details.
-    #[must_use]
     fn unique_edge<'id>(
         manager: &Self::Manager<'id>,
         root: Ref<'_, EdgeOfFunc<'id, Self>>,
@@ -1104,7 +1088,6 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     /// Combined application of `op` and forall quantification, edge version
     ///
     /// See [`Self::apply_forall()`] for more details.
-    #[must_use]
     fn apply_forall_edge<'id>(
         manager: &Self::Manager<'id>,
         op: BooleanOperator,
@@ -1135,7 +1118,6 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     /// version
     ///
     /// See [`Self::apply_exists()`] for more details.
-    #[must_use]
     fn apply_exists_edge<'id>(
         manager: &Self::Manager<'id>,
         op: BooleanOperator,
@@ -1165,7 +1147,6 @@ pub trait BooleanFunctionQuant: BooleanFunction {
     /// Combined application of `op` and unique quantification, edge version
     ///
     /// See [`Self::apply_unique()`] for more details.
-    #[must_use]
     fn apply_unique_edge<'id>(
         manager: &Self::Manager<'id>,
         op: BooleanOperator,
@@ -1568,7 +1549,6 @@ pub trait PseudoBooleanFunction: Function {
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>>;
 
     /// Edge version of [`Self::restrict()`]
-    #[must_use]
     fn restrict_edge<'id>(
         manager: &Self::Manager<'id>,
         root: Ref<'_, EdgeOfFunc<'id, Self>>,
@@ -1618,7 +1598,6 @@ pub trait PseudoBooleanFunction: Function {
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>>;
 
     /// Edge version of [`Self::ite()`]
-    #[must_use]
     fn ite_edge<'id>(
         manager: &Self::Manager<'id>,
         if_edge: Ref<'_, EdgeOfFunc<'id, Self>>,
@@ -1921,7 +1900,6 @@ pub trait TVLFunction: Function {
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>>;
 
     /// Compute the negation `¬edge`, edge version
-    #[must_use]
     fn not_edge<'id>(
         manager: &Self::Manager<'id>,
         edge: Ref<'_, EdgeOfFunc<'id, Self>>,
@@ -1932,7 +1910,6 @@ pub trait TVLFunction: Function {
     /// Compared to [`Self::not_edge()`], this method does not need to clone the
     /// edge, so when the implementation is using (e.g.) complemented edges,
     /// this might be a little bit faster than [`Self::not_edge()`].
-    #[must_use]
     fn not_edge_owned<'id>(
         manager: &Self::Manager<'id>,
         edge: OwnEdgeOfFunc<'id, Self>,
@@ -1942,56 +1919,48 @@ pub trait TVLFunction: Function {
     }
 
     /// Compute the conjunction `lhs ∧ rhs`, edge version
-    #[must_use]
     fn and_edge<'id>(
         manager: &Self::Manager<'id>,
         lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
         rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>>;
     /// Compute the disjunction `lhs ∨ rhs`, edge version
-    #[must_use]
     fn or_edge<'id>(
         manager: &Self::Manager<'id>,
         lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
         rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>>;
     /// Compute the negated conjunction `lhs ⊼ rhs`, edge version
-    #[must_use]
     fn nand_edge<'id>(
         manager: &Self::Manager<'id>,
         lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
         rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>>;
     /// Compute the negated disjunction `lhs ⊽ rhs`, edge version
-    #[must_use]
     fn nor_edge<'id>(
         manager: &Self::Manager<'id>,
         lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
         rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>>;
     /// Compute the exclusive disjunction `lhs ⊕ rhs`, edge version
-    #[must_use]
     fn xor_edge<'id>(
         manager: &Self::Manager<'id>,
         lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
         rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>>;
     /// Compute the equivalence `lhs ↔ rhs`, edge version
-    #[must_use]
     fn equiv_edge<'id>(
         manager: &Self::Manager<'id>,
         lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
         rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>>;
     /// Compute the implication `lhs → rhs`, edge version
-    #[must_use]
     fn imp_edge<'id>(
         manager: &Self::Manager<'id>,
         lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
         rhs: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>>;
     /// Compute the strict implication `lhs < rhs`, edge version
-    #[must_use]
     fn imp_strict_edge<'id>(
         manager: &Self::Manager<'id>,
         lhs: Ref<'_, EdgeOfFunc<'id, Self>>,
@@ -2022,7 +1991,6 @@ pub trait TVLFunction: Function {
     /// This is equivalent to `(self ∧ then_case) ∨ (¬self ∧ else_case)` but
     /// possibly more efficient than computing all the
     /// conjunctions/disjunctions.
-    #[must_use]
     fn ite_edge<'id>(
         manager: &Self::Manager<'id>,
         if_edge: Ref<'_, EdgeOfFunc<'id, Self>>,
