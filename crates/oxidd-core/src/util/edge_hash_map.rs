@@ -170,11 +170,9 @@ impl<M: Manager, V> Iterator for IntoIter<M, V> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        match self.0.next() {
-            // SAFETY: by invariant, we have ownership of all keys
-            Some((key, value)) => Some((unsafe { Own::from_raw(key) }, value)),
-            None => None,
-        }
+        let (key, value) = self.0.next()?;
+        // SAFETY: by invariant, we have ownership of all keys
+        Some((unsafe { Own::from_raw(key) }, value))
     }
 }
 

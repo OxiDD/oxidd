@@ -17,8 +17,6 @@
 // Explicitly writing out `'id` lifetimes possibly makes some code easier to
 // read.
 #![allow(clippy::needless_lifetimes)]
-// `match` syntax may be easier to read
-#![allow(clippy::manual_map)]
 
 use std::borrow::Borrow;
 use std::hash::Hash;
