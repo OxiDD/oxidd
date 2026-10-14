@@ -59,13 +59,18 @@ impl<'a, M: Manager> EdgeDropGuard<'a, M> {
         }
     }
 
-    /// Convert `this` into the contained edge
+    /// Convert `self` into the contained edge
     #[inline]
-    pub fn into_edge(mut self) -> Own<M::Edge> {
-        // SAFETY: `this.edge` is never used again, we drop `self` below
-        let edge = unsafe { ManuallyDrop::take(&mut self.edge) };
-        std::mem::forget(self);
-        edge
+    pub fn into_edge(self) -> Own<M::Edge> {
+        let mut this = ManuallyDrop::new(self);
+        // SAFETY: `this.edge` is never used again, we forget `this`
+        unsafe { ManuallyDrop::take(&mut this.edge) }
+    }
+
+    /// Convert this drop guard into one where the edge is tagged with `tag`
+    #[inline]
+    pub fn with_tag(self, tag: M::EdgeTag) -> Self {
+        Self::new(self.manager, self.into_edge().with_tag(tag))
     }
 }
 
