@@ -4,6 +4,7 @@
 //! ## Feature flags
 #![doc = document_features::document_features!()]
 #![forbid(unsafe_code)]
+#![warn(missing_docs)]
 // `'id` lifetimes may make the code easier to understand
 #![allow(clippy::needless_lifetimes)]
 
@@ -177,6 +178,7 @@ impl fmt::Display for ZBDDTerminal {
 
 // --- ZBDD Cache --------------------------------------------------------------
 
+/// Tautology cache
 pub struct ZBDDCache<E: Copy> {
     tautologies: Vec<Own<E>>,
 }
@@ -228,8 +230,11 @@ where
     }
 }
 
+/// Container for a [`ZBDDCache`]
 pub trait HasZBDDCache<E: Edge> {
+    /// Get a shared reference to the contained [`ZBDDCache`]
     fn zbdd_cache(&self) -> &ZBDDCache<E>;
+    /// Get a mutable reference to the contained [`ZBDDCache`]
     fn zbdd_cache_mut(&mut self) -> &mut ZBDDCache<E>;
 }
 impl<E: Edge, T: AsRef<ZBDDCache<E>> + AsMut<ZBDDCache<E>>> HasZBDDCache<E> for T {

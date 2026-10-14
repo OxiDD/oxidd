@@ -642,6 +642,7 @@ where
 trait HasZBDDOpApplyCache<M: Manager>: HasApplyCache<M, ZBDDOp> {}
 impl<M: Manager + HasApplyCache<M, ZBDDOp>> HasZBDDOpApplyCache<M> for M {}
 
+/// Boolean function backed by a zero-suppressed binary decision diagram
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Function, Debug)]
 #[repr_id = "ZBDD"]
 #[repr(transparent)]
@@ -1132,6 +1133,8 @@ pub mod mt {
 
     use super::*;
 
+    /// Boolean function backed by a zero-suppressed binary decision diagram,
+    /// multi-threaded version
     #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Function, Debug)]
     #[repr_id = "ZBDD"]
     #[repr(transparent)]
