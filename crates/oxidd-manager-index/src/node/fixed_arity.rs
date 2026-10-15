@@ -1,6 +1,5 @@
 use std::cell::UnsafeCell;
 use std::hash::{Hash, Hasher};
-use std::mem::MaybeUninit;
 use std::sync::atomic;
 use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering::{Relaxed, Release};
@@ -108,23 +107,13 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const ARITY: usize, const TERMINALS: usize
         level: LevelNo,
         children: impl IntoIterator<Item = Own<Edge<'id, DI, TERMINALS>>>,
     ) -> Self {
-        let mut it = children.into_iter();
-        let mut children = MaybeUninit::uninit();
-
-        // SAFETY: essentially the `AsMut` impl stabilized in Rust 1.95
-        let children_mut = unsafe {
-            &mut *(&raw mut children as *mut [MaybeUninit<Own<Edge<'id, DI, TERMINALS>>>; ARITY])
-        };
-        for slot in children_mut {
-            slot.write(it.next().unwrap());
-        }
-        debug_assert!(it.next().is_none());
-
         Self {
             rc: AtomicU32::new(2),
             level: AtomicLevelNo::new(level),
-            // SAFETY: all elements are initialized
-            children: UnsafeCell::new(unsafe { children.assume_init() }),
+            // We lack the reference to the node store for dropping edges
+            // properly on error, hence we just forget them. There will be an
+            // error message anyway.
+            children: UnsafeCell::new(oxidd_core::util::collect_exact(children, std::mem::forget)),
         }
     }
 

@@ -1,4 +1,4 @@
-use std::mem::ManuallyDrop;
+use std::mem::{ManuallyDrop, MaybeUninit};
 use std::ops::{Deref, DerefMut};
 
 use crate::Manager;
@@ -190,4 +190,74 @@ impl<'a, M: Manager> DerefMut for InnerNodeDropGuard<'a, M> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.node
     }
+}
+
+/// Collect exactly `N` elements from an iterator
+///
+/// Panics if the iterator does not provide exactly `N` elements. Calls the
+/// custom `drop` function for all elements on error.
+#[inline]
+pub fn collect_exact<T, const N: usize>(
+    it: impl IntoIterator<Item = T>,
+    drop: impl FnMut(T),
+) -> [T; N] {
+    /// SAFETY invariant: `collected <= N` and the first `collected` elements of
+    /// `edges` are initialized
+    struct Collector<T, D: FnMut(T), const N: usize> {
+        array: MaybeUninit<[T; N]>,
+        collected: usize,
+        drop: D,
+    }
+
+    impl<T, D: FnMut(T), const N: usize> Drop for Collector<T, D, N> {
+        fn drop(&mut self) {
+            // SAFETY: essentially the `AsRef` impl stabilized in Rust 1.95
+            let edges = unsafe { &*(&raw const self.array as *const [MaybeUninit<T>; N]) };
+            // SAFETY: `self.collected <= N` is part of the type invariant
+            for v in unsafe { edges.get_unchecked(..self.collected) } {
+                // SAFETY: The first `self.collected` elements are initialized.
+                // No elements are duplicated because we forget `self.array`.
+                (self.drop)(unsafe { v.assume_init_read() })
+            }
+        }
+    }
+
+    let mut collector = Collector {
+        array: MaybeUninit::uninit(),
+        collected: 0,
+        drop,
+    };
+
+    // SAFETY: essentially the `AsMut` impl stabilized in Rust 1.95
+    let array = unsafe { &mut *(&raw mut collector.array as *mut [MaybeUninit<T>; N]) };
+    let mut it = it.into_iter();
+    for (dst, src) in array.iter_mut().zip(it.by_ref()) {
+        dst.write(src);
+        collector.collected += 1;
+    }
+    let mut additional = false;
+    for v in it {
+        (collector.drop)(v);
+        additional = true;
+    }
+    assert!(!additional, "iterator provided too many elements");
+    assert_eq!(
+        collector.collected, N,
+        "iterator did not provide enough elements"
+    );
+    let collector = ManuallyDrop::new(collector);
+    // SAFETY: `collector.collected` is `N`, so all array elements are
+    // initialized. No elements are duplicated because we forget `collector`.
+    unsafe { collector.array.assume_init_read() }
+}
+
+/// Collect `N` edges from an iterator
+///
+/// Panics if the iterator does not provide exactly `N` elements.
+#[inline]
+pub fn collect_edges_exact<M: Manager, const N: usize>(
+    manager: &M,
+    it: impl IntoIterator<Item = Own<M::Edge>>,
+) -> [Own<M::Edge>; N] {
+    collect_exact(it, |edge| manager.drop_edge(edge))
 }

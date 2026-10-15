@@ -1,6 +1,5 @@
 use std::cell::UnsafeCell;
 use std::hash::{Hash, Hasher};
-use std::mem::MaybeUninit;
 use std::sync::atomic;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::{Relaxed, Release};
@@ -130,24 +129,11 @@ where
         level: LevelNo,
         children: impl IntoIterator<Item = Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>>,
     ) -> Self {
-        let mut it = children.into_iter();
-        let mut children = MaybeUninit::uninit();
-
-        // SAFETY: essentially the `AsMut` impl stabilized in Rust 1.95
-        let children_mut = unsafe {
-            &mut *(&raw mut children
-                as *mut [MaybeUninit<Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>>; ARITY])
-        };
-        for slot in children_mut {
-            slot.write(it.next().unwrap());
-        }
-        debug_assert!(it.next().is_none());
-
+        let drop_fn = crate::manager::Manager::<'id, DI, PAGE_SIZE, TAG_BITS>::drop_edge_common;
         Self {
             rc: AtomicUsize::new(2),
             level: AtomicLevelNo::new(level),
-            // SAFETY: all elements are initialized
-            children: UnsafeCell::new(unsafe { children.assume_init() }),
+            children: UnsafeCell::new(oxidd_core::util::collect_exact(children, drop_fn)),
         }
     }
 
