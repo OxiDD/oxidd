@@ -160,13 +160,12 @@ impl<'a, M: Manager> InnerNodeDropGuard<'a, M> {
         }
     }
 
-    /// Convert `this` into the contained node
+    /// Convert `self` into the contained node
     #[inline]
-    pub fn into_node(mut this: Self) -> M::InnerNode {
-        // SAFETY: `this.edge` is never used again, we drop `this` below
-        let node = unsafe { ManuallyDrop::take(&mut this.node) };
-        std::mem::forget(this);
-        node
+    pub fn into_node(self) -> M::InnerNode {
+        let mut this = ManuallyDrop::new(self);
+        // SAFETY: `this.node` is never used again, we forget `this`
+        unsafe { ManuallyDrop::take(&mut this.node) }
     }
 }
 
