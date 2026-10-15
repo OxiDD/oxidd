@@ -257,7 +257,7 @@ pub trait InnerNode<E: Edge>: Sized + Eq + Hash + DropWith<E> {
     /// only require a shared and not a mutable manager reference). Furthermore,
     /// there must not be a borrowed child (obtained via
     /// [`InnerNode::children()`]).
-    #[must_use = "call `Manager::drop_edge()` if you don't need the previous edge"]
+    #[must_use = "call `LevelView::try_remove()` to drop the edge and remove the node it references if possible"]
     unsafe fn set_child(&self, n: usize, child: Own<E>) -> Own<E>;
 
     /// Get the node's reference count
