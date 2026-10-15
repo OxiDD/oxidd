@@ -27,6 +27,7 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15",
   "Programming Language :: Python :: Implementation :: CPython",
   "Programming Language :: Python :: Implementation :: PyPy",
   "Programming Language :: Rust",
@@ -44,13 +45,13 @@ Issues = "https://github.com/OxiDD/oxidd/issues"
 
 [project.optional-dependencies]
 # spell-checker:ignore pydata
-dev = ["mypy ~= 2.3", "basedpyright ~= 1.39", "ruff ~= 0.16"]
-docs = ["Sphinx ~= 9.0", "pydata-sphinx-theme ~= 0.20"]
+dev = ["mypy ~= 2.4", "basedpyright ~= 1.40", "ruff ~= 0.17"]
+docs = ["Sphinx ~= 9.0", "pydata-sphinx-theme ~= 0.23"]
 test = ["pytest >= 9.0"]
 
 
 [build-system]
-requires = ["maturin ~= 1.14"]
+requires = ["maturin ~= 1.15"]
 build-backend = "maturin"
 
 [tool.maturin]
