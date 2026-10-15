@@ -2,8 +2,8 @@ use std::io;
 
 use oxidd_core::error::OutOfMemory;
 use oxidd_core::function::{ETagOfFunc, Function, INodeOfFunc, OwnEdgeOfFunc, TermOfFunc};
-use oxidd_core::util::{AllocResult, EdgeDropGuard, EdgeVecDropGuard, Own};
-use oxidd_core::{DiagramRules, HasLevel, InnerNode, LevelNo, Manager, VarNo};
+use oxidd_core::util::{AllocResult, EdgeDropGuard, EdgeVecDropGuard};
+use oxidd_core::{HasLevel, InnerNode, LevelNo, Manager, VarNo};
 
 use crate::ParseTagged;
 
@@ -12,6 +12,7 @@ use super::{Code, VarInfo};
 // spell-checker:dictionaries dddmp
 
 /// Helper function to return a parse error
+#[cold]
 fn err<T>(msg: impl Into<Box<dyn std::error::Error + Send + Sync>>) -> io::Result<T> {
     Err(io::Error::new(io::ErrorKind::InvalidData, msg))
 }
@@ -471,6 +472,31 @@ impl DumpHeader {
     }
 }
 
+/// [`Function`] that can be deserialized from DDDMP
+pub trait DDDMPDeserialize: Function {
+    /// Try to create a node at `level` with `children`, applying reduction
+    /// rules
+    ///
+    /// The default implementation will just ensure node uniqueness.
+    #[inline]
+    fn reduce<'id>(
+        manager: &Self::Manager<'id>,
+        level: LevelNo,
+        children: impl IntoIterator<Item = OwnEdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+        manager.get_or_insert(level, children)
+    }
+
+    /// Negate `edge`
+    ///
+    /// This method provides the semantics for negative node references in the
+    /// DDDMP dump.
+    fn neg<'id>(
+        manager: &Self::Manager<'id>,
+        edge: OwnEdgeOfFunc<'id, Self>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>>;
+}
+
 /// Import the decision diagram from `input` into `manager` after loading
 /// `header` from `input`
 ///
@@ -493,12 +519,11 @@ impl DumpHeader {
 /// edge.
 ///
 /// [set_var_order]: https://docs.rs/oxidd-reorder/latest/oxidd_reorder/fn.set_var_order.html
-pub fn import<'id, F: Function>(
+pub fn import<'id, F: DDDMPDeserialize>(
     mut input: impl io::BufRead,
     header: &DumpHeader,
     manager: &F::Manager<'id>,
     support_vars: impl IntoIterator<Item = VarNo>,
-    complement: impl Fn(&F::Manager<'id>, OwnEdgeOfFunc<'id, F>) -> AllocResult<OwnEdgeOfFunc<'id, F>>,
 ) -> io::Result<Vec<F>>
 where
     INodeOfFunc<'id, F>: HasLevel,
@@ -517,25 +542,18 @@ where
     );
 
     let nodes = if header.ascii {
-        import_ascii::<F::Manager<'id>>(
-            &mut input,
-            header,
-            manager,
-            &suppvar_level_map,
-            &complement,
-        )
+        import_ascii::<F>(&mut input, header, manager, &suppvar_level_map)
     } else {
         let mut level_suppvar_map = vec![u32::MAX; manager.num_levels() as usize];
         for (i, &level) in suppvar_level_map.iter().enumerate() {
             level_suppvar_map[level as usize] = i as u32;
         }
-        import_bin::<F::Manager<'id>>(
+        import_bin::<F>(
             &mut input,
             header,
             manager,
             &level_suppvar_map,
             &suppvar_level_map,
-            &complement,
         )
     }?;
     let nodes = EdgeVecDropGuard::new(manager, nodes);
@@ -552,7 +570,7 @@ where
         let e = manager.clone_edge(nodes[node_index].borrowed());
         roots.push(F::from_edge(
             manager,
-            if root > 0 { e } else { complement(manager, e)? },
+            if root > 0 { e } else { F::neg(manager, e)? },
         ));
     }
 
@@ -567,20 +585,22 @@ fn reads_expected(mut file: impl io::Read, expected: &[u8]) -> io::Result<bool> 
     Ok(buf.starts_with(expected) && buf[expected.len()..].iter().all(u8::is_ascii_whitespace))
 }
 
-fn import_ascii<M: Manager>(
+fn import_ascii<'id, F: DDDMPDeserialize>(
     mut input: impl io::BufRead,
     header: &DumpHeader,
-    manager: &M,
+    manager: &F::Manager<'id>,
     suppvar_level_map: &[LevelNo],
-    complement: impl Fn(&M, Own<M::Edge>) -> AllocResult<Own<M::Edge>>,
-) -> io::Result<Vec<Own<M::Edge>>>
+) -> io::Result<Vec<OwnEdgeOfFunc<'id, F>>>
 where
-    M::InnerNode: HasLevel,
-    M::Terminal: ParseTagged<M::EdgeTag>,
+    INodeOfFunc<'id, F>: HasLevel,
+    TermOfFunc<'id, F>: ParseTagged<ETagOfFunc<'id, F>>,
 {
+    let arity = INodeOfFunc::<'id, F>::ARITY;
     let mut nodes = EdgeVecDropGuard::new(manager, Vec::with_capacity(header.nnodes));
     let mut line = Vec::new();
-    let mut children = Vec::with_capacity(M::InnerNode::ARITY);
+    let mut children = Vec::with_capacity(arity);
+    let mut dd_children = EdgeVecDropGuard::new(manager, Vec::with_capacity(arity));
+
     for node_id in 1..=header.nnodes {
         match input.read_until(b'\n', &mut line) {
             Ok(0) => return err("unexpected end of file"),
@@ -624,10 +644,9 @@ where
         };
 
         parse_edge_list(rest, &mut children, line_no)?;
-        if children.len() != M::InnerNode::ARITY {
+        if children.len() != arity {
             return err(format!(
-                "expected {} children, got {} (line {line_no})",
-                M::InnerNode::ARITY,
+                "expected {arity} children, got {} (line {line_no})",
                 children.len()
             ));
         }
@@ -642,7 +661,7 @@ where
                     ));
                 }
             };
-            let Some((terminal, tag)) = M::Terminal::parse(string) else {
+            let Some((terminal, tag)) = TermOfFunc::<'id, F>::parse(string) else {
                 return err(format!(
                     "invalid terminal description '{string}' (line {line_no})"
                 ));
@@ -654,35 +673,26 @@ where
                 return err(format!("variable out of range (line {line_no})"));
             };
 
-            for &child in &children {
-                let child = child.unsigned_abs();
-                if child >= node_id {
+            debug_assert!(dd_children.is_empty());
+            for &child in children.iter() {
+                let cid = child.unsigned_abs();
+                if cid >= node_id {
                     return err(format!(
-                        "children ids must be less than node ({child} >= {node_id}, line {line_no})",
+                        "children ids must be less than node ({cid} >= {node_id}, line {line_no})",
                     ));
                 }
-                let child_level = manager.get_node(nodes[child - 1].borrowed()).level();
+                let child_level = manager.get_node(nodes[cid - 1].borrowed()).level();
                 if level >= child_level {
                     return err(format!(
                         "node level must be less than the children's levels ({level} >= {child_level}, line {line_no})",
                     ));
                 }
-            }
 
-            <M::Rules as DiagramRules<_, _, _>>::reduce(
-                manager,
-                level,
-                children.iter().map(|&child| {
-                    debug_assert_ne!(child, 0);
-                    let e = manager.clone_edge(nodes[child.unsigned_abs() - 1].borrowed());
-                    if child < 0 {
-                        complement(manager, e).unwrap()
-                    } else {
-                        e
-                    }
-                }),
-            )
-            .then_insert(manager, level)?
+                debug_assert_ne!(child, 0);
+                let e = manager.clone_edge(nodes[child.unsigned_abs() - 1].borrowed());
+                dd_children.push(if child < 0 { F::neg(manager, e)? } else { e })
+            }
+            F::reduce(manager, level, dd_children.drain(..))?
         };
         nodes.push(node);
 
@@ -693,25 +703,22 @@ where
     Ok(nodes.into_vec())
 }
 
-fn import_bin<M: Manager>(
+fn import_bin<'id, F: DDDMPDeserialize>(
     mut input: impl io::BufRead,
     header: &DumpHeader,
-    manager: &M,
+    manager: &F::Manager<'id>,
     level_suppvar_map: &[u32],
     suppvar_level_map: &[LevelNo],
-    complement: impl Fn(&M, Own<M::Edge>) -> AllocResult<Own<M::Edge>>,
-) -> io::Result<Vec<Own<M::Edge>>>
+) -> io::Result<Vec<OwnEdgeOfFunc<'id, F>>>
 where
-    M::InnerNode: HasLevel,
-    M::Terminal: ParseTagged<M::EdgeTag>,
+    INodeOfFunc<'id, F>: HasLevel,
+    TermOfFunc<'id, F>: ParseTagged<ETagOfFunc<'id, F>>,
 {
-    const {
-        assert!(
-            M::InnerNode::ARITY == 2,
-            "binary mode is (currently) only supported for binary nodes"
-        );
-    }
-    let Some((terminal, tag)) = M::Terminal::parse("T") else {
+    assert!(
+        INodeOfFunc::<'id, F>::ARITY == 2,
+        "binary mode is (currently) only supported for binary nodes"
+    );
+    let Some((terminal, tag)) = TermOfFunc::<'id, F>::parse("T") else {
         panic!("could not find the T terminal")
     };
     let terminal = EdgeDropGuard::new(manager, manager.get_terminal(terminal)?.with_tag(tag));
@@ -761,7 +768,7 @@ where
         );
         let e_level = manager.get_node(e.borrowed()).level();
         let e = if e_complement {
-            match complement(manager, e.into_edge()) {
+            match F::neg(manager, e.into_edge()) {
                 Ok(e) => EdgeDropGuard::new(manager, e),
                 Err(OutOfMemory) => {
                     return Err(io::ErrorKind::OutOfMemory.into());
@@ -797,9 +804,7 @@ where
         }
 
         let children = [t.into_edge(), e.into_edge()];
-        match <M::Rules as DiagramRules<_, _, _>>::reduce(manager, level, children)
-            .then_insert(manager, level)
-        {
+        match F::reduce(manager, level, children) {
             Ok(e) => nodes.push(e),
             Err(OutOfMemory) => {
                 return Err(io::ErrorKind::OutOfMemory.into());

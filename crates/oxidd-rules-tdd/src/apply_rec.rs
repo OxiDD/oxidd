@@ -2,11 +2,15 @@
 
 use std::borrow::Borrow;
 
-use oxidd_core::function::{EdgeOfFunc, Function, INodeOfFunc, OwnEdgeOfFunc, TVLFunction};
-use oxidd_core::util::{AllocResult, EdgeDropGuard, Own, Ref};
-use oxidd_core::{ApplyCache, HasApplyCache, HasLevel, InnerNode, Manager, Node, Tag, VarNo};
+use oxidd_core::function::{
+    ETagOfFunc, EdgeOfFunc, Function, INodeOfFunc, OwnEdgeOfFunc, TVLFunction,
+};
+use oxidd_core::util::{AllocResult, EdgeDropGuard, Own, Ref, collect_edges_exact};
+use oxidd_core::{
+    ApplyCache, HasApplyCache, HasLevel, InnerNode, LevelNo, Manager, Node, Tag, VarNo,
+};
 use oxidd_derive::Function;
-use oxidd_dump::dot::DotStyle;
+use oxidd_dump::{dddmp, dot::DotStyle};
 
 #[cfg(feature = "statistics")]
 use super::STAT_COUNTERS;
@@ -261,6 +265,18 @@ where
     for<'id> INodeOfFunc<'id, F>: HasLevel,
 {
     #[inline]
+    fn cofactors_node<'a, 'id>(
+        _tag: ETagOfFunc<'id, F>,
+        node: &'a INodeOfFunc<'id, Self>,
+    ) -> (
+        Ref<'a, EdgeOfFunc<'id, Self>>,
+        Ref<'a, EdgeOfFunc<'id, Self>>,
+        Ref<'a, EdgeOfFunc<'id, Self>>,
+    ) {
+        collect_children(node)
+    }
+
+    #[inline]
     fn var_edge<'id>(
         manager: &Self::Manager<'id>,
         var: VarNo,
@@ -406,6 +422,30 @@ where
                 Node::Terminal(t) => break (*t.borrow()).into(),
             }
         }
+    }
+}
+
+impl<F: Function> dddmp::DDDMPDeserialize for TDDFunction<F>
+where
+    for<'id> F::Manager<'id>: Manager<Terminal = TDDTerminal> + HasTDDOpApplyCache<F::Manager<'id>>,
+    for<'id> INodeOfFunc<'id, F>: HasLevel,
+{
+    #[inline]
+    fn reduce<'id>(
+        manager: &Self::Manager<'id>,
+        level: LevelNo,
+        children: impl IntoIterator<Item = OwnEdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+        let [t, u, e] = collect_edges_exact(manager, children);
+        reduce(manager, level, t, u, e, TDDOp::MkNode)
+    }
+
+    #[inline]
+    fn neg<'id>(
+        manager: &Self::Manager<'id>,
+        edge: OwnEdgeOfFunc<'id, Self>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+        Self::not_edge_owned(manager, edge)
     }
 }
 

@@ -6,15 +6,18 @@ use std::hash::{BuildHasher, Hash};
 
 use fixedbitset::FixedBitSet;
 
-use oxidd_core::function::OwnEdgeOfFunc;
-use oxidd_core::util::Own;
+use oxidd_core::function::{
+    BooleanFunction, BooleanVecSet, ETagOfFunc, EdgeOfFunc, Function, INodeOfFunc, OwnEdgeOfFunc,
+};
+use oxidd_core::util::{
+    AllocResult, EdgeDropGuard, OptBool, Own, Ref, SatCountCache, SatCountNumber,
+    collect_edges_exact,
+};
 use oxidd_core::{
     ApplyCache, HasApplyCache, HasLevel, InnerNode, LevelNo, Manager, Node, Tag, VarNo,
-    function::{BooleanFunction, BooleanVecSet, EdgeOfFunc, Function, INodeOfFunc},
-    util::{AllocResult, EdgeDropGuard, OptBool, Ref, SatCountCache, SatCountNumber},
 };
 use oxidd_derive::Function;
-use oxidd_dump::dot::DotStyle;
+use oxidd_dump::{dddmp, dot::DotStyle};
 
 use crate::recursor::{Recursor, SequentialRecursor};
 
@@ -800,6 +803,17 @@ where
     }
 
     #[inline]
+    fn cofactors_node<'a, 'id>(
+        _tag: ETagOfFunc<'id, F>,
+        node: &'a INodeOfFunc<'id, Self>,
+    ) -> (
+        Ref<'a, EdgeOfFunc<'id, Self>>,
+        Ref<'a, EdgeOfFunc<'id, Self>>,
+    ) {
+        collect_children(node)
+    }
+
+    #[inline]
     fn restrict_edge<'id>(
         manager: &Self::Manager<'id>,
         root: Ref<'_, EdgeOfFunc<'id, Self>>,
@@ -1123,6 +1137,32 @@ where
     }
 }
 
+impl<F: Function> dddmp::DDDMPDeserialize for ZBDDFunction<F>
+where
+    for<'id> F::Manager<'id>: Manager<Terminal = ZBDDTerminal>
+        + HasZBDDOpApplyCache<F::Manager<'id>>
+        + HasZBDDCache<EdgeOfFunc<'id, F>>,
+    for<'id> INodeOfFunc<'id, F>: HasLevel,
+{
+    #[inline]
+    fn reduce<'id>(
+        manager: &Self::Manager<'id>,
+        level: LevelNo,
+        children: impl IntoIterator<Item = OwnEdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+        let [hi, lo] = collect_edges_exact(manager, children);
+        reduce(manager, level, hi, lo, ZBDDOp::MkNode)
+    }
+
+    #[inline]
+    fn neg<'id>(
+        manager: &Self::Manager<'id>,
+        edge: OwnEdgeOfFunc<'id, Self>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+        Self::not_edge_owned(manager, edge)
+    }
+}
+
 impl<F: Function, T: Tag> DotStyle<T> for ZBDDFunction<F> {}
 
 #[cfg(feature = "multi-threading")]
@@ -1274,6 +1314,17 @@ pub mod mt {
         }
 
         #[inline]
+        fn cofactors_node<'a, 'id>(
+            _tag: ETagOfFunc<'id, F>,
+            node: &'a INodeOfFunc<'id, Self>,
+        ) -> (
+            Ref<'a, EdgeOfFunc<'id, Self>>,
+            Ref<'a, EdgeOfFunc<'id, Self>>,
+        ) {
+            collect_children(node)
+        }
+
+        #[inline]
         fn restrict_edge<'id>(
             manager: &Self::Manager<'id>,
             root: Ref<'_, EdgeOfFunc<'id, Self>>,
@@ -1418,6 +1469,31 @@ pub mod mt {
             args: impl IntoIterator<Item = (VarNo, bool)>,
         ) -> bool {
             ZBDDFunction::<F>::eval_edge(manager, edge, args)
+        }
+    }
+
+    impl<F: Function> dddmp::DDDMPDeserialize for ZBDDFunctionMT<F>
+    where
+        for<'id> F::Manager<'id>: Manager<Terminal = ZBDDTerminal>
+            + HasZBDDOpApplyCache<F::Manager<'id>>
+            + HasZBDDCache<EdgeOfFunc<'id, F>>,
+        for<'id> INodeOfFunc<'id, F>: HasLevel,
+    {
+        #[inline]
+        fn reduce<'id>(
+            manager: &Self::Manager<'id>,
+            level: LevelNo,
+            children: impl IntoIterator<Item = OwnEdgeOfFunc<'id, Self>>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+            ZBDDFunction::<F>::reduce(manager, level, children)
+        }
+
+        #[inline]
+        fn neg<'id>(
+            manager: &Self::Manager<'id>,
+            edge: OwnEdgeOfFunc<'id, Self>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+            ZBDDFunction::<F>::not_edge_owned(manager, edge)
         }
     }
 

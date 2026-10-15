@@ -54,7 +54,7 @@ mod index {
         type TerminalNode = BCDDTerminal;
         type TerminalManager<'id> =
             oxidd_manager_index::terminal_manager::StaticTerminalManager<'id, Self, TERMINALS>;
-        type DiagramRules<'id> = BCDDRules;
+        type Rules = BCDDRules;
         type ManagerData<'id> = BCDDManagerData<'id>;
     }
     type BCDD = IndexDD<BCDDInfo, TERMINALS>;
@@ -80,6 +80,7 @@ mod index {
         oxidd_derive::FunctionSubst,
         oxidd_derive::BooleanFunction,
         oxidd_derive::BooleanFunctionQuant,
+        oxidd_derive::DDDMPDeserialize,
     )]
     #[use_manager_ref(BCDDManagerRef, BCDDManagerRef(inner))]
     pub struct BCDDFunction(FunctionInner);
@@ -106,7 +107,7 @@ mod pointer {
         type InnerNode<'id> = NodeWithLevel<'id, Self, PAGE_SIZE, TAG_BITS, 2>;
         type TerminalNode = BCDDTerminal;
         type TerminalManager<'id> = StaticTerminalManager<'id, Self, PAGE_SIZE, TAG_BITS>;
-        type DiagramRules<'id> = BCDDRules;
+        type Rules = BCDDRules;
         type ManagerData<'id> = BCDDManagerData<'id>;
     }
     type BCDD = PointerDD<BCDDInfo, PAGE_SIZE, TAG_BITS>;
@@ -132,6 +133,7 @@ mod pointer {
         oxidd_derive::FunctionSubst,
         oxidd_derive::BooleanFunction,
         oxidd_derive::BooleanFunctionQuant,
+        oxidd_derive::DDDMPDeserialize,
     )]
     #[use_manager_ref(BCDDManagerRef, BCDDManagerRef(inner))]
     pub struct BCDDFunction(FunctionInner);

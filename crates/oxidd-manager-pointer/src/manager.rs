@@ -232,7 +232,7 @@ where
     }
 
     #[inline]
-    fn drop_edge_common(edge: Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>) {
+    pub(crate) fn drop_edge_common(edge: Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>) {
         if edge.raw().is_inner() {
             // SAFETY: `edge` points to an inner node
             unsafe { Edge::drop_inner(edge) };
@@ -444,7 +444,7 @@ where
         >
     where
         Self: 'a;
-    type Rules = DI::DiagramRules<'id>;
+    type Rules = DI::Rules;
 
     type TerminalIterator<'a>
         = <DI::TerminalManager<'id> as TerminalManager<'id, DI, PAGE_SIZE, TAG_BITS>>::Iterator<'a>
@@ -973,13 +973,19 @@ where
     #[inline]
     fn get(
         &self,
-        node: &DI::InnerNode<'id>,
+        children: &[Ref<'_, Edge<'id, DI, PAGE_SIZE, TAG_BITS>>],
     ) -> Option<Ref<'_, Edge<'id, DI, PAGE_SIZE, TAG_BITS>>> {
-        let hash = hash_node(node);
-        let edge = self.0.get(hash, |edge| {
+        let mut hasher = FxHasher::default();
+        crate::util::hash_children(children, &mut hasher);
+        let hash = hasher.finish();
+
+        let edge = self.0.get(hash, move |edge| {
+            let edge = edge.borrowed();
             // SAFETY: The hash table only contains untagged edges referencing
             // inner nodes.
-            (unsafe { Edge::inner_node_unchecked(edge.borrowed()) }) == node
+            let node = unsafe { Edge::inner_node_unchecked(edge) };
+            node.children().len() == children.len()
+                && node.children().zip(children).all(|(a, b)| a == *b)
         })?;
         Some(edge.borrowed())
     }
@@ -1275,9 +1281,9 @@ where
     #[inline]
     fn get(
         &self,
-        node: &DI::InnerNode<'id>,
+        children: &[Ref<'_, Edge<'id, DI, PAGE_SIZE, TAG_BITS>>],
     ) -> Option<Ref<'_, Edge<'id, DI, PAGE_SIZE, TAG_BITS>>> {
-        self.set.get(node)
+        self.set.get(children)
     }
 
     #[inline]
@@ -1413,9 +1419,9 @@ where
     #[inline]
     fn get(
         &self,
-        node: &DI::InnerNode<'id>,
+        children: &[Ref<'_, Edge<'id, DI, PAGE_SIZE, TAG_BITS>>],
     ) -> Option<Ref<'_, Edge<'id, DI, PAGE_SIZE, TAG_BITS>>> {
-        self.set.get(node)
+        self.set.get(children)
     }
 
     #[inline]

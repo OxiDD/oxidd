@@ -816,7 +816,7 @@ unsafe impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> oxidd_core:
         = <DI::TerminalManager<'id> as TerminalManager<'id, DI, TERMINALS>>::TerminalNodeRef<'a>
     where
         Self: 'a;
-    type Rules = DI::DiagramRules<'id>;
+    type Rules = DI::Rules;
 
     type TerminalIterator<'a>
         = <DI::TerminalManager<'id> as TerminalManager<'id, DI, TERMINALS>>::Iterator<'a>
@@ -1259,14 +1259,19 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> LevelViewSet<'id, 
     fn get(
         &self,
         nodes: &SlotSlice<'id, DI, TERMINALS>,
-        node: &DI::InnerNode<'id>,
+        children: &[Ref<'_, Edge<'id, DI, TERMINALS>>],
     ) -> Option<Ref<'_, Edge<'id, DI, TERMINALS>>> {
-        let hash = hash_node(node);
-        let edge = self.0.get(hash, |edge| {
+        let mut hasher = FxHasher::default();
+        crate::util::hash_children(children, &mut hasher);
+        let hash = hasher.finish();
+
+        let edge = self.0.get(hash, move |edge| {
             let edge = edge.borrowed();
-            // SAFETY: The hash table only contains untagged edges referencing
-            // inner nodes.
-            (unsafe { nodes.inner_node_unchecked(edge) }) == node
+            // SAFETY: The hash table only contains untagged edges
+            // referencing inner nodes.
+            let node = unsafe { nodes.inner_node_unchecked(edge) };
+            node.children().len() == children.len()
+                && node.children().zip(children).all(|(a, b)| a == *b)
         })?;
         Some(edge.borrowed())
     }
@@ -1593,8 +1598,11 @@ unsafe impl<'a, 'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize>
     }
 
     #[inline]
-    fn get(&self, node: &DI::InnerNode<'id>) -> Option<Ref<'_, Edge<'id, DI, TERMINALS>>> {
-        self.set.get(&self.store.inner_nodes, node)
+    fn get(
+        &self,
+        children: &[Ref<'_, Edge<'id, DI, TERMINALS>>],
+    ) -> Option<Ref<'_, Edge<'id, DI, TERMINALS>>> {
+        self.set.get(&self.store.inner_nodes, children)
     }
 
     #[inline]
@@ -1735,8 +1743,11 @@ unsafe impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize>
     }
 
     #[inline]
-    fn get(&self, node: &DI::InnerNode<'id>) -> Option<Ref<'_, Edge<'id, DI, TERMINALS>>> {
-        self.set.get(&self.store.inner_nodes, node)
+    fn get(
+        &self,
+        children: &[Ref<'_, Edge<'id, DI, TERMINALS>>],
+    ) -> Option<Ref<'_, Edge<'id, DI, TERMINALS>>> {
+        self.set.get(&self.store.inner_nodes, children)
     }
 
     #[inline]

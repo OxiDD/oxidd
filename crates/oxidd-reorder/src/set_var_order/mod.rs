@@ -3,7 +3,8 @@ use std::sync::atomic::Ordering::Relaxed;
 use fixedbitset::FixedBitSet;
 
 use oxidd_core::{
-    AtomicLevelNo, HasLevel, HasWorkers, LevelNo, LevelView, Manager, VarNo, WorkerPool,
+    AtomicLevelNo, HasLevel, HasWorkers, LevelNo, LevelSwapper, LevelView, Manager, VarNo,
+    WorkerPool,
 };
 
 mod segtree;
@@ -24,6 +25,7 @@ use segtree::MinSegTree;
 pub fn set_var_order_seq<M: Manager>(manager: &mut M, order: &[VarNo])
 where
     M::InnerNode: HasLevel,
+    M::Rules: LevelSwapper<M>,
 {
     if order.len() <= 1 {
         return; // nothing to do
@@ -47,6 +49,7 @@ pub fn set_var_order<M>(manager: &mut M, order: &[VarNo])
 where
     M: Manager + HasWorkers,
     M::InnerNode: HasLevel,
+    M::Rules: LevelSwapper<M>,
 {
     if order.len() <= 1 {
         return; // nothing to do
@@ -73,6 +76,7 @@ fn set_var_order_common<M: Manager>(
     update_levels: UpdateLevelFn<M>,
 ) where
     M::InnerNode: HasLevel,
+    M::Rules: LevelSwapper<M>,
 {
     let num_levels = manager.num_levels();
 
@@ -119,7 +123,7 @@ fn set_var_order_common<M: Manager>(
                 let l = from_ne[(i + 1) as usize];
                 let up = to_pre[u as usize].load(Relaxed);
                 let lp = to_pre[l as usize].load(Relaxed);
-                unsafe { crate::level_swap(manager, u, l, up, lp) };
+                unsafe { M::Rules::swap(manager, u, l, up, lp) };
                 to_pre[u as usize].store(lp, Relaxed);
                 to_pre[l as usize].store(up, Relaxed);
             };

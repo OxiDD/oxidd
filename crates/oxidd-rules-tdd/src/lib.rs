@@ -10,50 +10,17 @@ use std::borrow::Borrow;
 use std::fmt;
 use std::hash::Hash;
 
-use oxidd_core::util::{AllocResult, Own, Ref};
-use oxidd_core::{DiagramRules, Edge, InnerNode, LevelNo, Manager, Node, ReducedOrNew};
+use oxidd_core::util::{AllocResult, EdgeDropGuard, Own, Ref};
+use oxidd_core::{Edge, HasLevel, InnerNode, LevelNo, Manager, Node};
 use oxidd_derive::Countable;
 
 mod apply_rec;
+mod reorder;
 
 // --- Reduction Rules ---------------------------------------------------------
 
-/// [`DiagramRules`] for ternary decision diagrams
+/// Rules for TDDs
 pub struct TDDRules;
-
-impl<E: Edge, N: InnerNode<E>> DiagramRules<E, N, TDDTerminal> for TDDRules {
-    type Cofactors<'a>
-        = N::ChildrenIter<'a>
-    where
-        N: 'a,
-        E: 'a;
-
-    #[inline]
-    fn reduce<M: Manager<Edge = E, InnerNode = N, Terminal = TDDTerminal>>(
-        manager: &M,
-        level: LevelNo,
-        children: impl IntoIterator<Item = Own<E>>,
-    ) -> ReducedOrNew<E, N> {
-        let mut it = children.into_iter();
-        let t = it.next().unwrap();
-        let u = it.next().unwrap();
-        let e = it.next().unwrap();
-        debug_assert!(it.next().is_none());
-
-        if t == u && u == e {
-            manager.drop_edge(u);
-            manager.drop_edge(e);
-            ReducedOrNew::Reduced(t)
-        } else {
-            ReducedOrNew::New(N::new(level, [t, u, e]), Default::default())
-        }
-    }
-
-    #[inline]
-    fn cofactors(_tag: E::Tag, node: &N) -> Self::Cofactors<'_> {
-        node.children()
-    }
-}
 
 #[inline(always)]
 fn reduce<M>(
@@ -167,6 +134,9 @@ pub enum TDDOp {
 
     /// If-then-else
     Ite,
+
+    /// Make a new node. Only used for statistical purposes.
+    MkNode,
 }
 
 /// Collect the two children of a ternary node

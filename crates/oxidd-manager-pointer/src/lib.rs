@@ -33,11 +33,7 @@ pub trait DiagramInfo<const PAGE_SIZE: usize, const TAG_BITS: u32>: Sized + Send
         + Send
         + Sync;
 
-    type DiagramRules<'id>: oxidd_core::DiagramRules<
-            manager::Edge<'id, Self, PAGE_SIZE, TAG_BITS>,
-            Self::InnerNode<'id>,
-            Self::TerminalNode,
-        >;
+    type Rules;
 
     type ManagerData<'id>: oxidd_core::util::DropWith<manager::Edge<'id, Self, PAGE_SIZE, TAG_BITS>>
         + oxidd_core::ManagerEventSubscriber<manager::Manager<'id, Self, PAGE_SIZE, TAG_BITS>>

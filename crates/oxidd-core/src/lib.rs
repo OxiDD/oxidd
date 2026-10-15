@@ -23,6 +23,7 @@ use std::ops::Range;
 
 pub mod error;
 pub mod function;
+pub mod restricted;
 pub mod util;
 
 use error::DuplicateVarName;
@@ -55,138 +56,6 @@ pub trait ManagerRef: Clone + Eq + Hash + for<'a, 'id> From<&'a Self::Manager<'i
     fn with_manager_exclusive<F, T>(&self, f: F) -> T
     where
         F: for<'id> FnOnce(&mut Self::Manager<'id>) -> T;
-}
-
-/// Reduction rules for decision diagrams
-///
-/// This trait is intended to be implemented on a zero-sized type. Refer to
-/// [`DiagramRules::reduce()`] for an example implementation.
-pub trait DiagramRules<E: Edge, N: InnerNode<E>, T> {
-    /// Iterator created by [`DiagramRules::cofactors()`]
-    type Cofactors<'a>: Iterator<Item = Ref<'a, E>>
-    where
-        E: 'a,
-        N: 'a;
-
-    /// Apply the reduction rule(s)
-    ///
-    /// Besides uniqueness of nodes (there are no two nodes with the same
-    /// children at the same level), decision diagrams typically impose some
-    /// other reduction rules. The former is provided by the [`Manager`] /
-    /// [`LevelView`]s, the latter is implemented here.
-    ///
-    /// The implementation is responsible for consuming the entire `children`
-    /// iterator and dropping unused edges.
-    ///
-    /// # Example implementation
-    ///
-    /// In binary decision diagrams (BDDs), there are no nodes with equal
-    /// children. An implementation might look like this:
-    ///
-    /// ```
-    /// # use oxidd_core::{*, util::EdgeRefIter, util::Own};
-    /// struct BDDRules;
-    /// impl<E: Edge, N: InnerNode<E>, T> DiagramRules<E, N, T> for BDDRules {
-    ///     type Cofactors<'a> = N::ChildrenIter<'a> where N: 'a, E: 'a;
-    ///
-    ///     fn reduce<M: Manager<Edge = E, InnerNode = N, Terminal = T>>(
-    ///         manager: &M,
-    ///         level: LevelNo,
-    ///         children: impl IntoIterator<Item = Own<E>>,
-    ///     ) -> ReducedOrNew<E, N> {
-    ///         let mut it = children.into_iter();
-    ///         let f0 = it.next().unwrap();
-    ///         let f1 = it.next().unwrap();
-    ///         debug_assert!(it.next().is_none());
-    ///
-    ///         if f0 == f1 {
-    ///             manager.drop_edge(f1);
-    ///             ReducedOrNew::Reduced(f0)
-    ///         } else {
-    ///             ReducedOrNew::New(InnerNode::new(level, [f0, f1]), Default::default())
-    ///         }
-    ///     }
-    ///
-    ///     fn cofactors(_tag: E::Tag, node: &N) -> Self::Cofactors<'_> {
-    ///         node.children()
-    ///     }
-    /// }
-    /// ```
-    ///
-    /// Note that we assume no complemented edges, hence the cofactor iterator
-    /// is just `node.children()`.
-    ///
-    /// The implementation assumes that there are no panics, otherwise it would
-    /// leak some edges. It might be a bit better to use
-    /// [`EdgeDropGuard`][util::EdgeDropGuard]s, but this would make the code
-    /// more clumsy, and our assumption is usually fair enough.
-    fn reduce<M: Manager<Edge = E, InnerNode = N, Terminal = T>>(
-        manager: &M,
-        level: LevelNo,
-        children: impl IntoIterator<Item = Own<E>>,
-    ) -> ReducedOrNew<E, N>;
-
-    /// Get the cofactors of `node` assuming an incoming edge with `tag`
-    ///
-    /// In some diagram types, this is the same as [`InnerNode::children()`].
-    /// However, in a binary decision diagram with complement edges, we need to
-    /// respect the tag of the incoming edge: If the incoming edge is
-    /// complemented, then we need to complement the outgoing edges as well.
-    fn cofactors(tag: E::Tag, node: &N) -> Self::Cofactors<'_>;
-
-    /// Get the `n`-th cofactor of `node` assuming an incoming edge with `tag`
-    ///
-    /// This is equivalent to `Self::cofactors(tag, node).nth(n).unwrap()`.
-    #[inline]
-    fn cofactor(tag: E::Tag, node: &N, n: usize) -> Ref<'_, E> {
-        Self::cofactors(tag, node).nth(n).expect("out of range")
-    }
-}
-
-/// Result of the attempt to create a new node
-///
-/// Before actually creating a new node, reduction rules should be applied
-/// (see [`DiagramRules::reduce()`]). If a reduction was applied, then
-/// [`DiagramRules::reduce()`] returns the `Reduced` variant, otherwise the
-/// `New` variant.
-pub enum ReducedOrNew<E: Edge, N: InnerNode<E>> {
-    /// A reduction rule was applied
-    Reduced(Own<E>),
-    /// The node is new. After inserting it into the manager, the edge should be
-    /// tagged with the given tag.
-    New(N, E::Tag),
-}
-
-impl<E: Edge, N: InnerNode<E>> ReducedOrNew<E, N> {
-    /// Insert `self` into `manager` and `unique_table` at the given `level` if
-    /// it is `New`, otherwise return the `Reduced` edge.
-    ///
-    /// `level` must agree with the level used for creating the node, and must
-    /// be strictly above (i.e. less than) the children's levels.
-    #[must_use]
-    #[inline(always)]
-    pub fn then_insert<M>(self, manager: &M, level: LevelNo) -> AllocResult<Own<E>>
-    where
-        M: Manager<InnerNode = N, Edge = E>,
-    {
-        match self {
-            ReducedOrNew::Reduced(e) => Ok(e),
-            ReducedOrNew::New(node, tag) => {
-                debug_assert_ne!(level, LevelNo::MAX);
-                debug_assert!(node.check_level(|l| l == level));
-                debug_assert!(node.children().all(|c| {
-                    if let Node::Inner(node) = manager.get_node(c) {
-                        node.check_level(|l| level < l)
-                    } else {
-                        true
-                    }
-                }));
-
-                let edge = manager.level(level).get_or_insert(node)?;
-                Ok(edge.with_tag(tag))
-            }
-        }
-    }
 }
 
 /// Node in a decision diagram
@@ -623,8 +492,11 @@ pub unsafe trait Manager: Sized {
     type TerminalRef<'a>: Borrow<Self::Terminal> + Copy
     where
         Self: 'a;
-    /// Diagram rules, see [`DiagramRules`] for more details
-    type Rules: DiagramRules<Self::Edge, Self::InnerNode, Self::Terminal>;
+    /// Diagram rules, e.g., for reordering.
+    ///
+    /// If the diagram supports swaps of non-empty levels, this is the type that
+    /// should provide the [`LevelSwapper`] implementation.
+    type Rules;
 
     /// Iterator over all terminals
     ///
@@ -1062,9 +934,10 @@ pub unsafe trait LevelView<E: Edge, N: InnerNode<E>> {
     /// Reserve space for `additional` nodes on this level
     fn reserve(&mut self, additional: usize);
 
-    /// Get the edge corresponding to the given node (if present)
+    /// If a node with the given children exists, return the edge pointing to
+    /// that node
     #[must_use]
-    fn get(&self, node: &N) -> Option<Ref<'_, E>>;
+    fn get(&self, children: &[Ref<'_, E>]) -> Option<Ref<'_, E>>;
 
     /// Insert the given edge into the unique table at this level, assuming that
     /// the referenced node is already stored in the associated manager.
@@ -1322,4 +1195,62 @@ pub trait HasWorkers: Sync {
 
     /// Get the worker pool
     fn workers(&self) -> &Self::WorkerPool;
+}
+
+/// Rules for swapping two adjacent levels in a decision diagram
+///
+/// This trait should be implemented by [`Manager::Rules`]. Instead of
+/// implementing this trait manually, it is often possible to implement
+/// [`SafeLevelSwapper`][restricted::SafeLevelSwapper], which does not involve
+/// any unsafe code.
+///
+/// # Safety
+///
+/// Implementations of [`LevelSwapper::swap()`] must not access any nodes except
+/// those at the levels identified by `upper_no` and `lower_no`. If
+/// [`M::InnerNode`][Manager::InnerNode] implements [`HasLevel`] and the swap is
+/// successful, then all nodes at `upper_no` should be labeled with
+/// `lower_no_pre`, and all nodes at `lower_no` should be labeled with
+/// `upper_no_pre`. If the swap fails, all nodes at `upper_no` must be labeled
+/// with `upper_no_pre` and all nodes at `lower_no` with `lower_no_pre`. The
+/// latter must even be true if the function unwinds (panic).
+pub unsafe trait LevelSwapper<M: Manager> {
+    /// Swap the levels given by `upper_no` and `lower_no`
+    ///
+    /// The upper level (designated by `upper_no`) must be above the lower level
+    /// (designated by `lower_no`), i.e., `upper_no < lower_no` must hold.
+    /// Further, there should be no level l between the upper and lower level
+    /// with nodes at the upper level referring to nodes at level l or nodes at
+    /// level l referring to nodes at the lower level.
+    ///
+    /// This function does not update the level numbers inside nodes. When
+    /// multiple level swaps are needed to move a level to a different position,
+    /// it should be faster to only write the new level numbers at the very end.
+    /// To allow these lazy updates, we need to distinguish between the actual
+    /// level numbers and the level numbers inside the nodes. We suffix the
+    /// latter by `_pre` as they refer to the level numbers before the
+    /// reordering operation started.
+    ///
+    /// # Safety
+    ///
+    /// - Must be called from inside the closure of
+    ///   [`manager.reorder()`][Manager::reorder]
+    /// - `manager` must be derived from a `&mut M` reference (i.e., some caller
+    ///   had exclusive access to all nodes and delegates exclusive access
+    ///   level-wise).
+    /// - `upper_no < manager.num_levels()` and `lower_no <
+    ///   manager.num_levels()` must hold.
+    /// - This function may modify nodes at the level of `upper_no` and
+    ///   `lower_no`. There must not be any concurrent modification of any nodes
+    ///   at these levels.
+    /// - `upper_no_pre` must be the level number within all nodes at level
+    ///   `upper_no`, and `lower_no_pre` the level number within all nodes at
+    ///   level `lower_no`.
+    unsafe fn swap(
+        manager: &M,
+        upper_no: LevelNo,
+        lower_no: LevelNo,
+        upper_no_pre: LevelNo,
+        lower_no_pre: LevelNo,
+    );
 }

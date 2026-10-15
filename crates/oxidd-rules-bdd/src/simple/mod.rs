@@ -4,55 +4,19 @@ use std::borrow::Borrow;
 use std::fmt;
 use std::hash::Hash;
 
-use oxidd_core::util::{AllocResult, Own, Ref};
-use oxidd_core::{DiagramRules, Edge, InnerNode, LevelNo, Manager, Node, ReducedOrNew};
+use oxidd_core::util::{AllocResult, EdgeDropGuard, Own, Ref};
+use oxidd_core::{Edge, HasLevel, InnerNode, LevelNo, Manager, Node};
 use oxidd_derive::Countable;
 
 use crate::stat;
 
 mod apply_rec;
+mod reorder;
 
 // --- Reduction Rules ---------------------------------------------------------
 
-/// [`DiagramRules`] for simple binary decision diagrams
+/// Rules for BDDs
 pub struct BDDRules;
-
-impl<E: Edge, N: InnerNode<E>> DiagramRules<E, N, BDDTerminal> for BDDRules {
-    type Cofactors<'a>
-        = N::ChildrenIter<'a>
-    where
-        N: 'a,
-        E: 'a;
-
-    #[inline(always)]
-    fn reduce<M: Manager<Edge = E, InnerNode = N>>(
-        manager: &M,
-        level: LevelNo,
-        children: impl IntoIterator<Item = Own<E>>,
-    ) -> ReducedOrNew<E, N> {
-        let mut it = children.into_iter();
-        let f_then = it.next().unwrap();
-        let f_else = it.next().unwrap();
-        debug_assert!(it.next().is_none());
-
-        if f_then == f_else {
-            manager.drop_edge(f_else);
-            ReducedOrNew::Reduced(f_then)
-        } else {
-            ReducedOrNew::New(N::new(level, [f_then, f_else]), Default::default())
-        }
-    }
-
-    #[inline(always)]
-    fn cofactors(_tag: E::Tag, node: &N) -> Self::Cofactors<'_> {
-        node.children()
-    }
-
-    #[inline(always)]
-    fn cofactor(_tag: E::Tag, node: &N, n: usize) -> Ref<'_, E> {
-        node.child(n)
-    }
-}
 
 /// Apply the reduction rules, creating a node in `manager` if necessary
 #[inline(always)]
@@ -319,6 +283,9 @@ pub enum BDDOp {
     UniqueEquiv,
     UniqueImp,
     UniqueImpStrict,
+
+    /// Make a new node. Only used for statistical purposes.
+    MkNode,
 }
 
 impl BDDOp {

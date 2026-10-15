@@ -12,65 +12,29 @@ use std::fmt;
 use std::hash::Hash;
 
 use oxidd_core::util::{AllocResult, DropWith, EdgeDropGuard, Own, Ref};
-use oxidd_core::{
-    DiagramRules, Edge, HasLevel, InnerNode, LevelNo, LevelView, Manager, ManagerEventSubscriber,
-    ReducedOrNew,
-};
+use oxidd_core::{Edge, HasLevel, InnerNode, LevelNo, LevelView, Manager, ManagerEventSubscriber};
 use oxidd_derive::Countable;
 
 // spell-checker:ignore symm
 
 mod apply_rec;
 mod recursor;
-
-// --- Reduction Rules ---------------------------------------------------------
+mod reorder;
 
 /// Index of the HI branch in a node
 const HI: usize = 0;
 /// Index of the LO branch in a node
 const LO: usize = 1;
 
-/// [`DiagramRules`] for simple binary decision diagrams
-pub struct ZBDDRules;
-
-impl<E: Edge, N: InnerNode<E>> DiagramRules<E, N, ZBDDTerminal> for ZBDDRules {
-    type Cofactors<'a>
-        = N::ChildrenIter<'a>
-    where
-        N: 'a,
-        E: 'a;
-
-    #[inline]
-    fn reduce<M: Manager<Edge = E, InnerNode = N, Terminal = ZBDDTerminal>>(
-        manager: &M,
-        level: LevelNo,
-        children: impl IntoIterator<Item = Own<E>>,
-    ) -> ReducedOrNew<E, N> {
-        let mut it = children.into_iter();
-        let hi = it.next().unwrap();
-        let lo = it.next().unwrap();
-        debug_assert!(it.next().is_none());
-
-        if manager
-            .get_node(hi.borrowed())
-            .is_terminal(&ZBDDTerminal::Empty)
-        {
-            manager.drop_edge(hi);
-            return ReducedOrNew::Reduced(lo);
-        }
-        ReducedOrNew::New(N::new(level, [hi, lo]), Default::default())
-    }
-
-    #[inline]
-    fn cofactors(_tag: E::Tag, node: &N) -> Self::Cofactors<'_> {
-        node.children()
-    }
-}
-
 #[inline]
 fn is_empty<M: Manager<Terminal = ZBDDTerminal>>(manager: &M, e: Ref<'_, M::Edge>) -> bool {
     manager.get_node(e).is_terminal(&ZBDDTerminal::Empty)
 }
+
+// --- Reduction Rules ---------------------------------------------------------
+
+/// Rules for ZBDDs
+pub struct ZBDDRules;
 
 #[inline(always)]
 fn reduce<M: Manager<Terminal = ZBDDTerminal>>(
@@ -309,9 +273,7 @@ pub enum ZBDDOp {
     /// If-then-else
     Ite,
 
-    /// Make a new node
-    ///
-    /// Only used by [`make_node()`] for statistical purposes.
+    /// Make a new node. Only used for statistical purposes.
     MkNode,
 }
 

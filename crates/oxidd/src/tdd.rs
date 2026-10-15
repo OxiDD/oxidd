@@ -77,6 +77,7 @@ mod index {
         Hash,
         oxidd_derive::Function,
         oxidd_derive::TVLFunction,
+        oxidd_derive::DDDMPDeserialize,
     )]
     #[use_manager_ref(TDDManagerRef, TDDManagerRef(inner))]
     pub struct TDDFunction(FunctionInner);
@@ -109,7 +110,7 @@ mod pointer {
         type InnerNode<'id> = NodeWithLevel<'id, Self, PAGE_SIZE, TAG_BITS, 3>;
         type TerminalNode = TDDTerminal;
         type TerminalManager<'id> = StaticTerminalManager<'id, Self, PAGE_SIZE, TAG_BITS>;
-        type DiagramRules<'id> = TDDRules;
+        type Rules = TDDRules;
         type ManagerData<'id> = TDDManagerData<'id>;
     }
     type TDD = PointerDD<TDDInfo, PAGE_SIZE, TAG_BITS>;
@@ -134,6 +135,7 @@ mod pointer {
         Hash,
         oxidd_derive::Function,
         oxidd_derive::TVLFunction,
+        oxidd_derive::DDDMPDeserialize,
     )]
     #[use_manager_ref(TDDManagerRef, TDDManagerRef(inner))]
     pub struct TDDFunction(FunctionInner);

@@ -12,11 +12,11 @@ use oxidd_core::{
     },
     util::{
         AllocResult, EdgeDropGuard, EdgeVecDropGuard, OptBool, Own, Ref, SatCountCache,
-        SatCountNumber,
+        SatCountNumber, collect_edges_exact,
     },
 };
 use oxidd_derive::Function;
-use oxidd_dump::dot::DotStyle;
+use oxidd_dump::{dddmp, dot::DotStyle};
 
 use crate::complement_edge::{add_literal_to_cube, is_false};
 use crate::recursor::{Recursor, SequentialRecursor};
@@ -922,6 +922,17 @@ where
     }
 
     #[inline]
+    fn cofactors_node<'a, 'id>(
+        tag: EdgeTag,
+        node: &'a INodeOfFunc<'id, Self>,
+    ) -> (
+        Ref<'a, EdgeOfFunc<'id, Self>>,
+        Ref<'a, EdgeOfFunc<'id, Self>>,
+    ) {
+        collect_cofactors(tag, node)
+    }
+
+    #[inline]
     fn restrict_edge<'id>(
         manager: &Self::Manager<'id>,
         root: Ref<'_, EdgeOfFunc<'id, Self>>,
@@ -1334,6 +1345,31 @@ where
     }
 }
 
+impl<F: Function> dddmp::DDDMPDeserialize for BCDDFunction<F>
+where
+    for<'id> F::Manager<'id>:
+        Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag> + HasBCDDOpApplyCache<F::Manager<'id>>,
+    for<'id> INodeOfFunc<'id, F>: HasLevel,
+{
+    #[inline]
+    fn reduce<'id>(
+        manager: &Self::Manager<'id>,
+        level: LevelNo,
+        children: impl IntoIterator<Item = OwnEdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+        let [t, e] = collect_edges_exact(manager, children);
+        reduce(manager, level, t, e, BCDDOp::MkNode)
+    }
+
+    #[inline]
+    fn neg<'id>(
+        manager: &Self::Manager<'id>,
+        edge: OwnEdgeOfFunc<'id, Self>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+        Self::not_edge_owned(manager, edge)
+    }
+}
+
 impl<F: Function, T: Tag> DotStyle<T> for BCDDFunction<F> {}
 
 #[cfg(feature = "multi-threading")]
@@ -1413,6 +1449,17 @@ pub mod mt {
         #[inline]
         fn t_edge<'id>(manager: &Self::Manager<'id>) -> OwnEdgeOfFunc<'id, Self> {
             get_terminal(manager, true)
+        }
+
+        #[inline]
+        fn cofactors_node<'a, 'id>(
+            tag: EdgeTag,
+            node: &'a INodeOfFunc<'id, Self>,
+        ) -> (
+            Ref<'a, EdgeOfFunc<'id, Self>>,
+            Ref<'a, EdgeOfFunc<'id, Self>>,
+        ) {
+            collect_cofactors(tag, node)
         }
 
         #[inline]
@@ -1643,6 +1690,30 @@ pub mod mt {
         ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             let rec = ParallelRecursor::new(manager);
             apply_quant_unique_dispatch(manager, rec, op, lhs, rhs, vars)
+        }
+    }
+
+    impl<F: Function> dddmp::DDDMPDeserialize for BCDDFunctionMT<F>
+    where
+        for<'id> F::Manager<'id>: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag>
+            + HasBCDDOpApplyCache<F::Manager<'id>>,
+        for<'id> INodeOfFunc<'id, F>: HasLevel,
+    {
+        #[inline]
+        fn reduce<'id>(
+            manager: &Self::Manager<'id>,
+            level: LevelNo,
+            children: impl IntoIterator<Item = OwnEdgeOfFunc<'id, Self>>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+            BCDDFunction::<F>::reduce(manager, level, children)
+        }
+
+        #[inline]
+        fn neg<'id>(
+            manager: &Self::Manager<'id>,
+            edge: OwnEdgeOfFunc<'id, Self>,
+        ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+            BCDDFunction::<F>::not_edge_owned(manager, edge)
         }
     }
 

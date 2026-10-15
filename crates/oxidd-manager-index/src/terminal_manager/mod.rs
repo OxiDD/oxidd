@@ -19,7 +19,7 @@ pub use r#static::*;
 /// [`iter()`][TerminalManager::iter()] methods via
 /// [`Edge::from_terminal_id()`].
 pub trait TerminalManager<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize>: Sized {
-    /// References to [`Self::TerminalNode`]s
+    /// References to terminal nodes
     ///
     /// Should either be a `&'a Self::Terminal` or just `Self::Terminal`. The
     /// latter is useful for the [`StaticTerminalManager`] which doesn't

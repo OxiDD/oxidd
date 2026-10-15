@@ -7,9 +7,12 @@ use fixedbitset::FixedBitSet;
 use oxidd_core::function::{
     EdgeOfFunc, Function, INodeOfFunc, NumberBase, OwnEdgeOfFunc, PseudoBooleanFunction,
 };
-use oxidd_core::util::{AllocResult, EdgeDropGuard, Own, Ref};
-use oxidd_core::{ApplyCache, HasApplyCache, HasLevel, InnerNode, Manager, Node, Tag, VarNo};
+use oxidd_core::util::{AllocResult, EdgeDropGuard, Own, Ref, collect_edges_exact};
+use oxidd_core::{
+    ApplyCache, HasApplyCache, HasLevel, InnerNode, LevelNo, Manager, Node, Tag, VarNo,
+};
 use oxidd_derive::Function;
+use oxidd_dump::dddmp;
 use oxidd_dump::dot::DotStyle;
 
 #[cfg(feature = "statistics")]
@@ -428,6 +431,33 @@ where
                 Node::Terminal(t) => break t.borrow().clone(),
             }
         }
+    }
+}
+
+impl<F: Function, T: NumberBase> dddmp::DDDMPDeserialize for MTBDDFunction<F>
+where
+    for<'id> F::Manager<'id>: Manager<Terminal = T> + HasMTBDDOpApplyCache<F::Manager<'id>>,
+    for<'id> INodeOfFunc<'id, F>: HasLevel,
+{
+    #[inline]
+    fn reduce<'id>(
+        manager: &Self::Manager<'id>,
+        level: LevelNo,
+        children: impl IntoIterator<Item = OwnEdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+        let [t, e] = collect_edges_exact(manager, children);
+        reduce(manager, level, t, e, MTBDDOp::MkNode)
+    }
+
+    #[inline]
+    fn neg<'id>(
+        manager: &Self::Manager<'id>,
+        edge: OwnEdgeOfFunc<'id, Self>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+        let edge = EdgeDropGuard::new(manager, edge);
+        let zero = EdgeDropGuard::new(manager, manager.get_terminal(T::zero())?);
+        // TODO: is this the intended semantics?
+        Self::sub_edge(manager, zero.borrowed(), edge.borrowed())
     }
 }
 

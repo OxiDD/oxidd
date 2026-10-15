@@ -16,9 +16,6 @@ rust-version.workspace = true
 [dependencies]
 oxidd-core.workspace = true
 
-# stack-allocated vectors
-smallvec = { version = "1", features = ["union", "const_generics"] }
-
 # fast alternative Mutex & RwLock implementation
 parking_lot = "0.12"
 

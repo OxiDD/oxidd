@@ -11,10 +11,7 @@ use std::sync::Arc;
 
 use oxidd_core::error::DuplicateVarName;
 use oxidd_core::util::{AllocResult, DropWith, Own, Ref};
-use oxidd_core::{
-    DiagramRules, Edge, HasWorkers, InnerNode, LevelNo, LevelView, Manager, Node, NodeID,
-    ReducedOrNew, VarNo,
-};
+use oxidd_core::{Edge, HasWorkers, InnerNode, LevelNo, LevelView, Manager, Node, NodeID, VarNo};
 
 /// Simple dummy edge implementation based on [`Arc`]
 ///
@@ -55,34 +52,13 @@ impl Edge for DummyEdge {
 /// clone and drop edges.
 pub struct DummyManager;
 
-/// Dummy diagram rules
-pub struct DummyRules;
-impl DiagramRules<DummyEdge, DummyNode, ()> for DummyRules {
-    type Cofactors<'a> = std::iter::Empty<Ref<'a, DummyEdge>>;
-
-    fn reduce<M>(
-        _manager: &M,
-        _level: LevelNo,
-        _children: impl IntoIterator<Item = Own<DummyEdge>>,
-    ) -> ReducedOrNew<DummyEdge, DummyNode>
-    where
-        M: Manager<Edge = DummyEdge, InnerNode = DummyNode>,
-    {
-        ReducedOrNew::New(DummyNode, ())
-    }
-
-    fn cofactors(_tag: (), _node: &DummyNode) -> Self::Cofactors<'_> {
-        std::iter::empty()
-    }
-}
-
 unsafe impl Manager for DummyManager {
     type Edge = DummyEdge;
     type EdgeTag = ();
     type InnerNode = DummyNode;
     type Terminal = ();
     type TerminalRef<'a> = &'a ();
-    type Rules = DummyRules;
+    type Rules = ();
     type TerminalIterator<'a>
         = std::iter::Empty<Own<DummyEdge>>
     where
@@ -236,7 +212,7 @@ unsafe impl LevelView<DummyEdge, DummyNode> for DummyLevelView {
         unreachable!()
     }
 
-    fn get(&self, _node: &DummyNode) -> Option<Ref<'_, DummyEdge>> {
+    fn get(&self, _node: &[Ref<'_, DummyEdge>]) -> Option<Ref<'_, DummyEdge>> {
         unreachable!()
     }
 

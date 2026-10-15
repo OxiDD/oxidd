@@ -61,7 +61,7 @@ mod index {
         type TerminalNode = T;
         type TerminalManager<'id> =
             oxidd_manager_index::terminal_manager::DynamicTerminalManager<'id, Self, TERMINALS>;
-        type DiagramRules<'id> = MTBDDRules;
+        type Rules = MTBDDRules;
         type ManagerData<'id> = MTBDDManagerData<'id, T>;
     }
     type MTBDD<T> = IndexDD<MTBDDInfo<T>, TERMINALS>;
@@ -78,7 +78,13 @@ mod index {
 
     /// Pseudo-Boolean function represented as MTBDD
     #[derive(
-        Clone, PartialEq, Eq, Hash, oxidd_derive::Function, oxidd_derive::PseudoBooleanFunction,
+        Clone,
+        PartialEq,
+        Eq,
+        Hash,
+        oxidd_derive::Function,
+        oxidd_derive::PseudoBooleanFunction,
+        oxidd_derive::DDDMPDeserialize,
     )]
     #[use_manager_ref(MTBDDManagerRef<T>, MTBDDManagerRef::<T>(inner))]
     #[derive_where::derive_where(PartialOrd, Ord; T: NumberBase + Send + Sync)]

@@ -565,6 +565,7 @@ name = "oxidd-core"
 version = "0.13.0"
 dependencies = [
  "dashu-int",
+ "derive-where",
  "nanorand",
 ]
 
@@ -679,7 +680,6 @@ dependencies = [
  "oxidd-test-utils",
  "parking_lot",
  "scopeguard",
- "smallvec",
 ]
 
 [[package]]

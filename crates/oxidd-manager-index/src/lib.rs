@@ -29,11 +29,7 @@ pub trait DiagramInfo<const TERMINALS: usize>: Sized + Send + Sync {
     type TerminalNode: Eq + std::hash::Hash + Send + Sync;
     type TerminalManager<'id>: terminal_manager::TerminalManager<'id, Self, TERMINALS> + Send + Sync;
 
-    type DiagramRules<'id>: oxidd_core::DiagramRules<
-            manager::Edge<'id, Self, TERMINALS>,
-            Self::InnerNode<'id>,
-            Self::TerminalNode,
-        >;
+    type Rules;
 
     type ManagerData<'id>: oxidd_core::util::DropWith<manager::Edge<'id, Self, TERMINALS>>
         + oxidd_core::ManagerEventSubscriber<manager::Manager<'id, Self, TERMINALS>>

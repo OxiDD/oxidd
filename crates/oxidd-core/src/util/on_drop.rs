@@ -42,7 +42,7 @@ impl Drop for AbortOnDrop<'_> {
     }
 }
 
-/// Drop guard for edges to ensure that they are not leaked
+/// Drop guard for owned edges to ensure that they are not leaked
 pub struct EdgeDropGuard<'a, M: Manager> {
     /// Manager containing the edge
     pub manager: &'a M,

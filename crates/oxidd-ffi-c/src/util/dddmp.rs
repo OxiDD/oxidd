@@ -25,7 +25,7 @@ impl dddmp_file_t {
         error: *mut error_t,
     ) -> bool
     where
-        CF::Function: BooleanFunction,
+        CF::Function: BooleanFunction + dddmp::DDDMPDeserialize,
         for<'id> INodeOfFunc<'id, CF::Function>: HasLevel,
         for<'id> TermOfFunc<'id, CF::Function>: ParseTagged<ETagOfFunc<'id, CF::Function>>,
     {
@@ -41,7 +41,6 @@ impl dddmp_file_t {
                 &self.header,
                 manager,
                 support_vars.iter().copied(),
-                CF::Function::not_edge_owned,
             )
         });
         let Some(rs) = (unsafe { handle_err_or_init(res, error) }) else {

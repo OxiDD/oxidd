@@ -229,13 +229,12 @@ impl DDDMPFile {
     }
 }
 
-pub fn import_dddmp<'py, F>(
+pub fn import_dddmp<'py, F: BooleanFunction + dddmp::DDDMPDeserialize>(
     manager_ref: &F::ManagerRef,
     file: &mut DDDMPFile,
     support_vars: Option<&Bound<'py, PyAny>>,
 ) -> PyResult<Vec<F>>
 where
-    F: BooleanFunction,
     for<'id> INodeOfFunc<'id, F>: HasLevel,
     for<'id> TermOfFunc<'id, F>: oxidd_dump::ParseTagged<ETagOfFunc<'id, F>>,
 {
@@ -248,13 +247,7 @@ where
         Some(vars) => {
             let mut iter = super::TryIter::try_from(vars)?;
             let import_res = manager_ref.with_manager_shared(|manager| {
-                oxidd_dump::dddmp::import(
-                    reader,
-                    &file.header,
-                    manager,
-                    &mut iter,
-                    F::not_edge_owned,
-                )
+                oxidd_dump::dddmp::import(reader, &file.header, manager, &mut iter)
             });
             file.close();
             iter.err?;
@@ -262,13 +255,8 @@ where
         }
         None => {
             let import_res = manager_ref.with_manager_shared(|manager| {
-                oxidd_dump::dddmp::import(
-                    reader,
-                    &file.header,
-                    manager,
-                    file.header.support_var_order().iter().copied(),
-                    F::not_edge_owned,
-                )
+                let support_vars = file.header.support_var_order().iter().copied();
+                oxidd_dump::dddmp::import(reader, &file.header, manager, support_vars)
             });
             file.close();
             import_res

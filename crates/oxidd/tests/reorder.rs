@@ -1,13 +1,23 @@
-#![cfg(feature = "bdd")]
+#![cfg(any(feature = "bcdd", feature = "bdd", feature = "zbdd"))]
+
 // spell-checker:ignore nvars,mref
 
+use oxidd::util::AllocResult;
 use oxidd::{
-    BooleanFunction, InnerNode, LevelNo, Manager, ManagerRef, VarNo, bdd::BDDFunction,
-    util::AllocResult,
+    BooleanFunction, HasLevel, HasWorkers, InnerNode, LevelNo, Manager, ManagerRef, VarNo,
 };
-use oxidd_core::LevelView;
+use oxidd_core::function::{INodeOfFunc, RulesOfFunc};
+use oxidd_core::{LevelSwapper, LevelView};
 use oxidd_reorder::set_var_order;
 
+#[cfg(feature = "bcdd")]
+use oxidd::bcdd::BCDDFunction;
+#[cfg(feature = "bdd")]
+use oxidd::bdd::BDDFunction;
+#[cfg(feature = "zbdd")]
+use oxidd::zbdd::ZBDDFunction;
+
+#[cfg(feature = "bdd")]
 #[test]
 fn reverse_empty_bdd() {
     let mref = oxidd::bdd::new_manager(1024, 128, 2);
@@ -31,15 +41,18 @@ fn check_order<M: Manager>(manager: &M, order: &[VarNo]) {
     }
 }
 
-#[test]
-fn reorder_nonempty_bdd() -> AllocResult<()> {
-    let mref = oxidd::bdd::new_manager(1024, 128, 2);
+fn reorder_nonempty<B: BooleanFunction>(mref: B::ManagerRef) -> AllocResult<()>
+where
+    for<'id> B::Manager<'id>: HasWorkers,
+    for<'id> INodeOfFunc<'id, B>: HasLevel,
+    for<'id> RulesOfFunc<'id, B>: LevelSwapper<B::Manager<'id>>,
+{
     mref.with_manager_exclusive(|manager| manager.add_vars(5));
 
     let [x1, x3, x4, f] = mref.with_manager_shared(|manager| {
-        let x1 = BDDFunction::var(manager, 1)?;
-        let x3 = BDDFunction::var(manager, 3)?;
-        let x4 = BDDFunction::var(manager, 4)?;
+        let x1 = B::var(manager, 1)?;
+        let x3 = B::var(manager, 3)?;
+        let x4 = B::var(manager, 4)?;
         let f = x1.ite(&x3, &x4)?;
         Ok([x1, x3, x4, f])
     })?;
@@ -72,19 +85,40 @@ fn reorder_nonempty_bdd() -> AllocResult<()> {
         }
     };
 
+    let reorder = |order| mref.with_manager_exclusive(|manager| set_var_order(manager, order));
+
     check(&[0, 1, 2, 3, 4]);
-    mref.with_manager_exclusive(|manager| set_var_order(manager, &[2, 3, 1]));
+    reorder(&[2, 3, 1]);
     check(&[0, 2, 3, 1, 4]);
-    mref.with_manager_exclusive(|manager| set_var_order(manager, &[1, 4, 3]));
+    reorder(&[1, 4, 3]);
     check(&[0, 2, 1, 4, 3]);
-    mref.with_manager_exclusive(|manager| set_var_order(manager, &[4, 1]));
+    reorder(&[4, 1]);
     check(&[0, 2, 4, 1, 3]);
-    mref.with_manager_exclusive(|manager| set_var_order(manager, &[3, 1, 4]));
+    reorder(&[3, 1, 4]);
     check(&[0, 2, 3, 1, 4]);
 
     Ok(())
 }
 
+#[cfg(feature = "bcdd")]
+#[test]
+fn reorder_nonempty_bcdd() -> AllocResult<()> {
+    reorder_nonempty::<BCDDFunction>(oxidd::bcdd::new_manager(1024, 128, 2))
+}
+
+#[cfg(feature = "bdd")]
+#[test]
+fn reorder_nonempty_bdd() -> AllocResult<()> {
+    reorder_nonempty::<BDDFunction>(oxidd::bdd::new_manager(1024, 128, 2))
+}
+
+#[cfg(feature = "zbdd")]
+#[test]
+fn reorder_nonempty_zbdd() -> AllocResult<()> {
+    reorder_nonempty::<ZBDDFunction>(oxidd::zbdd::new_manager(1024, 128, 2))
+}
+
+#[cfg(feature = "bdd")]
 #[test]
 fn reorder_drops_child_referenced_only_by_parent() -> AllocResult<()> {
     let mref = oxidd::bdd::new_manager(1024, 128, 1);

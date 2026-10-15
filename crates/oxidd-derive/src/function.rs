@@ -19,7 +19,7 @@ impl StructField {
         }
     }
 
-    fn single_from_item(item: syn::Data, trait_name: &str) -> Self {
+    fn single_from_item(item: syn::Data, trait_name: proc_macro2::Ident) -> Self {
         let structure = match item {
             syn::Data::Struct(s) => s,
             syn::Data::Union(syn::DataUnion {
@@ -147,7 +147,8 @@ pub fn derive_function(input: syn::DeriveInput) -> TokenStream {
         }
     }
 
-    let struct_field = StructField::single_from_item(input.data, "Function");
+    let trait_name = proc_macro2::Ident::new("Function", Span::call_site());
+    let struct_field = StructField::single_from_item(input.data, trait_name);
     proc_macro_error::abort_if_dirty();
     let ty = &struct_field.ty;
     let from_edge_body = struct_field.gen_from_inner(
@@ -394,15 +395,17 @@ struct CustomMethodsCtx<'a> {
 
 fn derive_function_trait(
     input: syn::DeriveInput,
-    trait_name: &str,
+    trait_path: TokenStream,
     methods: &[Method],
     custom_methods: impl for<'a> FnOnce(CustomMethodsCtx<'a>) -> TokenStream,
 ) -> TokenStream {
     let ident = input.ident;
+    let Some(proc_macro2::TokenTree::Ident(trait_name)) = trait_path.clone().into_iter().last()
+    else {
+        panic!("internal error: could not extract a trait name from `trait_path`");
+    };
     let struct_field = StructField::single_from_item(input.data, trait_name);
     proc_macro_error::abort_if_dirty();
-    let trait_ident = syn::Ident::new(trait_name, Span::call_site());
-    let trait_path = quote!(::oxidd_core::function::#trait_ident);
 
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     // Note: We don't add any trait bounds like `Self: Function`. Adding those
@@ -432,7 +435,8 @@ fn derive_function_trait(
 }
 
 pub fn derive_function_subst(input: syn::DeriveInput) -> TokenStream {
-    derive_function_trait(input, "FunctionSubst", &[], |ctx| {
+    let trait_path = quote!(::oxidd_core::function::FunctionSubst);
+    derive_function_trait(input, trait_path, &[], |ctx| {
         let CustomMethodsCtx {
             trait_path,
             manager_ty,
@@ -478,7 +482,7 @@ pub fn derive_boolean_function(input: syn::DeriveInput) -> TokenStream {
     use Method::*;
     derive_function_trait(
         input,
-        "BooleanFunction",
+        quote!(::oxidd_core::function::BooleanFunction),
         &[
             Terminal("f"),
             Terminal("t"),
@@ -683,7 +687,7 @@ pub fn derive_boolean_function_quant(input: syn::DeriveInput) -> TokenStream {
     use Method::*;
     derive_function_trait(
         input,
-        "BooleanFunctionQuant",
+        quote!(::oxidd_core::function::BooleanFunctionQuant),
         &[Binary("forall"), Binary("exists"), Binary("unique")],
         |ctx| {
             let CustomMethodsCtx {
@@ -739,7 +743,7 @@ pub fn derive_boolean_vec_set(input: syn::DeriveInput) -> TokenStream {
     use Method::*;
     derive_function_trait(
         input,
-        "BooleanVecSet",
+        quote!(::oxidd_core::function::BooleanVecSet),
         &[
             Var("singleton"),
             Terminal("empty"),
@@ -759,7 +763,7 @@ pub fn derive_pseudo_boolean_function(input: syn::DeriveInput) -> TokenStream {
     use Method::*;
     derive_function_trait(
         input,
-        "PseudoBooleanFunction",
+        quote!(::oxidd_core::function::PseudoBooleanFunction),
         &[
             Var("var"),
             Binary("restrict"),
@@ -826,7 +830,7 @@ pub fn derive_tvl_function(input: syn::DeriveInput) -> TokenStream {
     use Method::*;
     derive_function_trait(
         input,
-        "TVLFunction",
+        quote!(::oxidd_core::function::TVLFunction),
         &[
             Terminal("f"),
             Terminal("t"),
@@ -905,6 +909,41 @@ pub fn derive_tvl_function(input: syn::DeriveInput) -> TokenStream {
                     args: impl ::std::iter::IntoIterator<Item = (::oxidd_core::VarNo, ::std::option::Option<bool>)>,
                 ) -> ::std::option::Option<bool> {
                     <#inner as #trait_path>::eval_edge(manager, edge, args)
+                }
+            }
+        },
+    )
+}
+
+pub fn derive_dddmp_deserialize(input: syn::DeriveInput) -> TokenStream {
+    derive_function_trait(
+        input,
+        quote!(::oxidd_dump::dddmp::DDDMPDeserialize),
+        &[],
+        |ctx| {
+            let CustomMethodsCtx {
+                trait_path,
+                manager_ty,
+                edge_ty,
+                struct_field,
+            } = ctx;
+            let inner = &struct_field.ty;
+            let edge_alloc_result =
+                quote!(::oxidd_core::util::AllocResult<::oxidd_core::util::Own<#edge_ty>>);
+
+            quote! {
+                #[inline]
+                fn reduce<'__id>(
+                    manager: &#manager_ty,
+                    level: ::oxidd_core::LevelNo,
+                    children: impl ::std::iter::IntoIterator<Item = ::oxidd_core::util::Own<#edge_ty>>,
+                ) -> #edge_alloc_result {
+                    <#inner as #trait_path>::reduce(manager, level, children)
+                }
+
+                #[inline]
+                fn neg<'__id>(manager: &#manager_ty, edge: ::oxidd_core::util::Own<#edge_ty>) -> #edge_alloc_result {
+                    <#inner as #trait_path>::neg(manager, edge)
                 }
             }
         },

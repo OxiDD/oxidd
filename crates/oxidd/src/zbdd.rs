@@ -148,7 +148,7 @@ mod index {
         type TerminalNode = ZBDDTerminal;
         type TerminalManager<'id> =
             oxidd_manager_index::terminal_manager::StaticTerminalManager<'id, Self, TERMINALS>;
-        type DiagramRules<'id> = ZBDDRules;
+        type Rules = ZBDDRules;
         type ManagerData<'id> = ZBDDManagerData<'id>;
     }
     type ZBDD = IndexDD<ZBDDInfo, TERMINALS>;
@@ -173,6 +173,7 @@ mod index {
         oxidd_derive::Function,
         oxidd_derive::BooleanFunction,
         oxidd_derive::BooleanVecSet,
+        oxidd_derive::DDDMPDeserialize,
     )]
     #[use_manager_ref(ZBDDManagerRef, ZBDDManagerRef(inner))]
     pub struct ZBDDFunction(FunctionInner);
@@ -199,7 +200,7 @@ mod pointer {
         type InnerNode<'id> = NodeWithLevel<'id, Self, PAGE_SIZE, TAG_BITS, 2>;
         type TerminalNode = ZBDDTerminal;
         type TerminalManager<'id> = StaticTerminalManager<'id, Self, PAGE_SIZE, TAG_BITS>;
-        type DiagramRules<'id> = ZBDDRules;
+        type Rules = ZBDDRules;
         type ManagerData<'id> = ZBDDManagerData<'id>;
     }
     type ZBDD = PointerDD<ZBDDInfo, PAGE_SIZE, TAG_BITS>;
@@ -224,6 +225,7 @@ mod pointer {
         oxidd_derive::Function,
         oxidd_derive::BooleanFunction,
         oxidd_derive::BooleanVecSet,
+        oxidd_derive::DDDMPDeserialize,
     )]
     #[use_manager_ref(ZBDDManagerRef, ZBDDManagerRef(inner))]
     pub struct ZBDDFunction(FunctionInner);

@@ -10,7 +10,7 @@ use crate::util::{
     AllocResult, EdgeDropGuard, NodeSet, OptBool, Own, Ref, SatCountCache, SatCountNumber,
     Substitution,
 };
-use crate::{DiagramRules, InnerNode, LevelNo, Manager, ManagerRef, Node, VarNo};
+use crate::{InnerNode, LevelNo, Manager, ManagerRef, Node, VarNo};
 
 #[allow(unused_imports)] // doc-only imports
 use crate::Edge;
@@ -25,6 +25,8 @@ pub type ETagOfFunc<'id, F> = <<F as Function>::Manager<'id> as Manager>::EdgeTa
 pub type INodeOfFunc<'id, F> = <<F as Function>::Manager<'id> as Manager>::InnerNode;
 /// Shorthand to get the `Terminal` type associated with a [`Function`]
 pub type TermOfFunc<'id, F> = <<F as Function>::Manager<'id> as Manager>::Terminal;
+/// Shorthand to get the `Rules` type associated with a [`Function`]
+pub type RulesOfFunc<'id, F> = <<F as Function>::Manager<'id> as Manager>::Rules;
 
 /// Function in a decision diagram
 ///
@@ -488,21 +490,13 @@ pub trait BooleanFunction: Function {
     ///
     /// Returns `None` iff `f` references a terminal node. For more details on
     /// the semantics of `f_true` and `f_false`, see [`Self::cofactors`].
-    ///
-    /// Implementation note: The default implementation assumes that
-    /// [cofactor 0][DiagramRules::cofactor] corresponds to `f_true` and
-    /// [cofactor 1][DiagramRules::cofactor] corresponds to `f_false`.
-    #[inline]
     fn cofactors_node<'a, 'id>(
         tag: ETagOfFunc<'id, Self>,
         node: &'a INodeOfFunc<'id, Self>,
     ) -> (
         Ref<'a, EdgeOfFunc<'id, Self>>,
         Ref<'a, EdgeOfFunc<'id, Self>>,
-    ) {
-        let cofactor = <<Self::Manager<'id> as Manager>::Rules as DiagramRules<_, _, _>>::cofactor;
-        (cofactor(tag, node, 0), cofactor(tag, node, 1))
-    }
+    );
 
     /// Restrict a set of `vars` to constant values, edge version
     ///
@@ -1870,12 +1864,6 @@ pub trait TVLFunction: Function {
     ///
     /// Returns `None` iff `f` references a terminal node. For more details on
     /// the semantics of `f_true` and `f_false`, see [`Self::cofactors`].
-    ///
-    /// Implementation note: The default implementation assumes that
-    /// [cofactor 0][DiagramRules::cofactor] corresponds to `f_true`,
-    /// [cofactor 1][DiagramRules::cofactor] corresponds to `f_unknown`, and
-    /// [cofactor 2][DiagramRules::cofactor] corresponds to `f_false`.
-    #[inline]
     #[allow(clippy::type_complexity)]
     fn cofactors_node<'a, 'id>(
         tag: ETagOfFunc<'id, Self>,
@@ -1884,14 +1872,7 @@ pub trait TVLFunction: Function {
         Ref<'a, EdgeOfFunc<'id, Self>>,
         Ref<'a, EdgeOfFunc<'id, Self>>,
         Ref<'a, EdgeOfFunc<'id, Self>>,
-    ) {
-        let cofactor = <<Self::Manager<'id> as Manager>::Rules as DiagramRules<_, _, _>>::cofactor;
-        (
-            cofactor(tag, node, 0),
-            cofactor(tag, node, 1),
-            cofactor(tag, node, 2),
-        )
-    }
+    );
 
     /// Edge version of [`Self::var()`]
     fn var_edge<'id>(

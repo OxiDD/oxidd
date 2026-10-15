@@ -2,11 +2,9 @@
 
 use std::fmt;
 use std::hash::Hash;
-use std::iter::FusedIterator;
-use std::marker::PhantomData;
 
 use oxidd_core::util::{AllocResult, EdgeDropGuard, Own, Ref};
-use oxidd_core::{DiagramRules, Edge, HasLevel, InnerNode, LevelNo, Manager, Node, ReducedOrNew};
+use oxidd_core::{Edge, HasLevel, InnerNode, LevelNo, Manager, Node};
 use oxidd_derive::Countable;
 
 use crate::stat;
@@ -14,6 +12,7 @@ use crate::stat;
 // spell-checker:ignore fnode,gnode
 
 mod apply_rec;
+mod reorder;
 
 // --- Edge Tag ----------------------------------------------------------------
 
@@ -82,103 +81,8 @@ fn not<E: Edge<Tag = EdgeTag>>(e: Ref<'_, E>) -> Ref<'_, E> {
 
 // --- Reduction Rules ---------------------------------------------------------
 
-/// [`DiagramRules`] for complement edge binary decision diagrams
+/// Rules for BCDDs
 pub struct BCDDRules;
-
-impl<E: Edge<Tag = EdgeTag>, N: InnerNode<E>> DiagramRules<E, N, BCDDTerminal> for BCDDRules {
-    type Cofactors<'a>
-        = Cofactors<'a, E, N::ChildrenIter<'a>>
-    where
-        N: 'a,
-        E: 'a;
-
-    #[inline]
-    fn reduce<M: Manager<Edge = E, InnerNode = N>>(
-        manager: &M,
-        level: LevelNo,
-        children: impl IntoIterator<Item = Own<E>>,
-    ) -> ReducedOrNew<E, N> {
-        let mut it = children.into_iter();
-        let t = it.next().unwrap();
-        let e = it.next().unwrap();
-        debug_assert!(it.next().is_none());
-
-        if t == e {
-            manager.drop_edge(e);
-            return ReducedOrNew::Reduced(t);
-        }
-
-        let tt = t.tag();
-        if tt == EdgeTag::Complemented {
-            let et = e.tag();
-            let node = N::new(level, [t.with_tag(EdgeTag::None), e.with_tag(!et)]);
-            ReducedOrNew::New(node, EdgeTag::Complemented)
-        } else {
-            let node = N::new(level, [t, e]);
-            ReducedOrNew::New(node, EdgeTag::None)
-        }
-    }
-
-    #[inline]
-    fn cofactors(tag: E::Tag, node: &N) -> Self::Cofactors<'_> {
-        Cofactors {
-            it: node.children(),
-            tag,
-            phantom: PhantomData,
-        }
-    }
-
-    #[inline]
-    fn cofactor(tag: E::Tag, node: &N, n: usize) -> Ref<'_, E> {
-        let e = node.child(n);
-        if tag == EdgeTag::None {
-            e
-        } else {
-            e.with_tag(!e.tag())
-        }
-    }
-}
-
-/// Iterator over the cofactors of a node in a complement edge BDD
-pub struct Cofactors<'a, E, I> {
-    it: I,
-    tag: EdgeTag,
-    phantom: PhantomData<&'a E>,
-}
-
-impl<'a, E: Edge<Tag = EdgeTag> + 'a, I: Iterator<Item = Ref<'a, E>>> Iterator
-    for Cofactors<'a, E, I>
-{
-    type Item = Ref<'a, E>;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        match (self.it.next(), self.tag) {
-            (Some(e), EdgeTag::None) => Some(e),
-            (Some(e), EdgeTag::Complemented) => Some(e.with_tag(!e.tag())),
-            (None, _) => None,
-        }
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.it.size_hint()
-    }
-}
-
-impl<'a, E: Edge<Tag = EdgeTag>, I: FusedIterator<Item = Ref<'a, E>>> FusedIterator
-    for Cofactors<'a, E, I>
-{
-}
-
-impl<'a, E: Edge<Tag = EdgeTag>, I: ExactSizeIterator<Item = Ref<'a, E>>> ExactSizeIterator
-    for Cofactors<'a, E, I>
-{
-    #[inline]
-    fn len(&self) -> usize {
-        self.it.len()
-    }
-}
 
 /// Check if `edge` represents the function `⊥`
 #[inline]
@@ -195,12 +99,14 @@ fn collect_cofactors<E: Edge<Tag = EdgeTag>, N: InnerNode<E>>(
     tag: EdgeTag,
     node: &N,
 ) -> (Ref<'_, E>, Ref<'_, E>) {
-    debug_assert_eq!(N::ARITY, 2);
-    let mut it = BCDDRules::cofactors(tag, node);
-    let ft = it.next().unwrap();
-    let fe = it.next().unwrap();
-    debug_assert!(it.next().is_none());
-    (ft, fe)
+    const { assert!(N::ARITY == 2) };
+    let t = node.child(0);
+    let e = node.child(1);
+    if tag == EdgeTag::None {
+        (t, e)
+    } else {
+        (t.with_tag(!t.tag()), e.with_tag(!e.tag()))
+    }
 }
 
 /// Apply the reduction rules, creating a node in `manager` if necessary
@@ -388,6 +294,9 @@ pub enum BCDDOp {
     /// apply-quantify algorithm.
     UniqueNand,
     UniqueXor,
+
+    /// Make a new node. Only used for statistical purposes.
+    MkNode,
 }
 
 impl BCDDOp {
@@ -466,11 +375,7 @@ where
         ([t, not_owned(sub)], EdgeTag::Complemented)
     };
 
-    let res = oxidd_core::LevelView::get_or_insert(
-        &mut manager.level(level),
-        M::InnerNode::new(level, children),
-    )?;
-    Ok(res.with_tag(tag))
+    Ok(manager.get_or_insert(level, children)?.with_tag(tag))
 }
 
 // --- Function Interface ------------------------------------------------------

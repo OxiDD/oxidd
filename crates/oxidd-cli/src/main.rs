@@ -12,7 +12,8 @@ use std::time::{Duration, Instant};
 use clap::{Parser, ValueEnum};
 use oxidd::util::SatCountCache;
 use oxidd::{BooleanFunction, HasLevel, HasWorkers, Manager, ManagerRef, VarNo, WorkerPool};
-use oxidd_core::function::{ETagOfFunc, INodeOfFunc, TermOfFunc};
+use oxidd_core::LevelSwapper;
+use oxidd_core::function::{ETagOfFunc, INodeOfFunc, RulesOfFunc, TermOfFunc};
 use oxidd_core::util::VarNameMap;
 use oxidd_core::{ApplyCache, HasApplyCache};
 use oxidd_dump::{dddmp, dot};
@@ -339,7 +340,7 @@ impl<'a> Inputs<'a> {
 
 fn bool_dd_main<B, O>(cli: &Cli, mref: B::ManagerRef)
 where
-    B: BooleanFunction + Send + Sync + 'static,
+    B: BooleanFunction + dddmp::DDDMPDeserialize + Send + Sync + 'static,
     B::ManagerRef: HasWorkers + Send + 'static,
     for<'id> B: dot::DotStyle<ETagOfFunc<'id, B>>,
     for<'id> B::Manager<'id>: HasWorkers + HasApplyCache<B::Manager<'id>, O>,
@@ -347,6 +348,7 @@ where
     for<'id> ETagOfFunc<'id, B>: fmt::Debug,
     for<'id> TermOfFunc<'id, B>:
         oxidd_dump::ParseTagged<ETagOfFunc<'id, B>> + fmt::Display + oxidd_dump::AsciiDisplay,
+    for<'id> RulesOfFunc<'id, B>: LevelSwapper<B::Manager<'id>>,
     O: Copy + Ord + Hash,
 {
     let mut funcs: Vec<(B, String)> = Vec::new();
@@ -425,7 +427,7 @@ where
 
         mref.with_manager_shared(|manager| {
             let support_vars = support_vars.iter().copied();
-            match dddmp::import(reader, &header, manager, support_vars, B::not_edge_owned) {
+            match dddmp::import(reader, &header, manager, support_vars) {
                 Ok(roots) => {
                     let name_prefix = match header.diagram_name() {
                         Some(n) => Cow::Borrowed(n),
