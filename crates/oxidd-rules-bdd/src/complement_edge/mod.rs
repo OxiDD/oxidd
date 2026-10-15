@@ -214,25 +214,28 @@ fn reduce<M>(
 ) -> AllocResult<Own<M::Edge>>
 where
     M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag>,
+    M::InnerNode: HasLevel,
 {
-    // We do not use `DiagramRules::reduce()` here, as the iterator is
-    // apparently not fully optimized away.
-    if t == e {
+    let t = EdgeDropGuard::new(manager, t);
+    let e = EdgeDropGuard::new(manager, e);
+    debug_assert!(manager.get_node(t.borrowed()).level() > level);
+    debug_assert!(manager.get_node(e.borrowed()).level() > level);
+
+    if *t == *e {
         stat!(reduced op);
-        manager.drop_edge(e);
-        return Ok(t);
+        return Ok(t.into_edge());
     }
 
-    let tt = t.tag();
-    let (node, tag) = if tt == EdgeTag::Complemented {
+    let tag = t.tag();
+    let (t, e) = if tag == EdgeTag::Complemented {
         let et = e.tag();
-        let node = M::InnerNode::new(level, [t.with_tag(EdgeTag::None), e.with_tag(!et)]);
-        (node, EdgeTag::Complemented)
+        (t.with_tag(EdgeTag::None), e.with_tag(!et))
     } else {
-        (M::InnerNode::new(level, [t, e]), EdgeTag::None)
+        (t, e)
     };
 
-    Ok(oxidd_core::LevelView::get_or_insert(&mut manager.level(level), node)?.with_tag(tag))
+    let res = manager.get_or_insert(level, [t.into_edge(), e.into_edge()])?;
+    Ok(res.with_tag(tag))
 }
 
 // --- Terminal Type -----------------------------------------------------------

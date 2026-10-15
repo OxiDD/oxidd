@@ -651,6 +651,25 @@ pub unsafe trait Manager: Sized {
     #[must_use]
     fn get_node<'a>(&'a self, edge: Ref<'a, Self::Edge>) -> Node<'a, Self>;
 
+    /// Get an edge pointing to a node at `level` with `children` if present, or
+    /// insert such a node.
+    ///
+    /// It is recommended to use this method instead of manually calling
+    /// [`Self::level()`] and [`LevelView::get_or_insert()`]. Manager
+    /// implementations may specialize the implementation, e.g., for
+    /// out-of-memory handling or to avoid constructing a level view.
+    fn get_or_insert(
+        &self,
+        level: LevelNo,
+        children: impl IntoIterator<Item = Own<Self::Edge>>,
+    ) -> AllocResult<Own<Self::Edge>> {
+        let guard = util::InnerNodeDropGuard::new(self, Self::InnerNode::new(level, children));
+        let mut view = self.level(level);
+        let node = guard.into_node();
+        // SAFETY: `node`'s level and `view`'s level match
+        unsafe { view.get_or_insert_unchecked(node) }
+    }
+
     /// Clone `edge`
     fn clone_edge(&self, edge: Ref<'_, Self::Edge>) -> Own<Self::Edge>;
 

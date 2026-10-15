@@ -64,12 +64,20 @@ fn reduce<M: Manager>(
     t: Own<M::Edge>,
     e: Own<M::Edge>,
     op: MTBDDOp,
-) -> AllocResult<Own<M::Edge>> {
-    let tmp = <MTBDDRules as DiagramRules<_, _, _>>::reduce(manager, level, [t, e]);
-    if let ReducedOrNew::Reduced(..) = &tmp {
+) -> AllocResult<Own<M::Edge>>
+where
+    M::InnerNode: HasLevel,
+{
+    let t = EdgeDropGuard::new(manager, t);
+    let e = EdgeDropGuard::new(manager, e);
+    debug_assert!(manager.get_node(t.borrowed()).level() > level);
+    debug_assert!(manager.get_node(e.borrowed()).level() > level);
+
+    if *t == *e {
         stat!(reduced op);
+        return Ok(t.into_edge());
     }
-    tmp.then_insert(manager, level)
+    manager.get_or_insert(level, [t.into_edge(), e.into_edge()])
 }
 
 // --- Operations & Apply Implementation ---------------------------------------

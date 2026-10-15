@@ -65,18 +65,18 @@ fn reduce<M>(
 ) -> AllocResult<Own<M::Edge>>
 where
     M: Manager<Terminal = BDDTerminal>,
+    M::InnerNode: HasLevel,
 {
-    // We do not use `DiagramRules::reduce()` here, as the iterator is
-    // apparently not fully optimized away.
-    if t == e {
+    let t = EdgeDropGuard::new(manager, t);
+    let e = EdgeDropGuard::new(manager, e);
+    debug_assert!(manager.get_node(t.borrowed()).level() > level);
+    debug_assert!(manager.get_node(e.borrowed()).level() > level);
+
+    if *t == *e {
         stat!(reduced op);
-        manager.drop_edge(e);
-        return Ok(t);
+        return Ok(t.into_edge());
     }
-    oxidd_core::LevelView::get_or_insert(
-        &mut manager.level(level),
-        M::InnerNode::new(level, [t, e]),
-    )
+    manager.get_or_insert(level, [t.into_edge(), e.into_edge()])
 }
 
 /// Collect the two children of a binary node

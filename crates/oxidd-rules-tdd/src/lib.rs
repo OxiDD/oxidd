@@ -66,13 +66,20 @@ fn reduce<M>(
 ) -> AllocResult<Own<M::Edge>>
 where
     M: Manager<Terminal = TDDTerminal>,
+    M::InnerNode: HasLevel,
 {
-    let _ = op;
-    let tmp = <TDDRules as DiagramRules<_, _, _>>::reduce(manager, level, [t, u, e]);
-    if let ReducedOrNew::Reduced(..) = &tmp {
+    let t = EdgeDropGuard::new(manager, t);
+    let u = EdgeDropGuard::new(manager, u);
+    let e = EdgeDropGuard::new(manager, e);
+    debug_assert!(manager.get_node(t.borrowed()).level() > level);
+    debug_assert!(manager.get_node(u.borrowed()).level() > level);
+    debug_assert!(manager.get_node(e.borrowed()).level() > level);
+
+    if *t == *u && *u == *e {
         stat!(reduced op);
+        return Ok(t.into_edge());
     }
-    tmp.then_insert(manager, level)
+    manager.get_or_insert(level, [t.into_edge(), u.into_edge(), e.into_edge()])
 }
 
 // --- Terminal Type -----------------------------------------------------------

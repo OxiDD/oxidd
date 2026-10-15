@@ -79,19 +79,20 @@ fn reduce<M: Manager<Terminal = ZBDDTerminal>>(
     hi: Own<M::Edge>,
     lo: Own<M::Edge>,
     op: ZBDDOp,
-) -> AllocResult<Own<M::Edge>> {
+) -> AllocResult<Own<M::Edge>>
+where
+    M::InnerNode: HasLevel,
+{
     let hi = EdgeDropGuard::new(manager, hi);
     let lo = EdgeDropGuard::new(manager, lo);
-    // We do not use `DiagramRules::reduce()` here, as the iterator is
-    // apparently not fully optimized away.
+    debug_assert!(manager.get_node(hi.borrowed()).level() > level);
+    debug_assert!(manager.get_node(lo.borrowed()).level() > level);
+
     if is_empty(manager, hi.borrowed()) {
         stat!(reduced op);
         return Ok(lo.into_edge());
     }
-    oxidd_core::LevelView::get_or_insert(
-        &mut manager.level(level),
-        M::InnerNode::new(level, [hi.into_edge(), lo.into_edge()]),
-    )
+    manager.get_or_insert(level, [hi.into_edge(), lo.into_edge()])
 }
 
 #[inline(always)]
@@ -100,18 +101,20 @@ fn reduce1<M: Manager<Terminal = ZBDDTerminal>>(
     level: LevelNo,
     child: Own<M::Edge>,
     op: ZBDDOp,
-) -> AllocResult<Own<M::Edge>> {
+) -> AllocResult<Own<M::Edge>>
+where
+    M::InnerNode: HasLevel,
+{
     let child = EdgeDropGuard::new(manager, child);
+    debug_assert!(manager.get_node(child.borrowed()).level() > level);
+
     if is_empty(manager, child.borrowed()) {
         stat!(reduced op);
         return Ok(child.into_edge());
     }
-    oxidd_core::LevelView::get_or_insert(
-        &mut manager.level(level),
-        M::InnerNode::new(
-            level,
-            [manager.clone_edge(child.borrowed()), child.into_edge()],
-        ),
+    manager.get_or_insert(
+        level,
+        [manager.clone_edge(child.borrowed()), child.into_edge()],
     )
 }
 
@@ -122,17 +125,19 @@ fn reduce_borrowed<M: Manager<Terminal = ZBDDTerminal>>(
     hi: Ref<'_, M::Edge>,
     lo: Own<M::Edge>,
     op: ZBDDOp,
-) -> AllocResult<Own<M::Edge>> {
+) -> AllocResult<Own<M::Edge>>
+where
+    M::InnerNode: HasLevel,
+{
     let lo = EdgeDropGuard::new(manager, lo);
+    debug_assert!(manager.get_node(hi).level() > level);
+    debug_assert!(manager.get_node(lo.borrowed()).level() > level);
+
     if is_empty(manager, hi) {
         stat!(reduced op);
         return Ok(lo.into_edge());
     }
-    ReducedOrNew::New(
-        M::InnerNode::new(level, [manager.clone_edge(hi), lo.into_edge()]),
-        Default::default(),
-    )
-    .then_insert(manager, level)
+    manager.get_or_insert(level, [manager.clone_edge(hi), lo.into_edge()])
 }
 
 // --- Terminal Type -----------------------------------------------------------
