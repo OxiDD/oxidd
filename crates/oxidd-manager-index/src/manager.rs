@@ -1351,7 +1351,7 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> LevelViewSet<'id, 
     ///
     /// If `node` is not yet present in the hash table, `insert` is called to
     /// insert the node into `nodes`.
-    #[inline]
+    #[inline(always)]
     fn get_or_insert(
         &mut self,
         nodes: &SlotSlice<'id, DI, TERMINALS>,
@@ -1634,7 +1634,6 @@ unsafe impl<'a, 'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize>
         unsafe { self.get_or_insert_unchecked(node) }
     }
 
-    #[inline(always)]
     unsafe fn get_or_insert_unchecked(
         &mut self,
         node: DI::InnerNode<'id>,
@@ -1779,7 +1778,6 @@ unsafe impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize>
         unsafe { self.get_or_insert_unchecked(node) }
     }
 
-    #[inline(always)]
     unsafe fn get_or_insert_unchecked(
         &mut self,
         node: DI::InnerNode<'id>,

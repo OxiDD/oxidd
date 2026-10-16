@@ -1060,7 +1060,7 @@ where
     ///
     /// If `node` is not yet present in the hash table, `insert` is called to
     /// insert the node into `nodes`.
-    #[inline]
+    #[inline(always)]
     fn get_or_insert(
         &mut self,
         node: DI::InnerNode<'id>,
@@ -1305,12 +1305,10 @@ where
         node: DI::InnerNode<'id>,
     ) -> AllocResult<Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>> {
         node.assert_level_matches(self.level);
-        // No need to check if the children of `node` are stored in `self.store`
-        // due to lifetime restrictions.
-        LevelViewSet::get_or_insert(&mut *self.set, node, |node| add_node(self.store, node))
+        // SAFETY: we checked the level as required
+        unsafe { self.get_or_insert_unchecked(node) }
     }
 
-    #[inline(always)]
     unsafe fn get_or_insert_unchecked(
         &mut self,
         node: DI::InnerNode<'id>,
@@ -1443,13 +1441,10 @@ where
         node: DI::InnerNode<'id>,
     ) -> AllocResult<Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>> {
         node.assert_level_matches(self.level);
-        // No need to check if the children of `node` are stored in `self.store`
-        // due to lifetime restrictions.
-        self.set
-            .get_or_insert(node, |node| add_node(self.store, node))
+        // SAFETY: we checked the level as required
+        unsafe { self.get_or_insert_unchecked(node) }
     }
 
-    #[inline(always)]
     unsafe fn get_or_insert_unchecked(
         &mut self,
         node: DI::InnerNode<'id>,
