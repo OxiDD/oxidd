@@ -894,6 +894,17 @@ pub fn derive_tvl_function(input: syn::DeriveInput) -> TokenStream {
                 )> {
                     <#inner as #trait_path>::cofactors_edge(manager, f)
                 }
+                #[inline]
+                fn cofactors_node<'__a, '__id>(
+                    tag: ::oxidd_core::function::ETagOfFunc<'__id, Self>,
+                    node: &'__a ::oxidd_core::function::INodeOfFunc<'__id, Self>,
+                ) -> (
+                    ::oxidd_core::util::Ref<'__a, #edge_ty>,
+                    ::oxidd_core::util::Ref<'__a, #edge_ty>,
+                    ::oxidd_core::util::Ref<'__a, #edge_ty>,
+                ) {
+                    <#inner as #trait_path>::cofactors_node(tag, node)
+                }
 
                 #[inline]
                 fn eval(

@@ -40,22 +40,24 @@ pub fn print_stats() {
 
 #[cfg(all(feature = "manager-index", not(feature = "manager-pointer")))]
 mod index {
-    use oxidd_manager_index::node::fixed_arity::NodeWithLevelCons;
-    use oxidd_manager_index::terminal_manager::StaticTerminalManagerCons;
-    use oxidd_rules_tdd::TDDOp;
-    use oxidd_rules_tdd::TDDRules;
-    use oxidd_rules_tdd::TDDTerminal;
+    use oxidd_rules_tdd::{TDDOp, TDDRules, TDDTerminal};
 
-    use crate::util::type_cons::DD;
+    use crate::util::type_cons::{DD, IndexDD};
 
-    crate::util::dd_index_based!(TDD {
-        node: NodeWithLevelCons<3>,
-        edge_tag: (),
-        terminal_manager: StaticTerminalManagerCons<TDDTerminal>,
-        rules: TDDRulesCons for TDDRules,
-        manager_data: TDDManagerDataCons for TDDManagerData,
-        terminals: 3,
-    });
+    const TERMINALS: usize = 3;
+
+    pub struct TDDInfo;
+    impl oxidd_manager_index::DiagramInfo<TERMINALS> for TDDInfo {
+        type EdgeTag = ();
+        type InnerNode<'id> =
+            oxidd_manager_index::node::fixed_arity::NodeWithLevel<'id, Self, 3, TERMINALS>;
+        type TerminalNode = TDDTerminal;
+        type TerminalManager<'id> =
+            oxidd_manager_index::terminal_manager::StaticTerminalManager<'id, Self, TERMINALS>;
+        type Rules = TDDRules;
+        type ManagerData<'id> = TDDManagerData<'id>;
+    }
+    type TDD = IndexDD<TDDInfo, TERMINALS>;
 
     crate::util::manager_data!(TDDManagerData for TDD, operator: TDDOp, cache_entry_capacity: 4);
 
