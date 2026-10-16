@@ -14,7 +14,7 @@ use quote::ToTokens;
 mod util;
 use util::{Indent, OrdRc, identifier_to_string};
 
-// spell-checker:ignore punct
+// spell-checker:ignore punct, dunder
 
 #[derive(Debug)]
 struct Item {
@@ -42,6 +42,8 @@ enum ItemKind {
         impl_eq_int: bool,
         impl_ord: bool,
         impl_hash: bool,
+        /// Bit set with the IDs returned by [`reversible_dunder_id()`]
+        reversible_dunder: u64,
     },
 }
 
@@ -276,6 +278,12 @@ enum Type {
     Any,
     Union(Vec<Self>),
     Other(OrdRc<String>, Vec<Self>),
+}
+
+impl Type {
+    fn is_self(&self) -> bool {
+        matches!(self, Type::Other(name, params) if **name == "Self" && params.is_empty())
+    }
 }
 
 #[derive(Default)]
@@ -582,6 +590,28 @@ pub struct StubGen {
     type_env: TypeEnv,
 }
 
+static REVERSIBLE_DUNDER: [&str; 14] = [
+    // list from https://docs.python.org/3.15/reference/datamodel.html#object.__add__
+    // spell-checker:disable
+    "add", "and", "divmod", "floordiv", "lshift", "matmul", "mod", "mul", "or", "pow", "rshift",
+    "sub", "truediv", "xor",
+    // spell-checker:enable
+];
+
+/// If `name` is a dunder method with a reverse variant (e.g., `__or__` or
+/// `__ror__`), return its ID
+fn reversible_dunder_id(name: &str) -> Option<u8> {
+    let name = name.strip_prefix("__")?.strip_suffix("__")?;
+    const { assert!(REVERSIBLE_DUNDER.len() < 32) };
+    if let Ok(id) = REVERSIBLE_DUNDER.binary_search(&name) {
+        return Some(id as u8 * 2);
+    }
+    if let Ok(id) = REVERSIBLE_DUNDER.binary_search(&name.strip_prefix("r")?) {
+        return Some(id as u8 * 2 + 1);
+    }
+    None
+}
+
 impl StubGen {
     pub fn new(type_env: TypeEnv) -> Self {
         Self {
@@ -668,6 +698,7 @@ impl StubGen {
                 impl_eq_int,
                 impl_ord,
                 impl_hash,
+                reversible_dunder: 0,
             },
         });
 
@@ -957,6 +988,7 @@ impl StubGen {
         let ItemKind::Class {
             items: class_items,
             constructible,
+            reversible_dunder,
             ..
         } = &mut class.kind
         else {
@@ -983,6 +1015,10 @@ impl StubGen {
                                 "failed to process methods for Python class '{class_name}'"
                             ))
                         })?;
+
+                    if let Some(id) = reversible_dunder_id(&f.name) {
+                        *reversible_dunder |= 1 << id;
+                    }
 
                     *constructible |= matches!(
                         f,
@@ -1051,6 +1087,7 @@ impl StubGen {
                 impl_eq_int: false,
                 impl_ord: false,
                 impl_hash: false,
+                reversible_dunder: 0,
             },
         });
 
@@ -1264,13 +1301,14 @@ impl StubGen {
         items: &[Item],
         indent: Indent,
         mut blanks_before: u32,
+        reversible_dunder: u64,
     ) -> Result<()> {
         for item in items {
             for _ in 0..blanks_before {
                 writeln!(w)?;
             }
 
-            let name = &item.name;
+            let name = item.name.as_str();
             let sub_indent = Indent(indent.0 + 1);
             match &item.kind {
                 ItemKind::Attribute { ty } => {
@@ -1307,6 +1345,23 @@ impl StubGen {
                         Self::write_doc(w, &item.doc, sub_indent)?;
                         blanks_before = 1;
                     }
+
+                    if let FunctionKind::Method = kind
+                        && params.len() >= 2
+                        && let Some(id) = reversible_dunder_id(name)
+                        && reversible_dunder & (1 << (id ^ 1)) == 0
+                        && params[1].ty.as_ref().is_some_and(Type::is_self)
+                    {
+                        if blanks_before != 0 {
+                            writeln!(w)?;
+                        }
+                        let name = REVERSIBLE_DUNDER[(id >> 1) as usize];
+                        let r = if id & 1 == 0 { "r" } else { "" };
+                        writeln!(
+                            w,
+                            "{indent}def __{r}{name}__(self, rhs: Self, /) -> {return_type}: ..."
+                        )?;
+                    }
                 }
                 ItemKind::Class {
                     items,
@@ -1317,6 +1372,7 @@ impl StubGen {
                     impl_eq_int,
                     impl_ord,
                     impl_hash,
+                    reversible_dunder,
                 } => {
                     if !*subclassable {
                         writeln!(w, "{indent}@final")?;
@@ -1346,7 +1402,7 @@ impl StubGen {
                     }
 
                     if !items.is_empty() {
-                        Self::write_items(w, items, sub_indent, 1)?;
+                        Self::write_items(w, items, sub_indent, 1, *reversible_dunder)?;
                     }
 
                     if *impl_eq || *impl_eq_int || *impl_ord || *impl_hash {
@@ -1386,6 +1442,6 @@ impl StubGen {
     }
 
     pub fn write<W: io::Write>(&self, writer: &mut W) -> Result<()> {
-        Self::write_items(writer, &self.items, Indent(0), 1)
+        Self::write_items(writer, &self.items, Indent(0), 1, 0)
     }
 }
