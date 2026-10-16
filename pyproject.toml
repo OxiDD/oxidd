@@ -7,15 +7,13 @@ keywords = ["Decision Diagrams", "BDD", "ZBDD", "ZDD"]
 authors = [{ name = "OxiDD Contributors", email = "info@oxidd.net" }]
 maintainers = [{ name = "Nils Husung", email = "nils@oxidd.net" }]
 readme = "bindings/python/README.md"
+license = "MIT OR Apache-2.0"
 
 dependencies = ["typing-extensions ~= 4.0"]
 
 # see https://pypi.org/classifiers/
 classifiers = [
   "Development Status :: 4 - Beta",
-
-  "License :: OSI Approved :: MIT License",
-  "License :: OSI Approved :: Apache Software License",
 
   "Programming Language :: C",
   "Programming Language :: C++",
@@ -28,6 +26,7 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
   "Programming Language :: Python :: 3.15",
+  "Programming Language :: Python :: Free Threading",
   "Programming Language :: Python :: Implementation :: CPython",
   "Programming Language :: Python :: Implementation :: PyPy",
   "Programming Language :: Rust",
