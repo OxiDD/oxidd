@@ -7,10 +7,10 @@
 
 use std::alloc;
 use std::marker::{PhantomData, PhantomPinned};
-use std::mem::{size_of, ManuallyDrop, MaybeUninit};
+use std::mem::{ManuallyDrop, MaybeUninit, size_of};
 use std::ops::Deref;
 use std::ptr;
-use std::ptr::{addr_of, addr_of_mut, NonNull};
+use std::ptr::NonNull;
 use std::sync::atomic;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
@@ -18,6 +18,34 @@ use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 use crossbeam_utils::CachePadded;
 use derive_where::derive_where;
 use parking_lot::Mutex;
+
+/// Page size information
+///
+/// We use types and a trait instead of generic const arguments for more
+/// flexibility: Currently, associated constants cannot be used as generic const
+/// arguments, but associated types can be used as generic arguments.
+pub trait PageSizeInfo {
+    /// Page size in bytes
+    ///
+    /// Must be a power of two.
+    ///
+    /// To efficiently allocate memory for items, they are stored on so-called
+    /// pages. The larger the pages, the fewer allocations are needed. However,
+    /// larger pages also potentially mean a larger waste of memory. In
+    /// practice, it makes sense for pages to be at least as large as physical
+    /// memory pages. To reduce cache misses in the translation lookaside buffer
+    /// (TLB), one can leverage huge pages which are 2 MiB or 1 GiB large on
+    /// x86_64. Hence, `2 * 1024 * 1024` is a good default.
+    const PAGE_SIZE: usize;
+}
+
+/// Page size `N`
+///
+/// See [`PageSizeInfo`] for more details.
+pub struct PageSize<const N: usize>;
+impl<const N: usize> PageSizeInfo for PageSize<N> {
+    const PAGE_SIZE: usize = N;
+}
 
 /// Atomically reference counted value
 ///
@@ -99,7 +127,7 @@ unsafe impl<T> AtomicRefCounted for ArcItem<T> {
 // `ArcSlab::new()` until dropping it is always safe to create `&ArcSlab<I, D>`
 // references.
 #[repr(C)]
-pub struct ArcSlab<I, D, const PAGE_SIZE: usize> {
+pub struct ArcSlab<I, D, S: PageSizeInfo> {
     /// Additional data
     data: D,
 
@@ -108,10 +136,10 @@ pub struct ArcSlab<I, D, const PAGE_SIZE: usize> {
     /// These fields are cache padded to avoid false sharing with `data`:
     /// In many use cases, adding new items and cloning or dropping external
     /// handles does not modify `data`.
-    int: CachePadded<ArcSlabInt<I, D, PAGE_SIZE>>,
+    int: CachePadded<ArcSlabInt<I, D, S>>,
 }
 
-struct ArcSlabInt<I, D, const PAGE_SIZE: usize> {
+struct ArcSlabInt<I, D, S: PageSizeInfo> {
     /// Count of external references to the `ArcSlab`
     rc: AtomicUsize,
 
@@ -119,17 +147,17 @@ struct ArcSlabInt<I, D, const PAGE_SIZE: usize> {
     items: AtomicUsize,
 
     /// Linked list of pages where the items are
-    pages: Mutex<PageList<I, D, PAGE_SIZE>>,
+    pages: Mutex<PageList<I, D, S>>,
 
     _pin: PhantomPinned,
 }
 
 /// List of the allocated pages
-struct PageList<I, D, const PAGE_SIZE: usize> {
+struct PageList<I, D, S: PageSizeInfo> {
     /// Pointer to the current page, which contains at least a free slot
     ///
     /// SAFETY invariant: `current_page` always points to a valid `Page`
-    current_page: NonNull<Page<I, D, PAGE_SIZE>>,
+    current_page: NonNull<Page<I, D, S>>,
 
     /// Pointer to the first free slot
     ///
@@ -148,7 +176,7 @@ struct PageList<I, D, const PAGE_SIZE: usize> {
 /// given a size, we just rely on the `items` field to be the last (that is why
 /// we need `repr(C)`) and to be properly aligned.
 #[repr(C)]
-struct Page<I, D, const PAGE_SIZE: usize> {
+struct Page<I, D, S: PageSizeInfo> {
     /// Pointer back to the [`ArcSlab`]
     ///
     /// Use `NonNull<ArcSlab<I, D>>` and not `ArcSlabRef<T>` because we don't
@@ -157,16 +185,17 @@ struct Page<I, D, const PAGE_SIZE: usize> {
     /// SAFETY invariant: `ArcSlab` is always a valid `ArcSlab` pointer. Only
     /// during `ArcSlab::new()`, the pointee may be uninitialized. After
     /// `Page::new()`, the value is never changed.
-    slab: NonNull<ArcSlab<I, D, PAGE_SIZE>>,
+    slab: NonNull<ArcSlab<I, D, S>>,
 
     /// Pointer to the previous page in the page list (or null)
     ///
     /// SAFETY invariant: Either `prev` is null, or a valid `Page` pointer
-    prev: *mut Page<I, D, PAGE_SIZE>,
+    prev: *mut Page<I, D, S>,
 
     /// Actually, the element count is
     ///
-    ///   PAGE_SIZE - (addr_of!(items) - addr_of!(slab)) / size_of::<Slot<I>>()
+    /// `P::PAGE_SIZE - (addr_of!(items) - addr_of!(slab)) /
+    /// size_of::<Slot<I>>()`
     ///
     /// However, we cannot use generics in const expressions. By having an array
     /// with zero elements, we can at least ensure that `items` is properly
@@ -189,12 +218,7 @@ union Slot<I> {
 
 // --- Implementations for `ArcSlab` -------------------------------------------
 
-impl<I, D, const PAGE_SIZE: usize> ArcSlab<I, D, PAGE_SIZE> {
-    const ASSERT_PAGE_SIZE_POWER_OF_TWO: () = assert!(
-        PAGE_SIZE.is_power_of_two(),
-        "PAGE_SIZE must be a power of 2"
-    );
-
+impl<I, D, S: PageSizeInfo> ArcSlab<I, D, S> {
     /// Create a new `ArcSlab` and initialize the `data` field using `init_data`
     ///
     /// # Safety
@@ -205,17 +229,15 @@ impl<I, D, const PAGE_SIZE: usize> ArcSlab<I, D, PAGE_SIZE> {
     /// location). With respect to aliasing models such as Stacked Borrows or
     /// Tree Borrows, the pointer given to `init_data` is guaranteed to be
     /// tagged as the root of the allocation.
-    pub unsafe fn new_with(init_data: impl FnOnce(*mut D)) -> ArcSlabRef<I, D, PAGE_SIZE> {
-        // Ensure that our assertion is evaluated
-        let () = Self::ASSERT_PAGE_SIZE_POWER_OF_TWO;
+    pub unsafe fn new_with(init_data: impl FnOnce(*mut D)) -> ArcSlabRef<I, D, S> {
+        const { assert!(S::PAGE_SIZE.is_power_of_two()) };
 
         // Use a `Box` here such that we do not have to implement the allocation
         // ourselves. Inspired by the `Arc` implementation in the Rustonomicon.
-        let mut boxed = Box::new(MaybeUninit::<ArcSlab<I, D, PAGE_SIZE>>::uninit());
+        let mut boxed = Box::new(MaybeUninit::<ArcSlab<I, D, S>>::uninit());
         let ptr = boxed.as_mut_ptr();
         let non_null_ptr = NonNull::new(ptr).unwrap();
-        let _ = Box::into_raw(boxed); // we need `ptr: *mut ArcSlab<..>` instead
-                                      // of `*mut MaybeUninit<..>`
+        let _ = Box::into_raw(boxed); // we need `ptr: *mut ArcSlab<..>` instead of `*mut MaybeUninit<..>`
 
         /// Helper function to create a mutable `MaybeUninit<T>` reference from
         /// a raw `T` pointer.
@@ -228,12 +250,12 @@ impl<I, D, const PAGE_SIZE: usize> ArcSlab<I, D, PAGE_SIZE> {
         }
 
         // SAFETY: `ptr` and `(*ptr).data` are valid for writes
-        init_data(unsafe { addr_of_mut!((*ptr).data) });
+        init_data(unsafe { &raw mut (*ptr).data });
 
         // SAFETY: `ptr` and `(*ptr).int` are valid, we have exclusive access
         // (`PageList::new()` and `Page::new()` do not access the slab).
         MaybeUninit::write(
-            unsafe { uninit(addr_of_mut!((*ptr).int)) },
+            unsafe { uninit(&raw mut (*ptr).int) },
             CachePadded::new(ArcSlabInt {
                 rc: AtomicUsize::new(1),
                 items: AtomicUsize::new(0),
@@ -247,9 +269,9 @@ impl<I, D, const PAGE_SIZE: usize> ArcSlab<I, D, PAGE_SIZE> {
 
     /// Create a new ArcSlab with the given data
     #[allow(clippy::new_ret_no_self)]
-    pub fn new(data: D) -> ArcSlabRef<I, D, PAGE_SIZE> {
+    pub fn new(data: D) -> ArcSlabRef<I, D, S> {
         // SAFETY: writing to `slot` is safe, we initialize the slot
-        unsafe { Self::new_with(|slot| std::ptr::write(slot, data)) }
+        unsafe { Self::new_with(|slot| ptr::write(slot, data)) }
     }
 
     /// Increase the counter of external references
@@ -318,11 +340,11 @@ impl<I, D, const PAGE_SIZE: usize> ArcSlab<I, D, PAGE_SIZE> {
     }
 }
 
-impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> ArcSlab<I, D, PAGE_SIZE> {
+impl<I: AtomicRefCounted, D, S: PageSizeInfo> ArcSlab<I, D, S> {
     /// Get a free slot
     #[must_use]
     #[inline]
-    pub fn add_item(&self, item: I) -> IntHandle<'_, I, D, PAGE_SIZE> {
+    pub fn add_item(&self, item: I) -> IntHandle<'_, I, D, S> {
         let slot = self.int.pages.lock().get_slot();
         self.int.items.fetch_add(1, Relaxed);
         let item = Slot {
@@ -331,21 +353,18 @@ impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> ArcSlab<I, D, PAGE_SIZE> {
         // SAFETY: the `slot` is valid and we have exclusive ownership
         unsafe { ptr::write(slot.as_ptr(), item) };
 
-        IntHandle(slot, PhantomData)
+        IntHandle::<I, D, S>(slot, PhantomData)
     }
 }
 
-// SAFETY: it is safe to send `&ArcSlab<I, D, PAGE_SIZE>` to another thread
-unsafe impl<I: Send + Sync, D: Send + Sync, const PAGE_SIZE: usize> Sync
-    for ArcSlab<I, D, PAGE_SIZE>
-{
-}
+// SAFETY: it is safe to send `&ArcSlab<I, D, S>` to another thread
+unsafe impl<I: Send + Sync, D: Send + Sync, S: PageSizeInfo> Sync for ArcSlab<I, D, S> {}
 
 // --- Implementations for `PageList` ------------------------------------------
 
-impl<I, D, const PAGE_SIZE: usize> PageList<I, D, PAGE_SIZE> {
+impl<I, D, S: PageSizeInfo> PageList<I, D, S> {
     /// Creates a new page list with the given page
-    fn new(arc_slab: NonNull<ArcSlab<I, D, PAGE_SIZE>>) -> Self {
+    fn new(arc_slab: NonNull<ArcSlab<I, D, S>>) -> Self {
         let page = Page::new(arc_slab, ptr::null_mut());
         // SAFETY: `page` is a valid `Page` pointer
         let free_slot = unsafe { Page::first_slot(page) };
@@ -385,7 +404,7 @@ impl<I, D, const PAGE_SIZE: usize> PageList<I, D, PAGE_SIZE> {
     }
 }
 
-impl<I, D, const PAGE_SIZE: usize> Drop for PageList<I, D, PAGE_SIZE> {
+impl<I, D, S: PageSizeInfo> Drop for PageList<I, D, S> {
     fn drop(&mut self) {
         // SAFETY: `current_page` is always a valid pointer.
         unsafe { Page::dealloc(self.current_page) };
@@ -394,7 +413,7 @@ impl<I, D, const PAGE_SIZE: usize> Drop for PageList<I, D, PAGE_SIZE> {
 
 // --- Implementations for `Page` ----------------------------------------------
 
-impl<I, D, const PAGE_SIZE: usize> Page<I, D, PAGE_SIZE> {
+impl<I, D, S: PageSizeInfo> Page<I, D, S> {
     /// Compute the layout for (de-)allocation
     ///
     /// It is SAFE to use this layout for [`alloc::alloc()`] and
@@ -404,14 +423,14 @@ impl<I, D, const PAGE_SIZE: usize> Page<I, D, PAGE_SIZE> {
         // Assert that a page has space for at least one element. Should
         // evaluate to true at compile time.
         assert!(
-            size_of::<Page<I, D, PAGE_SIZE>>() + size_of::<Slot<I>>() <= PAGE_SIZE,
-            "PAGE_SIZE is too small, need space for at least one item"
+            size_of::<Page<I, D, S>>() + size_of::<Slot<I>>() <= S::PAGE_SIZE,
+            "P is too small, need space for at least one item"
         );
         // Calling `alloc::alloc()` with zero-sized layout is unsafe. Should
         // also evaluate to true at compile time.
-        assert!(size_of::<Page<I, D, PAGE_SIZE>>() > 0);
+        assert!(size_of::<Page<I, D, S>>() > 0);
 
-        alloc::Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap()
+        alloc::Layout::from_size_align(S::PAGE_SIZE, S::PAGE_SIZE).unwrap()
     }
 
     /// Create a new (initialized) page.
@@ -420,10 +439,7 @@ impl<I, D, const PAGE_SIZE: usize> Page<I, D, PAGE_SIZE> {
     ///
     /// The returned `Page` pointer is always valid.
     #[cold]
-    fn new(
-        slab: NonNull<ArcSlab<I, D, PAGE_SIZE>>,
-        prev: *mut Page<I, D, PAGE_SIZE>,
-    ) -> NonNull<Self> {
+    fn new(slab: NonNull<ArcSlab<I, D, S>>, prev: *mut Page<I, D, S>) -> NonNull<Self> {
         let layout = Self::layout();
         // SAFETY: The layout is safe for use with `alloc::alloc()`.
         let raw_ptr = unsafe { alloc::alloc(layout) } as *mut Self;
@@ -435,20 +451,19 @@ impl<I, D, const PAGE_SIZE: usize> Page<I, D, PAGE_SIZE> {
 
         // Use transparent hugepages on Linux
         #[cfg(all(not(miri), target_os = "linux"))]
-        if PAGE_SIZE >= 2 * 1024 * 1024 {
+        if S::PAGE_SIZE >= 2 * 1024 * 1024 {
             unsafe {
                 // spell-checker:ignore MADV
                 let _ = libc::madvise(
                     raw_ptr as *mut std::ffi::c_void,
-                    PAGE_SIZE,
+                    S::PAGE_SIZE,
                     libc::MADV_HUGEPAGE,
                 );
             }
         }
 
-        // SAFETY: `raw_ptr` is valid (the pointee is uninitialized, but this is
-        // allowed in context of `addr_of_mut!()`).
-        let first_slot = unsafe { addr_of_mut!((*raw_ptr).items) as *mut Slot<I> };
+        // SAFETY: `raw_ptr` is valid.
+        let first_slot = unsafe { (&raw mut (*raw_ptr).items) as *mut Slot<I> };
 
         let page = Page {
             slab,
@@ -466,17 +481,17 @@ impl<I, D, const PAGE_SIZE: usize> Page<I, D, PAGE_SIZE> {
         // a page).
         let count = unsafe {
             (raw_ptr as *mut u8)
-                .add(PAGE_SIZE)
+                .add(S::PAGE_SIZE)
                 .offset_from(first_slot as *mut u8)
         } / size_of::<Slot<I>>() as isize;
         let mut slot = first_slot;
         let last_slot = unsafe { slot.offset(count - 1) };
-        while !std::ptr::eq(slot, last_slot) {
+        while !ptr::eq(slot, last_slot) {
             let next = unsafe { slot.offset(1) };
-            unsafe { ptr::write(addr_of_mut!((*slot).next_free), next) };
+            unsafe { ptr::write(&raw mut (*slot).next_free, next) };
             slot = next;
         }
-        unsafe { ptr::write(addr_of_mut!((*last_slot).next_free), ptr::null_mut()) };
+        unsafe { ptr::write(&raw mut (*last_slot).next_free, ptr::null_mut()) };
 
         ptr
     }
@@ -487,27 +502,27 @@ impl<I, D, const PAGE_SIZE: usize> Page<I, D, PAGE_SIZE> {
     /// initialized).
     #[inline]
     unsafe fn first_slot(ptr: NonNull<Self>) -> NonNull<Slot<I>> {
-        unsafe { NonNull::new_unchecked(addr_of_mut!((*ptr.as_ptr()).items) as *mut Slot<I>) }
+        unsafe { NonNull::new_unchecked((&raw mut (*ptr.as_ptr()).items) as *mut Slot<I>) }
     }
 
     /// Obtain a pointer to the `Page` from a pointer that points somewhere at
-    /// the page (e.g. a `Slot<I>`)
+    /// the page (e.g., a `Slot<I>`)
     #[inline]
     fn page_ptr<P>(ptr: *mut P) -> *mut Self {
-        sptr::Strict::map_addr(ptr, |addr| addr & !(PAGE_SIZE - 1)) as _
+        ptr.map_addr(|addr| addr & !(S::PAGE_SIZE - 1)) as _
     }
 
     /// Obtain a the `ArcSlab` corresponding to the page
     ///
     /// SAFETY: `page` must point to a valid `Page`.
     #[inline]
-    unsafe fn slab(page: *const Self) -> NonNull<ArcSlab<I, D, PAGE_SIZE>> {
+    unsafe fn slab(page: *const Self) -> NonNull<ArcSlab<I, D, S>> {
         // SAFETY: `page` points to a valid `Page`. The `ArcSlab` field is kept
         // constant for the entire lifecycle of a `Page`.
-        unsafe { ptr::read(addr_of!((*page).slab)) }
+        unsafe { ptr::read(&raw const (*page).slab) }
     }
 
-    /// Free the given slot, i.e. add it to the page's free slot list and
+    /// Free the given slot, i.e., add it to the page's free slot list and
     /// possibly park or reorder pages.
     ///
     /// SAFETY: The slot must be empty.
@@ -529,7 +544,7 @@ impl<I, D, const PAGE_SIZE: usize> Page<I, D, PAGE_SIZE> {
     /// SAFETY: Safe as long as `page` is the start of a valid chain (only
     /// `next` pointers matter). Every page in the chain needs to be empty.
     /// There must not be any accesses to pages of this chain.
-    unsafe fn dealloc(mut page: NonNull<Page<I, D, PAGE_SIZE>>) {
+    unsafe fn dealloc(mut page: NonNull<Page<I, D, S>>) {
         loop {
             // SAFETY: `page` is a valid `Page` pointer
             let prev = unsafe { page.as_ref().prev };
@@ -567,24 +582,24 @@ impl<I: AtomicRefCounted> Slot<I> {
     /// reference). For every call to this function, there must have been a
     /// preceding call to `retain()`, or an initial count.
     #[inline]
-    unsafe fn release<D, const PAGE_SIZE: usize>(this: NonNull<Self>, f: impl FnOnce(I)) {
+    unsafe fn release<D, S: PageSizeInfo>(this: NonNull<Self>, f: impl FnOnce(I)) {
         // SAFETY:
         // - `this.as_ref()`: `this` is valid
         // - `.item`: the slot is non-empty
         // - `.release()`: we give up ownership of one reference
         if unsafe { this.as_ref().item.release() } == 1 {
-            drop_item::<I, D, PAGE_SIZE>(this, f);
+            drop_item::<I, D, S>(this, f);
         }
 
         #[cold]
-        fn drop_item<I, D, const PAGE_SIZE: usize>(mut this: NonNull<Slot<I>>, f: impl FnOnce(I)) {
+        fn drop_item<I, D, S: PageSizeInfo>(mut this: NonNull<Slot<I>>, f: impl FnOnce(I)) {
             atomic::fence(Acquire);
 
             // SAFETY: We have exclusive access to the slot, we don't use the
             // item again
             f(unsafe { ManuallyDrop::take(&mut this.as_mut().item) });
             // SAFETY: The slot is empty
-            unsafe { Page::<I, D, PAGE_SIZE>::free_slot(this) };
+            unsafe { Page::<I, D, S>::free_slot(this) };
         }
     }
 
@@ -595,7 +610,7 @@ impl<I: AtomicRefCounted> Slot<I> {
     /// and there must not be any further accesses to `this` (if it was the last
     /// reference). For every call to this function, there must have been a
     /// preceding call to `retain()`, or an initial count.
-    unsafe fn release_move<D, const PAGE_SIZE: usize>(mut this: NonNull<Self>) -> Option<I> {
+    unsafe fn release_move<D, S: PageSizeInfo>(mut this: NonNull<Self>) -> Option<I> {
         // SAFETY:
         // - `this.as_ref()`: `this` is valid
         // - `.item`: the slot is non-empty
@@ -610,7 +625,7 @@ impl<I: AtomicRefCounted> Slot<I> {
         // again
         let res = unsafe { ManuallyDrop::take(&mut this.as_mut().item) };
         // SAFETY: The slot is empty
-        unsafe { Page::<I, D, PAGE_SIZE>::free_slot(this) };
+        unsafe { Page::<I, D, S>::free_slot(this) };
 
         Some(res)
     }
@@ -628,16 +643,16 @@ impl<I: AtomicRefCounted> Slot<I> {
 /// the `ExtHandle`s. This is the reason for this custom reference type.
 #[repr(transparent)]
 #[derive_where(PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ArcSlabRef<I, D, const PAGE_SIZE: usize>(NonNull<ArcSlab<I, D, PAGE_SIZE>>);
+pub struct ArcSlabRef<I, D, S: PageSizeInfo>(NonNull<ArcSlab<I, D, S>>);
 
-impl<I, D, const PAGE_SIZE: usize> ArcSlabRef<I, D, PAGE_SIZE> {
+impl<I, D, S: PageSizeInfo> ArcSlabRef<I, D, S> {
     /// Convert this `ArcSlabRef` into its underlying pointer
     ///
     /// This does not change any reference counts. To avoid a memory leak, the
     /// pointer must be converted back to an `ArcSlabRef` using
     /// [`Self::from_raw()`].
     #[inline]
-    pub fn into_raw(this: Self) -> NonNull<ArcSlab<I, D, PAGE_SIZE>> {
+    pub fn into_raw(this: Self) -> NonNull<ArcSlab<I, D, S>> {
         let ptr = this.0;
         std::mem::forget(this);
         ptr
@@ -648,18 +663,18 @@ impl<I, D, const PAGE_SIZE: usize> ArcSlabRef<I, D, PAGE_SIZE> {
     /// # Safety
     ///
     /// The pointer must have been obtained from
-    /// [`ArcSlabRef::<I, D, PAGE_SIZE>::into_raw()`] (`I`, `D` and `PAGE_SIZE`
-    /// must match). This function does not change any reference counters, so
-    /// calling this function multiple times for the same pointer may lead to
-    /// use after free bugs depending on the usage of the returned `ArcSlabRef`.
+    /// [`ArcSlabRef::<I, D, S>::into_raw()`] (`I`, `D` and `S` must match).
+    /// This function does not change any reference counters, so calling this
+    /// function multiple times for the same pointer may lead to use after free
+    /// bugs depending on the usage of the returned `ArcSlabRef`.
     #[inline]
-    pub unsafe fn from_raw(ptr: NonNull<ArcSlab<I, D, PAGE_SIZE>>) -> Self {
+    pub unsafe fn from_raw(ptr: NonNull<ArcSlab<I, D, S>>) -> Self {
         Self(ptr)
     }
 }
 
-impl<I, D, const PAGE_SIZE: usize> std::ops::Deref for ArcSlabRef<I, D, PAGE_SIZE> {
-    type Target = ArcSlab<I, D, PAGE_SIZE>;
+impl<I, D, S: PageSizeInfo> std::ops::Deref for ArcSlabRef<I, D, S> {
+    type Target = ArcSlab<I, D, S>;
 
     #[inline]
     fn deref(&self) -> &Self::Target {
@@ -668,7 +683,7 @@ impl<I, D, const PAGE_SIZE: usize> std::ops::Deref for ArcSlabRef<I, D, PAGE_SIZ
     }
 }
 
-impl<I, D, const PAGE_SIZE: usize> Clone for ArcSlabRef<I, D, PAGE_SIZE> {
+impl<I, D, S: PageSizeInfo> Clone for ArcSlabRef<I, D, S> {
     #[inline]
     fn clone(&self) -> Self {
         // SAFETY: `ArcSlab` is reference counted
@@ -677,7 +692,7 @@ impl<I, D, const PAGE_SIZE: usize> Clone for ArcSlabRef<I, D, PAGE_SIZE> {
     }
 }
 
-impl<I, D, const PAGE_SIZE: usize> Drop for ArcSlabRef<I, D, PAGE_SIZE> {
+impl<I, D, S: PageSizeInfo> Drop for ArcSlabRef<I, D, S> {
     #[inline]
     fn drop(&mut self) {
         // SAFETY: `ArcSlab` is reference counted, `self.0` is valid and there
@@ -687,15 +702,9 @@ impl<I, D, const PAGE_SIZE: usize> Drop for ArcSlabRef<I, D, PAGE_SIZE> {
 }
 
 // SAFETY: It is safe to send `ArcSlabRef`s to another thread.
-unsafe impl<I: Send + Sync, D: Send + Sync, const PAGE_SIZE: usize> Send
-    for ArcSlabRef<I, D, PAGE_SIZE>
-{
-}
+unsafe impl<I: Send + Sync, D: Send + Sync, S: PageSizeInfo> Send for ArcSlabRef<I, D, S> {}
 // SAFETY: It is safe to send `&ArcSlabRef`s to another thread.
-unsafe impl<I: Send + Sync, D: Send + Sync, const PAGE_SIZE: usize> Sync
-    for ArcSlabRef<I, D, PAGE_SIZE>
-{
-}
+unsafe impl<I: Send + Sync, D: Send + Sync, S: PageSizeInfo> Sync for ArcSlabRef<I, D, S> {}
 
 // --- `IntHandle` -------------------------------------------------------------
 
@@ -709,19 +718,19 @@ unsafe impl<I: Send + Sync, D: Send + Sync, const PAGE_SIZE: usize> Sync
 // SAFETY invariant: The `ArcSlab` outlives `'a`
 #[repr(transparent)]
 #[derive_where(PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct IntHandle<'a, I: AtomicRefCounted, D, const PAGE_SIZE: usize>(
+pub struct IntHandle<'a, I: AtomicRefCounted, D, S: PageSizeInfo>(
     NonNull<Slot<I>>,
-    #[derive_where(skip)] PhantomData<(D, &'a ())>,
+    #[derive_where(skip)] PhantomData<(D, S, &'a ())>,
 );
 
-impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> IntHandle<'_, I, D, PAGE_SIZE> {
+impl<I: AtomicRefCounted, D, S: PageSizeInfo> IntHandle<'_, I, D, S> {
     /// Move the referenced item out in case `this` is the last reference,
     /// otherwise return `None`
     #[inline]
     pub fn into_inner(this: Self) -> Option<I> {
         let slot = this.0;
         std::mem::forget(this); // "first things first" for exception safety
-        unsafe { Slot::release_move::<D, PAGE_SIZE>(slot) }
+        unsafe { Slot::release_move::<D, S>(slot) }
     }
 
     /// Move the referenced item out without checking whether `this` is the last
@@ -744,7 +753,7 @@ impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> IntHandle<'_, I, D, PAGE_SI
         // again
         let res = unsafe { ManuallyDrop::take(&mut slot.as_mut().item) };
         // SAFETY: The slot is empty
-        unsafe { Page::<I, D, PAGE_SIZE>::free_slot(slot) };
+        unsafe { Page::<I, D, S>::free_slot(slot) };
 
         res
     }
@@ -754,7 +763,7 @@ impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> IntHandle<'_, I, D, PAGE_SI
     pub fn drop_with(this: Self, f: impl FnOnce(I)) {
         let slot = this.0;
         std::mem::forget(this); // "first things first" for exception safety
-        unsafe { Slot::release::<D, PAGE_SIZE>(slot, f) };
+        unsafe { Slot::release::<D, S>(slot, f) };
     }
 
     /// Convert this handle into its underlying pointer
@@ -776,8 +785,8 @@ impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> IntHandle<'_, I, D, PAGE_SI
     /// # Safety
     ///
     /// The pointer must have been obtained from
-    /// [`IntHandle::<I, D, PAGE_SIZE>::into_raw()`] (`I`, `D` and `PAGE_SIZE`
-    /// must match). Furthermore, the caller must ensure that the [`ArcSlab`]
+    /// [`IntHandle::<I, D, S>::into_raw()`] (`I`, `D` and `S` must match).
+    /// Furthermore, the caller must ensure that the [`ArcSlab`]
     /// outlives the created `IntHandle`.
     #[inline]
     pub unsafe fn from_raw(ptr: NonNull<I>) -> Self {
@@ -787,7 +796,7 @@ impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> IntHandle<'_, I, D, PAGE_SI
     }
 }
 
-impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> Clone for IntHandle<'_, I, D, PAGE_SIZE> {
+impl<I: AtomicRefCounted, D, S: PageSizeInfo> Clone for IntHandle<'_, I, D, S> {
     #[inline]
     fn clone(&self) -> Self {
         unsafe { Slot::retain(self.0) };
@@ -795,14 +804,14 @@ impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> Clone for IntHandle<'_, I, 
     }
 }
 
-impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> Drop for IntHandle<'_, I, D, PAGE_SIZE> {
+impl<I: AtomicRefCounted, D, S: PageSizeInfo> Drop for IntHandle<'_, I, D, S> {
     #[inline]
     fn drop(&mut self) {
-        unsafe { Slot::release::<D, PAGE_SIZE>(self.0, |_| {}) };
+        unsafe { Slot::release::<D, S>(self.0, |_| {}) };
     }
 }
 
-impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> Deref for IntHandle<'_, I, D, PAGE_SIZE> {
+impl<I: AtomicRefCounted, D, S: PageSizeInfo> Deref for IntHandle<'_, I, D, S> {
     type Target = I;
 
     #[inline]
@@ -812,12 +821,12 @@ impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> Deref for IntHandle<'_, I, 
     }
 }
 
-unsafe impl<I: AtomicRefCounted + Send + Sync, D: Send + Sync, const PAGE_SIZE: usize> Send
-    for IntHandle<'_, I, D, PAGE_SIZE>
+unsafe impl<I: AtomicRefCounted + Send + Sync, D: Send + Sync, S: PageSizeInfo> Send
+    for IntHandle<'_, I, D, S>
 {
 }
-unsafe impl<I: AtomicRefCounted + Send + Sync, D: Send + Sync, const PAGE_SIZE: usize> Sync
-    for IntHandle<'_, I, D, PAGE_SIZE>
+unsafe impl<I: AtomicRefCounted + Send + Sync, D: Send + Sync, S: PageSizeInfo> Sync
+    for IntHandle<'_, I, D, S>
 {
 }
 
@@ -830,12 +839,12 @@ unsafe impl<I: AtomicRefCounted + Send + Sync, D: Send + Sync, const PAGE_SIZE: 
 /// `&ArcSlab`.
 #[repr(transparent)]
 #[derive_where(PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ExtHandle<I: AtomicRefCounted, D, const PAGE_SIZE: usize>(
+pub struct ExtHandle<I: AtomicRefCounted, D, S: PageSizeInfo>(
     NonNull<Slot<I>>,
-    #[derive_where(skip)] PhantomData<D>,
+    #[derive_where(skip)] PhantomData<(D, S)>,
 );
 
-impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> ExtHandle<I, D, PAGE_SIZE> {
+impl<I: AtomicRefCounted, D, S: PageSizeInfo> ExtHandle<I, D, S> {
     /// Move the referenced item out in case `this` is the last reference,
     /// otherwise return `None`
     #[inline]
@@ -845,8 +854,8 @@ impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> ExtHandle<I, D, PAGE_SIZE> 
 
         // The item must be released before the `ArcSlab`: `this` might be the
         // last reference, so otherwise we might have a use after free.
-        let res = unsafe { Slot::release_move::<D, PAGE_SIZE>(slot) };
-        let page = Page::<I, D, PAGE_SIZE>::page_ptr(slot.as_ptr());
+        let res = unsafe { Slot::release_move::<D, S>(slot) };
+        let page = Page::<I, D, S>::page_ptr(slot.as_ptr());
         unsafe { ArcSlab::release(Page::slab(page)) };
         res
     }
@@ -859,15 +868,15 @@ impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> ExtHandle<I, D, PAGE_SIZE> 
 
         // The item must be released before the `ArcSlab`: `this` might be the
         // last reference, so otherwise we might have a use after free.
-        unsafe { Slot::release::<D, PAGE_SIZE>(slot, f) };
-        let page = Page::<I, D, PAGE_SIZE>::page_ptr(slot.as_ptr());
+        unsafe { Slot::release::<D, S>(slot, f) };
+        let page = Page::<I, D, S>::page_ptr(slot.as_ptr());
         unsafe { ArcSlab::release(Page::slab(page)) };
     }
 
     /// Obtain the [`ArcSlab`] storing the referenced item
     #[inline]
-    pub fn slab(this: &Self) -> &ArcSlab<I, D, PAGE_SIZE> {
-        let page = Page::<I, D, PAGE_SIZE>::page_ptr(this.0.as_ptr());
+    pub fn slab(this: &Self) -> &ArcSlab<I, D, S> {
+        let page = Page::<I, D, S>::page_ptr(this.0.as_ptr());
         unsafe { Page::slab(page).as_ref() }
     }
 
@@ -890,8 +899,7 @@ impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> ExtHandle<I, D, PAGE_SIZE> 
     /// # Safety
     ///
     /// The pointer must have been obtained from
-    /// [`ExtHandle::<I, D, PAGE_SIZE>::into_raw()`] (`I`, `D` and `PAGE_SIZE`
-    /// must match).
+    /// [`ExtHandle::<I, D, S>::into_raw()`] (`I`, `D` and `S` must match).
     #[inline]
     pub unsafe fn from_raw(ptr: NonNull<I>) -> Self {
         // The cast is fine: `Slot<I>` is a `union` with `repr(C)` and
@@ -900,10 +908,10 @@ impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> ExtHandle<I, D, PAGE_SIZE> 
     }
 }
 
-impl<'a, I: AtomicRefCounted, D, const PAGE_SIZE: usize> From<IntHandle<'a, I, D, PAGE_SIZE>>
-    for ExtHandle<I, D, PAGE_SIZE>
+impl<'a, I: AtomicRefCounted, D, S: PageSizeInfo> From<IntHandle<'a, I, D, S>>
+    for ExtHandle<I, D, S>
 {
-    fn from(value: IntHandle<'a, I, D, PAGE_SIZE>) -> Self {
+    fn from(value: IntHandle<'a, I, D, S>) -> Self {
         let handle = Self(value.0, PhantomData);
         std::mem::forget(value);
         Self::slab(&handle).retain();
@@ -911,7 +919,7 @@ impl<'a, I: AtomicRefCounted, D, const PAGE_SIZE: usize> From<IntHandle<'a, I, D
     }
 }
 
-impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> Clone for ExtHandle<I, D, PAGE_SIZE> {
+impl<I: AtomicRefCounted, D, S: PageSizeInfo> Clone for ExtHandle<I, D, S> {
     #[inline]
     fn clone(&self) -> Self {
         // SAFETY: the slot is occupied
@@ -921,18 +929,18 @@ impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> Clone for ExtHandle<I, D, P
     }
 }
 
-impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> Drop for ExtHandle<I, D, PAGE_SIZE> {
+impl<I: AtomicRefCounted, D, S: PageSizeInfo> Drop for ExtHandle<I, D, S> {
     #[inline]
     fn drop(&mut self) {
         // The item must be released before the `ArcSlab`: `this` might be the
         // last reference, so otherwise we might have a use after free.
-        unsafe { Slot::release::<D, PAGE_SIZE>(self.0, |_| {}) };
-        let page = Page::<I, D, PAGE_SIZE>::page_ptr(self.0.as_ptr());
+        unsafe { Slot::release::<D, S>(self.0, |_| {}) };
+        let page = Page::<I, D, S>::page_ptr(self.0.as_ptr());
         unsafe { ArcSlab::release(Page::slab(page)) };
     }
 }
 
-impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> Deref for ExtHandle<I, D, PAGE_SIZE> {
+impl<I: AtomicRefCounted, D, S: PageSizeInfo> Deref for ExtHandle<I, D, S> {
     type Target = I;
 
     #[inline]
@@ -942,12 +950,12 @@ impl<I: AtomicRefCounted, D, const PAGE_SIZE: usize> Deref for ExtHandle<I, D, P
     }
 }
 
-unsafe impl<I: AtomicRefCounted + Send + Sync, D: Send + Sync, const PAGE_SIZE: usize> Send
-    for ExtHandle<I, D, PAGE_SIZE>
+unsafe impl<I: AtomicRefCounted + Send + Sync, D: Send + Sync, S: PageSizeInfo> Send
+    for ExtHandle<I, D, S>
 {
 }
-unsafe impl<I: AtomicRefCounted + Send + Sync, D: Send + Sync, const PAGE_SIZE: usize> Sync
-    for ExtHandle<I, D, PAGE_SIZE>
+unsafe impl<I: AtomicRefCounted + Send + Sync, D: Send + Sync, S: PageSizeInfo> Sync
+    for ExtHandle<I, D, S>
 {
 }
 
@@ -955,10 +963,10 @@ unsafe impl<I: AtomicRefCounted + Send + Sync, D: Send + Sync, const PAGE_SIZE: 
 
 #[cfg(test)]
 mod tests {
-    use crate::{ArcItem, ArcSlab};
+    use crate::{ArcItem, ArcSlab, PageSize};
 
     #[test]
     fn instantiate() {
-        ArcSlab::<ArcItem<u8>, (), 1024>::new(());
+        ArcSlab::<ArcItem<u8>, (), PageSize<1024>>::new(());
     }
 }

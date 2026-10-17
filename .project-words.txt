@@ -92,6 +92,7 @@ levelized
 libc
 liboxidd
 linenos
+lookaside
 madvise
 malloc
 manylinux

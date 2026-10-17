@@ -1,20 +1,15 @@
 [package]
 name = "arcslab"
-version = "0.1.2"
-edition = "2021"
+version = "0.2.0"
+edition = "2024"
 description = "Slab, but with reference counted items"
 
 license.workspace = true
 homepage.workspace = true
 repository.workspace = true
-
+rust-version = "1.85"
 
 [dependencies]
-
-# strict provenance polyfill
-# (TODO: remove this once we raise the MSRV to 1.84)
-sptr = "0.3"
-
 # fast alternative Mutex & RwLock implementation
 parking_lot = "0.12"
 

@@ -66,13 +66,12 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "arcslab"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "crossbeam-utils",
  "derive-where",
  "libc",
  "parking_lot",
- "sptr",
 ]
 
 [[package]]
