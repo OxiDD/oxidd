@@ -138,20 +138,18 @@ mod index {
 
     use crate::util::type_cons::{DD, IndexDD};
 
-    const TERMINALS: usize = 2;
-
     pub struct ZBDDInfo;
-    impl oxidd_manager_index::DiagramInfo<TERMINALS> for ZBDDInfo {
+    impl oxidd_manager_index::DiagramInfo for ZBDDInfo {
         type EdgeTag = ();
-        type InnerNode<'id> =
-            oxidd_manager_index::node::fixed_arity::NodeWithLevel<'id, Self, 2, TERMINALS>;
+        type InnerNode<'id> = oxidd_manager_index::node::fixed_arity::NodeWithLevel<'id, Self, 2>;
+        const TERMINALS: u32 = 2;
         type TerminalNode = ZBDDTerminal;
         type TerminalManager<'id> =
-            oxidd_manager_index::terminal_manager::StaticTerminalManager<'id, Self, TERMINALS>;
+            oxidd_manager_index::terminal_manager::StaticTerminalManager<'id, Self>;
         type Rules = ZBDDRules;
         type ManagerData<'id> = ZBDDManagerData<'id>;
     }
-    type ZBDD = IndexDD<ZBDDInfo, TERMINALS>;
+    type ZBDD = IndexDD<ZBDDInfo>;
 
     manager_data!(ZBDDManagerData for ZBDD, operator: ZBDDOp, cache_entry_capacity: 4);
 
@@ -189,21 +187,20 @@ mod pointer {
     use oxidd_manager_pointer::terminal_manager::StaticTerminalManager;
     use oxidd_rules_zbdd::{ZBDDOp, ZBDDRules, ZBDDTerminal};
 
-    use crate::PAGE_SIZE;
     use crate::util::type_cons::{DD, PointerDD};
 
-    const TAG_BITS: u32 = 0;
-
     pub struct ZBDDInfo;
-    impl oxidd_manager_pointer::DiagramInfo<PAGE_SIZE, TAG_BITS> for ZBDDInfo {
+    impl oxidd_manager_pointer::DiagramInfo for ZBDDInfo {
+        type PageSizeInfo = crate::PageSizeInfo;
         type EdgeTag = ();
-        type InnerNode<'id> = NodeWithLevel<'id, Self, PAGE_SIZE, TAG_BITS, 2>;
+        const TAG_BITS: u32 = 0;
+        type InnerNode<'id> = NodeWithLevel<'id, Self, 2>;
         type TerminalNode = ZBDDTerminal;
-        type TerminalManager<'id> = StaticTerminalManager<'id, Self, PAGE_SIZE, TAG_BITS>;
+        type TerminalManager<'id> = StaticTerminalManager<'id, Self>;
         type Rules = ZBDDRules;
         type ManagerData<'id> = ZBDDManagerData<'id>;
     }
-    type ZBDD = PointerDD<ZBDDInfo, PAGE_SIZE, TAG_BITS>;
+    type ZBDD = PointerDD<ZBDDInfo>;
 
     manager_data!(ZBDDManagerData for ZBDD, operator: ZBDDOp, cache_entry_capacity: 4);
 

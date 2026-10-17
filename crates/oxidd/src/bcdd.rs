@@ -44,20 +44,18 @@ mod index {
 
     use crate::util::type_cons::{DD, IndexDD};
 
-    const TERMINALS: usize = 1;
-
     pub struct BCDDInfo;
-    impl oxidd_manager_index::DiagramInfo<TERMINALS> for BCDDInfo {
+    impl oxidd_manager_index::DiagramInfo for BCDDInfo {
         type EdgeTag = EdgeTag;
-        type InnerNode<'id> =
-            oxidd_manager_index::node::fixed_arity::NodeWithLevel<'id, Self, 2, TERMINALS>;
+        type InnerNode<'id> = oxidd_manager_index::node::fixed_arity::NodeWithLevel<'id, Self, 2>;
+        const TERMINALS: u32 = 1;
         type TerminalNode = BCDDTerminal;
         type TerminalManager<'id> =
-            oxidd_manager_index::terminal_manager::StaticTerminalManager<'id, Self, TERMINALS>;
+            oxidd_manager_index::terminal_manager::StaticTerminalManager<'id, Self>;
         type Rules = BCDDRules;
         type ManagerData<'id> = BCDDManagerData<'id>;
     }
-    type BCDD = IndexDD<BCDDInfo, TERMINALS>;
+    type BCDD = IndexDD<BCDDInfo>;
 
     crate::util::manager_data!(BCDDManagerData for BCDD, operator: BCDDOp, cache_entry_capacity: 4);
 
@@ -96,21 +94,20 @@ mod pointer {
     use oxidd_manager_pointer::terminal_manager::StaticTerminalManager;
     use oxidd_rules_bdd::complement_edge::{BCDDOp, BCDDRules, BCDDTerminal, EdgeTag};
 
-    use crate::PAGE_SIZE;
     use crate::util::type_cons::{DD, PointerDD};
 
-    const TAG_BITS: u32 = 1;
-
     pub struct BCDDInfo;
-    impl oxidd_manager_pointer::DiagramInfo<PAGE_SIZE, TAG_BITS> for BCDDInfo {
+    impl oxidd_manager_pointer::DiagramInfo for BCDDInfo {
+        type PageSizeInfo = crate::PageSizeInfo;
         type EdgeTag = EdgeTag;
-        type InnerNode<'id> = NodeWithLevel<'id, Self, PAGE_SIZE, TAG_BITS, 2>;
+        const TAG_BITS: u32 = 1;
+        type InnerNode<'id> = NodeWithLevel<'id, Self, 2>;
         type TerminalNode = BCDDTerminal;
-        type TerminalManager<'id> = StaticTerminalManager<'id, Self, PAGE_SIZE, TAG_BITS>;
+        type TerminalManager<'id> = StaticTerminalManager<'id, Self>;
         type Rules = BCDDRules;
         type ManagerData<'id> = BCDDManagerData<'id>;
     }
-    type BCDD = PointerDD<BCDDInfo, PAGE_SIZE, TAG_BITS>;
+    type BCDD = PointerDD<BCDDInfo>;
 
     crate::util::manager_data!(BCDDManagerData for BCDD, operator: BCDDOp, cache_entry_capacity: 4);
 

@@ -18,21 +18,22 @@ compile_error!("oxidd-manager-index assumes that for all `x: u32`, `x as usize` 
 ///
 /// This trait is typically implemented by a zero-sized type that is not
 /// relevant otherwise.
-pub trait DiagramInfo<const TERMINALS: usize>: Sized + Send + Sync {
+pub trait DiagramInfo: Sized + Send + Sync {
     type EdgeTag: oxidd_core::Tag + Send + Sync;
 
     type InnerNode<'id>: node::NodeBase
-        + oxidd_core::InnerNode<manager::Edge<'id, Self, TERMINALS>>
+        + oxidd_core::InnerNode<manager::Edge<'id, Self>>
         + Send
         + Sync;
 
+    const TERMINALS: u32;
     type TerminalNode: Eq + std::hash::Hash + Send + Sync;
-    type TerminalManager<'id>: terminal_manager::TerminalManager<'id, Self, TERMINALS> + Send + Sync;
+    type TerminalManager<'id>: terminal_manager::TerminalManager<'id, Self> + Send + Sync;
 
     type Rules;
 
-    type ManagerData<'id>: oxidd_core::util::DropWith<manager::Edge<'id, Self, TERMINALS>>
-        + oxidd_core::ManagerEventSubscriber<manager::Manager<'id, Self, TERMINALS>>
+    type ManagerData<'id>: oxidd_core::util::DropWith<manager::Edge<'id, Self>>
+        + oxidd_core::ManagerEventSubscriber<manager::Manager<'id, Self>>
         + Send
         + Sync;
 }

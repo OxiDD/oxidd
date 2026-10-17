@@ -64,19 +64,16 @@ impl Drop for GCSignalSender {
     }
 }
 
-pub struct Store<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> {
-    inner_nodes: huge::Box<SlotSlice<'id, DI, TERMINALS>>,
-    manager: RwLock<Manager<'id, DI, TERMINALS>>,
+pub struct Store<'id, DI: DiagramInfo> {
+    inner_nodes: huge::Box<SlotSlice<'id, DI>>,
+    manager: RwLock<Manager<'id, DI>>,
     terminal_manager: DI::TerminalManager<'id>,
     state: CachePadded<Mutex<SharedStoreState>>,
     gc_signal: GCSignalSender,
     workers: crate::workers::Workers,
 }
 
-unsafe impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Sync
-    for Store<'id, DI, TERMINALS>
-{
-}
+unsafe impl<'id, DI: DiagramInfo> Sync for Store<'id, DI> {}
 
 /// Size of a pre-allocation (number of nodes)
 const CHUNK_SIZE: u32 = 64 * 1024;
@@ -177,9 +174,7 @@ thread_local! {
     };
 }
 
-struct LocalStoreStateGuard<'a, 'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize>(
-    &'a Store<'id, DI, TERMINALS>,
-);
+struct LocalStoreStateGuard<'a, 'id, DI: DiagramInfo>(&'a Store<'id, DI>);
 
 /// Node slot. We distinguish three states, corresponding to the variants:
 /// "containing a node," "free," and "uninitialized."
@@ -193,7 +188,7 @@ union Slot<N> {
 }
 
 #[repr(transparent)]
-struct SlotSlice<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> {
+struct SlotSlice<'id, DI: DiagramInfo> {
     phantom: PhantomData<(Invariant<'id>, DI)>,
     slots: [UnsafeCell<Slot<DI::InnerNode<'id>>>],
 }
@@ -204,15 +199,15 @@ struct SlotSlice<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> {
 #[repr(transparent)]
 #[must_use]
 #[derive_where(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Edge<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize>(
+pub struct Edge<'id, DI: DiagramInfo>(
     /// `node_index | edge_tag << (u32::BITS - Self::TAG_BITS)`
     u32,
     #[derive_where(skip)] PhantomData<(Invariant<'id>, DI)>,
 );
 
 #[repr(C)]
-pub struct Manager<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> {
-    unique_table: Vec<Mutex<LevelViewSet<'id, DI, TERMINALS>>>,
+pub struct Manager<'id, DI: DiagramInfo> {
+    unique_table: Vec<Mutex<LevelViewSet<'id, DI>>>,
     var_level_map: VarLevelMap,
     var_name_map: VarNameMap,
     data: ManuallyDrop<DI::ManagerData<'id>>,
@@ -220,25 +215,19 @@ pub struct Manager<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> {
     ///
     /// Theoretically, we should be able to get the pointer from a `&Manager`
     /// reference, but this leads to provenance issues.
-    store: *const Store<'id, DI, TERMINALS>,
+    store: *const Store<'id, DI>,
     gc_count: AtomicU64,
     reorder_count: u64,
     gc_ongoing: TryLock,
     reorder_gc_prepared: bool,
 }
 
-unsafe impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Send
-    for Manager<'id, DI, TERMINALS>
-{
-}
-unsafe impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Sync
-    for Manager<'id, DI, TERMINALS>
-{
-}
+unsafe impl<'id, DI: DiagramInfo> Send for Manager<'id, DI> {}
+unsafe impl<'id, DI: DiagramInfo> Sync for Manager<'id, DI> {}
 
 // --- Edge Impls --------------------------------------------------------------
 
-impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Edge<'_, DI, TERMINALS> {
+impl<DI: DiagramInfo> Edge<'_, DI> {
     const TAG_BITS: u32 = {
         let bits = usize::BITS - DI::EdgeTag::MAX_VALUE.leading_zeros();
         assert!(bits <= 16, "Maximum value of edge tag is too large");
@@ -255,6 +244,10 @@ impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Edge<'_, DI, TERMINALS>
     unsafe fn node_id_unchecked(self) -> u32 {
         debug_assert_eq!(self.0 & Self::TAG_MASK, 0);
         self.0
+    }
+
+    fn node_id_u32(self) -> u32 {
+        self.0 & !Self::TAG_MASK
     }
 
     /// Returns `true` iff the edge's tag != 0
@@ -286,9 +279,7 @@ impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Edge<'_, DI, TERMINALS>
     }
 }
 
-impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> oxidd_core::Edge
-    for Edge<'_, DI, TERMINALS>
-{
+impl<DI: DiagramInfo> oxidd_core::Edge for Edge<'_, DI> {
     type Tag = DI::EdgeTag;
 
     #[inline]
@@ -312,7 +303,7 @@ impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> oxidd_core::Edge
 
 // --- SlotSlice Impl ----------------------------------------------------------
 
-impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> SlotSlice<'id, DI, TERMINALS> {
+impl<'id, DI: DiagramInfo> SlotSlice<'id, DI> {
     // Create a new slot slice for up to `capacity` nodes
     fn new_boxed(capacity: u32) -> huge::Box<Self> {
         #[cfg(not(feature = "hugealloc"))]
@@ -342,36 +333,38 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> SlotSlice<'id, DI,
     #[inline]
     unsafe fn slot_pointer_unchecked(
         &self,
-        edge: Ref<'_, Edge<'id, DI, TERMINALS>>,
+        edge: Ref<'_, Edge<'id, DI>>,
     ) -> *mut Slot<DI::InnerNode<'id>> {
         let raw = edge.raw();
         // SAFETY: `edge` is untagged
-        let id = unsafe { raw.node_id_unchecked() } as usize;
-        debug_assert!(id >= TERMINALS, "`edge` must reference an inner node");
-        debug_assert!(id - TERMINALS < self.slots.len());
+        let id = unsafe { raw.node_id_unchecked() };
+        debug_assert!(id >= DI::TERMINALS, "`edge` must reference an inner node");
+        let index = (id - DI::TERMINALS) as usize;
+        debug_assert!(index < self.slots.len());
         // SAFETY: Indices derived from edges pointing to inner nodes are always
         // in bounds.
-        unsafe { self.slots.get_unchecked(id - TERMINALS).get() }
+        unsafe { self.slots.get_unchecked(index).get() }
     }
 
     /// Panics if `edge` references a terminal node
     #[inline]
-    fn inner_node<'a>(&'a self, edge: Ref<'a, Edge<'id, DI, TERMINALS>>) -> &'a DI::InnerNode<'id> {
-        let id = edge.node_id();
-        assert!(id >= TERMINALS, "`edge` must reference an inner node");
-        debug_assert!(id - TERMINALS < self.slots.len());
+    fn inner_node<'a>(&'a self, edge: Ref<'a, Edge<'id, DI>>) -> &'a DI::InnerNode<'id> {
+        let id = edge.raw().node_id_u32();
+        assert!(id >= DI::TERMINALS, "`edge` must reference an inner node");
+        let index = (id - DI::TERMINALS) as usize;
+        debug_assert!(index < self.slots.len());
         // SAFETY:
         // - Indices derived from edges pointing to inner nodes are in bounds
         // - If an edge points to an inner node, the node's `Slot` is immutable
         //   and a properly initialized node
-        unsafe { &(*self.slots.get_unchecked(id - TERMINALS).get()).node }
+        unsafe { &(*self.slots.get_unchecked(index).get()).node }
     }
 
     /// SAFETY: `edge` must be untagged and reference an inner node
     #[inline(always)]
     unsafe fn inner_node_unchecked<'a>(
         &'a self,
-        edge: Ref<'a, Edge<'id, DI, TERMINALS>>,
+        edge: Ref<'a, Edge<'id, DI>>,
     ) -> &'a DI::InnerNode<'id> {
         // SAFETY: If an edge points to an inner node, the node's `Slot` is
         // immutable and a properly initialized node.
@@ -380,10 +373,7 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> SlotSlice<'id, DI,
 
     /// SAFETY: `edge` must be untagged and reference an inner node
     #[inline(always)]
-    unsafe fn clone_edge_unchecked(
-        &self,
-        edge: Ref<'_, Edge<'id, DI, TERMINALS>>,
-    ) -> Own<Edge<'id, DI, TERMINALS>> {
+    unsafe fn clone_edge_unchecked(&self, edge: Ref<'_, Edge<'id, DI>>) -> Own<Edge<'id, DI>> {
         unsafe { self.inner_node_unchecked(edge) }.retain();
         let raw = edge.raw();
         unsafe { Own::from_raw(raw) }
@@ -398,17 +388,9 @@ fn addr<T>(ptr: *const T) -> usize {
     ptr.addr()
 }
 
-impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Store<'id, DI, TERMINALS> {
-    const CHECK_TERMINALS: () = {
-        assert!(TERMINALS >= 1, "TERMINALS must be >= 1");
-        assert!(
-            TERMINALS <= u32::MAX as usize,
-            "TERMINALS must fit into an u32"
-        );
-    };
-
+impl<'id, DI: DiagramInfo> Store<'id, DI> {
     #[inline]
-    fn prepare_local_state(&self) -> Option<LocalStoreStateGuard<'_, 'id, DI, TERMINALS>> {
+    fn prepare_local_state(&self) -> Option<LocalStoreStateGuard<'_, 'id, DI>> {
         LOCAL_STORE_STATE.with(|state| {
             if state.current_store.get() == 0 {
                 state.next_free.set(0);
@@ -426,10 +408,7 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Store<'id, DI, TER
     ///
     /// Panics if the store is full.
     #[inline]
-    fn add_node(
-        &self,
-        node: DI::InnerNode<'id>,
-    ) -> AllocResult<[Own<Edge<'id, DI, TERMINALS>>; 2]> {
+    fn add_node(&self, node: DI::InnerNode<'id>) -> AllocResult<[Own<Edge<'id, DI>>; 2]> {
         debug_assert_eq!(node.load_rc(Relaxed), 2);
         let res = LOCAL_STORE_STATE.with(|state| {
             let node_count_delta = if state.current_store.get() == addr(self) {
@@ -455,7 +434,7 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Store<'id, DI, TER
                     let slot = unsafe { &mut *slots.get_unchecked(index as usize).get() };
                     state.initialized.set(index + 1);
                     state.node_count_delta.set(delta);
-                    return Ok((index + TERMINALS as u32, slot));
+                    return Ok((index + DI::TERMINALS, slot));
                 }
 
                 state.node_count_delta.set(0);
@@ -487,8 +466,8 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Store<'id, DI, TER
     #[inline(always)]
     #[allow(clippy::mut_from_ref)]
     unsafe fn use_free_slot(&self, id: u32) -> (u32, &mut Slot<DI::InnerNode<'id>>) {
-        debug_assert!(id as usize >= TERMINALS);
-        let index = id as usize - TERMINALS;
+        debug_assert!(id >= DI::TERMINALS);
+        let index = (id - DI::TERMINALS) as usize;
         debug_assert!(index < self.inner_nodes.slots.len());
         // SAFETY: All next-free ids (>= TERMINALS) are valid, we have
         // exclusive access to the node.
@@ -543,7 +522,7 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Store<'id, DI, TER
             }
             // SAFETY: `index` is in bounds, the slot is uninitialized
             let slot = unsafe { &mut *slots.get_unchecked(index as usize).get() };
-            Ok((index + TERMINALS as u32, slot))
+            Ok((index + DI::TERMINALS, slot))
         } else {
             if let Some(id) = shared.next_free.pop() {
                 // SAFETY: `id` is the ID of a free slot, we have exclusive
@@ -563,7 +542,7 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Store<'id, DI, TER
             shared.allocated += 1;
             // SAFETY: `index` is in bounds, the slot is uninitialized
             let slot = unsafe { &mut *slots.get_unchecked(index as usize).get() };
-            Ok((index + TERMINALS as u32, slot))
+            Ok((index + DI::TERMINALS, slot))
         }
     }
 
@@ -577,7 +556,7 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Store<'id, DI, TER
     /// assumption.
     ///
     /// SAFETY: `edge` must be untagged and point to an inner node
-    unsafe fn drop_unique_table_edge(&self, edge: Own<Edge<'id, DI, TERMINALS>>) {
+    unsafe fn drop_unique_table_edge(&self, edge: Own<Edge<'id, DI>>) {
         let edge_ref = edge.borrowed();
         // SAFETY (next 2): `edge` is untagged and points to an inner node
         let slot_ptr = unsafe { self.inner_nodes.slot_pointer_unchecked(edge_ref) };
@@ -607,7 +586,7 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Store<'id, DI, TER
     /// SAFETY: `slot` must contain a node. `id` is the ID of `slot`.
     #[inline]
     unsafe fn free_slot(&self, slot: &mut Slot<DI::InnerNode<'id>>, id: u32) {
-        debug_assert!(id as usize >= TERMINALS);
+        debug_assert!(id >= DI::TERMINALS);
         // SAFETY: We don't use the node in `slot` again.
         unsafe { ManuallyDrop::take(&mut slot.node) }.drop_with(|edge| self.drop_edge(edge));
 
@@ -646,10 +625,10 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Store<'id, DI, TER
     /// There is a debug assertion that checks the aforementioned assumption. In
     /// release builds, this function will simply leak the node.
     #[inline]
-    fn drop_edge(&self, edge: Own<Edge<'id, DI, TERMINALS>>) {
+    fn drop_edge(&self, edge: Own<Edge<'id, DI>>) {
         let edge = ManuallyDrop::new(edge);
-        let id = edge.node_id();
-        if id >= TERMINALS {
+        let id = edge.raw().node_id_u32();
+        if id >= DI::TERMINALS {
             // inner node
             let node = self.inner_nodes.inner_node(edge.borrowed());
             // SAFETY: we forget `edge`
@@ -665,9 +644,9 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Store<'id, DI, TER
     ///
     /// `edge` may be tagged and point to an inner or a terminal node.
     #[inline]
-    fn clone_edge(&self, edge: Ref<'_, Edge<'id, DI, TERMINALS>>) -> Own<Edge<'id, DI, TERMINALS>> {
-        let id = edge.node_id();
-        if id >= TERMINALS {
+    fn clone_edge(&self, edge: Ref<'_, Edge<'id, DI>>) -> Own<Edge<'id, DI>> {
+        let id = edge.raw().node_id_u32();
+        if id >= DI::TERMINALS {
             // inner node
             self.inner_nodes.inner_node(edge).retain();
         } else {
@@ -679,7 +658,7 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Store<'id, DI, TER
     }
 }
 
-impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Drop for Store<'id, DI, TERMINALS> {
+impl<'id, DI: DiagramInfo> Drop for Store<'id, DI> {
     fn drop(&mut self) {
         let manager = self.manager.get_mut();
         // We don't care about reference counters from here on.
@@ -708,9 +687,7 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Drop for Store<'id
 
 // --- LocalStoreStateGuard impl -----------------------------------------------
 
-impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Drop
-    for LocalStoreStateGuard<'_, 'id, DI, TERMINALS>
-{
+impl<'id, DI: DiagramInfo> Drop for LocalStoreStateGuard<'_, 'id, DI> {
     #[inline]
     fn drop(&mut self) {
         /// Return pre-allocated slots to the shared state
@@ -762,7 +739,7 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Drop
                 || local.initialized.get() % CHUNK_SIZE != 0
                 || local.node_count_delta.get() != 0
             {
-                return_preallocated(&self.0.inner_nodes.slots, &self.0.state, TERMINALS as u32);
+                return_preallocated(&self.0.inner_nodes.slots, &self.0.state, DI::TERMINALS);
             }
         });
     }
@@ -770,17 +747,16 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Drop
 
 // --- Manager Impls -----------------------------------------------------------
 
-impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Manager<'id, DI, TERMINALS> {
+impl<'id, DI: DiagramInfo> Manager<'id, DI> {
     /// Get a reference to the store
     #[inline]
-    fn store(&self) -> &Store<'id, DI, TERMINALS> {
+    fn store(&self) -> &Store<'id, DI> {
         // We can simply get the store pointer by subtracting the offset of
         // `Manager` in `Store`. The only issue is that this violates Rust's
         // (proposed) aliasing rules. Hence, we only provide a hint that the
         // store's address can be computed without loading the value.
         let offset = const {
-            std::mem::offset_of!(Store<'static, DI, TERMINALS>, manager)
-                + RwLock::<Self>::DATA_OFFSET
+            std::mem::offset_of!(Store<'static, DI>, manager) + RwLock::<Self>::DATA_OFFSET
         };
         // SAFETY:
         // - The pointer resulting from the subtraction is in bounds of the
@@ -805,38 +781,36 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Manager<'id, DI, T
     }
 }
 
-unsafe impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> oxidd_core::Manager
-    for Manager<'id, DI, TERMINALS>
-{
-    type Edge = Edge<'id, DI, TERMINALS>;
+unsafe impl<'id, DI: DiagramInfo> oxidd_core::Manager for Manager<'id, DI> {
+    type Edge = Edge<'id, DI>;
     type EdgeTag = DI::EdgeTag;
     type InnerNode = DI::InnerNode<'id>;
     type Terminal = DI::TerminalNode;
     type TerminalRef<'a>
-        = <DI::TerminalManager<'id> as TerminalManager<'id, DI, TERMINALS>>::TerminalNodeRef<'a>
+        = <DI::TerminalManager<'id> as TerminalManager<'id, DI>>::TerminalNodeRef<'a>
     where
         Self: 'a;
     type Rules = DI::Rules;
 
     type TerminalIterator<'a>
-        = <DI::TerminalManager<'id> as TerminalManager<'id, DI, TERMINALS>>::Iterator<'a>
+        = <DI::TerminalManager<'id> as TerminalManager<'id, DI>>::Iterator<'a>
     where
         Self: 'a;
     type NodeSet = NodeSet;
     type LevelView<'a>
-        = LevelView<'a, 'id, DI, TERMINALS>
+        = LevelView<'a, 'id, DI>
     where
         Self: 'a;
     type LevelIterator<'a>
-        = LevelIter<'a, 'id, DI, TERMINALS>
+        = LevelIter<'a, 'id, DI>
     where
         Self: 'a;
 
     #[inline]
     fn get_node<'a>(&'a self, edge: Ref<'a, Self::Edge>) -> oxidd_core::Node<'a, Self> {
         let store = self.store();
-        let id = edge.node_id();
-        if id >= TERMINALS {
+        let id = edge.raw().node_id_u32();
+        if id >= DI::TERMINALS {
             oxidd_core::Node::Inner(store.inner_nodes.inner_node(edge))
         } else {
             // SAFETY: `id` is a valid terminal ID
@@ -855,11 +829,11 @@ unsafe impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> oxidd_core:
     }
 
     #[track_caller]
-    fn try_remove_node(&self, edge: Own<Edge<'id, DI, TERMINALS>>, level: LevelNo) -> bool {
+    fn try_remove_node(&self, edge: Own<Edge<'id, DI>>, level: LevelNo) -> bool {
         let edge = ManuallyDrop::new(edge);
-        let id = edge.node_id();
+        let id = edge.raw().node_id_u32();
         let store = self.store();
-        if id < TERMINALS {
+        if id < DI::TERMINALS {
             // SAFETY: `id` is a valid terminal ID and we forget `edge`
             unsafe { store.terminal_manager.release(id) };
             debug_assert_eq!(level, LevelNo::MAX, "`level` does not match");
@@ -895,7 +869,7 @@ unsafe impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> oxidd_core:
             return false;
         }
 
-        let Some(edge) = set.remove(node, id as u32) else {
+        let Some(edge) = set.remove(node, id) else {
             return false;
         };
 
@@ -908,7 +882,7 @@ unsafe impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> oxidd_core:
         // order above and `Release` order when decrementing reference counters,
         // so we have exclusive node access now. The slot contains a node. `id`
         // is the ID of the slot.
-        unsafe { store.free_slot(&mut *slot_ptr, id as u32) };
+        unsafe { store.free_slot(&mut *slot_ptr, id) };
 
         true
     }
@@ -1206,9 +1180,7 @@ unsafe impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> oxidd_core:
     }
 }
 
-impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> oxidd_core::HasWorkers
-    for Manager<'id, DI, TERMINALS>
-{
+impl<'id, DI: DiagramInfo> oxidd_core::HasWorkers for Manager<'id, DI> {
     type WorkerPool = crate::workers::Workers;
 
     #[inline]
@@ -1229,9 +1201,7 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> oxidd_core::HasWor
 /// Because a [`LevelViewSet`] on its own is not sufficient to drop nodes
 /// accordingly, this will simply leak all contained edges, not calling the
 /// `Edge`'s `Drop` implementation.
-struct LevelViewSet<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize>(
-    huge::RawTable<Own<Edge<'id, DI, TERMINALS>>>,
-);
+struct LevelViewSet<'id, DI: DiagramInfo>(huge::RawTable<Own<Edge<'id, DI>>>);
 
 #[inline]
 fn hash_node<N: NodeBase>(node: &N) -> u64 {
@@ -1240,7 +1210,7 @@ fn hash_node<N: NodeBase>(node: &N) -> u64 {
     hasher.finish()
 }
 
-impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> LevelViewSet<'id, DI, TERMINALS> {
+impl<'id, DI: DiagramInfo> LevelViewSet<'id, DI> {
     /// Get the number of nodes on this level
     #[inline]
     fn len(&self) -> usize {
@@ -1258,9 +1228,9 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> LevelViewSet<'id, 
     #[inline]
     fn get(
         &self,
-        nodes: &SlotSlice<'id, DI, TERMINALS>,
-        children: &[Ref<'_, Edge<'id, DI, TERMINALS>>],
-    ) -> Option<Ref<'_, Edge<'id, DI, TERMINALS>>> {
+        nodes: &SlotSlice<'id, DI>,
+        children: &[Ref<'_, Edge<'id, DI>>],
+    ) -> Option<Ref<'_, Edge<'id, DI>>> {
         let mut hasher = FxHasher::default();
         crate::util::hash_children(children, &mut hasher);
         let hash = hasher.finish();
@@ -1296,8 +1266,8 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> LevelViewSet<'id, 
     #[inline]
     unsafe fn insert<const CHECKS: bool>(
         &mut self,
-        nodes: &SlotSlice<'id, DI, TERMINALS>,
-        edge: Own<Edge<'id, DI, TERMINALS>>,
+        nodes: &SlotSlice<'id, DI>,
+        edge: Own<Edge<'id, DI>>,
         expected_level: LevelNo,
     ) -> bool {
         let raw = edge.into_raw();
@@ -1306,7 +1276,7 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> LevelViewSet<'id, 
         let raw = raw.untagged();
         if const { CHECKS || cfg!(debug_assertions) } {
             assert!(
-                raw.0 as usize >= TERMINALS,
+                raw.0 >= DI::TERMINALS,
                 "`edge` must reference an inner node"
             );
         }
@@ -1354,11 +1324,11 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> LevelViewSet<'id, 
     #[inline(always)]
     fn get_or_insert(
         &mut self,
-        nodes: &SlotSlice<'id, DI, TERMINALS>,
+        nodes: &SlotSlice<'id, DI>,
         node: DI::InnerNode<'id>,
-        insert: impl FnOnce(DI::InnerNode<'id>) -> AllocResult<[Own<Edge<'id, DI, TERMINALS>>; 2]>,
+        insert: impl FnOnce(DI::InnerNode<'id>) -> AllocResult<[Own<Edge<'id, DI>>; 2]>,
         drop: impl FnOnce(DI::InnerNode<'id>),
-    ) -> AllocResult<Own<Edge<'id, DI, TERMINALS>>> {
+    ) -> AllocResult<Own<Edge<'id, DI>>> {
         let hash = hash_node(&node);
         match self.0.find_or_find_insert_slot(hash, |edge| {
             let edge = edge.borrowed();
@@ -1393,7 +1363,7 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> LevelViewSet<'id, 
     /// SAFETY: There must not be any "weak" edges, i.e., edges where the
     /// reference count is not materialized (apply cache implementations exploit
     /// this).
-    unsafe fn gc(&mut self, store: &Store<'id, DI, TERMINALS>) {
+    unsafe fn gc(&mut self, store: &Store<'id, DI>) {
         let inner_nodes = &*store.inner_nodes;
         self.0.retain(
             |edge| {
@@ -1423,11 +1393,7 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> LevelViewSet<'id, 
     ///
     /// Returns `Some(edge)` if `node` was present, `None` otherwise
     #[inline]
-    fn remove(
-        &mut self,
-        node: &DI::InnerNode<'id>,
-        node_id: u32,
-    ) -> Option<Own<Edge<'id, DI, TERMINALS>>> {
+    fn remove(&mut self, node: &DI::InnerNode<'id>, node_id: u32) -> Option<Own<Edge<'id, DI>>> {
         self.0
             .remove_entry(hash_node(node), |e| e.raw().0 == node_id)
     }
@@ -1443,14 +1409,10 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> LevelViewSet<'id, 
     /// There must not be any "weak" edges, i.e., edges where the reference
     /// count is not materialized (apply cache implementations exploit this).
     #[inline]
-    unsafe fn try_remove(
-        &mut self,
-        store: &Store<'id, DI, TERMINALS>,
-        edge: Own<Edge<'id, DI, TERMINALS>>,
-    ) -> bool {
+    unsafe fn try_remove(&mut self, store: &Store<'id, DI>, edge: Own<Edge<'id, DI>>) -> bool {
         let edge = ManuallyDrop::new(edge);
-        let id = edge.node_id();
-        debug_assert!(id >= TERMINALS);
+        let id = edge.node_id() as u32;
+        debug_assert!(id >= DI::TERMINALS);
         let node = store.inner_nodes.inner_node(edge.borrowed());
         // SAFETY: we forget `edge`
         let old_rc = unsafe { node.release() };
@@ -1459,7 +1421,7 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> LevelViewSet<'id, 
             return false;
         }
 
-        let Some(edge) = self.remove(node, id as u32) else {
+        let Some(edge) = self.remove(node, id) else {
             return false;
         };
 
@@ -1475,24 +1437,24 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> LevelViewSet<'id, 
         // reference counters, so we have exclusive node access now.
         // Additionally, the caller guarantees that there are no weak
         // edges. The slot contains a node. `id` is the ID of the slot.
-        unsafe { store.free_slot(&mut *slot_ptr, id as u32) };
+        unsafe { store.free_slot(&mut *slot_ptr, id) };
         true
     }
 
     /// Iterate over all edges pointing to nodes in the set
     #[inline]
-    fn iter(&self) -> LevelViewIter<'_, 'id, DI, TERMINALS> {
+    fn iter(&self) -> LevelViewIter<'_, 'id, DI> {
         LevelViewIter(self.0.iter())
     }
 
     /// Iterator that consumes all [`Edge`]s in the set
     #[inline]
-    fn drain(&mut self) -> linear_hashtbl::raw::Drain<'_, Own<Edge<'id, DI, TERMINALS>>, u32> {
+    fn drain(&mut self) -> linear_hashtbl::raw::Drain<'_, Own<Edge<'id, DI>>, u32> {
         self.0.drain()
     }
 }
 
-impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Drop for LevelViewSet<'_, DI, TERMINALS> {
+impl<DI: DiagramInfo> Drop for LevelViewSet<'_, DI> {
     #[inline]
     fn drop(&mut self) {
         // If the nodes need drop, this is handled by the `Manager` `Drop` impl
@@ -1501,21 +1463,17 @@ impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Drop for LevelViewSet<'
     }
 }
 
-impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Default
-    for LevelViewSet<'_, DI, TERMINALS>
-{
+impl<DI: DiagramInfo> Default for LevelViewSet<'_, DI> {
     #[inline]
     fn default() -> Self {
         Self(Default::default())
     }
 }
 
-impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> IntoIterator
-    for LevelViewSet<'id, DI, TERMINALS>
-{
-    type Item = Own<Edge<'id, DI, TERMINALS>>;
+impl<'id, DI: DiagramInfo> IntoIterator for LevelViewSet<'id, DI> {
+    type Item = Own<Edge<'id, DI>>;
 
-    type IntoIter = huge::RawTableIntoIter<Own<Edge<'id, DI, TERMINALS>>>;
+    type IntoIter = huge::RawTableIntoIter<Own<Edge<'id, DI>>>;
 
     fn into_iter(self) -> Self::IntoIter {
         let this = ManuallyDrop::new(self);
@@ -1525,14 +1483,12 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> IntoIterator
     }
 }
 
-pub struct LevelViewIter<'a, 'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize>(
-    linear_hashtbl::raw::Iter<'a, Own<Edge<'id, DI, TERMINALS>>, u32>,
+pub struct LevelViewIter<'a, 'id, DI: DiagramInfo>(
+    linear_hashtbl::raw::Iter<'a, Own<Edge<'id, DI>>, u32>,
 );
 
-impl<'a, 'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Iterator
-    for LevelViewIter<'a, 'id, DI, TERMINALS>
-{
-    type Item = Ref<'a, Edge<'id, DI, TERMINALS>>;
+impl<'a, 'id, DI: DiagramInfo> Iterator for LevelViewIter<'a, 'id, DI> {
+    type Item = Ref<'a, Edge<'id, DI>>;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -1545,42 +1501,37 @@ impl<'a, 'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Iterator
     }
 }
 
-impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> ExactSizeIterator
-    for LevelViewIter<'_, '_, DI, TERMINALS>
-{
+impl<DI: DiagramInfo> ExactSizeIterator for LevelViewIter<'_, '_, DI> {
     #[inline(always)]
     fn len(&self) -> usize {
         self.0.len()
     }
 }
-impl<'a, 'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> FusedIterator
-    for LevelViewIter<'a, 'id, DI, TERMINALS>
-where
-    linear_hashtbl::raw::Iter<'a, Edge<'id, DI, TERMINALS>, u32>: FusedIterator,
+impl<'a, 'id, DI: DiagramInfo> FusedIterator for LevelViewIter<'a, 'id, DI> where
+    linear_hashtbl::raw::Iter<'a, Edge<'id, DI>, u32>: FusedIterator
 {
 }
 
-pub struct LevelView<'a, 'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> {
-    store: &'a Store<'id, DI, TERMINALS>,
+pub struct LevelView<'a, 'id, DI: DiagramInfo> {
+    store: &'a Store<'id, DI>,
     var_level_map: &'a VarLevelMap,
     /// SAFETY invariant: If set to true, a garbage collection is prepared
     /// (i.e., there are no "weak" edges).
     allow_node_removal: bool,
     level: LevelNo,
-    set: MutexGuard<'a, LevelViewSet<'id, DI, TERMINALS>>,
+    set: MutexGuard<'a, LevelViewSet<'id, DI>>,
 }
 
-unsafe impl<'a, 'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize>
-    oxidd_core::LevelView<Edge<'id, DI, TERMINALS>, DI::InnerNode<'id>>
-    for LevelView<'a, 'id, DI, TERMINALS>
+unsafe impl<'a, 'id, DI: DiagramInfo> oxidd_core::LevelView<Edge<'id, DI>, DI::InnerNode<'id>>
+    for LevelView<'a, 'id, DI>
 {
     type Iterator<'b>
-        = LevelViewIter<'b, 'id, DI, TERMINALS>
+        = LevelViewIter<'b, 'id, DI>
     where
         Self: 'b,
-        Edge<'id, DI, TERMINALS>: 'b;
+        Edge<'id, DI>: 'b;
 
-    type Taken = TakenLevelView<'a, 'id, DI, TERMINALS>;
+    type Taken = TakenLevelView<'a, 'id, DI>;
 
     #[inline(always)]
     fn len(&self) -> usize {
@@ -1598,15 +1549,12 @@ unsafe impl<'a, 'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize>
     }
 
     #[inline]
-    fn get(
-        &self,
-        children: &[Ref<'_, Edge<'id, DI, TERMINALS>>],
-    ) -> Option<Ref<'_, Edge<'id, DI, TERMINALS>>> {
+    fn get(&self, children: &[Ref<'_, Edge<'id, DI>>]) -> Option<Ref<'_, Edge<'id, DI>>> {
         self.set.get(&self.store.inner_nodes, children)
     }
 
     #[inline]
-    fn insert(&mut self, edge: Own<Edge<'id, DI, TERMINALS>>) -> bool {
+    fn insert(&mut self, edge: Own<Edge<'id, DI>>) -> bool {
         // No need to check if the node referenced by `edge` is stored in
         // `self.store` due to lifetime restrictions.
         let nodes = &self.store.inner_nodes;
@@ -1615,7 +1563,7 @@ unsafe impl<'a, 'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize>
     }
 
     #[inline]
-    unsafe fn insert_unchecked(&mut self, edge: Own<Edge<'id, DI, TERMINALS>>) -> bool {
+    unsafe fn insert_unchecked(&mut self, edge: Own<Edge<'id, DI>>) -> bool {
         // No need to check if the node referenced by `edge` is stored in
         // `self.store` due to lifetime restrictions.
         let nodes = &self.store.inner_nodes;
@@ -1625,10 +1573,7 @@ unsafe impl<'a, 'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize>
     }
 
     #[inline(always)]
-    fn get_or_insert(
-        &mut self,
-        node: DI::InnerNode<'id>,
-    ) -> AllocResult<Own<Edge<'id, DI, TERMINALS>>> {
+    fn get_or_insert(&mut self, node: DI::InnerNode<'id>) -> AllocResult<Own<Edge<'id, DI>>> {
         node.assert_level_matches(self.level);
         // SAFETY: we checked the level as required
         unsafe { self.get_or_insert_unchecked(node) }
@@ -1637,7 +1582,7 @@ unsafe impl<'a, 'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize>
     unsafe fn get_or_insert_unchecked(
         &mut self,
         node: DI::InnerNode<'id>,
-    ) -> AllocResult<Own<Edge<'id, DI, TERMINALS>>> {
+    ) -> AllocResult<Own<Edge<'id, DI>>> {
         // No need to check if the children of `node` are stored in `self.store`
         // due to lifetime restrictions.
         self.set.get_or_insert(
@@ -1657,9 +1602,9 @@ unsafe impl<'a, 'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize>
     }
 
     #[inline]
-    fn try_remove(&mut self, edge: Own<Edge<'id, DI, TERMINALS>>) -> bool {
-        let id = edge.node_id();
-        if id < TERMINALS {
+    fn try_remove(&mut self, edge: Own<Edge<'id, DI>>) -> bool {
+        let id = edge.raw().node_id_u32();
+        if id < DI::TERMINALS {
             std::mem::forget(edge);
             // SAFETY: `id` is a valid terminal ID and `edge` is forgotten
             unsafe { self.store.terminal_manager.release(id) };
@@ -1707,22 +1652,21 @@ unsafe impl<'a, 'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize>
 // Note that due to lifetime restrictions there is no way to have a
 // non-empty `TakenLevelView` when the associated `Manager` has
 // `reorder_gc_prepared` set to `false`.
-pub struct TakenLevelView<'a, 'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> {
-    store: &'a Store<'id, DI, TERMINALS>,
+pub struct TakenLevelView<'a, 'id, DI: DiagramInfo> {
+    store: &'a Store<'id, DI>,
     var_level_map: &'a VarLevelMap,
     level: LevelNo,
-    set: LevelViewSet<'id, DI, TERMINALS>,
+    set: LevelViewSet<'id, DI>,
 }
 
-unsafe impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize>
-    oxidd_core::LevelView<Edge<'id, DI, TERMINALS>, DI::InnerNode<'id>>
-    for TakenLevelView<'_, 'id, DI, TERMINALS>
+unsafe impl<'id, DI: DiagramInfo> oxidd_core::LevelView<Edge<'id, DI>, DI::InnerNode<'id>>
+    for TakenLevelView<'_, 'id, DI>
 {
     type Iterator<'b>
-        = LevelViewIter<'b, 'id, DI, TERMINALS>
+        = LevelViewIter<'b, 'id, DI>
     where
         Self: 'b,
-        Edge<'id, DI, TERMINALS>: 'b;
+        Edge<'id, DI>: 'b;
 
     type Taken = Self;
 
@@ -1742,15 +1686,12 @@ unsafe impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize>
     }
 
     #[inline]
-    fn get(
-        &self,
-        children: &[Ref<'_, Edge<'id, DI, TERMINALS>>],
-    ) -> Option<Ref<'_, Edge<'id, DI, TERMINALS>>> {
+    fn get(&self, children: &[Ref<'_, Edge<'id, DI>>]) -> Option<Ref<'_, Edge<'id, DI>>> {
         self.set.get(&self.store.inner_nodes, children)
     }
 
     #[inline]
-    fn insert(&mut self, edge: Own<Edge<'id, DI, TERMINALS>>) -> bool {
+    fn insert(&mut self, edge: Own<Edge<'id, DI>>) -> bool {
         // No need to check if the node referenced by `edge` is stored in
         // `self.store` due to lifetime restrictions.
         let nodes = &self.store.inner_nodes;
@@ -1759,7 +1700,7 @@ unsafe impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize>
     }
 
     #[inline]
-    unsafe fn insert_unchecked(&mut self, edge: Own<Edge<'id, DI, TERMINALS>>) -> bool {
+    unsafe fn insert_unchecked(&mut self, edge: Own<Edge<'id, DI>>) -> bool {
         // No need to check if the node referenced by `edge` is stored in
         // `self.store` due to lifetime restrictions.
         let nodes = &self.store.inner_nodes;
@@ -1769,10 +1710,7 @@ unsafe impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize>
     }
 
     #[inline(always)]
-    fn get_or_insert(
-        &mut self,
-        node: DI::InnerNode<'id>,
-    ) -> AllocResult<Own<Edge<'id, DI, TERMINALS>>> {
+    fn get_or_insert(&mut self, node: DI::InnerNode<'id>) -> AllocResult<Own<Edge<'id, DI>>> {
         node.assert_level_matches(self.level);
         // SAFETY: we checked the level as required
         unsafe { self.get_or_insert_unchecked(node) }
@@ -1781,7 +1719,7 @@ unsafe impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize>
     unsafe fn get_or_insert_unchecked(
         &mut self,
         node: DI::InnerNode<'id>,
-    ) -> AllocResult<Own<Edge<'id, DI, TERMINALS>>> {
+    ) -> AllocResult<Own<Edge<'id, DI>>> {
         // No need to check if the children of `node` are stored in `self.store`
         // due to lifetime restrictions.
         self.set.get_or_insert(
@@ -1799,9 +1737,9 @@ unsafe impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize>
     }
 
     #[inline]
-    fn try_remove(&mut self, edge: Own<Edge<'id, DI, TERMINALS>>) -> bool {
-        let id = edge.node_id();
-        if id < TERMINALS {
+    fn try_remove(&mut self, edge: Own<Edge<'id, DI>>) -> bool {
+        let id = edge.raw().node_id_u32();
+        if id < DI::TERMINALS {
             std::mem::forget(edge);
             // SAFETY: `id` is a valid terminal ID and `edge` is forgotten
             unsafe { self.store.terminal_manager.release(id) };
@@ -1833,9 +1771,7 @@ unsafe impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize>
     }
 }
 
-impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Drop
-    for TakenLevelView<'_, 'id, DI, TERMINALS>
-{
+impl<'id, DI: DiagramInfo> Drop for TakenLevelView<'_, 'id, DI> {
     fn drop(&mut self) {
         for edge in self.set.drain() {
             // SAFETY: Edges in unique tables are untagged and point to inner
@@ -1847,21 +1783,19 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Drop
 
 // --- LevelIterator -----------------------------------------------------------
 
-pub struct LevelIter<'a, 'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> {
-    store: &'a Store<'id, DI, TERMINALS>,
+pub struct LevelIter<'a, 'id, DI: DiagramInfo> {
+    store: &'a Store<'id, DI>,
     var_level_map: &'a VarLevelMap,
     /// SAFETY invariant: If set to true, a garbage collection is prepared
     /// (i.e., there are no "weak" edges).
     allow_node_removal: bool,
     level_front: LevelNo,
     level_back: LevelNo,
-    it: std::slice::Iter<'a, Mutex<LevelViewSet<'id, DI, TERMINALS>>>,
+    it: std::slice::Iter<'a, Mutex<LevelViewSet<'id, DI>>>,
 }
 
-impl<'a, 'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Iterator
-    for LevelIter<'a, 'id, DI, TERMINALS>
-{
-    type Item = LevelView<'a, 'id, DI, TERMINALS>;
+impl<'a, 'id, DI: DiagramInfo> Iterator for LevelIter<'a, 'id, DI> {
+    type Item = LevelView<'a, 'id, DI>;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -1883,24 +1817,18 @@ impl<'a, 'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Iterator
     }
 }
 
-impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> ExactSizeIterator
-    for LevelIter<'_, 'id, DI, TERMINALS>
-{
+impl<'id, DI: DiagramInfo> ExactSizeIterator for LevelIter<'_, 'id, DI> {
     #[inline(always)]
     fn len(&self) -> usize {
         self.it.len()
     }
 }
-impl<'a, 'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> FusedIterator
-    for LevelIter<'a, 'id, DI, TERMINALS>
-where
-    std::slice::Iter<'a, Mutex<LevelViewSet<'id, DI, TERMINALS>>>: FusedIterator,
+impl<'a, 'id, DI: DiagramInfo> FusedIterator for LevelIter<'a, 'id, DI> where
+    std::slice::Iter<'a, Mutex<LevelViewSet<'id, DI>>>: FusedIterator
 {
 }
 
-impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> DoubleEndedIterator
-    for LevelIter<'_, 'id, DI, TERMINALS>
-{
+impl<'id, DI: DiagramInfo> DoubleEndedIterator for LevelIter<'_, 'id, DI> {
     fn next_back(&mut self) -> Option<Self::Item> {
         let mutex = self.it.next_back()?;
         self.level_back -= 1;
@@ -1918,11 +1846,9 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> DoubleEndedIterato
 
 #[repr(transparent)]
 #[derive_where(Clone)]
-pub struct ManagerRef<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize>(
-    Arc<Store<'static, DI, TERMINALS>>,
-);
+pub struct ManagerRef<DI: DiagramInfo>(Arc<Store<'static, DI>>);
 
-impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> ManagerRef<DI, TERMINALS> {
+impl<DI: DiagramInfo> ManagerRef<DI> {
     /// Convert `self` into a raw pointer, e.g., for usage in a foreign function
     /// interface.
     ///
@@ -1951,38 +1877,36 @@ impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> ManagerRef<DI, TERMINAL
     }
 }
 
-impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> PartialEq for ManagerRef<DI, TERMINALS> {
+impl<DI: DiagramInfo> PartialEq for ManagerRef<DI> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.0, &other.0)
     }
 }
-impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Eq for ManagerRef<DI, TERMINALS> {}
-impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> PartialOrd for ManagerRef<DI, TERMINALS> {
+impl<DI: DiagramInfo> Eq for ManagerRef<DI> {}
+impl<DI: DiagramInfo> PartialOrd for ManagerRef<DI> {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
-impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Ord for ManagerRef<DI, TERMINALS> {
+impl<DI: DiagramInfo> Ord for ManagerRef<DI> {
     #[inline]
     fn cmp(&self, other: &Self) -> Ordering {
         std::ptr::from_ref(&*self.0).cmp(&std::ptr::from_ref(&*other.0))
     }
 }
-impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Hash for ManagerRef<DI, TERMINALS> {
+impl<DI: DiagramInfo> Hash for ManagerRef<DI> {
     #[inline]
     fn hash<H: Hasher>(&self, state: &mut H) {
         std::ptr::from_ref(&*self.0).hash(state);
     }
 }
 
-impl<'a, 'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize>
-    From<&'a Manager<'id, DI, TERMINALS>> for ManagerRef<DI, TERMINALS>
-{
+impl<'a, 'id, DI: DiagramInfo> From<&'a Manager<'id, DI>> for ManagerRef<DI> {
     #[inline]
-    fn from(manager: &'a Manager<'id, DI, TERMINALS>) -> Self {
-        let ptr: *const Manager<'static, DI, TERMINALS> = std::ptr::from_ref(manager).cast();
+    fn from(manager: &'a Manager<'id, DI>) -> Self {
+        let ptr: *const Manager<'static, DI> = std::ptr::from_ref(manager).cast();
         // SAFETY:
         // - We just changed "identifier" lifetimes.
         // - The pointer was obtained via `Arc::into_raw()`, and since we have a
@@ -1995,10 +1919,8 @@ impl<'a, 'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize>
     }
 }
 
-impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> oxidd_core::ManagerRef
-    for ManagerRef<DI, TERMINALS>
-{
-    type Manager<'id> = Manager<'id, DI, TERMINALS>;
+impl<DI: DiagramInfo> oxidd_core::ManagerRef for ManagerRef<DI> {
+    type Manager<'id> = Manager<'id, DI>;
 
     fn with_manager_shared<F, T>(&self, f: F) -> T
     where
@@ -2022,23 +1944,25 @@ impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> oxidd_core::ManagerRef
 }
 
 /// Create a new manager
-pub fn new_manager<DI: DiagramInfo<TERMINALS> + 'static, const TERMINALS: usize>(
+pub fn new_manager<DI: DiagramInfo + 'static>(
     inner_node_capacity: u32,
     terminal_node_capacity: u32,
     threads: u32,
     data: DI::ManagerData<'static>,
-) -> ManagerRef<DI, TERMINALS> {
-    // Evaluate constant for assertions
-    let () = Store::<'static, DI, TERMINALS>::CHECK_TERMINALS;
+) -> ManagerRef<DI> {
+    const { assert!(DI::TERMINALS >= 1, "TERMINALS must be >= 1") };
 
-    let max_inner_capacity = if usize::BITS > u32::BITS {
-        ((1usize << (u32::BITS - Edge::<DI, TERMINALS>::TAG_BITS)) - TERMINALS) as u32
-    } else {
-        // 32 bit address space. Every node consumes 16 byte plus at least
-        // 4 byte in the unique table. Furthermore, there is the apply cache.
-        // If we try to reserve space for more than `u32::MAX / 24` nodes, we
-        // will most likely run out of memory.
-        u32::MAX / 24
+    let max_inner_capacity = const {
+        if usize::BITS > u32::BITS {
+            ((1u64 << (u32::BITS - Edge::<DI>::TAG_BITS)) - DI::TERMINALS as u64) as u32
+        } else {
+            // 32 bit address space. Every node consumes 16 byte plus at least
+            // 4 byte in the unique table. Furthermore, there is the apply
+            // cache. If we try to reserve space for more than
+            // `u32::MAX / 24` nodes, we will most likely run out of
+            // memory.
+            u32::MAX / 24
+        }
     };
     let inner_node_capacity = std::cmp::min(inner_node_capacity, max_inner_capacity);
 
@@ -2114,7 +2038,7 @@ pub fn new_manager<DI: DiagramInfo<TERMINALS> + 'static, const TERMINALS: usize>
                 let Some(arc) = gc_ref.upgrade() else {
                     break;
                 };
-                let mref: ManagerRef<DI, TERMINALS> = ManagerRef(arc);
+                let mref: ManagerRef<DI> = ManagerRef(arc);
 
                 // parking_lot `Condvar`s have no spurious wakeups -> run gc now
                 oxidd_core::ManagerRef::with_manager_shared(&mref, |manager| {
@@ -2140,9 +2064,7 @@ pub fn new_manager<DI: DiagramInfo<TERMINALS> + 'static, const TERMINALS: usize>
     ManagerRef(arc)
 }
 
-impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> oxidd_core::HasWorkers
-    for ManagerRef<DI, TERMINALS>
-{
+impl<DI: DiagramInfo> oxidd_core::HasWorkers for ManagerRef<DI> {
     type WorkerPool = crate::workers::Workers;
 
     #[inline]
@@ -2155,12 +2077,12 @@ impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> oxidd_core::HasWorkers
 
 #[repr(C)]
 #[derive_where(PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Function<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> {
-    store: ManagerRef<DI, TERMINALS>,
-    edge: Edge<'static, DI, TERMINALS>,
+pub struct Function<DI: DiagramInfo> {
+    store: ManagerRef<DI>,
+    edge: Edge<'static, DI>,
 }
 
-impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Function<DI, TERMINALS> {
+impl<DI: DiagramInfo> Function<DI> {
     /// Convert `self` into a raw pointer and edge value, e.g., for usage in a
     /// foreign function interface.
     ///
@@ -2195,7 +2117,7 @@ impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Function<DI, TERMINALS>
     }
 }
 
-impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Drop for Function<DI, TERMINALS> {
+impl<DI: DiagramInfo> Drop for Function<DI> {
     #[inline]
     fn drop(&mut self) {
         // SAFETY: `self.edge` is never used again.
@@ -2204,7 +2126,7 @@ impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Drop for Function<DI, T
     }
 }
 
-impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Clone for Function<DI, TERMINALS> {
+impl<DI: DiagramInfo> Clone for Function<DI> {
     #[inline]
     fn clone(&self) -> Self {
         // SAFETY: `self` is borrowed
@@ -2216,14 +2138,12 @@ impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Clone for Function<DI, 
     }
 }
 
-unsafe impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> oxidd_core::function::Function
-    for Function<DI, TERMINALS>
-{
+unsafe impl<DI: DiagramInfo> oxidd_core::function::Function for Function<DI> {
     const REPR_ID: &str = "<none>";
 
-    type Manager<'id> = Manager<'id, DI, TERMINALS>;
+    type Manager<'id> = Manager<'id, DI>;
 
-    type ManagerRef = ManagerRef<DI, TERMINALS>;
+    type ManagerRef = ManagerRef<DI>;
 
     #[inline]
     fn from_edge<'id>(manager: &Self::Manager<'id>, edge: OwnEdgeOfFunc<'id, Self>) -> Self {
@@ -2304,16 +2224,14 @@ pub struct NodeSet {
     data: FixedBitSet,
 }
 
-impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize>
-    oxidd_core::util::NodeSet<Edge<'id, DI, TERMINALS>> for NodeSet
-{
+impl<'id, DI: DiagramInfo> oxidd_core::util::NodeSet<Edge<'id, DI>> for NodeSet {
     #[inline(always)]
     fn len(&self) -> usize {
         self.len
     }
 
     #[inline]
-    fn insert(&mut self, edge: Ref<'_, Edge<'id, DI, TERMINALS>>) -> bool {
+    fn insert(&mut self, edge: Ref<'_, Edge<'id, DI>>) -> bool {
         let index = edge.node_id();
         if index < self.data.len() && self.data.contains(index) {
             return false;
@@ -2324,7 +2242,7 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize>
     }
 
     #[inline]
-    fn contains(&self, edge: Ref<'_, Edge<'id, DI, TERMINALS>>) -> bool {
+    fn contains(&self, edge: Ref<'_, Edge<'id, DI>>) -> bool {
         let index = edge.node_id();
         if index < self.data.len() {
             self.data.contains(index)
@@ -2334,7 +2252,7 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize>
     }
 
     #[inline]
-    fn remove(&mut self, edge: Ref<'_, Edge<'id, DI, TERMINALS>>) -> bool {
+    fn remove(&mut self, edge: Ref<'_, Edge<'id, DI>>) -> bool {
         let index = edge.node_id();
         if index < self.data.len() && self.data.contains(index) {
             self.len -= 1;
@@ -2348,8 +2266,7 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize>
 
 // === Additional Trait Implementations ========================================
 
-impl<'id, DI: DiagramInfo<TERMINALS>, O: Copy, const TERMINALS: usize> HasApplyCache<Self, O>
-    for Manager<'id, DI, TERMINALS>
+impl<'id, DI: DiagramInfo, O: Copy> HasApplyCache<Self, O> for Manager<'id, DI>
 where
     DI::ManagerData<'id>: HasApplyCache<Self, O>,
 {
@@ -2366,10 +2283,9 @@ where
     }
 }
 
-impl<'id, DI: DiagramInfo<TERMINALS>, T, const TERMINALS: usize> AsRef<T>
-    for Manager<'id, DI, TERMINALS>
+impl<'id, DI: DiagramInfo, T> AsRef<T> for Manager<'id, DI>
 where
-    DI::ManagerData<'id>: DropWith<Edge<'id, DI, TERMINALS>> + AsRef<T>,
+    DI::ManagerData<'id>: DropWith<Edge<'id, DI>> + AsRef<T>,
 {
     #[inline(always)]
     fn as_ref(&self) -> &T {
@@ -2377,10 +2293,9 @@ where
     }
 }
 
-impl<'id, DI: DiagramInfo<TERMINALS>, T, const TERMINALS: usize> AsMut<T>
-    for Manager<'id, DI, TERMINALS>
+impl<'id, DI: DiagramInfo, T> AsMut<T> for Manager<'id, DI>
 where
-    DI::ManagerData<'id>: DropWith<Edge<'id, DI, TERMINALS>> + AsMut<T>,
+    DI::ManagerData<'id>: DropWith<Edge<'id, DI>> + AsMut<T>,
 {
     #[inline(always)]
     fn as_mut(&mut self) -> &mut T {

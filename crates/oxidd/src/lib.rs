@@ -83,8 +83,12 @@ pub trait RawManagerRef {
 }
 
 #[cfg(feature = "manager-pointer")]
-const PAGE_SIZE: usize = if cfg!(miri) {
-    4 * 1024
-} else {
-    2 * 1024 * 1024
-};
+type PageSizeInfo = oxidd_manager_pointer::PageSize<
+    {
+        if cfg!(miri) {
+            4 * 1024
+        } else {
+            2 * 1024 * 1024
+        }
+    },
+>;

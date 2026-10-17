@@ -51,20 +51,18 @@ mod index {
 
     use crate::util::type_cons::{DD, IndexDD};
 
-    const TERMINALS: usize = 0x2000000; // up to 0.78125 % terminal nodes
-
     pub struct MTBDDInfo<T>(PhantomData<T>);
-    impl<T: Eq + Hash + Send + Sync> oxidd_manager_index::DiagramInfo<TERMINALS> for MTBDDInfo<T> {
+    impl<T: Eq + Hash + Send + Sync> oxidd_manager_index::DiagramInfo for MTBDDInfo<T> {
         type EdgeTag = ();
-        type InnerNode<'id> =
-            oxidd_manager_index::node::fixed_arity::NodeWithLevel<'id, Self, 2, TERMINALS>;
+        type InnerNode<'id> = oxidd_manager_index::node::fixed_arity::NodeWithLevel<'id, Self, 2>;
+        const TERMINALS: u32 = 0x2000000; // up to 0.78125 % terminal nodes
         type TerminalNode = T;
         type TerminalManager<'id> =
-            oxidd_manager_index::terminal_manager::DynamicTerminalManager<'id, Self, TERMINALS>;
+            oxidd_manager_index::terminal_manager::DynamicTerminalManager<'id, Self>;
         type Rules = MTBDDRules;
         type ManagerData<'id> = MTBDDManagerData<'id, T>;
     }
-    type MTBDD<T> = IndexDD<MTBDDInfo<T>, TERMINALS>;
+    type MTBDD<T> = IndexDD<MTBDDInfo<T>>;
 
     crate::util::manager_data!(MTBDDManagerData<T> for MTBDD<T>, operator: MTBDDOp, cache_entry_capacity: 3, where T: Eq + Hash + Send + Sync);
 

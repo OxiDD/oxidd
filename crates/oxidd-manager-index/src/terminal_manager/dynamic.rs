@@ -16,12 +16,12 @@ use oxidd_core::util::{AllocResult, Own};
 
 use crate::{DiagramInfo, manager::Edge, terminal_manager::TerminalManager};
 
-pub struct DynamicTerminalManager<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> {
+pub struct DynamicTerminalManager<'id, DI: DiagramInfo> {
     store: Box<[UnsafeCell<Slot<DI::TerminalNode>>]>,
-    state: CachePadded<Mutex<State<'id, DI, TERMINALS>>>,
+    state: CachePadded<Mutex<State<'id, DI>>>,
 }
 
-struct State<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> {
+struct State<'id, DI: DiagramInfo> {
     /// Next free index in the `store` of `DynamicTerminalManager`
     ///
     /// SAFETY invariant: Unless `next_free` is out of bounds for the store
@@ -34,7 +34,7 @@ struct State<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> {
     /// The hash values are those of the referenced terminal values.
     unique_table: RawTable<u32, u32>,
 
-    phantom: PhantomData<Edge<'id, DI, TERMINALS>>,
+    phantom: PhantomData<Edge<'id, DI>>,
 }
 
 union Slot<T> {
@@ -52,11 +52,11 @@ struct ArcItem<T> {
 }
 
 /// SAFETY: `id` must be a valid terminal ID for `store`
-unsafe fn retain<T>(store: &[UnsafeCell<Slot<T>>], id: usize) {
+unsafe fn retain<T>(store: &[UnsafeCell<Slot<T>>], id: u32) {
     // SAFETY: Since `id` is a valid terminal ID, it is `<= store.len()`.
     // Furthermore, we have shared access to the referenced slot and the `Slot`
     // is a `node`.
-    let item = unsafe { &(*store.get_unchecked(id).get()).node };
+    let item = unsafe { &(*store.get_unchecked(id as usize).get()).node };
     let old_rc = item.rc.fetch_add(1, Relaxed);
     if old_rc > (u32::MAX >> 1) {
         std::process::abort(); // prevent overflow
@@ -69,34 +69,30 @@ fn hash<T: Hash>(terminal: &T) -> u64 {
     hasher.finish()
 }
 
-impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> DynamicTerminalManager<'_, DI, TERMINALS> {
-    const CHECK_TERMINALS: () = assert!(
-        TERMINALS < (1 << (u32::BITS - 1)),
-        "`TERMINALS` is too large"
-    );
-}
-
-impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> TerminalManager<'id, DI, TERMINALS>
-    for DynamicTerminalManager<'id, DI, TERMINALS>
-{
+impl<'id, DI: DiagramInfo> TerminalManager<'id, DI> for DynamicTerminalManager<'id, DI> {
     type TerminalNodeRef<'a>
         = &'a DI::TerminalNode
     where
         Self: 'a;
 
     type Iterator<'a>
-        = DynamicTerminalIterator<'a, 'id, DI, TERMINALS>
+        = DynamicTerminalIterator<'a, 'id, DI>
     where
         Self: 'a,
         'id: 'a;
 
     fn with_capacity(capacity: u32) -> Self {
-        let () = Self::CHECK_TERMINALS;
-        let capacity = std::cmp::min(TERMINALS, capacity as usize);
+        const {
+            assert!(
+                DI::TERMINALS < (1 << (u32::BITS - 1)),
+                "`TERMINALS` is too large"
+            )
+        };
+        let capacity = std::cmp::min(DI::TERMINALS, capacity);
 
         let mut store_vec = Vec::new();
         let mut i = 0u32;
-        store_vec.resize_with(capacity, || {
+        store_vec.resize_with(capacity as usize, || {
             i += 1;
             UnsafeCell::new(Slot { next_free: i })
         });
@@ -117,25 +113,25 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> TerminalManager<'i
     }
 
     #[inline]
-    unsafe fn get_terminal(&self, id: usize) -> &DI::TerminalNode {
+    unsafe fn get_terminal(&self, id: u32) -> &DI::TerminalNode {
         // SAFETY: Since `id` is a valid terminal ID, it is
         // `<= self.store.len()`. Furthermore, we have shared access to the
         // referenced `Slot` and the slot is a `node`.
-        &unsafe { &(*self.store.get_unchecked(id).get()).node }.value
+        &unsafe { &(*self.store.get_unchecked(id as usize).get()).node }.value
     }
 
     #[inline]
-    unsafe fn retain(&self, id: usize) {
+    unsafe fn retain(&self, id: u32) {
         // SAFETY: `id` is a valid terminal ID for `self.store`
         unsafe { retain(&self.store, id) }
     }
 
     #[inline]
-    unsafe fn release(&self, id: usize) {
+    unsafe fn release(&self, id: u32) {
         // SAFETY: Since `id` is a valid terminal ID, it is
         // `<= self.store.len()`. Furthermore, we have shared access to the
         // referenced `Slot` and the slot is a `node`.
-        let item = unsafe { &(*self.store.get_unchecked(id).get()).node };
+        let item = unsafe { &(*self.store.get_unchecked(id as usize).get()).node };
         // Synchronizes-with the load in `Self::gc()`
         let _old_rc = item.rc.fetch_sub(1, Release);
         debug_assert!(
@@ -145,7 +141,7 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> TerminalManager<'i
     }
 
     #[inline]
-    fn get_edge(&self, terminal: DI::TerminalNode) -> AllocResult<Own<Edge<'id, DI, TERMINALS>>> {
+    fn get_edge(&self, terminal: DI::TerminalNode) -> AllocResult<Own<Edge<'id, DI>>> {
         let mut state = self.state.lock();
         let hash = hash(&terminal);
         let id = match state.unique_table.find_or_find_insert_slot(
@@ -160,7 +156,7 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> TerminalManager<'i
                 // `state.unique_table.find_or_find_insert_slot()` and there
                 // were no modifications of the table in between.
                 let id = *unsafe { state.unique_table.get_at_slot_unchecked(slot) };
-                unsafe { self.retain(id as usize) };
+                unsafe { self.retain(id) };
                 id
             }
             Err(table_slot) => {
@@ -236,26 +232,18 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> TerminalManager<'i
     }
 }
 
-unsafe impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Send
-    for DynamicTerminalManager<'_, DI, TERMINALS>
-{
-}
-unsafe impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Sync
-    for DynamicTerminalManager<'_, DI, TERMINALS>
-{
-}
+unsafe impl<DI: DiagramInfo> Send for DynamicTerminalManager<'_, DI> {}
+unsafe impl<DI: DiagramInfo> Sync for DynamicTerminalManager<'_, DI> {}
 
-pub struct DynamicTerminalIterator<'a, 'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> {
+pub struct DynamicTerminalIterator<'a, 'id, DI: DiagramInfo> {
     store: &'a [UnsafeCell<Slot<DI::TerminalNode>>],
-    state: MutexGuard<'a, State<'id, DI, TERMINALS>>,
+    state: MutexGuard<'a, State<'id, DI>>,
     next_slot: usize,
     len: usize,
 }
 
-impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Iterator
-    for DynamicTerminalIterator<'_, 'id, DI, TERMINALS>
-{
-    type Item = Own<Edge<'id, DI, TERMINALS>>;
+impl<'id, DI: DiagramInfo> Iterator for DynamicTerminalIterator<'_, 'id, DI> {
+    type Item = Own<Edge<'id, DI>>;
 
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
@@ -275,7 +263,7 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Iterator
         self.next_slot += 1;
         // SAFETY: `id` was obtained from the unique_table, hence it is a valid
         // terminal ID for `self.store`.
-        unsafe { retain(self.store, id as usize) };
+        unsafe { retain(self.store, id) };
         Some(unsafe { Own::from_raw(Edge::from_terminal_id(id)) })
     }
 
@@ -286,14 +274,9 @@ impl<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> Iterator
     }
 }
 
-impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> FusedIterator
-    for DynamicTerminalIterator<'_, '_, DI, TERMINALS>
-{
-}
+impl<DI: DiagramInfo> FusedIterator for DynamicTerminalIterator<'_, '_, DI> {}
 
-impl<DI: DiagramInfo<TERMINALS>, const TERMINALS: usize> ExactSizeIterator
-    for DynamicTerminalIterator<'_, '_, DI, TERMINALS>
-{
+impl<DI: DiagramInfo> ExactSizeIterator for DynamicTerminalIterator<'_, '_, DI> {
     #[inline(always)]
     fn len(&self) -> usize {
         self.len

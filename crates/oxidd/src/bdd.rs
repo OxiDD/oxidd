@@ -44,20 +44,18 @@ mod index {
 
     use crate::util::type_cons::{DD, IndexDD};
 
-    const TERMINALS: usize = 2;
-
     pub struct BDDInfo;
-    impl oxidd_manager_index::DiagramInfo<TERMINALS> for BDDInfo {
+    impl oxidd_manager_index::DiagramInfo for BDDInfo {
         type EdgeTag = ();
-        type InnerNode<'id> =
-            oxidd_manager_index::node::fixed_arity::NodeWithLevel<'id, Self, 2, TERMINALS>;
+        type InnerNode<'id> = oxidd_manager_index::node::fixed_arity::NodeWithLevel<'id, Self, 2>;
+        const TERMINALS: u32 = 2;
         type TerminalNode = BDDTerminal;
         type TerminalManager<'id> =
-            oxidd_manager_index::terminal_manager::StaticTerminalManager<'id, Self, TERMINALS>;
+            oxidd_manager_index::terminal_manager::StaticTerminalManager<'id, Self>;
         type Rules = BDDRules;
         type ManagerData<'id> = BDDManagerData<'id>;
     }
-    type BDD = IndexDD<BDDInfo, TERMINALS>;
+    type BDD = IndexDD<BDDInfo>;
 
     crate::util::manager_data!(BDDManagerData for BDD, operator: BDDOp, cache_entry_capacity: 4);
 
@@ -96,21 +94,20 @@ mod pointer {
     use oxidd_manager_pointer::terminal_manager::StaticTerminalManager;
     use oxidd_rules_bdd::simple::{BDDOp, BDDRules, BDDTerminal};
 
-    use crate::PAGE_SIZE;
     use crate::util::type_cons::{DD, PointerDD};
 
-    const TAG_BITS: u32 = 0;
-
     pub struct BDDInfo;
-    impl oxidd_manager_pointer::DiagramInfo<PAGE_SIZE, TAG_BITS> for BDDInfo {
+    impl oxidd_manager_pointer::DiagramInfo for BDDInfo {
+        type PageSizeInfo = crate::PageSizeInfo;
         type EdgeTag = ();
-        type InnerNode<'id> = NodeWithLevel<'id, Self, PAGE_SIZE, TAG_BITS, 2>;
+        const TAG_BITS: u32 = 0;
+        type InnerNode<'id> = NodeWithLevel<'id, Self, 2>;
         type TerminalNode = BDDTerminal;
-        type TerminalManager<'id> = StaticTerminalManager<'id, Self, PAGE_SIZE, TAG_BITS>;
+        type TerminalManager<'id> = StaticTerminalManager<'id, Self>;
         type Rules = BDDRules;
         type ManagerData<'id> = BDDManagerData<'id>;
     }
-    type BDD = PointerDD<BDDInfo, PAGE_SIZE, TAG_BITS>;
+    type BDD = PointerDD<BDDInfo>;
 
     crate::util::manager_data!(BDDManagerData for BDD, operator: BDDOp, cache_entry_capacity: 4);
 

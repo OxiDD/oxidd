@@ -18,7 +18,7 @@ pub use r#static::*;
 /// created by the [`get_edge()`][TerminalManager::get_edge()] and
 /// [`iter()`][TerminalManager::iter()] methods via
 /// [`Edge::from_terminal_id()`].
-pub trait TerminalManager<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usize>: Sized {
+pub trait TerminalManager<'id, DI: DiagramInfo>: Sized {
     /// References to terminal nodes
     ///
     /// Should either be a `&'a Self::Terminal` or just `Self::Terminal`. The
@@ -30,7 +30,7 @@ pub trait TerminalManager<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usiz
         Self: 'a;
 
     /// Iterator over all terminal nodes (as [`Edge`]s), see [`Self::iter()`]
-    type Iterator<'a>: Iterator<Item = Own<Edge<'id, DI, TERMINALS>>>
+    type Iterator<'a>: Iterator<Item = Own<Edge<'id, DI>>>
     where
         Self: 'a;
 
@@ -56,25 +56,25 @@ pub trait TerminalManager<'id, DI: DiagramInfo<TERMINALS>, const TERMINALS: usiz
     /// # Safety
     ///
     /// `id` must be a valid terminal node ID for this terminal manager.
-    unsafe fn get_terminal(&self, id: usize) -> Self::TerminalNodeRef<'_>;
+    unsafe fn get_terminal(&self, id: u32) -> Self::TerminalNodeRef<'_>;
 
     /// Increment the reference counter of the terminal `id`
     ///
     /// # Safety
     ///
     /// `id` must be a valid terminal node ID for this terminal manager.
-    unsafe fn retain(&self, id: usize);
+    unsafe fn retain(&self, id: u32);
 
     /// Decrement the reference counter of the terminal `id`
     ///
     /// # Safety
     ///
     /// `id` must be a valid terminal node ID for this terminal manager.
-    unsafe fn release(&self, id: usize);
+    unsafe fn release(&self, id: u32);
 
     /// Add a terminal to this manager (if it does not already exist) and return
     /// an [`Edge`] pointing to it
-    fn get_edge(&self, terminal: DI::TerminalNode) -> AllocResult<Own<Edge<'id, DI, TERMINALS>>>;
+    fn get_edge(&self, terminal: DI::TerminalNode) -> AllocResult<Own<Edge<'id, DI>>>;
 
     /// Iterate over all terminals
     fn iter<'a>(&'a self) -> Self::Iterator<'a>;

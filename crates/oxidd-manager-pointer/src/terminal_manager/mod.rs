@@ -14,20 +14,14 @@ pub use r#static::*;
 ///
 /// [`TerminalManager::new_in()`] must properly initialize the given slot and
 /// return a reference to the initialized slot.
-pub unsafe trait TerminalManager<
-    'id,
-    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
-    const PAGE_SIZE: usize,
-    const TAG_BITS: u32,
->: Sized
-{
+pub unsafe trait TerminalManager<'id, DI: DiagramInfo>: Sized {
     type TerminalNodeRef<'a>: Borrow<DI::TerminalNode> + Copy
     where
         Self: 'a,
         'id: 'a,
         DI: 'a;
 
-    type Iterator<'a>: Iterator<Item = Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>>
+    type Iterator<'a>: Iterator<Item = Own<Edge<'id, DI>>>
     where
         Self: 'a;
 
@@ -42,7 +36,7 @@ pub unsafe trait TerminalManager<
     unsafe fn new_in(slot: *mut Self);
 
     /// Get a pointer to the terminal store
-    fn terminal_manager(edge: Ref<'_, Edge<'id, DI, PAGE_SIZE, TAG_BITS>>) -> NonNull<Self>;
+    fn terminal_manager(edge: Ref<'_, Edge<'id, DI>>) -> NonNull<Self>;
 
     /// Get the number of currently stored terminals
     #[must_use]
@@ -55,18 +49,13 @@ pub unsafe trait TerminalManager<
     }
 
     /// Dereference the given `edge`
-    fn deref_edge<'a>(
-        &'a self,
-        edge: Ref<'a, Edge<'id, DI, PAGE_SIZE, TAG_BITS>>,
-    ) -> Self::TerminalNodeRef<'a>;
+    fn deref_edge<'a>(&'a self, edge: Ref<'a, Edge<'id, DI>>) -> Self::TerminalNodeRef<'a>;
 
     /// Clone the given `edge`
-    fn clone_edge(
-        edge: Ref<'_, Edge<'id, DI, PAGE_SIZE, TAG_BITS>>,
-    ) -> Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>;
+    fn clone_edge(edge: Ref<'_, Edge<'id, DI>>) -> Own<Edge<'id, DI>>;
 
     /// Drop the given `edge`
-    fn drop_edge(edge: Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>);
+    fn drop_edge(edge: Own<Edge<'id, DI>>);
 
     /// Add a terminal to this manager (if it does not already exist) and return
     /// an [`Edge`] pointing to it
@@ -76,10 +65,8 @@ pub unsafe trait TerminalManager<
     /// `this` is valid for reads, properly aligned and initialized. With
     /// respect to Stacked / Tree Borrows, `this` is tagged as the root of the
     /// allocation.
-    unsafe fn get(
-        this: *const Self,
-        terminal: DI::TerminalNode,
-    ) -> AllocResult<Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>>;
+    unsafe fn get(this: *const Self, terminal: DI::TerminalNode)
+    -> AllocResult<Own<Edge<'id, DI>>>;
 
     /// Iterate over all terminals
     ///

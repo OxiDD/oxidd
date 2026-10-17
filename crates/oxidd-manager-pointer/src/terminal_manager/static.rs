@@ -11,37 +11,32 @@ use crate::{DiagramInfo, manager::Edge};
 use super::TerminalManager;
 
 #[repr(align(128))]
-pub struct StaticTerminalManager<'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32>(
-    PhantomData<(&'id (), DI)>,
-);
+pub struct StaticTerminalManager<'id, DI>(PhantomData<(&'id (), DI)>);
 
-impl<DI, const PAGE_SIZE: usize, const TAG_BITS: u32>
-    StaticTerminalManager<'_, DI, PAGE_SIZE, TAG_BITS>
+impl<DI> StaticTerminalManager<'_, DI>
 where
-    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
+    DI: DiagramInfo,
     DI::TerminalNode: Countable,
 {
     /// All "info" bits of edges: `TAG_BITS` for the `EdgeTag`, one bit for
     /// inner/terminal node, and `bit_width(Terminal::MAX_VALUE)` bits for the
     /// terminal value.
     const ALL_BITS: u32 =
-        TAG_BITS + 1 + (usize::BITS - DI::TerminalNode::MAX_VALUE.leading_zeros());
+        DI::TAG_BITS + 1 + (usize::BITS - DI::TerminalNode::MAX_VALUE.leading_zeros());
 
     /// Bit mask corresponding to `Self::ALL_BITS`
     const ALL_BITS_MASK: usize = (1 << Self::ALL_BITS) - 1;
 
     /// Bit indicating whether an edge points to a terminal or an inner node
-    const TERMINAL_BIT: u32 = TAG_BITS;
+    const TERMINAL_BIT: u32 = DI::TAG_BITS;
 
     /// Least significant bit of the value
-    const VAL_LSB: u32 = TAG_BITS + 1;
+    const VAL_LSB: u32 = DI::TAG_BITS + 1;
 }
 
-unsafe impl<'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32>
-    TerminalManager<'id, DI, PAGE_SIZE, TAG_BITS>
-    for StaticTerminalManager<'id, DI, PAGE_SIZE, TAG_BITS>
+unsafe impl<'id, DI> TerminalManager<'id, DI> for StaticTerminalManager<'id, DI>
 where
-    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
+    DI: DiagramInfo,
     DI::TerminalNode: Countable,
 {
     type TerminalNodeRef<'a>
@@ -50,7 +45,7 @@ where
         Self: 'a;
 
     type Iterator<'a>
-        = StaticTerminalIterator<'id, DI, PAGE_SIZE, TAG_BITS>
+        = StaticTerminalIterator<'id, DI>
     where
         Self: 'a,
         'id: 'a;
@@ -66,7 +61,7 @@ where
     }
 
     #[inline]
-    fn terminal_manager(edge: Ref<'_, Edge<'id, DI, PAGE_SIZE, TAG_BITS>>) -> NonNull<Self> {
+    fn terminal_manager(edge: Ref<'_, Edge<'id, DI>>) -> NonNull<Self> {
         assert!(!edge.raw().is_inner());
         let edge_ptr = edge.raw().as_ptr().as_ptr();
         let ptr = edge_ptr.map_addr(|p| p & !Self::ALL_BITS_MASK) as *mut Self;
@@ -79,14 +74,12 @@ where
     }
 
     #[inline]
-    fn deref_edge(&self, edge: Ref<'_, Edge<'id, DI, PAGE_SIZE, TAG_BITS>>) -> DI::TerminalNode {
+    fn deref_edge(&self, edge: Ref<'_, Edge<'id, DI>>) -> DI::TerminalNode {
         DI::TerminalNode::from_usize((edge.raw().addr() & Self::ALL_BITS_MASK) >> Self::VAL_LSB)
     }
 
     #[inline]
-    fn clone_edge(
-        edge: Ref<'_, Edge<'id, DI, PAGE_SIZE, TAG_BITS>>,
-    ) -> Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>> {
+    fn clone_edge(edge: Ref<'_, Edge<'id, DI>>) -> Own<Edge<'id, DI>> {
         let raw = edge.raw();
         assert!(!raw.is_inner());
         let ptr = raw.as_ptr();
@@ -94,7 +87,7 @@ where
     }
 
     #[inline(always)]
-    fn drop_edge(edge: Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>) {
+    fn drop_edge(edge: Own<Edge<'id, DI>>) {
         let edge = edge.into_raw();
         debug_assert!(!edge.is_inner());
     }
@@ -103,7 +96,7 @@ where
     unsafe fn get(
         this: *const Self,
         terminal: DI::TerminalNode,
-    ) -> AllocResult<Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>> {
+    ) -> AllocResult<Own<Edge<'id, DI>>> {
         let ptr = (this as *mut ())
             .map_addr(|p| p | (1 << Self::TERMINAL_BIT) | (terminal.as_usize() << Self::VAL_LSB));
         Ok(unsafe { Edge::from_ptr(NonNull::new_unchecked(ptr)) })
@@ -127,23 +120,19 @@ where
     }
 }
 
-pub struct StaticTerminalIterator<'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32>
+pub struct StaticTerminalIterator<'id, DI>
 where
-    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
+    DI: DiagramInfo,
 {
     ptr: NonNull<()>,
     count: usize,
-    phantom: PhantomData<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>,
+    phantom: PhantomData<Edge<'id, DI>>,
 }
 
-impl<DI, const PAGE_SIZE: usize, const TAG_BITS: u32>
-    StaticTerminalIterator<'_, DI, PAGE_SIZE, TAG_BITS>
-where
-    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
-{
-    const TERMINAL_BIT: u32 = TAG_BITS;
+impl<DI: DiagramInfo> StaticTerminalIterator<'_, DI> {
+    const TERMINAL_BIT: u32 = DI::TAG_BITS;
 
-    const VAL_LSB: u32 = TAG_BITS + 1;
+    const VAL_LSB: u32 = DI::TAG_BITS + 1;
 
     pub fn new(first_ptr: NonNull<()>, count: usize) -> Self {
         assert!(first_ptr.as_ptr().addr() & (1 << Self::TERMINAL_BIT) != 0);
@@ -155,12 +144,8 @@ where
     }
 }
 
-impl<'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32> Iterator
-    for StaticTerminalIterator<'id, DI, PAGE_SIZE, TAG_BITS>
-where
-    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
-{
-    type Item = Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>;
+impl<'id, DI: DiagramInfo> Iterator for StaticTerminalIterator<'id, DI> {
+    type Item = Own<Edge<'id, DI>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.count != 0 {
@@ -184,18 +169,9 @@ where
     }
 }
 
-impl<DI, const PAGE_SIZE: usize, const TAG_BITS: u32> FusedIterator
-    for StaticTerminalIterator<'_, DI, PAGE_SIZE, TAG_BITS>
-where
-    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
-{
-}
+impl<DI: DiagramInfo> FusedIterator for StaticTerminalIterator<'_, DI> {}
 
-impl<DI, const PAGE_SIZE: usize, const TAG_BITS: u32> ExactSizeIterator
-    for StaticTerminalIterator<'_, DI, PAGE_SIZE, TAG_BITS>
-where
-    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
-{
+impl<DI: DiagramInfo> ExactSizeIterator for StaticTerminalIterator<'_, DI> {
     fn len(&self) -> usize {
         self.count
     }

@@ -13,20 +13,13 @@ use crate::{DiagramInfo, manager::Edge};
 
 use super::NodeBase;
 
-pub struct NodeWithLevel<'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32, const ARITY: usize>
-where
-    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
-{
+pub struct NodeWithLevel<'id, DI: DiagramInfo, const ARITY: usize> {
     rc: AtomicUsize,
     level: AtomicLevelNo,
-    children: UnsafeCell<[Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>; ARITY]>,
+    children: UnsafeCell<[Own<Edge<'id, DI>>; ARITY]>,
 }
 
-unsafe impl<DI, const PAGE_SIZE: usize, const TAG_BITS: u32, const ARITY: usize> AtomicRefCounted
-    for NodeWithLevel<'_, DI, PAGE_SIZE, TAG_BITS, ARITY>
-where
-    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
-{
+unsafe impl<DI: DiagramInfo, const ARITY: usize> AtomicRefCounted for NodeWithLevel<'_, DI, ARITY> {
     #[inline(always)]
     fn retain(&self) {
         if self.rc.fetch_add(1, Relaxed) > (usize::MAX >> 1) {
@@ -45,29 +38,16 @@ where
     }
 }
 
-impl<DI, const PAGE_SIZE: usize, const TAG_BITS: u32, const ARITY: usize> PartialEq
-    for NodeWithLevel<'_, DI, PAGE_SIZE, TAG_BITS, ARITY>
-where
-    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
-{
+impl<DI: DiagramInfo, const ARITY: usize> PartialEq for NodeWithLevel<'_, DI, ARITY> {
     #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
         // SAFETY: we have shared access to the node
         unsafe { *self.children.get() == *other.children.get() }
     }
 }
-impl<DI, const PAGE_SIZE: usize, const TAG_BITS: u32, const ARITY: usize> Eq
-    for NodeWithLevel<'_, DI, PAGE_SIZE, TAG_BITS, ARITY>
-where
-    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
-{
-}
+impl<DI: DiagramInfo, const ARITY: usize> Eq for NodeWithLevel<'_, DI, ARITY> {}
 
-impl<DI, const PAGE_SIZE: usize, const TAG_BITS: u32, const ARITY: usize> Hash
-    for NodeWithLevel<'_, DI, PAGE_SIZE, TAG_BITS, ARITY>
-where
-    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
-{
+impl<DI: DiagramInfo, const ARITY: usize> Hash for NodeWithLevel<'_, DI, ARITY> {
     #[inline(always)]
     fn hash<H: Hasher>(&self, state: &mut H) {
         // SAFETY: we have shared access to the node
@@ -77,11 +57,7 @@ where
 
 // SAFETY: The reference counter is initialized to 2, `load_rc` uses the given
 // ordering.
-unsafe impl<DI, const PAGE_SIZE: usize, const TAG_BITS: u32, const ARITY: usize> NodeBase
-    for NodeWithLevel<'_, DI, PAGE_SIZE, TAG_BITS, ARITY>
-where
-    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
-{
+unsafe impl<DI: DiagramInfo, const ARITY: usize> NodeBase for NodeWithLevel<'_, DI, ARITY> {
     #[inline(always)]
     fn needs_drop() -> bool {
         false
@@ -93,43 +69,30 @@ where
     }
 }
 
-impl<'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32, const ARITY: usize>
-    DropWith<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>
-    for NodeWithLevel<'id, DI, PAGE_SIZE, TAG_BITS, ARITY>
-where
-    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
+impl<'id, DI: DiagramInfo, const ARITY: usize> DropWith<Edge<'id, DI>>
+    for NodeWithLevel<'id, DI, ARITY>
 {
     #[inline]
-    fn drop_with(self, drop_edge: impl Fn(Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>)) {
+    fn drop_with(self, drop_edge: impl Fn(Own<Edge<'id, DI>>)) {
         for c in self.children.into_inner() {
             drop_edge(c);
         }
     }
 }
 
-impl<'id, DI, const PAGE_SIZE: usize, const TAG_BITS: u32, const ARITY: usize>
-    InnerNode<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>
-    for NodeWithLevel<'id, DI, PAGE_SIZE, TAG_BITS, ARITY>
-where
-    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
+impl<'id, DI: DiagramInfo, const ARITY: usize> InnerNode<Edge<'id, DI>>
+    for NodeWithLevel<'id, DI, ARITY>
 {
-    const ARITY: usize = 2;
+    const ARITY: usize = ARITY;
 
     type ChildrenIter<'a>
-        = EdgeRefIter<
-        'a,
-        Edge<'id, DI, PAGE_SIZE, TAG_BITS>,
-        std::slice::Iter<'a, Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>>,
-    >
+        = EdgeRefIter<'a, Edge<'id, DI>, std::slice::Iter<'a, Own<Edge<'id, DI>>>>
     where
         Self: 'a;
 
     #[inline(always)]
-    fn new(
-        level: LevelNo,
-        children: impl IntoIterator<Item = Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>>,
-    ) -> Self {
-        let drop_fn = crate::manager::Manager::<'id, DI, PAGE_SIZE, TAG_BITS>::drop_edge_common;
+    fn new(level: LevelNo, children: impl IntoIterator<Item = Own<Edge<'id, DI>>>) -> Self {
+        let drop_fn = crate::manager::Manager::<'id, DI>::drop_edge_common;
         Self {
             rc: AtomicUsize::new(2),
             level: AtomicLevelNo::new(level),
@@ -158,18 +121,14 @@ where
     }
 
     #[inline(always)]
-    fn child(&self, n: usize) -> Ref<'_, Edge<'id, DI, PAGE_SIZE, TAG_BITS>> {
+    fn child(&self, n: usize) -> Ref<'_, Edge<'id, DI>> {
         // SAFETY: we have shared access to the node
         let children = unsafe { &*self.children.get() };
         children[n].borrowed()
     }
 
     #[inline(always)]
-    unsafe fn set_child(
-        &self,
-        n: usize,
-        child: Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>>,
-    ) -> Own<Edge<'id, DI, PAGE_SIZE, TAG_BITS>> {
+    unsafe fn set_child(&self, n: usize, child: Own<Edge<'id, DI>>) -> Own<Edge<'id, DI>> {
         // SAFETY: we have exclusive access to the node and no child is
         // referenced
         let children = unsafe { &mut *self.children.get() };
@@ -183,11 +142,7 @@ where
     }
 }
 
-unsafe impl<DI, const PAGE_SIZE: usize, const TAG_BITS: u32, const ARITY: usize> HasLevel
-    for NodeWithLevel<'_, DI, PAGE_SIZE, TAG_BITS, ARITY>
-where
-    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
-{
+unsafe impl<DI: DiagramInfo, const ARITY: usize> HasLevel for NodeWithLevel<'_, DI, ARITY> {
     #[inline(always)]
     fn level(&self) -> LevelNo {
         self.level.load(Relaxed)
@@ -199,15 +154,5 @@ where
     }
 }
 
-unsafe impl<DI, const PAGE_SIZE: usize, const TAG_BITS: u32, const ARITY: usize> Send
-    for NodeWithLevel<'_, DI, PAGE_SIZE, TAG_BITS, ARITY>
-where
-    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
-{
-}
-unsafe impl<DI, const PAGE_SIZE: usize, const TAG_BITS: u32, const ARITY: usize> Sync
-    for NodeWithLevel<'_, DI, PAGE_SIZE, TAG_BITS, ARITY>
-where
-    DI: DiagramInfo<PAGE_SIZE, TAG_BITS>,
-{
-}
+unsafe impl<DI: DiagramInfo, const ARITY: usize> Send for NodeWithLevel<'_, DI, ARITY> {}
+unsafe impl<DI: DiagramInfo, const ARITY: usize> Sync for NodeWithLevel<'_, DI, ARITY> {}

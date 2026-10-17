@@ -44,20 +44,18 @@ mod index {
 
     use crate::util::type_cons::{DD, IndexDD};
 
-    const TERMINALS: usize = 3;
-
     pub struct TDDInfo;
-    impl oxidd_manager_index::DiagramInfo<TERMINALS> for TDDInfo {
+    impl oxidd_manager_index::DiagramInfo for TDDInfo {
         type EdgeTag = ();
-        type InnerNode<'id> =
-            oxidd_manager_index::node::fixed_arity::NodeWithLevel<'id, Self, 3, TERMINALS>;
+        type InnerNode<'id> = oxidd_manager_index::node::fixed_arity::NodeWithLevel<'id, Self, 3>;
+        const TERMINALS: u32 = 3;
         type TerminalNode = TDDTerminal;
         type TerminalManager<'id> =
-            oxidd_manager_index::terminal_manager::StaticTerminalManager<'id, Self, TERMINALS>;
+            oxidd_manager_index::terminal_manager::StaticTerminalManager<'id, Self>;
         type Rules = TDDRules;
         type ManagerData<'id> = TDDManagerData<'id>;
     }
-    type TDD = IndexDD<TDDInfo, TERMINALS>;
+    type TDD = IndexDD<TDDInfo>;
 
     crate::util::manager_data!(TDDManagerData for TDD, operator: TDDOp, cache_entry_capacity: 4);
 
@@ -101,21 +99,20 @@ mod pointer {
     use oxidd_manager_pointer::terminal_manager::StaticTerminalManager;
     use oxidd_rules_tdd::{TDDOp, TDDRules, TDDTerminal};
 
-    use crate::PAGE_SIZE;
     use crate::util::type_cons::{DD, PointerDD};
 
-    const TAG_BITS: u32 = 0;
-
     pub struct TDDInfo;
-    impl oxidd_manager_pointer::DiagramInfo<PAGE_SIZE, TAG_BITS> for TDDInfo {
+    impl oxidd_manager_pointer::DiagramInfo for TDDInfo {
+        type PageSizeInfo = crate::PageSizeInfo;
         type EdgeTag = ();
-        type InnerNode<'id> = NodeWithLevel<'id, Self, PAGE_SIZE, TAG_BITS, 3>;
+        const TAG_BITS: u32 = 0;
+        type InnerNode<'id> = NodeWithLevel<'id, Self, 3>;
         type TerminalNode = TDDTerminal;
-        type TerminalManager<'id> = StaticTerminalManager<'id, Self, PAGE_SIZE, TAG_BITS>;
+        type TerminalManager<'id> = StaticTerminalManager<'id, Self>;
         type Rules = TDDRules;
         type ManagerData<'id> = TDDManagerData<'id>;
     }
-    type TDD = PointerDD<TDDInfo, PAGE_SIZE, TAG_BITS>;
+    type TDD = PointerDD<TDDInfo>;
 
     crate::util::manager_data!(TDDManagerData for TDD, operator: TDDOp, cache_entry_capacity: 4);
 
