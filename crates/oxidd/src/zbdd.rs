@@ -171,7 +171,7 @@ mod index {
         oxidd_derive::Function,
         oxidd_derive::BooleanFunction,
         oxidd_derive::BooleanVecSet,
-        oxidd_derive::DDDMPDeserialize,
+        oxidd_derive::DumpDeserialize,
     )]
     #[use_manager_ref(ZBDDManagerRef, ZBDDManagerRef(inner))]
     pub struct ZBDDFunction(FunctionInner);
@@ -222,7 +222,7 @@ mod pointer {
         oxidd_derive::Function,
         oxidd_derive::BooleanFunction,
         oxidd_derive::BooleanVecSet,
-        oxidd_derive::DDDMPDeserialize,
+        oxidd_derive::DumpDeserialize,
     )]
     #[use_manager_ref(ZBDDManagerRef, ZBDDManagerRef(inner))]
     pub struct ZBDDFunction(FunctionInner);

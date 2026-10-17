@@ -77,7 +77,7 @@ mod index {
         Hash,
         oxidd_derive::Function,
         oxidd_derive::TVLFunction,
-        oxidd_derive::DDDMPDeserialize,
+        oxidd_derive::DumpDeserialize,
     )]
     #[use_manager_ref(TDDManagerRef, TDDManagerRef(inner))]
     pub struct TDDFunction(FunctionInner);
@@ -134,7 +134,7 @@ mod pointer {
         Hash,
         oxidd_derive::Function,
         oxidd_derive::TVLFunction,
-        oxidd_derive::DDDMPDeserialize,
+        oxidd_derive::DumpDeserialize,
     )]
     #[use_manager_ref(TDDManagerRef, TDDManagerRef(inner))]
     pub struct TDDFunction(FunctionInner);

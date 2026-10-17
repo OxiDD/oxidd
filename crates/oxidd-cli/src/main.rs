@@ -340,7 +340,7 @@ impl<'a> Inputs<'a> {
 
 fn bool_dd_main<B, O>(cli: &Cli, mref: B::ManagerRef)
 where
-    B: BooleanFunction + dddmp::DDDMPDeserialize + Send + Sync + 'static,
+    B: BooleanFunction + oxidd_dump::DumpDeserialize + Send + Sync + 'static,
     B::ManagerRef: HasWorkers + Send + 'static,
     for<'id> B: dot::DotStyle<ETagOfFunc<'id, B>>,
     for<'id> B::Manager<'id>: HasWorkers + HasApplyCache<B::Manager<'id>, O>,

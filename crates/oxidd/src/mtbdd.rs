@@ -86,7 +86,7 @@ mod index {
         Hash,
         oxidd_derive::Function,
         oxidd_derive::PseudoBooleanFunction,
-        oxidd_derive::DDDMPDeserialize,
+        oxidd_derive::DumpDeserialize,
     )]
     #[use_manager_ref(MTBDDManagerRef<T>, MTBDDManagerRef::<T>(inner))]
     #[derive_where::derive_where(PartialOrd, Ord; T: NumberBase + Send + Sync)]

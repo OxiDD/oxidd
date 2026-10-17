@@ -1,8 +1,8 @@
 use std::io;
 
 use oxidd_core::error::OutOfMemory;
-use oxidd_core::function::{ETagOfFunc, Function, INodeOfFunc, OwnEdgeOfFunc, TermOfFunc};
-use oxidd_core::util::{AllocResult, EdgeDropGuard, EdgeVecDropGuard};
+use oxidd_core::function::{ETagOfFunc, INodeOfFunc, OwnEdgeOfFunc, TermOfFunc};
+use oxidd_core::util::{EdgeDropGuard, EdgeVecDropGuard};
 use oxidd_core::{HasLevel, InnerNode, LevelNo, Manager, VarNo};
 
 use crate::ParseTagged;
@@ -472,31 +472,6 @@ impl DumpHeader {
     }
 }
 
-/// [`Function`] that can be deserialized from DDDMP
-pub trait DDDMPDeserialize: Function {
-    /// Try to create a node at `level` with `children`, applying reduction
-    /// rules
-    ///
-    /// The default implementation will just ensure node uniqueness.
-    #[inline]
-    fn reduce<'id>(
-        manager: &Self::Manager<'id>,
-        level: LevelNo,
-        children: impl IntoIterator<Item = OwnEdgeOfFunc<'id, Self>>,
-    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
-        manager.get_or_insert(level, children)
-    }
-
-    /// Negate `edge`
-    ///
-    /// This method provides the semantics for negative node references in the
-    /// DDDMP dump.
-    fn neg<'id>(
-        manager: &Self::Manager<'id>,
-        edge: OwnEdgeOfFunc<'id, Self>,
-    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>>;
-}
-
 /// Import the decision diagram from `input` into `manager` after loading
 /// `header` from `input`
 ///
@@ -519,7 +494,7 @@ pub trait DDDMPDeserialize: Function {
 /// edge.
 ///
 /// [set_var_order]: https://docs.rs/oxidd-reorder/latest/oxidd_reorder/fn.set_var_order.html
-pub fn import<'id, F: DDDMPDeserialize>(
+pub fn import<'id, F: crate::DumpDeserialize>(
     mut input: impl io::BufRead,
     header: &DumpHeader,
     manager: &F::Manager<'id>,
@@ -585,7 +560,7 @@ fn reads_expected(mut file: impl io::Read, expected: &[u8]) -> io::Result<bool> 
     Ok(buf.starts_with(expected) && buf[expected.len()..].iter().all(u8::is_ascii_whitespace))
 }
 
-fn import_ascii<'id, F: DDDMPDeserialize>(
+fn import_ascii<'id, F: crate::DumpDeserialize>(
     mut input: impl io::BufRead,
     header: &DumpHeader,
     manager: &F::Manager<'id>,
@@ -703,7 +678,7 @@ where
     Ok(nodes.into_vec())
 }
 
-fn import_bin<'id, F: DDDMPDeserialize>(
+fn import_bin<'id, F: crate::DumpDeserialize>(
     mut input: impl io::BufRead,
     header: &DumpHeader,
     manager: &F::Manager<'id>,

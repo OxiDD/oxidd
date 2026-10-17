@@ -16,7 +16,7 @@ use oxidd_core::{
     },
 };
 use oxidd_derive::Function;
-use oxidd_dump::{dddmp, dot::DotStyle};
+use oxidd_dump::dot::DotStyle;
 
 use crate::complement_edge::{add_literal_to_cube, is_false};
 use crate::recursor::{Recursor, SequentialRecursor};
@@ -1345,7 +1345,7 @@ where
     }
 }
 
-impl<F: Function> dddmp::DDDMPDeserialize for BCDDFunction<F>
+impl<F: Function> oxidd_dump::DumpDeserialize for BCDDFunction<F>
 where
     for<'id> F::Manager<'id>:
         Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag> + HasBCDDOpApplyCache<F::Manager<'id>>,
@@ -1693,7 +1693,7 @@ pub mod mt {
         }
     }
 
-    impl<F: Function> dddmp::DDDMPDeserialize for BCDDFunctionMT<F>
+    impl<F: Function> oxidd_dump::DumpDeserialize for BCDDFunctionMT<F>
     where
         for<'id> F::Manager<'id>: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag>
             + HasBCDDOpApplyCache<F::Manager<'id>>,

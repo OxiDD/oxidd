@@ -12,7 +12,6 @@ use oxidd_core::{
     ApplyCache, HasApplyCache, HasLevel, InnerNode, LevelNo, Manager, Node, Tag, VarNo,
 };
 use oxidd_derive::Function;
-use oxidd_dump::dddmp;
 use oxidd_dump::dot::DotStyle;
 
 #[cfg(feature = "statistics")]
@@ -434,7 +433,7 @@ where
     }
 }
 
-impl<F: Function, T: NumberBase> dddmp::DDDMPDeserialize for MTBDDFunction<F>
+impl<F: Function, T: NumberBase> oxidd_dump::DumpDeserialize for MTBDDFunction<F>
 where
     for<'id> F::Manager<'id>: Manager<Terminal = T> + HasMTBDDOpApplyCache<F::Manager<'id>>,
     for<'id> INodeOfFunc<'id, F>: HasLevel,

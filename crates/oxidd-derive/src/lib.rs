@@ -205,14 +205,14 @@ pub fn derive_tvl_function(input: proc_macro::TokenStream) -> proc_macro::TokenS
     proc_macro::TokenStream::from(expanded)
 }
 
-/// Derive the `DDDMPDeserialize` trait from `oxidd_dump::dddmp`
+/// Derive the `DumpDeserialize` trait from `oxidd_dump`
 ///
-/// This trait can be derived for `struct`s that wrap another `DDDMPDeserialize`
+/// This trait can be derived for `struct`s that wrap another `DumpDeserialize`
 /// implementation. The same restrictions apply as for deriving [`Function`].
 #[proc_macro_error::proc_macro_error]
-#[proc_macro_derive(DDDMPDeserialize)]
-pub fn derive_dddmp_deserialize(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+#[proc_macro_derive(DumpDeserialize)]
+pub fn derive_dump_deserialize(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
-    let expanded = function::derive_dddmp_deserialize(input);
+    let expanded = function::derive_dump_deserialize(input);
     proc_macro::TokenStream::from(expanded)
 }

@@ -15,7 +15,7 @@ rust-version.workspace = true
 oxidd-core.workspace = true
 oxidd-derive.workspace = true
 
-# For implementing `DotStyle`
+# For implementing `DumpDeserialize` and `DotStyle`
 oxidd-dump.workspace = true
 
 # document feature flags

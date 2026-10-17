@@ -78,7 +78,7 @@ mod index {
         oxidd_derive::FunctionSubst,
         oxidd_derive::BooleanFunction,
         oxidd_derive::BooleanFunctionQuant,
-        oxidd_derive::DDDMPDeserialize,
+        oxidd_derive::DumpDeserialize,
     )]
     #[use_manager_ref(BCDDManagerRef, BCDDManagerRef(inner))]
     pub struct BCDDFunction(FunctionInner);
@@ -130,7 +130,7 @@ mod pointer {
         oxidd_derive::FunctionSubst,
         oxidd_derive::BooleanFunction,
         oxidd_derive::BooleanFunctionQuant,
-        oxidd_derive::DDDMPDeserialize,
+        oxidd_derive::DumpDeserialize,
     )]
     #[use_manager_ref(BCDDManagerRef, BCDDManagerRef(inner))]
     pub struct BCDDFunction(FunctionInner);

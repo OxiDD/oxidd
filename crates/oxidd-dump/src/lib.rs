@@ -11,6 +11,10 @@
 
 use std::fmt;
 
+use oxidd_core::function::{Function, OwnEdgeOfFunc};
+use oxidd_core::util::AllocResult;
+use oxidd_core::{LevelNo, Manager};
+
 /// Like [`std::fmt::Display`], but the format should use ASCII characters only
 pub trait AsciiDisplay {
     /// Format the value with the given formatter
@@ -21,6 +25,31 @@ pub trait AsciiDisplay {
 pub trait ParseTagged<Tag>: Sized {
     /// Parse the string `s`
     fn parse(s: &str) -> Option<(Self, Tag)>;
+}
+
+/// [`Function`] that can be deserialized from a dump
+pub trait DumpDeserialize: Function {
+    /// Try to create a node at `level` with `children`, applying reduction
+    /// rules
+    ///
+    /// The default implementation will just ensure node uniqueness.
+    #[inline]
+    fn reduce<'id>(
+        manager: &Self::Manager<'id>,
+        level: LevelNo,
+        children: impl IntoIterator<Item = OwnEdgeOfFunc<'id, Self>>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+        manager.get_or_insert(level, children)
+    }
+
+    /// Negate `edge`
+    ///
+    /// This method provides the semantics for negative node references in the
+    /// DDDMP dump.
+    fn neg<'id>(
+        manager: &Self::Manager<'id>,
+        edge: OwnEdgeOfFunc<'id, Self>,
+    ) -> AllocResult<OwnEdgeOfFunc<'id, Self>>;
 }
 
 #[cfg(feature = "dddmp")]

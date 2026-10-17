@@ -229,7 +229,7 @@ impl DDDMPFile {
     }
 }
 
-pub fn import_dddmp<'py, F: BooleanFunction + dddmp::DDDMPDeserialize>(
+pub fn import_dddmp<'py, F: BooleanFunction + oxidd_dump::DumpDeserialize>(
     manager_ref: &F::ManagerRef,
     file: &mut DDDMPFile,
     support_vars: Option<&Bound<'py, PyAny>>,

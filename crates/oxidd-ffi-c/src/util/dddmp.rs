@@ -25,7 +25,7 @@ impl dddmp_file_t {
         error: *mut error_t,
     ) -> bool
     where
-        CF::Function: BooleanFunction + dddmp::DDDMPDeserialize,
+        CF::Function: BooleanFunction + oxidd_dump::DumpDeserialize,
         for<'id> INodeOfFunc<'id, CF::Function>: HasLevel,
         for<'id> TermOfFunc<'id, CF::Function>: ParseTagged<ETagOfFunc<'id, CF::Function>>,
     {

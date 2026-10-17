@@ -926,37 +926,32 @@ pub fn derive_tvl_function(input: syn::DeriveInput) -> TokenStream {
     )
 }
 
-pub fn derive_dddmp_deserialize(input: syn::DeriveInput) -> TokenStream {
-    derive_function_trait(
-        input,
-        quote!(::oxidd_dump::dddmp::DDDMPDeserialize),
-        &[],
-        |ctx| {
-            let CustomMethodsCtx {
-                trait_path,
-                manager_ty,
-                edge_ty,
-                struct_field,
-            } = ctx;
-            let inner = &struct_field.ty;
-            let edge_alloc_result =
-                quote!(::oxidd_core::util::AllocResult<::oxidd_core::util::Own<#edge_ty>>);
+pub fn derive_dump_deserialize(input: syn::DeriveInput) -> TokenStream {
+    derive_function_trait(input, quote!(::oxidd_dump::DumpDeserialize), &[], |ctx| {
+        let CustomMethodsCtx {
+            trait_path,
+            manager_ty,
+            edge_ty,
+            struct_field,
+        } = ctx;
+        let inner = &struct_field.ty;
+        let edge_alloc_result =
+            quote!(::oxidd_core::util::AllocResult<::oxidd_core::util::Own<#edge_ty>>);
 
-            quote! {
-                #[inline]
-                fn reduce<'__id>(
-                    manager: &#manager_ty,
-                    level: ::oxidd_core::LevelNo,
-                    children: impl ::std::iter::IntoIterator<Item = ::oxidd_core::util::Own<#edge_ty>>,
-                ) -> #edge_alloc_result {
-                    <#inner as #trait_path>::reduce(manager, level, children)
-                }
-
-                #[inline]
-                fn neg<'__id>(manager: &#manager_ty, edge: ::oxidd_core::util::Own<#edge_ty>) -> #edge_alloc_result {
-                    <#inner as #trait_path>::neg(manager, edge)
-                }
+        quote! {
+            #[inline]
+            fn reduce<'__id>(
+                manager: &#manager_ty,
+                level: ::oxidd_core::LevelNo,
+                children: impl ::std::iter::IntoIterator<Item = ::oxidd_core::util::Own<#edge_ty>>,
+            ) -> #edge_alloc_result {
+                <#inner as #trait_path>::reduce(manager, level, children)
             }
-        },
-    )
+
+            #[inline]
+            fn neg<'__id>(manager: &#manager_ty, edge: ::oxidd_core::util::Own<#edge_ty>) -> #edge_alloc_result {
+                <#inner as #trait_path>::neg(manager, edge)
+            }
+        }
+    })
 }

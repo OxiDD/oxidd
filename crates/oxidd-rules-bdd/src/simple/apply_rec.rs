@@ -17,7 +17,7 @@ use oxidd_core::{
     },
 };
 use oxidd_derive::Function;
-use oxidd_dump::{dddmp, dot::DotStyle};
+use oxidd_dump::dot::DotStyle;
 
 use crate::recursor::{Recursor, SequentialRecursor};
 use crate::stat;
@@ -1198,7 +1198,7 @@ where
 
 impl<F: Function, T: Tag> DotStyle<T> for BDDFunction<F> {}
 
-impl<F: Function> dddmp::DDDMPDeserialize for BDDFunction<F>
+impl<F: Function> oxidd_dump::DumpDeserialize for BDDFunction<F>
 where
     for<'id> F::Manager<'id>: Manager<Terminal = BDDTerminal> + HasBDDOpApplyCache<F::Manager<'id>>,
     for<'id> INodeOfFunc<'id, F>: HasLevel,
@@ -1534,7 +1534,7 @@ pub mod mt {
         }
     }
 
-    impl<F: Function> dddmp::DDDMPDeserialize for BDDFunctionMT<F>
+    impl<F: Function> oxidd_dump::DumpDeserialize for BDDFunctionMT<F>
     where
         for<'id> F::Manager<'id>:
             Manager<Terminal = BDDTerminal> + HasBDDOpApplyCache<F::Manager<'id>>,

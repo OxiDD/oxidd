@@ -17,7 +17,7 @@ use oxidd_core::{
     ApplyCache, HasApplyCache, HasLevel, InnerNode, LevelNo, Manager, Node, Tag, VarNo,
 };
 use oxidd_derive::Function;
-use oxidd_dump::{dddmp, dot::DotStyle};
+use oxidd_dump::dot::DotStyle;
 
 use crate::recursor::{Recursor, SequentialRecursor};
 
@@ -1137,7 +1137,7 @@ where
     }
 }
 
-impl<F: Function> dddmp::DDDMPDeserialize for ZBDDFunction<F>
+impl<F: Function> oxidd_dump::DumpDeserialize for ZBDDFunction<F>
 where
     for<'id> F::Manager<'id>: Manager<Terminal = ZBDDTerminal>
         + HasZBDDOpApplyCache<F::Manager<'id>>
@@ -1472,7 +1472,7 @@ pub mod mt {
         }
     }
 
-    impl<F: Function> dddmp::DDDMPDeserialize for ZBDDFunctionMT<F>
+    impl<F: Function> oxidd_dump::DumpDeserialize for ZBDDFunctionMT<F>
     where
         for<'id> F::Manager<'id>: Manager<Terminal = ZBDDTerminal>
             + HasZBDDOpApplyCache<F::Manager<'id>>

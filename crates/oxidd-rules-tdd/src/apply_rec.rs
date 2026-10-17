@@ -10,7 +10,7 @@ use oxidd_core::{
     ApplyCache, HasApplyCache, HasLevel, InnerNode, LevelNo, Manager, Node, Tag, VarNo,
 };
 use oxidd_derive::Function;
-use oxidd_dump::{dddmp, dot::DotStyle};
+use oxidd_dump::dot::DotStyle;
 
 #[cfg(feature = "statistics")]
 use super::STAT_COUNTERS;
@@ -425,7 +425,7 @@ where
     }
 }
 
-impl<F: Function> dddmp::DDDMPDeserialize for TDDFunction<F>
+impl<F: Function> oxidd_dump::DumpDeserialize for TDDFunction<F>
 where
     for<'id> F::Manager<'id>: Manager<Terminal = TDDTerminal> + HasTDDOpApplyCache<F::Manager<'id>>,
     for<'id> INodeOfFunc<'id, F>: HasLevel,
