@@ -3,10 +3,10 @@
 pub use oxidd_rules_mtbdd::terminal;
 
 cfg_if::cfg_if! {
-    if #[cfg(feature = "manager-pointer")] {
-        pub type MTBDDFunction<T> = std::marker::PhantomData<T>;
-        pub type MTBDDManagerRef<T> = std::marker::PhantomData<T>;
-    } else if #[cfg(feature = "manager-index")] {
+    // if #[cfg(feature = "manager-pointer")] {
+    //     pub use pointer::{MTBDDFunction, MTBDDManagerRef};
+    // } else
+    if #[cfg(feature = "manager-index")] {
         pub use index::{MTBDDFunction, MTBDDManagerRef};
     } else {
         pub type MTBDDFunction<T> = std::marker::PhantomData<T>;
@@ -23,10 +23,13 @@ pub fn new_manager<T: Eq + std::hash::Hash + Send + Sync>(
     threads: u32,
 ) -> MTBDDManagerRef<T> {
     cfg_if::cfg_if! {
-        if #[cfg(feature = "manager-pointer")] {
-            todo!("There is no DynamicTerminalManager for the pointer-based manager yet")
-        } else if #[cfg(feature = "manager-index")] {
+        // if #[cfg(feature = "manager-pointer")] {
+        //     // TODO
+        // } else
+        if #[cfg(feature = "manager-index")] {
             index::MTBDDManagerRef::new_manager(inner_node_capacity, terminal_node_capacity, apply_cache_capacity, threads)
+        } else if #[cfg(feature = "manager-pointer")] {
+            todo!("There is no DynamicTerminalManager for the pointer-based manager yet")
         } else {
             unreachable!()
         }
@@ -42,7 +45,8 @@ pub fn print_stats() {
     oxidd_rules_bdd::simple::print_stats();
 }
 
-#[cfg(all(feature = "manager-index", not(feature = "manager-pointer")))]
+//#[cfg(all(feature = "manager-index", not(feature = "manager-pointer")))]
+#[cfg(feature = "manager-index")]
 mod index {
     use std::{hash::Hash, marker::PhantomData};
 
