@@ -263,19 +263,12 @@ where
 
     let mut res = EdgeVecDropGuard::new(manager, Vec::with_capacity(subst.len()));
     for (level, e) in subst.into_iter().enumerate() {
-        use oxidd_core::LevelView;
-
         res.push(if let Some(e) = e {
             manager.clone_edge(e)
         } else {
             let t = EdgeDropGuard::new(manager, get_terminal(manager, true));
             let e = EdgeDropGuard::new(manager, get_terminal(manager, false));
-            manager
-                .level(level as LevelNo)
-                .get_or_insert(InnerNode::new(
-                    level as LevelNo,
-                    [t.into_edge(), e.into_edge()],
-                ))?
+            manager.get_or_insert(level as LevelNo, [t.into_edge(), e.into_edge()])?
         });
     }
 
@@ -903,13 +896,10 @@ where
         manager: &Self::Manager<'id>,
         var: VarNo,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+        let level = manager.var_to_level(var);
         let t = get_terminal(manager, true);
         let e = get_terminal(manager, false);
-        let level = manager.var_to_level(var);
-        oxidd_core::LevelView::get_or_insert(
-            &mut manager.level(level),
-            InnerNode::new(level, [t, e]),
-        )
+        manager.get_or_insert(level, [t, e])
     }
 
     #[inline]

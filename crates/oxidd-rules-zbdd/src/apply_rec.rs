@@ -155,10 +155,8 @@ where
                 let mut res = restrict_base(manager, hi, node_level + 1)?;
                 if node_level > level && !is_empty(manager, res.borrowed()) {
                     for l in (level..node_level).rev() {
-                        res = oxidd_core::LevelView::get_or_insert(
-                            &mut manager.level(l),
-                            M::InnerNode::new(l, [manager.clone_edge(res.borrowed()), res]),
-                        )?;
+                        res =
+                            manager.get_or_insert(l, [manager.clone_edge(res.borrowed()), res])?;
                     }
                 }
                 res
@@ -677,13 +675,10 @@ where
         manager: &Self::Manager<'id>,
         var: VarNo,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
+        let level = manager.var_to_level(var);
         let hi = manager.get_terminal(ZBDDTerminal::Base).unwrap();
         let lo = manager.get_terminal(ZBDDTerminal::Empty).unwrap();
-        let level = manager.var_to_level(var);
-        oxidd_core::LevelView::get_or_insert(
-            &mut manager.level(level),
-            InnerNode::new(level, [hi, lo]),
-        )
+        manager.get_or_insert(level, [hi, lo])
     }
 
     #[inline]
@@ -771,10 +766,7 @@ where
         let level = manager.var_to_level(var);
         let hi = manager.clone_edge(manager.zbdd_cache().tautology(level + 1));
         let lo = manager.get_terminal(ZBDDTerminal::Empty).unwrap();
-        let mut edge = oxidd_core::LevelView::get_or_insert(
-            &mut manager.level(level),
-            InnerNode::new(level, [hi, lo]),
-        )?;
+        let mut edge = manager.get_or_insert(level, [hi, lo])?;
 
         // Build the chain bottom up. We need to skip the newly created level.
         let levels = manager.levels().rev();
@@ -1023,10 +1015,7 @@ where
             } else {
                 manager.get_terminal(ZBDDTerminal::Empty)?
             };
-            oxidd_core::LevelView::get_or_insert(
-                &mut manager.level(level),
-                M::InnerNode::new(level, [hi.into_edge(), lo]),
-            )
+            manager.get_or_insert(level, [hi.into_edge(), lo])
         }
 
         inner(manager, edge, choice)
@@ -1089,10 +1078,7 @@ where
             } else {
                 manager.get_terminal(ZBDDTerminal::Empty)?
             };
-            oxidd_core::LevelView::get_or_insert(
-                &mut manager.level(level),
-                M::InnerNode::new(level, [hi.into_edge(), lo]),
-            )
+            manager.get_or_insert(level, [hi.into_edge(), lo])
         }
 
         inner(manager, edge, literal_set)

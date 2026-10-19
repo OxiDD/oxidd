@@ -144,7 +144,7 @@ pub unsafe trait Function: Clone + Ord + Hash {
     ///         let level = manager.add_vars(1).start;
     ///         let fe = manager.clone_edge(f_edge);
     ///         let ge = manager.clone_edge(g.as_edge(manager));
-    ///         let he = manager.level(level).get_or_insert(InnerNode::new(level, [fe, ge]))?;
+    ///         let he = manager.get_or_insert(level, [fe, ge])?;
     ///         Ok(F::from_edge(manager, he))
     ///     })
     /// }

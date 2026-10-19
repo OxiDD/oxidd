@@ -285,10 +285,7 @@ where
         let f0 = manager.get_terminal(TDDTerminal::True).unwrap();
         let f1 = manager.get_terminal(TDDTerminal::Unknown).unwrap();
         let f2 = manager.get_terminal(TDDTerminal::False).unwrap();
-        oxidd_core::LevelView::get_or_insert(
-            &mut manager.level(level),
-            InnerNode::new(level, [f0, f1, f2]),
-        )
+        manager.get_or_insert(level, [f0, f1, f2])
     }
 
     #[inline]

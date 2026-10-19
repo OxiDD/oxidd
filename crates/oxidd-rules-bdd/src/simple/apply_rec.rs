@@ -257,19 +257,12 @@ where
 
     let mut res = EdgeVecDropGuard::new(manager, Vec::with_capacity(subst.len()));
     for (level, e) in subst.into_iter().enumerate() {
-        use oxidd_core::LevelView;
-
         res.push(if let Some(e) = e {
             manager.clone_edge(e)
         } else {
             let t = EdgeDropGuard::new(manager, manager.get_terminal(BDDTerminal::True)?);
             let e = EdgeDropGuard::new(manager, manager.get_terminal(BDDTerminal::False)?);
-            manager
-                .level(level as LevelNo)
-                .get_or_insert(InnerNode::new(
-                    level as LevelNo,
-                    [t.into_edge(), e.into_edge()],
-                ))?
+            manager.get_or_insert(level as LevelNo, [t.into_edge(), e.into_edge()])?
         });
     }
 
@@ -766,10 +759,7 @@ where
         let level = manager.var_to_level(var);
         let ft = manager.get_terminal(BDDTerminal::True).unwrap();
         let fe = manager.get_terminal(BDDTerminal::False).unwrap();
-        oxidd_core::LevelView::get_or_insert(
-            &mut manager.level(level),
-            InnerNode::new(level, [ft, fe]),
-        )
+        manager.get_or_insert(level, [ft, fe])
     }
 
     #[inline]
@@ -780,10 +770,7 @@ where
         let level = manager.var_to_level(var);
         let ft = manager.get_terminal(BDDTerminal::False).unwrap();
         let fe = manager.get_terminal(BDDTerminal::True).unwrap();
-        oxidd_core::LevelView::get_or_insert(
-            &mut manager.level(level),
-            InnerNode::new(level, [ft, fe]),
-        )
+        manager.get_or_insert(level, [ft, fe])
     }
 
     #[inline]
@@ -1033,12 +1020,7 @@ where
             );
             let f = manager.get_terminal(BDDTerminal::False)?;
             let sub = sub.into_edge();
-            let children = if c { [sub, f] } else { [f, sub] };
-
-            oxidd_core::LevelView::get_or_insert(
-                &mut manager.level(level),
-                M::InnerNode::new(level, children),
-            )
+            manager.get_or_insert(level, if c { [sub, f] } else { [f, sub] })
         }
 
         inner(manager, edge, choice)
@@ -1094,12 +1076,7 @@ where
             );
             let f = manager.get_terminal(BDDTerminal::False)?;
             let sub = sub.into_edge();
-            let children = if c { [sub, f] } else { [f, sub] };
-
-            oxidd_core::LevelView::get_or_insert(
-                &mut manager.level(level),
-                M::InnerNode::new(level, children),
-            )
+            manager.get_or_insert(level, if c { [sub, f] } else { [f, sub] })
         }
 
         inner(manager, edge, literal_set)

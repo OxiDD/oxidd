@@ -330,10 +330,7 @@ where
         let level = manager.var_to_level(var);
         let t = EdgeDropGuard::new(manager, manager.get_terminal(T::one())?);
         let e = EdgeDropGuard::new(manager, manager.get_terminal(T::zero())?);
-        oxidd_core::LevelView::get_or_insert(
-            &mut manager.level(level),
-            InnerNode::new(level, [t.into_edge(), e.into_edge()]),
-        )
+        manager.get_or_insert(level, [t.into_edge(), e.into_edge()])
     }
 
     #[inline]
