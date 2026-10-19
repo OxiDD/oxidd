@@ -134,6 +134,7 @@ pub fn print_stats() {
 
 #[cfg(all(feature = "manager-index", not(feature = "manager-pointer")))]
 mod index {
+    use oxidd_core::AtomicLevelNo;
     use oxidd_rules_zbdd::{ZBDDOp, ZBDDRules, ZBDDTerminal};
 
     use crate::util::type_cons::{DD, IndexDD};
@@ -141,7 +142,8 @@ mod index {
     pub struct ZBDDInfo;
     impl oxidd_manager_index::DiagramInfo for ZBDDInfo {
         type EdgeTag = ();
-        type InnerNode<'id> = oxidd_manager_index::node::fixed_arity::NodeWithLevel<'id, Self, 2>;
+        type InnerNode<'id> =
+            oxidd_manager_index::node::fixed_arity::Node<'id, Self, AtomicLevelNo, 2>;
         type InnerNodeValue = ();
         const TERMINALS: u32 = 2;
         type TerminalNode = ZBDDTerminal;
@@ -184,7 +186,7 @@ mod index {
 
 #[cfg(feature = "manager-pointer")]
 mod pointer {
-    use oxidd_manager_pointer::node::fixed_arity::NodeWithLevel;
+    use oxidd_manager_pointer::node::fixed_arity::Node;
     use oxidd_manager_pointer::terminal_manager::StaticTerminalManager;
     use oxidd_rules_zbdd::{ZBDDOp, ZBDDRules, ZBDDTerminal};
 
@@ -195,7 +197,7 @@ mod pointer {
         type PageSizeInfo = crate::PageSizeInfo;
         type EdgeTag = ();
         const TAG_BITS: u32 = 0;
-        type InnerNode<'id> = NodeWithLevel<'id, Self, 2>;
+        type InnerNode<'id> = Node<'id, Self, oxidd_core::AtomicLevelNo, 2>;
         type InnerNodeValue = ();
         type TerminalNode = ZBDDTerminal;
         type TerminalManager<'id> = StaticTerminalManager<'id, Self>;

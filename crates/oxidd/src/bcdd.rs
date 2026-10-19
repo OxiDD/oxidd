@@ -40,6 +40,7 @@ pub fn new_manager(
 
 #[cfg(all(feature = "manager-index", not(feature = "manager-pointer")))]
 mod index {
+    use oxidd_core::AtomicLevelNo;
     use oxidd_rules_bdd::complement_edge::{BCDDOp, BCDDRules, BCDDTerminal, EdgeTag};
 
     use crate::util::type_cons::{DD, IndexDD};
@@ -47,7 +48,8 @@ mod index {
     pub struct BCDDInfo;
     impl oxidd_manager_index::DiagramInfo for BCDDInfo {
         type EdgeTag = EdgeTag;
-        type InnerNode<'id> = oxidd_manager_index::node::fixed_arity::NodeWithLevel<'id, Self, 2>;
+        type InnerNode<'id> =
+            oxidd_manager_index::node::fixed_arity::Node<'id, Self, AtomicLevelNo, 2>;
         type InnerNodeValue = ();
         const TERMINALS: u32 = 1;
         type TerminalNode = BCDDTerminal;
@@ -91,7 +93,7 @@ mod index {
 
 #[cfg(feature = "manager-pointer")]
 mod pointer {
-    use oxidd_manager_pointer::node::fixed_arity::NodeWithLevel;
+    use oxidd_manager_pointer::node::fixed_arity::Node;
     use oxidd_manager_pointer::terminal_manager::StaticTerminalManager;
     use oxidd_rules_bdd::complement_edge::{BCDDOp, BCDDRules, BCDDTerminal, EdgeTag};
 
@@ -102,7 +104,7 @@ mod pointer {
         type PageSizeInfo = crate::PageSizeInfo;
         type EdgeTag = EdgeTag;
         const TAG_BITS: u32 = 1;
-        type InnerNode<'id> = NodeWithLevel<'id, Self, 2>;
+        type InnerNode<'id> = Node<'id, Self, oxidd_core::AtomicLevelNo, 2>;
         type InnerNodeValue = ();
         type TerminalNode = BCDDTerminal;
         type TerminalManager<'id> = StaticTerminalManager<'id, Self>;

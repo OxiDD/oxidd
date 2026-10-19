@@ -40,6 +40,7 @@ pub fn print_stats() {
 
 #[cfg(all(feature = "manager-index", not(feature = "manager-pointer")))]
 mod index {
+    use oxidd_core::AtomicLevelNo;
     use oxidd_rules_tdd::{TDDOp, TDDRules, TDDTerminal};
 
     use crate::util::type_cons::{DD, IndexDD};
@@ -47,7 +48,8 @@ mod index {
     pub struct TDDInfo;
     impl oxidd_manager_index::DiagramInfo for TDDInfo {
         type EdgeTag = ();
-        type InnerNode<'id> = oxidd_manager_index::node::fixed_arity::NodeWithLevel<'id, Self, 3>;
+        type InnerNode<'id> =
+            oxidd_manager_index::node::fixed_arity::Node<'id, Self, AtomicLevelNo, 3>;
         type InnerNodeValue = ();
         const TERMINALS: u32 = 3;
         type TerminalNode = TDDTerminal;
@@ -96,7 +98,7 @@ mod index {
 
 #[cfg(feature = "manager-pointer")]
 mod pointer {
-    use oxidd_manager_pointer::node::fixed_arity::NodeWithLevel;
+    use oxidd_manager_pointer::node::fixed_arity::Node;
     use oxidd_manager_pointer::terminal_manager::StaticTerminalManager;
     use oxidd_rules_tdd::{TDDOp, TDDRules, TDDTerminal};
 
@@ -107,7 +109,7 @@ mod pointer {
         type PageSizeInfo = crate::PageSizeInfo;
         type EdgeTag = ();
         const TAG_BITS: u32 = 0;
-        type InnerNode<'id> = NodeWithLevel<'id, Self, 3>;
+        type InnerNode<'id> = Node<'id, Self, oxidd_core::AtomicLevelNo, 3>;
         type InnerNodeValue = ();
         type TerminalNode = TDDTerminal;
         type TerminalManager<'id> = StaticTerminalManager<'id, Self>;

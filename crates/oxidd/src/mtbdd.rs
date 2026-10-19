@@ -50,7 +50,7 @@ pub fn print_stats() {
 mod index {
     use std::{hash::Hash, marker::PhantomData};
 
-    use oxidd_core::function::NumberBase;
+    use oxidd_core::{AtomicLevelNo, function::NumberBase};
     use oxidd_rules_mtbdd::{MTBDDOp, MTBDDRules};
 
     use crate::util::type_cons::{DD, IndexDD};
@@ -58,7 +58,8 @@ mod index {
     pub struct MTBDDInfo<T>(PhantomData<T>);
     impl<T: Eq + Hash + Send + Sync> oxidd_manager_index::DiagramInfo for MTBDDInfo<T> {
         type EdgeTag = ();
-        type InnerNode<'id> = oxidd_manager_index::node::fixed_arity::NodeWithLevel<'id, Self, 2>;
+        type InnerNode<'id> =
+            oxidd_manager_index::node::fixed_arity::Node<'id, Self, AtomicLevelNo, 2>;
         type InnerNodeValue = ();
         const TERMINALS: u32 = 0x2000000; // up to 0.78125 % terminal nodes
         type TerminalNode = T;
