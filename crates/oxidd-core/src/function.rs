@@ -23,6 +23,8 @@ pub type OwnEdgeOfFunc<'id, F> = Own<<<F as Function>::Manager<'id> as Manager>:
 pub type ETagOfFunc<'id, F> = <<F as Function>::Manager<'id> as Manager>::EdgeTag;
 /// Shorthand to get the [`InnerNode`] type associated with a [`Function`]
 pub type INodeOfFunc<'id, F> = <<F as Function>::Manager<'id> as Manager>::InnerNode;
+/// Shorthand to get the `InnerNodeValue` type associated with a [`Function`]
+pub type INodeValOfFunc<'id, F> = <<F as Function>::Manager<'id> as Manager>::InnerNodeValue;
 /// Shorthand to get the `Terminal` type associated with a [`Function`]
 pub type TermOfFunc<'id, F> = <<F as Function>::Manager<'id> as Manager>::Terminal;
 /// Shorthand to get the `Rules` type associated with a [`Function`]
@@ -139,12 +141,15 @@ pub unsafe trait Function: Clone + Ord + Hash {
     /// ```
     /// # use oxidd_core::{*, function::Function, util::AllocResult};
     /// /// Adds a binary node on a new level with children `f` and `g`
-    /// fn foo<F: Function>(f: &F, g: &F) -> AllocResult<F> {
+    /// fn foo<F: Function>(f: &F, g: &F) -> AllocResult<F>
+    /// where
+    ///     for<'id> F::Manager<'id>: Manager<InnerNodeValue = ()>
+    /// {
     ///     f.with_manager_exclusive(|manager, f_edge| {
     ///         let level = manager.add_vars(1).start;
     ///         let fe = manager.clone_edge(f_edge);
     ///         let ge = manager.clone_edge(g.as_edge(manager));
-    ///         let he = manager.get_or_insert(level, [fe, ge])?;
+    ///         let he = manager.get_or_insert(level, [fe, ge], ())?;
     ///         Ok(F::from_edge(manager, he))
     ///     })
     /// }

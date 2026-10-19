@@ -95,7 +95,7 @@ fn is_false<M: Manager<EdgeTag = EdgeTag>>(manager: &M, edge: Ref<'_, M::Edge>) 
 /// tagged as `tag`
 #[inline]
 #[must_use]
-fn collect_cofactors<E: Edge<Tag = EdgeTag>, N: InnerNode<E>>(
+fn collect_cofactors<E: Edge<Tag = EdgeTag>, N: InnerNode<E, Value = ()>>(
     tag: EdgeTag,
     node: &N,
 ) -> (Ref<'_, E>, Ref<'_, E>) {
@@ -119,7 +119,7 @@ fn reduce<M>(
     op: BCDDOp,
 ) -> AllocResult<Own<M::Edge>>
 where
-    M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag>,
+    M: Manager<EdgeTag = EdgeTag, InnerNodeValue = ()>,
     M::InnerNode: HasLevel,
 {
     let t = EdgeDropGuard::new(manager, t);
@@ -140,7 +140,7 @@ where
         (t, e)
     };
 
-    let res = manager.get_or_insert(level, [t.into_edge(), e.into_edge()])?;
+    let res = manager.get_or_insert(level, [t.into_edge(), e.into_edge()], ())?;
     Ok(res.with_tag(tag))
 }
 
@@ -355,7 +355,7 @@ fn add_literal_to_cube<M>(
     positive: bool,
 ) -> AllocResult<Own<M::Edge>>
 where
-    M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal>,
+    M: Manager<EdgeTag = EdgeTag, Terminal = BCDDTerminal, InnerNodeValue = ()>,
     M::InnerNode: HasLevel,
 {
     let sub = EdgeDropGuard::new(manager, sub);
@@ -375,7 +375,7 @@ where
         ([t, not_owned(sub)], EdgeTag::Complemented)
     };
 
-    Ok(manager.get_or_insert(level, children)?.with_tag(tag))
+    Ok(manager.get_or_insert(level, children, ())?.with_tag(tag))
 }
 
 // --- Function Interface ------------------------------------------------------

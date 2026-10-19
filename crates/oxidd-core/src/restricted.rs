@@ -275,13 +275,18 @@ impl<'a, 'v, M: Manager> LowerLevelView<'a, 'v, M> {
         &mut self,
         manager: RestrictedManager<'a, M>,
         children: &[Ref<'_, M::Edge>],
-    ) -> AllocResult<Own<M::Edge>> {
-        if let Some(edge) = self.old_upper.get(children) {
+        value: &M::InnerNodeValue,
+    ) -> AllocResult<Own<M::Edge>>
+    where
+        M::InnerNodeValue: Clone,
+    {
+        if let Some(edge) = self.old_upper.get(children, value) {
             Ok(manager.clone_edge(edge))
         } else {
             let node = M::InnerNode::new(
                 self.pre_level,
                 children.iter().map(|e| manager.clone_edge(*e)),
+                value.clone(),
             );
             unsafe { self.view.get_or_insert_unchecked(node) }
         }
@@ -393,8 +398,9 @@ impl<'v, M: Manager> UpperLevelView<'v, M> {
     pub fn get_or_insert(
         &mut self,
         children: impl IntoIterator<Item = Own<M::Edge>>,
+        value: M::InnerNodeValue,
     ) -> AllocResult<Own<M::Edge>> {
-        let node = M::InnerNode::new(self.pre_level, children);
+        let node = M::InnerNode::new(self.pre_level, children, value);
         // SAFETY: `node` has the desired level
         unsafe { self.view.get_or_insert_unchecked(node) }
     }

@@ -11,7 +11,7 @@
 
 use std::fmt;
 
-use oxidd_core::function::{Function, OwnEdgeOfFunc};
+use oxidd_core::function::{Function, INodeValOfFunc, OwnEdgeOfFunc};
 use oxidd_core::util::AllocResult;
 use oxidd_core::{LevelNo, Manager};
 
@@ -29,17 +29,17 @@ pub trait ParseTagged<Tag>: Sized {
 
 /// [`Function`] that can be deserialized from a dump
 pub trait DumpDeserialize: Function {
-    /// Try to create a node at `level` with `children`, applying reduction
-    /// rules
+    /// Try to create a node at `level` with `children` and `value`, applying
+    /// reduction rules
     ///
     /// The default implementation will just ensure node uniqueness.
-    #[inline]
     fn reduce<'id>(
         manager: &Self::Manager<'id>,
         level: LevelNo,
         children: impl IntoIterator<Item = OwnEdgeOfFunc<'id, Self>>,
+        value: INodeValOfFunc<'id, Self>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
-        manager.get_or_insert(level, children)
+        manager.get_or_insert(level, children, value)
     }
 
     /// Negate `edge`

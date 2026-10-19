@@ -784,6 +784,7 @@ unsafe impl<'id, DI: DiagramInfo> oxidd_core::Manager for Manager<'id, DI> {
     type Edge = Edge<'id, DI>;
     type EdgeTag = DI::EdgeTag;
     type InnerNode = DI::InnerNode<'id>;
+    type InnerNodeValue = DI::InnerNodeValue;
     type Terminal = DI::TerminalNode;
     type TerminalRef<'a>
         = <DI::TerminalManager<'id> as TerminalManager<'id, DI>>::TerminalNodeRef<'a>
@@ -1228,6 +1229,7 @@ impl<'id, DI: DiagramInfo> LevelViewSet<'id, DI> {
         &self,
         nodes: &SlotSlice<'id, DI>,
         children: &[Ref<'_, Edge<'id, DI>>],
+        value: &DI::InnerNodeValue,
     ) -> Option<Ref<'_, Edge<'id, DI>>> {
         let mut hasher = FxHasher::default();
         crate::util::hash_children(children, &mut hasher);
@@ -1240,6 +1242,7 @@ impl<'id, DI: DiagramInfo> LevelViewSet<'id, DI> {
             let node = unsafe { nodes.inner_node_unchecked(edge) };
             node.children().len() == children.len()
                 && node.children().zip(children).all(|(a, b)| a == *b)
+                && node.value() == value
         })?;
         Some(edge.borrowed())
     }
@@ -1520,8 +1523,12 @@ unsafe impl<'a, 'id, DI: DiagramInfo> oxidd_core::LevelView<Edge<'id, DI>, DI::I
     }
 
     #[inline]
-    fn get(&self, children: &[Ref<'_, Edge<'id, DI>>]) -> Option<Ref<'_, Edge<'id, DI>>> {
-        self.set.get(&self.store.inner_nodes, children)
+    fn get(
+        &self,
+        children: &[Ref<'_, Edge<'id, DI>>],
+        value: &DI::InnerNodeValue,
+    ) -> Option<Ref<'_, Edge<'id, DI>>> {
+        self.set.get(&self.store.inner_nodes, children, value)
     }
 
     #[inline]
@@ -1655,8 +1662,12 @@ unsafe impl<'id, DI: DiagramInfo> oxidd_core::LevelView<Edge<'id, DI>, DI::Inner
     }
 
     #[inline]
-    fn get(&self, children: &[Ref<'_, Edge<'id, DI>>]) -> Option<Ref<'_, Edge<'id, DI>>> {
-        self.set.get(&self.store.inner_nodes, children)
+    fn get(
+        &self,
+        children: &[Ref<'_, Edge<'id, DI>>],
+        value: &DI::InnerNodeValue,
+    ) -> Option<Ref<'_, Edge<'id, DI>>> {
+        self.set.get(&self.store.inner_nodes, children, value)
     }
 
     #[inline]

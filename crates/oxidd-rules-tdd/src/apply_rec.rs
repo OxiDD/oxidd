@@ -18,12 +18,20 @@ use super::{Operation, TDDOp, TDDTerminal, collect_children, reduce, stat, termi
 
 // spell-checker:ignore fnode,gnode,hnode,flevel,glevel,hlevel,ghlevel
 
-/// Recursively apply the 'not' operator to `f`
-fn apply_not<M>(manager: &M, f: Ref<'_, M::Edge>) -> AllocResult<Own<M::Edge>>
-where
-    M: Manager<Terminal = TDDTerminal> + HasApplyCache<M, TDDOp>,
-    M::InnerNode: HasLevel,
+trait TDDManager:
+    Manager<Terminal = TDDTerminal, InnerNode: HasLevel, InnerNodeValue = ()>
+    + HasApplyCache<Self, TDDOp>
 {
+}
+impl<
+    M: Manager<Terminal = TDDTerminal, InnerNode: HasLevel, InnerNodeValue = ()>
+        + HasApplyCache<Self, TDDOp>,
+> TDDManager for M
+{
+}
+
+/// Recursively apply the 'not' operator to `f`
+fn apply_not<M: TDDManager>(manager: &M, f: Ref<'_, M::Edge>) -> AllocResult<Own<M::Edge>> {
     stat!(call TDDOp::Not);
     let node = match manager.get_node(f) {
         Node::Inner(node) => node,
@@ -64,15 +72,11 @@ where
 ///
 /// We use a `const` parameter `OP` to have specialized version of this function
 /// for each operator.
-fn apply_bin<M, const OP: u8>(
+fn apply_bin<M: TDDManager, const OP: u8>(
     manager: &M,
     f: Ref<'_, M::Edge>,
     g: Ref<'_, M::Edge>,
-) -> AllocResult<Own<M::Edge>>
-where
-    M: Manager<Terminal = TDDTerminal> + HasApplyCache<M, TDDOp>,
-    M::InnerNode: HasLevel,
-{
+) -> AllocResult<Own<M::Edge>> {
     stat!(call OP);
     let (operator, op1, op2) = match terminal_bin::<M, OP>(manager, f, g) {
         Operation::Binary(o, op1, op2) => (o, op1, op2),
@@ -128,16 +132,12 @@ where
 }
 
 /// Recursively apply the if-then-else operator (`if f { g } else { h }`)
-fn apply_ite_rec<M>(
+fn apply_ite_rec<M: TDDManager>(
     manager: &M,
     f: Ref<'_, M::Edge>,
     g: Ref<'_, M::Edge>,
     h: Ref<'_, M::Edge>,
-) -> AllocResult<Own<M::Edge>>
-where
-    M: Manager<Terminal = TDDTerminal> + HasApplyCache<M, TDDOp>,
-    M::InnerNode: HasLevel,
-{
+) -> AllocResult<Own<M::Edge>> {
     use TDDTerminal::*;
     stat!(call TDDOp::Ite);
 
@@ -234,10 +234,6 @@ where
 
 // --- Function Interface ------------------------------------------------------
 
-/// Workaround for https://github.com/rust-lang/rust/issues/49601
-trait HasTDDOpApplyCache<M: Manager>: HasApplyCache<M, TDDOp> {}
-impl<M: Manager + HasApplyCache<M, TDDOp>> HasTDDOpApplyCache<M> for M {}
-
 /// Three value logic function backed by a ternary decision diagram
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Function, Debug)]
 #[repr_id = "TDD"]
@@ -261,8 +257,7 @@ impl<F: Function> TDDFunction<F> {
 
 impl<F: Function> TVLFunction for TDDFunction<F>
 where
-    for<'id> F::Manager<'id>: Manager<Terminal = TDDTerminal> + HasTDDOpApplyCache<F::Manager<'id>>,
-    for<'id> INodeOfFunc<'id, F>: HasLevel,
+    for<'id> F::Manager<'id>: TDDManager,
 {
     #[inline]
     fn cofactors_node<'a, 'id>(
@@ -285,7 +280,7 @@ where
         let f0 = manager.get_terminal(TDDTerminal::True).unwrap();
         let f1 = manager.get_terminal(TDDTerminal::Unknown).unwrap();
         let f2 = manager.get_terminal(TDDTerminal::False).unwrap();
-        manager.get_or_insert(level, [f0, f1, f2])
+        manager.get_or_insert(level, [f0, f1, f2], ())
     }
 
     #[inline]
@@ -424,14 +419,14 @@ where
 
 impl<F: Function> oxidd_dump::DumpDeserialize for TDDFunction<F>
 where
-    for<'id> F::Manager<'id>: Manager<Terminal = TDDTerminal> + HasTDDOpApplyCache<F::Manager<'id>>,
-    for<'id> INodeOfFunc<'id, F>: HasLevel,
+    for<'id> F::Manager<'id>: TDDManager,
 {
     #[inline]
     fn reduce<'id>(
         manager: &Self::Manager<'id>,
         level: LevelNo,
         children: impl IntoIterator<Item = OwnEdgeOfFunc<'id, Self>>,
+        _value: (),
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         let [t, u, e] = collect_edges_exact(manager, children);
         reduce(manager, level, t, u, e, TDDOp::MkNode)
