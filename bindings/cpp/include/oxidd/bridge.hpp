@@ -822,18 +822,16 @@ public:
   ///
   /// Note that the support variables must also be ordered by their current
   /// level (lower level numbers first). To this end, you can use
-  /// `set_var_order()` with `support_vars` (or
-  /// `oxidd_dddmp_support_var_order(file)`).
+  /// `set_var_order()` with `support_vars` (or `file.support_var_order()`).
   ///
   /// Locking behavior: acquires the manager's lock for shared access.
   ///
   /// @param  file          The DDDMP file handle
   /// @param  support_vars  Optional mapping from support variables of the DDDMP
   ///                       file to variable numbers in this manager. By
-  ///                       default, `oxidd_dddmp_support_var_order(file)` will
-  ///                       be used. If non-null, the pointer must reference an
-  ///                       array with `oxidd_dddmp_num_support_vars(file)`
-  ///                       elements.
+  ///                       default, `file.support_var_order()` will be used. If
+  ///                       non-null, the pointer must reference an array with
+  ///                       `file.num_support_vars()` elements.
   ///
   /// @returns  The imported DD functions or an error
   compat::expected<std::vector<DDFunc>, util::error>
