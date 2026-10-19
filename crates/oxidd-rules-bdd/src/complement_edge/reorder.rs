@@ -6,7 +6,7 @@ use super::{BCDDRules, BCDDTerminal, EdgeTag};
 
 impl<M> SafeLevelSwapper<M> for BCDDRules
 where
-    M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag>,
+    M: Manager<Terminal = BCDDTerminal, EdgeTag = EdgeTag, InnerNodeValue = ()>,
     M::InnerNode: HasLevel,
 {
     #[inline]
@@ -36,7 +36,7 @@ where
             if t == e {
                 Ok(manager.clone_edge(t))
             } else {
-                lower.get_or_insert(manager, &[t, e])
+                lower.get_or_insert(manager, &[t, e], &())
             }
         };
 

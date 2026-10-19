@@ -21,8 +21,9 @@ compile_error!("oxidd-manager-index assumes that for all `x: u32`, `x as usize` 
 pub trait DiagramInfo: Sized + Send + Sync {
     type EdgeTag: oxidd_core::Tag + Send + Sync;
 
+    type InnerNodeValue: Eq + std::hash::Hash;
     type InnerNode<'id>: node::NodeBase
-        + oxidd_core::InnerNode<manager::Edge<'id, Self>>
+        + oxidd_core::InnerNode<manager::Edge<'id, Self>, Value = Self::InnerNodeValue>
         + Send
         + Sync;
 

@@ -59,6 +59,7 @@ mod index {
     impl<T: Eq + Hash + Send + Sync> oxidd_manager_index::DiagramInfo for MTBDDInfo<T> {
         type EdgeTag = ();
         type InnerNode<'id> = oxidd_manager_index::node::fixed_arity::NodeWithLevel<'id, Self, 2>;
+        type InnerNodeValue = ();
         const TERMINALS: u32 = 0x2000000; // up to 0.78125 % terminal nodes
         type TerminalNode = T;
         type TerminalManager<'id> =

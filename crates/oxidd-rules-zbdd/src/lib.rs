@@ -37,7 +37,7 @@ fn is_empty<M: Manager<Terminal = ZBDDTerminal>>(manager: &M, e: Ref<'_, M::Edge
 pub struct ZBDDRules;
 
 #[inline(always)]
-fn reduce<M: Manager<Terminal = ZBDDTerminal>>(
+fn reduce<M: Manager<Terminal = ZBDDTerminal, InnerNodeValue = ()>>(
     manager: &M,
     level: LevelNo,
     hi: Own<M::Edge>,
@@ -56,11 +56,11 @@ where
         stat!(reduced op);
         return Ok(lo.into_edge());
     }
-    manager.get_or_insert(level, [hi.into_edge(), lo.into_edge()])
+    manager.get_or_insert(level, [hi.into_edge(), lo.into_edge()], ())
 }
 
 #[inline(always)]
-fn reduce1<M: Manager<Terminal = ZBDDTerminal>>(
+fn reduce1<M: Manager<Terminal = ZBDDTerminal, InnerNodeValue = ()>>(
     manager: &M,
     level: LevelNo,
     child: Own<M::Edge>,
@@ -76,14 +76,12 @@ where
         stat!(reduced op);
         return Ok(child.into_edge());
     }
-    manager.get_or_insert(
-        level,
-        [manager.clone_edge(child.borrowed()), child.into_edge()],
-    )
+    let children = [manager.clone_edge(child.borrowed()), child.into_edge()];
+    manager.get_or_insert(level, children, ())
 }
 
 #[inline(always)]
-fn reduce_borrowed<M: Manager<Terminal = ZBDDTerminal>>(
+fn reduce_borrowed<M: Manager<Terminal = ZBDDTerminal, InnerNodeValue = ()>>(
     manager: &M,
     level: LevelNo,
     hi: Ref<'_, M::Edge>,
@@ -101,7 +99,7 @@ where
         stat!(reduced op);
         return Ok(lo.into_edge());
     }
-    manager.get_or_insert(level, [manager.clone_edge(hi), lo.into_edge()])
+    manager.get_or_insert(level, [manager.clone_edge(hi), lo.into_edge()], ())
 }
 
 // --- Terminal Type -----------------------------------------------------------
@@ -154,7 +152,7 @@ pub struct ZBDDCache<E: Copy> {
 
 impl<M> ManagerEventSubscriber<M> for ZBDDCache<M::Edge>
 where
-    M: Manager<Terminal = ZBDDTerminal> + HasZBDDCache<M::Edge>,
+    M: Manager<Terminal = ZBDDTerminal, InnerNodeValue = ()> + HasZBDDCache<M::Edge>,
 {
     #[inline(always)]
     fn init_mut(manager: &mut M) {
@@ -188,7 +186,7 @@ where
             let level = view.level_no();
             let hi = manager.clone_edge(tautologies.last().unwrap().borrowed());
             let lo = manager.clone_edge(hi.borrowed());
-            let Ok(edge) = view.get_or_insert(M::InnerNode::new(level, [hi, lo])) else {
+            let Ok(edge) = view.get_or_insert(M::InnerNode::new(level, [hi, lo], ())) else {
                 eprintln!("Out of memory");
                 std::process::abort();
             };
@@ -331,7 +329,7 @@ pub fn make_node<M>(
     lo: Own<M::Edge>,
 ) -> AllocResult<Own<M::Edge>>
 where
-    M: Manager<Terminal = ZBDDTerminal>,
+    M: Manager<Terminal = ZBDDTerminal, InnerNodeValue = ()>,
     M::InnerNode: HasLevel,
 {
     let level = singleton_level(manager, var);

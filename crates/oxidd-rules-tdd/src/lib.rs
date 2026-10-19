@@ -23,7 +23,7 @@ mod reorder;
 pub struct TDDRules;
 
 #[inline(always)]
-fn reduce<M>(
+fn reduce<M: Manager<Terminal = TDDTerminal, InnerNodeValue = ()>>(
     manager: &M,
     level: LevelNo,
     t: Own<M::Edge>,
@@ -32,7 +32,6 @@ fn reduce<M>(
     op: TDDOp,
 ) -> AllocResult<Own<M::Edge>>
 where
-    M: Manager<Terminal = TDDTerminal>,
     M::InnerNode: HasLevel,
 {
     let t = EdgeDropGuard::new(manager, t);
@@ -46,7 +45,7 @@ where
         stat!(reduced op);
         return Ok(t.into_edge());
     }
-    manager.get_or_insert(level, [t.into_edge(), u.into_edge(), e.into_edge()])
+    manager.get_or_insert(level, [t.into_edge(), u.into_edge(), e.into_edge()], ())
 }
 
 // --- Terminal Type -----------------------------------------------------------

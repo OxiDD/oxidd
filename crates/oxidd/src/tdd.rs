@@ -48,6 +48,7 @@ mod index {
     impl oxidd_manager_index::DiagramInfo for TDDInfo {
         type EdgeTag = ();
         type InnerNode<'id> = oxidd_manager_index::node::fixed_arity::NodeWithLevel<'id, Self, 3>;
+        type InnerNodeValue = ();
         const TERMINALS: u32 = 3;
         type TerminalNode = TDDTerminal;
         type TerminalManager<'id> =
@@ -107,6 +108,7 @@ mod pointer {
         type EdgeTag = ();
         const TAG_BITS: u32 = 0;
         type InnerNode<'id> = NodeWithLevel<'id, Self, 3>;
+        type InnerNodeValue = ();
         type TerminalNode = TDDTerminal;
         type TerminalManager<'id> = StaticTerminalManager<'id, Self>;
         type Rules = TDDRules;

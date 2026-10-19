@@ -13,13 +13,18 @@ pub struct NodeWithLevel<'id, DI: DiagramInfo, const ARITY: usize> {
     rc: AtomicU32,
     level: AtomicLevelNo,
     children: UnsafeCell<[Own<Edge<'id, DI>>; ARITY]>,
+    value: UnsafeCell<DI::InnerNodeValue>,
 }
 
 impl<DI: DiagramInfo, const ARITY: usize> PartialEq for NodeWithLevel<'_, DI, ARITY> {
     #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
-        // SAFETY: we have shared access to the node
-        unsafe { *self.children.get() == *other.children.get() }
+        // SAFETY: by default, we have shared access to the node. If a user
+        // wants to modify the node, it is their responsibility to ensure
+        // exclusive access.
+        unsafe {
+            *self.children.get() == *other.children.get() && *self.value.get() == *other.value.get()
+        }
     }
 }
 impl<DI: DiagramInfo, const ARITY: usize> Eq for NodeWithLevel<'_, DI, ARITY> {}
@@ -27,8 +32,10 @@ impl<DI: DiagramInfo, const ARITY: usize> Eq for NodeWithLevel<'_, DI, ARITY> {}
 impl<DI: DiagramInfo, const ARITY: usize> Hash for NodeWithLevel<'_, DI, ARITY> {
     #[inline(always)]
     fn hash<H: Hasher>(&self, state: &mut H) {
-        // SAFETY: we have shared access to the node
+        // SAFETY: we have shared access to the node (as detailed above)
         crate::util::hash_children(unsafe { &*self.children.get() }, state);
+        // SAFETY: as above
+        unsafe { &*self.value.get() }.hash(state);
     }
 }
 
@@ -59,7 +66,7 @@ unsafe impl<DI: DiagramInfo, const ARITY: usize> NodeBase for NodeWithLevel<'_, 
 
     #[inline(always)]
     fn needs_drop() -> bool {
-        false
+        std::mem::needs_drop::<DI::InnerNodeValue>()
     }
 }
 
@@ -79,13 +86,19 @@ impl<'id, DI: DiagramInfo, const ARITY: usize> InnerNode<Edge<'id, DI>>
 {
     const ARITY: usize = ARITY;
 
+    type Value = DI::InnerNodeValue;
+
     type ChildrenIter<'a>
         = EdgeRefIter<'a, Edge<'id, DI>, std::slice::Iter<'a, Own<Edge<'id, DI>>>>
     where
         Self: 'a;
 
     #[inline(always)]
-    fn new(level: LevelNo, children: impl IntoIterator<Item = Own<Edge<'id, DI>>>) -> Self {
+    fn new(
+        level: LevelNo,
+        children: impl IntoIterator<Item = Own<Edge<'id, DI>>>,
+        value: Self::Value,
+    ) -> Self {
         Self {
             rc: AtomicU32::new(2),
             level: AtomicLevelNo::new(level),
@@ -93,6 +106,7 @@ impl<'id, DI: DiagramInfo, const ARITY: usize> InnerNode<Edge<'id, DI>>
             // properly on error, hence we just forget them. There will be an
             // error message anyway.
             children: UnsafeCell::new(oxidd_core::util::collect_exact(children, std::mem::forget)),
+            value: UnsafeCell::new(value),
         }
     }
 
@@ -135,6 +149,18 @@ impl<'id, DI: DiagramInfo, const ARITY: usize> InnerNode<Edge<'id, DI>>
     fn ref_count(&self) -> usize {
         // Subtract 1 for the reference in the unique table
         (self.rc.load(Relaxed) - 1) as usize
+    }
+
+    #[inline(always)]
+    fn value(&self) -> &Self::Value {
+        // SAFETY: we have shared access to the node
+        unsafe { &*self.value.get() }
+    }
+
+    #[inline(always)]
+    unsafe fn value_mut(&self) -> &mut Self::Value {
+        // SAFETY: we have shared access to the node
+        unsafe { &mut *self.value.get() }
     }
 }
 

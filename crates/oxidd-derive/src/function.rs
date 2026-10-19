@@ -944,8 +944,9 @@ pub fn derive_dump_deserialize(input: syn::DeriveInput) -> TokenStream {
                 manager: &#manager_ty,
                 level: ::oxidd_core::LevelNo,
                 children: impl ::std::iter::IntoIterator<Item = ::oxidd_core::util::Own<#edge_ty>>,
+                value: <#manager_ty as oxidd_core::Manager>::InnerNodeValue,
             ) -> #edge_alloc_result {
-                <#inner as #trait_path>::reduce(manager, level, children)
+                <#inner as #trait_path>::reduce(manager, level, children, value)
             }
 
             #[inline]

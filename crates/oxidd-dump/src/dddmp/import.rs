@@ -1,7 +1,7 @@
 use std::io;
 
 use oxidd_core::error::OutOfMemory;
-use oxidd_core::function::{ETagOfFunc, INodeOfFunc, OwnEdgeOfFunc, TermOfFunc};
+use oxidd_core::function::{ETagOfFunc, INodeOfFunc, INodeValOfFunc, OwnEdgeOfFunc, TermOfFunc};
 use oxidd_core::util::{EdgeDropGuard, EdgeVecDropGuard};
 use oxidd_core::{HasLevel, InnerNode, LevelNo, Manager, VarNo};
 
@@ -502,6 +502,7 @@ pub fn import<'id, F: crate::DumpDeserialize>(
 ) -> io::Result<Vec<F>>
 where
     INodeOfFunc<'id, F>: HasLevel,
+    INodeValOfFunc<'id, F>: Default, // TODO: relax this restriction to allow importing, e.g., LDDs
     TermOfFunc<'id, F>: ParseTagged<ETagOfFunc<'id, F>>,
 {
     let suppvar_level_map =
@@ -568,6 +569,7 @@ fn import_ascii<'id, F: crate::DumpDeserialize>(
 ) -> io::Result<Vec<OwnEdgeOfFunc<'id, F>>>
 where
     INodeOfFunc<'id, F>: HasLevel,
+    INodeValOfFunc<'id, F>: Default,
     TermOfFunc<'id, F>: ParseTagged<ETagOfFunc<'id, F>>,
 {
     let arity = INodeOfFunc::<'id, F>::ARITY;
@@ -667,7 +669,8 @@ where
                 let e = manager.clone_edge(nodes[child.unsigned_abs() - 1].borrowed());
                 dd_children.push(if child < 0 { F::neg(manager, e)? } else { e })
             }
-            F::reduce(manager, level, dd_children.drain(..))?
+            let value = Default::default();
+            F::reduce(manager, level, dd_children.drain(..), value)?
         };
         nodes.push(node);
 
@@ -687,6 +690,7 @@ fn import_bin<'id, F: crate::DumpDeserialize>(
 ) -> io::Result<Vec<OwnEdgeOfFunc<'id, F>>>
 where
     INodeOfFunc<'id, F>: HasLevel,
+    INodeValOfFunc<'id, F>: Default,
     TermOfFunc<'id, F>: ParseTagged<ETagOfFunc<'id, F>>,
 {
     assert!(
@@ -778,8 +782,9 @@ where
             return err("node level must be less than the children's levels");
         }
 
+        let value = Default::default();
         let children = [t.into_edge(), e.into_edge()];
-        match F::reduce(manager, level, children) {
+        match F::reduce(manager, level, children, value) {
             Ok(e) => nodes.push(e),
             Err(OutOfMemory) => {
                 return Err(io::ErrorKind::OutOfMemory.into());

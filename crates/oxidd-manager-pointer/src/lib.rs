@@ -28,8 +28,9 @@ pub trait DiagramInfo: Sized + Send + Sync {
     type EdgeTag: oxidd_core::Tag + Send + Sync;
     const TAG_BITS: u32;
 
+    type InnerNodeValue: Eq + std::hash::Hash;
     type InnerNode<'id>: node::NodeBase
-        + oxidd_core::InnerNode<manager::Edge<'id, Self>>
+        + oxidd_core::InnerNode<manager::Edge<'id, Self>, Value = Self::InnerNodeValue>
         + Send
         + Sync;
 

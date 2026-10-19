@@ -48,6 +48,7 @@ mod index {
     impl oxidd_manager_index::DiagramInfo for BDDInfo {
         type EdgeTag = ();
         type InnerNode<'id> = oxidd_manager_index::node::fixed_arity::NodeWithLevel<'id, Self, 2>;
+        type InnerNodeValue = ();
         const TERMINALS: u32 = 2;
         type TerminalNode = BDDTerminal;
         type TerminalManager<'id> =
@@ -102,6 +103,7 @@ mod pointer {
         type EdgeTag = ();
         const TAG_BITS: u32 = 0;
         type InnerNode<'id> = NodeWithLevel<'id, Self, 2>;
+        type InnerNodeValue = ();
         type TerminalNode = BDDTerminal;
         type TerminalManager<'id> = StaticTerminalManager<'id, Self>;
         type Rules = BDDRules;
