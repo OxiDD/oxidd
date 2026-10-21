@@ -64,6 +64,7 @@ fixedbitset
 forall
 fullname
 getattr
+getrlimit
 Graphviz
 hashable
 hasher
@@ -147,6 +148,7 @@ recursor
 recursors
 repr
 retag
+RLIMIT
 rpath
 rustc
 RUSTDOCFLAGS

@@ -47,6 +47,10 @@ derive-where = "1.5"
 # run actions when unwinding
 scopeguard = { version = "1.2", default-features = false }
 
+[target.'cfg(all(target_family = "unix", not(miri)))'.dependencies]
+# getrlimit to determine the workers' stack size
+libc = "0.2.191"
+
 
 [features]
 default = ["hugealloc"]
@@ -55,4 +59,8 @@ default = ["hugealloc"]
 statistics = []
 
 ## Use the hugealloc crate to allocate memory
-hugealloc = ["dep:hugealloc", "dep:allocator-api2", "linear-hashtbl/allocator-api2"]
+hugealloc = [
+  "dep:hugealloc",
+  "dep:allocator-api2",
+  "linear-hashtbl/allocator-api2",
+]

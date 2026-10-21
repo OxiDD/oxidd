@@ -6,12 +6,35 @@ pub struct Workers {
     split_depth: AtomicU32,
 }
 
+// spell-checker:ignore rlim
+fn getrlimit_as() -> usize {
+    #[cfg(all(target_family = "unix", not(miri)))]
+    {
+        let mut rlimit = std::mem::MaybeUninit::uninit();
+        // SAFETY: `getrlimit` is MT-Safe, the second argument is a valid
+        // pointer
+        if unsafe { libc::getrlimit(libc::RLIMIT_AS, rlimit.as_mut_ptr()) } == 0 {
+            // SAFETY: on success (return value 0), `rlimit` is initialized
+            let limit = unsafe { rlimit.assume_init_ref() }.rlim_cur;
+            return limit.try_into().unwrap_or(usize::MAX);
+        }
+    }
+    usize::MAX
+}
+
 impl Workers {
     pub(crate) fn new(threads: u32) -> Self {
-        let stack_size = std::env::var("OXIDD_STACK_SIZE")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(1024 * 1024 * 1024); // default: 1 GiB
+        let stack_size: usize = if let Ok(str) = std::env::var("OXIDD_STACK_SIZE")
+            && let Ok(size) = str.parse()
+        {
+            size
+        } else {
+            let default = 1024 * 1024 * 1024; // 1 GiB
+            // Never use more than 1/16 of the available address space for
+            // worker pool stacks. This parameter is based on experiments on a
+            // Linux machine with an RLIMIT_AS of 512 MiB and up to 16 threads.
+            std::cmp::min(default, getrlimit_as() / (16 * threads as usize))
+        };
 
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(threads as usize)
