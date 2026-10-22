@@ -82,9 +82,9 @@ impl<H: Copy> Drop for Own<H> {
             std::backtrace::Backtrace::capture()
         );
 
-        #[cfg(feature = "static_leak_check")]
+        #[cfg(feature = "static-leak-check")]
         {
-            extern "C" {
+            unsafe extern "C" {
                 #[link_name = "\n\n`Own<H>`s must not be dropped.`.\n"]
                 fn trigger() -> !;
             }
