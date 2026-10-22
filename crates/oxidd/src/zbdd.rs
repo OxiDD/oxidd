@@ -117,7 +117,7 @@ pub fn try_new_manager(
 ) -> std::io::Result<ZBDDManagerRef> {
     cfg_if::cfg_if! {
         if #[cfg(feature = "manager-pointer")] {
-            pointer::ZBDDManagerRef::new_manager(inner_node_capacity, apply_cache_capacity, threads)
+            pointer::ZBDDManagerRef::new_manager(apply_cache_capacity, threads)
         } else if #[cfg(feature = "manager-index")] {
             index::ZBDDManagerRef::new_manager(inner_node_capacity, 2, apply_cache_capacity, threads)
         } else {
