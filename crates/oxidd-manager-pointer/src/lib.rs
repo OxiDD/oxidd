@@ -9,7 +9,6 @@ pub use arcslab::{PageSize, PageSizeInfo};
 pub mod manager;
 pub mod node;
 pub mod terminal_manager;
-pub mod workers;
 
 mod util;
 

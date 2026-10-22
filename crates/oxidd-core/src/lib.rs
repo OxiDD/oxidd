@@ -1156,6 +1156,10 @@ pub trait WorkerPool: Sync {
     /// Execute `op` on every worker in the thread pool
     fn broadcast<R: Send>(&self, op: impl Fn(BroadcastContext) -> R + Sync) -> Vec<R>;
 
+    /// Execute `op` on every worker in the thread pool, without waiting for
+    /// completion
+    fn spawn_broadcast(&self, op: impl Fn(BroadcastContext) + Send + Sync + 'static);
+
     /// Execute `op` concurrently for every element of `slice`
     fn slice_for_each<T: Sync>(&self, slice: &[T], op: impl Fn(&T) + Sync) {
         match slice {

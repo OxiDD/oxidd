@@ -1,5 +1,7 @@
 //! Multi-terminal binary decision diagrams (MTBDDs)
 
+use std::hash::Hash;
+
 pub use oxidd_rules_mtbdd::terminal;
 
 cfg_if::cfg_if! {
@@ -14,14 +16,17 @@ cfg_if::cfg_if! {
     }
 }
 
-/// Create a new manager for a simple binary decision diagram
+/// Create a new manager for a multi-terminal binary decision diagram
+///
+/// This function may return an error, e.g., if there is insufficient memory or
+/// the creation of the worker thread pool fails.
 #[allow(unused_variables)]
-pub fn new_manager<T: Eq + std::hash::Hash + Send + Sync>(
+pub fn try_new_manager<T: Eq + Hash + Send + Sync>(
     inner_node_capacity: usize,
     terminal_node_capacity: usize,
     apply_cache_capacity: usize,
     threads: u32,
-) -> MTBDDManagerRef<T> {
+) -> std::io::Result<MTBDDManagerRef<T>> {
     cfg_if::cfg_if! {
         // if #[cfg(feature = "manager-pointer")] {
         //     // TODO
@@ -33,6 +38,28 @@ pub fn new_manager<T: Eq + std::hash::Hash + Send + Sync>(
         } else {
             unreachable!()
         }
+    }
+}
+
+/// Create a new manager for a multi-terminal binary decision diagram
+///
+/// This function may panic, e.g., if there is insufficient memory or the
+/// creation of the worker thread pool fails. If you wish to handle such errors,
+/// consider using [`try_new_manager()`] instead.
+pub fn new_manager<T: Eq + Hash + Send + Sync>(
+    inner_node_capacity: usize,
+    terminal_node_capacity: usize,
+    apply_cache_capacity: usize,
+    threads: u32,
+) -> MTBDDManagerRef<T> {
+    match try_new_manager(
+        inner_node_capacity,
+        terminal_node_capacity,
+        apply_cache_capacity,
+        threads,
+    ) {
+        Ok(mgr) => mgr,
+        Err(err) => crate::report_manager_creation_err(err),
     }
 }
 

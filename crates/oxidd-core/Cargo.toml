@@ -12,11 +12,21 @@ rust-version.workspace = true
 
 
 [dependencies]
-nanorand = { version = "0.8.0", default-features = false, features = ["wyrand"] }
+nanorand = { version = "0.8.0", default-features = false, features = [
+  "wyrand",
+] }
 dashu-int = { version = "0.6.0", default-features = false }
 
 # standard derive macros but with custom bounds on generics
 derive-where = "1.5"
+
+# thread pool
+rayon = { version = "1.10", optional = true }
+
+[target.'cfg(all(target_family = "unix", not(miri)))'.dependencies]
+# `getrlimit()` to determine the workers' stack size
+libc = { version = "0.2.191", optional = true }
+
 
 [features]
 ## Check that `Own<H>` is never dropped via its `Drop` implementation. This is
@@ -24,3 +34,5 @@ derive-where = "1.5"
 ## `Drop` implementation. So if the check fails, there will be a weird linker
 ## error. Using this feature in unoptimized builds may cause false positives.
 static_leak_check = []
+
+rayon-workers = ["dep:rayon", "dep:libc"]

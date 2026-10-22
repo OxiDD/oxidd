@@ -1,8 +1,12 @@
-use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
+use std::fmt;
+use std::io;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering::Relaxed};
+
+use crate::BroadcastContext;
 
 /// Worker thread pool
 pub struct Workers {
-    pub(crate) pool: rayon::ThreadPool,
+    pool: rayon::ThreadPool,
     split_depth: AtomicU32,
 }
 
@@ -22,8 +26,34 @@ fn getrlimit_as() -> usize {
     usize::MAX
 }
 
+#[derive(Debug)]
+struct WorkerBuildError(rayon::ThreadPoolBuildError);
+
+impl fmt::Display for WorkerBuildError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "failed to build the manager's worker pool: {}", self.0)
+    }
+}
+
+impl std::error::Error for WorkerBuildError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.0)
+    }
+}
+
+impl From<WorkerBuildError> for io::Error {
+    fn from(value: WorkerBuildError) -> Self {
+        io::Error::other(value)
+    }
+}
+
 impl Workers {
-    pub(crate) fn new(threads: u32) -> Self {
+    /// Create a new worker pool with the given number of threads
+    ///
+    /// If `threads` is 0, the thread count will be determined automatically.
+    /// The exact behavior is currently determined by
+    /// [`rayon::ThreadPoolBuilder::num_threads()`].
+    pub fn new(threads: u32) -> io::Result<Self> {
         let stack_size: usize = if let Ok(str) = std::env::var("OXIDD_STACK_SIZE")
             && let Ok(size) = str.parse()
         {
@@ -36,14 +66,18 @@ impl Workers {
             std::cmp::min(default, getrlimit_as() / (16 * threads as usize))
         };
 
+        static POOL_COUNTER: AtomicU64 = AtomicU64::new(0);
+        let p = POOL_COUNTER.fetch_add(1, Relaxed);
+
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(threads as usize)
-            .thread_name(|i| format!("oxidd mi {i}")) // "mi" for "manager index"
+            .thread_name(move |i| format!("oxidd/rayon {p}-{i}"))
             .stack_size(stack_size)
             .build()
-            .expect("could not build thread pool");
+            .map_err(WorkerBuildError)?;
+
         let split_depth = AtomicU32::new(Workers::auto_split_depth(&pool));
-        Self { pool, split_depth }
+        Ok(Self { pool, split_depth })
     }
 
     fn auto_split_depth(pool: &rayon::ThreadPool) -> u32 {
@@ -56,7 +90,7 @@ impl Workers {
     }
 }
 
-impl oxidd_core::WorkerPool for Workers {
+impl crate::WorkerPool for Workers {
     #[inline]
     fn current_num_threads(&self) -> usize {
         self.pool.current_num_threads()
@@ -90,15 +124,22 @@ impl oxidd_core::WorkerPool for Workers {
     }
 
     #[inline]
-    fn broadcast<RA: Send>(
-        &self,
-        op: impl Fn(oxidd_core::BroadcastContext) -> RA + Sync,
-    ) -> Vec<RA> {
-        self.pool.broadcast(|ctx| {
-            op(oxidd_core::BroadcastContext {
+    fn broadcast<RA: Send>(&self, op: impl Fn(BroadcastContext) -> RA + Sync) -> Vec<RA> {
+        self.pool.broadcast(move |ctx| {
+            op(BroadcastContext {
                 index: ctx.index() as u32,
                 num_threads: ctx.num_threads() as u32,
             })
         })
+    }
+
+    #[inline]
+    fn spawn_broadcast(&self, op: impl Fn(BroadcastContext) + Send + Sync + 'static) {
+        self.pool.spawn_broadcast(move |ctx| {
+            op(BroadcastContext {
+                index: ctx.index() as u32,
+                num_threads: ctx.num_threads() as u32,
+            })
+        });
     }
 }

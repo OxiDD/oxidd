@@ -3,6 +3,7 @@
 use std::cell::{Cell, UnsafeCell};
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
+use std::io;
 use std::iter::FusedIterator;
 use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
@@ -20,7 +21,9 @@ use rustc_hash::FxHasher;
 use oxidd_core::error::{DuplicateVarName, OutOfMemory};
 use oxidd_core::function::{EdgeOfFunc, OwnEdgeOfFunc};
 use oxidd_core::util::{AbortOnDrop, AllocResult, DropWith, Own, Ref, VarNameMap};
-use oxidd_core::{Countable, HasApplyCache, InnerNode, LevelNo, ManagerEventSubscriber, VarNo};
+use oxidd_core::{
+    Countable, HasApplyCache, InnerNode, LevelNo, ManagerEventSubscriber, VarNo, WorkerPool,
+};
 
 use crate::DiagramInfo;
 use crate::node::NodeBase;
@@ -70,7 +73,7 @@ pub struct Store<'id, DI: DiagramInfo> {
     terminal_manager: DI::TerminalManager<'id>,
     state: CachePadded<Mutex<SharedStoreState>>,
     gc_signal: GCSignalSender,
-    workers: crate::workers::Workers,
+    workers: oxidd_core::util::Workers,
 }
 
 unsafe impl<'id, DI: DiagramInfo> Sync for Store<'id, DI> {}
@@ -1181,7 +1184,7 @@ unsafe impl<'id, DI: DiagramInfo> oxidd_core::Manager for Manager<'id, DI> {
 }
 
 impl<'id, DI: DiagramInfo> oxidd_core::HasWorkers for Manager<'id, DI> {
-    type WorkerPool = crate::workers::Workers;
+    type WorkerPool = oxidd_core::util::Workers;
 
     #[inline]
     fn workers(&self) -> &Self::WorkerPool {
@@ -1949,8 +1952,10 @@ pub fn new_manager<DI: DiagramInfo + 'static>(
     terminal_node_capacity: u32,
     threads: u32,
     data: DI::ManagerData<'static>,
-) -> ManagerRef<DI> {
+) -> io::Result<ManagerRef<DI>> {
     const { assert!(DI::TERMINALS >= 1, "TERMINALS must be >= 1") };
+
+    let workers = oxidd_core::util::Workers::new(threads)?;
 
     let max_inner_capacity = const {
         if usize::BITS > u32::BITS {
@@ -1997,11 +2002,11 @@ pub fn new_manager<DI: DiagramInfo + 'static>(
         }),
         terminal_manager: DI::TerminalManager::<'static>::with_capacity(terminal_node_capacity),
         gc_signal: GCSignalSender(gc_signal.clone()),
-        workers: crate::workers::Workers::new(threads),
+        workers,
     });
 
     let store_addr = addr(&*arc);
-    arc.workers.pool.spawn_broadcast(move |_| {
+    arc.workers.spawn_broadcast(move |_| {
         // The workers are dedicated to this store.
         LOCAL_STORE_STATE.with(|state| state.current_store.set(store_addr))
     });
@@ -2061,11 +2066,11 @@ pub fn new_manager<DI: DiagramInfo + 'static>(
         })
         .unwrap();
 
-    ManagerRef(arc)
+    Ok(ManagerRef(arc))
 }
 
 impl<DI: DiagramInfo> oxidd_core::HasWorkers for ManagerRef<DI> {
-    type WorkerPool = crate::workers::Workers;
+    type WorkerPool = oxidd_core::util::Workers;
 
     #[inline]
     fn workers(&self) -> &Self::WorkerPool {

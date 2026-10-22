@@ -33,7 +33,16 @@ impl WorkerPool for Workers {
     }
 
     fn broadcast<R: Send>(&self, op: impl Fn(oxidd_core::BroadcastContext) -> R + Sync) -> Vec<R> {
-        rayon::broadcast(|ctx| {
+        rayon::broadcast(move |ctx| {
+            op(BroadcastContext {
+                index: ctx.index() as u32,
+                num_threads: ctx.num_threads() as u32,
+            })
+        })
+    }
+
+    fn spawn_broadcast(&self, op: impl Fn(BroadcastContext) + Send + Sync + 'static) {
+        rayon::spawn_broadcast(move |ctx| {
             op(BroadcastContext {
                 index: ctx.index() as u32,
                 num_threads: ctx.num_threads() as u32,

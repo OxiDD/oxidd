@@ -144,16 +144,20 @@ pub struct bdd_pair_t {
 /// @param  threads               Number of threads for concurrent operations.
 ///                               `0` means automatic selection.
 ///
-/// @returns  The BDD manager with reference count 1
+/// @returns  The BDD manager with reference count 1 or an invalid manager if
+///           the manager creation failed, e.g., due to insufficient memory.
 #[unsafe(no_mangle)]
 pub extern "C" fn oxidd_bdd_manager_new(
     inner_node_capacity: usize,
     apply_cache_capacity: usize,
     threads: u32,
 ) -> bdd_manager_t {
-    bdd_manager_t {
-        _p: oxidd::bdd::new_manager(inner_node_capacity, apply_cache_capacity, threads).into_raw(),
-    }
+    let ptr = match oxidd::bdd::try_new_manager(inner_node_capacity, apply_cache_capacity, threads)
+    {
+        Ok(mgr) => mgr.into_raw(),
+        Err(_) => std::ptr::null(),
+    };
+    bdd_manager_t { _p: ptr }
 }
 
 /// Increment the manager reference counter

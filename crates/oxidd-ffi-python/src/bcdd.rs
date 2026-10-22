@@ -36,12 +36,16 @@ impl BCDDManager {
     /// Returns:
     ///     BCDDManager: The new manager
     #[new]
-    fn new(inner_node_capacity: usize, apply_cache_capacity: usize, threads: u32) -> Self {
-        Self(oxidd::bcdd::new_manager(
+    fn new(
+        inner_node_capacity: usize,
+        apply_cache_capacity: usize,
+        threads: u32,
+    ) -> std::io::Result<Self> {
+        Ok(Self(oxidd::bcdd::try_new_manager(
             inner_node_capacity,
             apply_cache_capacity,
             threads,
-        ))
+        )?))
     }
 
     /// Get the count of inner nodes.

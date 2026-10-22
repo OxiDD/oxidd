@@ -159,12 +159,12 @@ macro_rules! manager_ref_index_based {
                 terminal_node_capacity: usize,
                 apply_cache_capacity: usize,
                 threads: u32,
-            ) -> Self {
+            ) -> ::std::io::Result<Self> {
                 assert!(
                     (inner_node_capacity + terminal_node_capacity) as u64 <= (1 << u32::BITS),
                     "`inner_node_capacity ({inner_node_capacity}) + terminal_node_capacity ({terminal_node_capacity})` must be <= 2^32"
                 );
-                Self(::oxidd_manager_index::manager::new_manager(
+                Ok(Self(::oxidd_manager_index::manager::new_manager(
                     inner_node_capacity as u32,
                     terminal_node_capacity as u32,
                     threads,
@@ -172,7 +172,7 @@ macro_rules! manager_ref_index_based {
                     // all node deletions to be wrapped inside an
                     // `ApplyCache::pre_gc()` / `ApplyCache::post_gc()` pair.
                     unsafe { <$mgr_data>::new(apply_cache_capacity) },
-                ))
+                )?))
             }
         }
     };
@@ -241,24 +241,21 @@ macro_rules! manager_ref_pointer_based {
         impl $name {
             /// Create a new manager instance
             ///
-            /// - `inner_node_capacity` is the maximum number of inner nodes that can be
-            ///   stored
             /// - `apply_cache_capacity` refers to the maximum number of apply cache
             ///   entries
             /// - `threads` is the thread count for the worker pool
             #[allow(unused_variables)]
             pub fn new_manager(
-                inner_node_capacity: usize,
                 apply_cache_capacity: usize,
                 threads: u32,
-            ) -> Self {
+            ) -> ::std::io::Result<Self> {
                 // SAFETY: The pointer-based manager implementation guarantees
                 // all node deletions to be wrapped inside an
                 // `ApplyCache::pre_gc()` / `ApplyCache::post_gc()` pair.
-                Self(::oxidd_manager_pointer::manager::new_manager(
+                Ok(Self(::oxidd_manager_pointer::manager::new_manager(
                     unsafe { <$mgr_data>::new(apply_cache_capacity) },
                     threads,
-                ))
+                )?))
             }
         }
     };

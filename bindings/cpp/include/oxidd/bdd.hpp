@@ -85,6 +85,9 @@ public:
 
   /// Create a new BDD manager
   ///
+  /// The constructed manager may be invalid, e.g., in case of insufficient
+  /// memory or if the worker thread pool creation fails.
+  ///
   /// @param  inner_node_capacity   Maximum count of inner nodes
   /// @param  apply_cache_capacity  Maximum count of apply cache entries
   /// @param  threads               Thread count for the internal thread pool

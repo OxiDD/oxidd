@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::hash::{BuildHasherDefault, Hasher};
+use std::io;
 use std::iter::FusedIterator;
 use std::marker::PhantomData;
 use std::mem::{ManuallyDrop, align_of};
@@ -38,7 +39,7 @@ type RawTable<T> = linear_hashtbl::raw::RawTable<T, usize, hugealloc::HugeAlloc>
 pub struct StoreInner<'id, DI: DiagramInfo> {
     manager: RwLock<Manager<'id, DI>>,
     terminal_manager: DI::TerminalManager<'id>,
-    workers: crate::workers::Workers,
+    workers: oxidd_core::util::Workers,
 }
 
 type StoreSlab<'id, DI> = ArcSlab<
@@ -105,7 +106,11 @@ pub struct ManagerRef<DI: DiagramInfo>(
 );
 
 impl<'id, DI: DiagramInfo> StoreInner<'id, DI> {
-    unsafe fn init_in(slot: *mut Self, data: DI::ManagerData<'id>, threads: u32) {
+    unsafe fn init_in(
+        slot: *mut Self,
+        data: DI::ManagerData<'id>,
+        workers: oxidd_core::util::Workers,
+    ) {
         let data = RwLock::new(Manager {
             unique_table: Vec::new(),
             var_level_map: VarLevelMap::new(),
@@ -117,12 +122,11 @@ impl<'id, DI: DiagramInfo> StoreInner<'id, DI> {
             gc_ongoing: TryLock::new(),
             reorder_gc_prepared: false,
         });
-        unsafe { std::ptr::write(&raw mut ((*slot).manager), data) };
-
-        unsafe { DI::TerminalManager::<'id>::new_in(&raw mut ((*slot).terminal_manager)) };
-
-        let workers = crate::workers::Workers::new(threads);
-        unsafe { std::ptr::write(&raw mut ((*slot).workers), workers) };
+        unsafe {
+            std::ptr::write(&raw mut ((*slot).manager), data);
+            DI::TerminalManager::<'id>::new_in(&raw mut ((*slot).terminal_manager));
+            std::ptr::write(&raw mut ((*slot).workers), workers)
+        };
     }
 
     #[inline(always)]
@@ -769,7 +773,7 @@ unsafe impl<'id, DI: DiagramInfo> oxidd_core::Manager for Manager<'id, DI> {
 }
 
 impl<'id, DI: DiagramInfo> oxidd_core::HasWorkers for Manager<'id, DI> {
-    type WorkerPool = crate::workers::Workers;
+    type WorkerPool = oxidd_core::util::Workers;
 
     #[inline]
     fn workers(&self) -> &Self::WorkerPool {
@@ -1559,7 +1563,7 @@ impl<DI: DiagramInfo> oxidd_core::ManagerRef for ManagerRef<DI> {
 }
 
 impl<DI: DiagramInfo> oxidd_core::HasWorkers for ManagerRef<DI> {
-    type WorkerPool = crate::workers::Workers;
+    type WorkerPool = oxidd_core::util::Workers;
 
     #[inline]
     fn workers(&self) -> &Self::WorkerPool {
@@ -1571,12 +1575,13 @@ impl<DI: DiagramInfo> oxidd_core::HasWorkers for ManagerRef<DI> {
 pub fn new_manager<DI: DiagramInfo>(
     data: DI::ManagerData<'static>,
     threads: u32,
-) -> ManagerRef<DI> {
+) -> io::Result<ManagerRef<DI>> {
     // Evaluate a few constants for assertions
     let _ = Edge::<'static, DI>::TAG_MASK;
     let _ = Edge::<'static, DI>::ALL_TAG_BITS;
 
-    let arc = unsafe { ArcSlab::new_with(|slot| StoreInner::init_in(slot, data, threads)) };
+    let workers = oxidd_core::util::Workers::new(threads)?;
+    let arc = unsafe { ArcSlab::new_with(|slot| StoreInner::init_in(slot, data, workers)) };
 
     // initialize the manager data
     {
@@ -1586,7 +1591,7 @@ pub fn new_manager<DI: DiagramInfo>(
         DI::ManagerData::<'static>::init_mut(manager);
     }
 
-    ManagerRef(arc)
+    Ok(ManagerRef(arc))
 }
 
 // === Functions ===============================================================

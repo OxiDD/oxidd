@@ -565,7 +565,9 @@ version = "0.13.0"
 dependencies = [
  "dashu-int",
  "derive-where",
+ "libc",
  "nanorand",
+ "rayon",
 ]
 
 [[package]]
@@ -631,11 +633,9 @@ dependencies = [
  "derive-where",
  "fixedbitset",
  "hugealloc",
- "libc",
  "linear-hashtbl",
  "oxidd-core",
  "parking_lot",
- "rayon",
  "rustc-hash",
  "scopeguard",
 ]
@@ -649,11 +649,9 @@ dependencies = [
  "derive-where",
  "fixedbitset",
  "hugealloc",
- "libc",
  "linear-hashtbl",
  "oxidd-core",
  "parking_lot",
- "rayon",
  "rustc-hash",
  "scopeguard",
 ]

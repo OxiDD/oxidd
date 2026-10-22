@@ -92,3 +92,10 @@ type PageSizeInfo = oxidd_manager_pointer::PageSize<
         }
     },
 >;
+
+#[allow(unused)] // depending on the enabled DD kinds, this may be unused
+#[cold]
+#[track_caller]
+fn report_manager_creation_err(err: std::io::Error) -> ! {
+    panic!("manager creation failed: {err}")
+}

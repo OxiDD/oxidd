@@ -37,18 +37,11 @@ rustc-hash = "1.1"
 # bit sets
 fixedbitset = "0.5.7"
 
-# thread pool
-rayon = "1.10"
-
 # standard derive macros but with custom bounds on generics
 derive-where = "1.5"
 
 # run actions when unwinding
 scopeguard = { version = "1.2", default-features = false }
-
-[target.'cfg(all(target_family = "unix", not(miri)))'.dependencies]
-# getrlimit to determine the workers' stack size
-libc = "0.2.191"
 
 
 [features]

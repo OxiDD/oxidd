@@ -20,6 +20,11 @@ pub use substitution::*;
 pub mod var_name_map;
 pub use var_name_map::VarNameMap;
 
+#[cfg(feature = "rayon-workers")]
+mod workers;
+#[cfg(feature = "rayon-workers")]
+pub use workers::Workers;
+
 pub use nanorand::WyRand as Rng;
 
 /// Owned version of some handle

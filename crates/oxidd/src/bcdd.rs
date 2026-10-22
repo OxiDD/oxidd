@@ -21,20 +21,39 @@ pub fn print_stats() {
 }
 
 /// Create a new manager for a binary decision diagram with complement edges
+///
+/// This function may return an error, e.g., if there is insufficient memory or
+/// the creation of the worker thread pool fails.
 #[allow(unused_variables)]
-pub fn new_manager(
+pub fn try_new_manager(
     inner_node_capacity: usize,
     apply_cache_capacity: usize,
     threads: u32,
-) -> BCDDManagerRef {
+) -> std::io::Result<BCDDManagerRef> {
     cfg_if::cfg_if! {
         if #[cfg(feature = "manager-pointer")] {
-            pointer::BCDDManagerRef::new_manager(inner_node_capacity, apply_cache_capacity, threads)
+            pointer::BCDDManagerRef::new_manager(apply_cache_capacity, threads)
         } else if #[cfg(feature = "manager-index")] {
             index::BCDDManagerRef::new_manager(inner_node_capacity, 1, apply_cache_capacity, threads)
         } else {
             unreachable!()
         }
+    }
+}
+
+/// Create a new manager for a binary decision diagram with complement edges
+///
+/// This function may panic, e.g., if there is insufficient memory or the
+/// creation of the worker thread pool fails. If you wish to handle such errors,
+/// consider using [`try_new_manager()`] instead.
+pub fn new_manager(
+    inner_node_capacity: usize,
+    apply_cache_capacity: usize,
+    threads: u32,
+) -> BCDDManagerRef {
+    match try_new_manager(inner_node_capacity, apply_cache_capacity, threads) {
+        Ok(mgr) => mgr,
+        Err(err) => crate::report_manager_creation_err(err),
     }
 }
 
