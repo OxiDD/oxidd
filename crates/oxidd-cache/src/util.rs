@@ -2,7 +2,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 #[cfg(feature = "parking_lot")]
-pub use parking_lot::{Mutex, RawMutex};
+pub use parking_lot::RawMutex;
 
 #[cfg(not(feature = "parking_lot"))]
 pub struct RawMutex(AtomicBool);
