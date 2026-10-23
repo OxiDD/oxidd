@@ -1550,7 +1550,7 @@ unsafe impl<'a, 'id, DI: DiagramInfo> oxidd_core::LevelView<Edge<'id, DI>, DI::I
         // No need to check if the children of `node` are stored in `self.store`
         // due to lifetime restrictions.
         self.set
-            .get_or_insert(&self.store, ScopeGuard::into_inner(guard))
+            .get_or_insert(self.store, ScopeGuard::into_inner(guard))
     }
 
     unsafe fn get_or_insert_unchecked(
@@ -1559,7 +1559,7 @@ unsafe impl<'a, 'id, DI: DiagramInfo> oxidd_core::LevelView<Edge<'id, DI>, DI::I
     ) -> AllocResult<Own<Edge<'id, DI>>> {
         // No need to check if the children of `node` are stored in `self.store`
         // due to lifetime restrictions.
-        self.set.get_or_insert(&self.store, node)
+        self.set.get_or_insert(self.store, node)
     }
 
     #[inline]
@@ -1685,7 +1685,7 @@ unsafe impl<'id, DI: DiagramInfo> oxidd_core::LevelView<Edge<'id, DI>, DI::Inner
         // No need to check if the children of `node` are stored in `self.store`
         // due to lifetime restrictions.
         self.set
-            .get_or_insert(&self.store, ScopeGuard::into_inner(guard))
+            .get_or_insert(self.store, ScopeGuard::into_inner(guard))
     }
 
     unsafe fn get_or_insert_unchecked(
@@ -1694,7 +1694,7 @@ unsafe impl<'id, DI: DiagramInfo> oxidd_core::LevelView<Edge<'id, DI>, DI::Inner
     ) -> AllocResult<Own<Edge<'id, DI>>> {
         // No need to check if the children of `node` are stored in `self.store`
         // due to lifetime restrictions.
-        self.set.get_or_insert(&self.store, node)
+        self.set.get_or_insert(self.store, node)
     }
 
     #[inline]
