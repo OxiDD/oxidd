@@ -1707,8 +1707,8 @@ unsafe impl<DI: DiagramInfo> oxidd_core::function::Function for Function<DI> {
         let store_ptr = self.store();
         f(
             &*unsafe { store_ptr.as_ref() }.data().manager.shared(),
-            // SAFETY: a `Function` provides shared permission for the referenced
-            // node
+            // SAFETY: a `Function` provides shared permission for the
+            // referenced node
             unsafe { Ref::from_raw(Edge(self.0, PhantomData)) },
         )
     }
@@ -1721,8 +1721,8 @@ unsafe impl<DI: DiagramInfo> oxidd_core::function::Function for Function<DI> {
         let store_ptr = self.store();
         f(
             &mut *unsafe { store_ptr.as_ref() }.data().manager.exclusive(),
-            // SAFETY: a `Function` provides shared permission for the referenced
-            // node
+            // SAFETY: a `Function` provides shared permission for the
+            // referenced node
             unsafe { Ref::from_raw(Edge(self.0, PhantomData)) },
         )
     }
