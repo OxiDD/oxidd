@@ -11,7 +11,7 @@
 use std::fmt;
 use std::hash::Hash;
 
-use oxidd_core::util::{AllocResult, DropWith, EdgeDropGuard, Own, Ref};
+use oxidd_core::util::{AllocResult, DropWith, EdgeDropGuard, EdgeVecDropGuard, Own, Ref};
 use oxidd_core::{Edge, HasLevel, InnerNode, LevelNo, LevelView, Manager, ManagerEventSubscriber};
 use oxidd_derive::Countable;
 
@@ -180,9 +180,10 @@ where
         // Build the tautologies bottom up
         //
         // Storing the edge for `ZBDDTerminal::Base` as well enables us to
-        // return `&E` instead of `E` in `Self::tautology()`, so we
+        // return `Ref<'_, E>` instead of `Own<E>` in `Self::tautology()`, so we
         // don't need as many clone/drop operations.
-        let mut tautologies = Vec::with_capacity(1 + manager.num_levels() as usize);
+        let tautologies = Vec::with_capacity(1 + manager.num_levels() as usize);
+        let mut tautologies = EdgeVecDropGuard::new(manager, tautologies);
         tautologies.push(manager.get_terminal(ZBDDTerminal::Base).unwrap());
         for mut view in manager.levels().rev() {
             let level = view.level_no();
@@ -195,7 +196,10 @@ where
             tautologies.push(edge);
         }
 
-        manager.zbdd_cache_mut().tautologies = tautologies;
+        let new = tautologies.into_vec();
+        let old = std::mem::replace(&mut manager.zbdd_cache_mut().tautologies, new);
+        let old = EdgeVecDropGuard::new(manager, old);
+        debug_assert!(old.is_empty());
     }
 }
 
@@ -238,7 +242,7 @@ impl<E: Edge> ZBDDCache<E> {
     fn tautology(&self, level: LevelNo) -> Ref<'_, E> {
         // The vector contains one entry for each level including the terminals.
         // The terminal level comes first, the top-most level last.
-        let len = self.tautologies.len() as u32;
+        let len = self.tautologies.len() as LevelNo;
         debug_assert!(
             len > 0,
             "ZBDDCache is empty. This is an OxiDD-internal error."

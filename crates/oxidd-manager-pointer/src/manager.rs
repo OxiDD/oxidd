@@ -91,7 +91,8 @@ impl<'id, DI: DiagramInfo> Drop for Manager<'id, DI> {
 
             let unique_table = std::mem::take(&mut self.unique_table);
             for level in unique_table {
-                for edge in level.into_inner() {
+                for edge in level.into_inner().0 {
+                    let edge = ManuallyDrop::into_inner(edge);
                     unsafe { Self::drop_edge_from_unique_table(edge) };
                 }
             }
@@ -875,7 +876,7 @@ impl<DI: DiagramInfo> oxidd_core::Edge for Edge<'_, DI> {
 /// Because a [`LevelViewSet`] on its own is not sufficient to drop nodes
 /// accordingly, this will simply leak all contained edges, not calling the
 /// `Edge`'s `Drop` implementation.
-struct LevelViewSet<'id, DI: DiagramInfo>(RawTable<Own<Edge<'id, DI>>>);
+struct LevelViewSet<'id, DI: DiagramInfo>(RawTable<ManuallyDrop<Own<Edge<'id, DI>>>>);
 
 #[inline]
 fn hash_node<N: NodeBase>(node: &N) -> u64 {
@@ -972,7 +973,6 @@ impl<'id, DI: DiagramInfo> LevelViewSet<'id, DI> {
                 false
             }
             Err(slot) => {
-                let edge = ManuallyDrop::into_inner(edge);
                 // SAFETY: `slot` was returned by `find_or_find_insert_slot`.
                 // We have exclusive access to the hash table and did not modify
                 // it in between.
@@ -990,7 +990,7 @@ impl<'id, DI: DiagramInfo> LevelViewSet<'id, DI> {
     fn get_or_insert(
         &mut self,
         node: DI::InnerNode<'id>,
-        insert: impl FnOnce(DI::InnerNode<'id>) -> AllocResult<[Own<Edge<'id, DI>>; 2]>,
+        store: &StoreSlab<'id, DI>,
     ) -> AllocResult<Own<Edge<'id, DI>>> {
         let hash = hash_node(&node);
         match self.0.find_or_find_insert_slot(hash, |edge| {
@@ -1009,7 +1009,8 @@ impl<'id, DI: DiagramInfo> LevelViewSet<'id, DI> {
                 Ok(unsafe { Edge::clone_inner_unchecked(edge) })
             }
             Err(slot) => {
-                let [e1, e2] = insert(node)?;
+                let [e1, e2] = add_node(store, node)?;
+                let e1 = ManuallyDrop::new(e1);
                 // SAFETY: `slot` was returned by `find_or_find_insert_slot`.
                 // We have exclusive access to the hash table and did not modify
                 // it in between.
@@ -1034,6 +1035,7 @@ impl<'id, DI: DiagramInfo> LevelViewSet<'id, DI> {
                 unsafe { Edge::inner_node_unchecked(edge) }.load_rc(Acquire) != 1
             },
             |edge| {
+                let edge = ManuallyDrop::into_inner(edge);
                 // SAFETY: Since `rc` is 1, this is the last reference. We use
                 // `Acquire` order above and `Release` order when decrementing
                 // reference counters, so we have exclusive node access now.
@@ -1052,9 +1054,10 @@ impl<'id, DI: DiagramInfo> LevelViewSet<'id, DI> {
     /// Returns the edge from the unique table entry if `node` was found.
     #[inline]
     fn remove(&mut self, node: &DI::InnerNode<'id>) -> Option<Own<Edge<'id, DI>>> {
-        self.0.remove_entry(hash_node(node), |e| {
+        let edge = self.0.remove_entry(hash_node(node), |e| {
             std::ptr::eq(e.raw().0.as_ptr().cast(), node)
-        })
+        })?;
+        Some(ManuallyDrop::into_inner(edge))
     }
 
     /// Remove the node referenced by `edge` if it is contained in this level
@@ -1101,43 +1104,12 @@ impl<'id, DI: DiagramInfo> LevelViewSet<'id, DI> {
     fn iter(&self) -> LevelViewIter<'_, 'id, DI> {
         LevelViewIter(self.0.iter())
     }
-
-    /// Iterator that consumes all [`Edge`]s in the set
-    #[inline]
-    fn drain(&mut self) -> linear_hashtbl::raw::Drain<'_, Own<Edge<'id, DI>>> {
-        self.0.drain()
-    }
-}
-
-impl<DI: DiagramInfo> Drop for LevelViewSet<'_, DI> {
-    #[inline]
-    fn drop(&mut self) {
-        // If the nodes need drop, this is handled by the `Manager` `Drop` impl
-        // or the `TakenLevelView` `Drop` impl, respectively.
-        self.0.reset_no_drop();
-    }
 }
 
 impl<DI: DiagramInfo> Default for LevelViewSet<'_, DI> {
     #[inline]
     fn default() -> Self {
         Self(Default::default())
-    }
-}
-
-impl<'id, DI: DiagramInfo> IntoIterator for LevelViewSet<'id, DI> {
-    type Item = Own<Edge<'id, DI>>;
-
-    #[cfg(not(feature = "hugealloc"))]
-    type IntoIter = linear_hashtbl::raw::IntoIter<Own<Edge<'id, DI>>, usize>;
-    #[cfg(feature = "hugealloc")]
-    type IntoIter = linear_hashtbl::raw::IntoIter<Own<Edge<'id, DI>>, usize, hugealloc::HugeAlloc>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        let this = ManuallyDrop::new(self);
-        // SAFETY: We move out of `this` (and forget `this`)
-        let set = unsafe { std::ptr::read(&this.0) };
-        set.into_iter()
     }
 }
 
@@ -1208,7 +1180,7 @@ unsafe impl<'a, 'id, DI: DiagramInfo> oxidd_core::LevelView<Edge<'id, DI>, DI::I
     ) -> AllocResult<Own<Edge<'id, DI>>> {
         // No need to check if the children of `node` are stored in `self.store`
         // due to lifetime restrictions.
-        LevelViewSet::get_or_insert(&mut *self.set, node, |node| add_node(self.store, node))
+        LevelViewSet::get_or_insert(&mut *self.set, node, self.store)
     }
 
     #[inline]
@@ -1332,8 +1304,7 @@ unsafe impl<'id, DI: DiagramInfo> oxidd_core::LevelView<Edge<'id, DI>, DI::Inner
     ) -> AllocResult<Own<Edge<'id, DI>>> {
         // No need to check if the children of `node` are stored in `self.store`
         // due to lifetime restrictions.
-        self.set
-            .get_or_insert(node, |node| add_node(self.store, node))
+        self.set.get_or_insert(node, self.store)
     }
 
     #[inline]
@@ -1378,7 +1349,8 @@ unsafe impl<'id, DI: DiagramInfo> oxidd_core::LevelView<Edge<'id, DI>, DI::Inner
 
 impl<'id, DI: DiagramInfo> Drop for TakenLevelView<'_, 'id, DI> {
     fn drop(&mut self) {
-        for edge in self.set.drain() {
+        for edge in self.set.0.drain() {
+            let edge = ManuallyDrop::into_inner(edge);
             // SAFETY: `edge` is untagged and points to an inner node, the type
             // parameters match
             unsafe { Manager::<'id, DI>::drop_edge_from_unique_table(edge) };
@@ -1390,7 +1362,7 @@ impl<'id, DI: DiagramInfo> Drop for TakenLevelView<'_, 'id, DI> {
 
 /// Iterator over entries (as [`Edge`]s) of a level view
 pub struct LevelViewIter<'a, 'id, DI: DiagramInfo>(
-    linear_hashtbl::raw::Iter<'a, Own<Edge<'id, DI>>>,
+    linear_hashtbl::raw::Iter<'a, ManuallyDrop<Own<Edge<'id, DI>>>>,
 );
 
 impl<'a, 'id, DI: DiagramInfo> Iterator for LevelViewIter<'a, 'id, DI> {
@@ -1576,12 +1548,18 @@ pub fn new_manager<DI: DiagramInfo>(
     data: DI::ManagerData<'static>,
     threads: u32,
 ) -> io::Result<ManagerRef<DI>> {
+    let data = scopeguard::guard(data, |data| data.drop_with(std::mem::forget));
+
     // Evaluate a few constants for assertions
     let _ = Edge::<'static, DI>::TAG_MASK;
     let _ = Edge::<'static, DI>::ALL_TAG_BITS;
 
     let workers = oxidd_core::util::Workers::new(threads)?;
-    let arc = unsafe { ArcSlab::new_with(|slot| StoreInner::init_in(slot, data, workers)) };
+    let arc = unsafe {
+        ArcSlab::new_with(|slot| {
+            StoreInner::init_in(slot, scopeguard::ScopeGuard::into_inner(data), workers)
+        })
+    };
 
     // initialize the manager data
     {

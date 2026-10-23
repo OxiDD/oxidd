@@ -24,6 +24,7 @@ use oxidd_core::util::{AbortOnDrop, AllocResult, DropWith, Own, Ref, VarNameMap}
 use oxidd_core::{
     Countable, HasApplyCache, InnerNode, LevelNo, ManagerEventSubscriber, VarNo, WorkerPool,
 };
+use scopeguard::ScopeGuard;
 
 use crate::DiagramInfo;
 use crate::node::NodeBase;
@@ -36,7 +37,6 @@ mod huge {
     pub type Vec<T> = std::vec::Vec<T>;
 
     pub type RawTable<T> = linear_hashtbl::raw::RawTable<T, u32>;
-    pub type RawTableIntoIter<T> = linear_hashtbl::raw::IntoIter<T, u32>;
 }
 #[cfg(feature = "hugealloc")]
 mod huge {
@@ -45,7 +45,6 @@ mod huge {
     pub type Vec<T> = allocator_api2::vec::Vec<T, HugeAlloc>;
 
     pub type RawTable<T> = linear_hashtbl::raw::RawTable<T, u32, HugeAlloc>;
-    pub type RawTableIntoIter<T> = linear_hashtbl::raw::IntoIter<T, u32, HugeAlloc>;
 }
 
 // === Manager & Edges =========================================================
@@ -408,12 +407,11 @@ impl<'id, DI: DiagramInfo> Store<'id, DI> {
     }
 
     /// Add a node to the store. Does not perform any duplicate checks.
-    ///
-    /// Panics if the store is full.
     #[inline]
     fn add_node(&self, node: DI::InnerNode<'id>) -> AllocResult<[Own<Edge<'id, DI>>; 2]> {
+        let node = scopeguard::guard(node, |node| self.drop_node(node));
         debug_assert_eq!(node.load_rc(Relaxed), 2);
-        let res = LOCAL_STORE_STATE.with(|state| {
+        let (id, slot) = LOCAL_STORE_STATE.with(|state| {
             let node_count_delta = if state.current_store.get() == addr(self) {
                 let delta = state.node_count_delta.get() + 1;
                 let id = state.next_free.get();
@@ -447,19 +445,12 @@ impl<'id, DI: DiagramInfo> Store<'id, DI> {
             };
 
             self.get_slot_from_shared(state, node_count_delta)
-        });
-        match res {
-            Ok((id, slot)) => {
-                slot.node = ManuallyDrop::new(node);
-                let raw = Edge(id, PhantomData);
-                // SAFETY: the initial reference count is (at least) 2
-                Ok(unsafe { [Own::from_raw(raw), Own::from_raw(raw)] })
-            }
-            Err(OutOfMemory) => {
-                node.drop_with(|e| self.drop_edge(e));
-                Err(OutOfMemory)
-            }
-        }
+        })?;
+
+        slot.node = ManuallyDrop::new(ScopeGuard::into_inner(node));
+        let raw = Edge(id, PhantomData);
+        // SAFETY: the initial reference count is (at least) 2
+        Ok(unsafe { [Own::from_raw(raw), Own::from_raw(raw)] })
     }
 
     /// Get the free slot with ID `id` and load the `next_free` ID
@@ -643,6 +634,12 @@ impl<'id, DI: DiagramInfo> Store<'id, DI> {
         }
     }
 
+    /// Drop a node using [`Self::drop_edge()`]
+    #[inline]
+    fn drop_node(&self, node: DI::InnerNode<'id>) {
+        node.drop_with(|edge| self.drop_edge(edge));
+    }
+
     /// Clone `edge`
     ///
     /// `edge` may be tagged and point to an inner or a terminal node.
@@ -671,11 +668,10 @@ impl<'id, DI: DiagramInfo> Drop for Store<'id, DI> {
         if DI::InnerNode::<'id>::needs_drop() {
             let unique_table = std::mem::take(&mut manager.unique_table);
             for level in unique_table {
-                for edge in level.into_inner() {
+                for edge in level.into_inner().0 {
                     let borrowed = edge.borrowed();
                     // SAFETY: `edge` is untagged and points to an inner node
                     let slot_ptr = unsafe { self.inner_nodes.slot_pointer_unchecked(borrowed) };
-                    std::mem::forget(edge);
                     // SAFETY: We have exclusive access to all nodes in the
                     // store. `edge` points to an inner node.
                     let node = unsafe { ManuallyDrop::take(&mut (*slot_ptr).node) };
@@ -1202,9 +1198,8 @@ impl<'id, DI: DiagramInfo> oxidd_core::HasWorkers for Manager<'id, DI> {
 /// reference inner nodes.
 ///
 /// Because a [`LevelViewSet`] on its own is not sufficient to drop nodes
-/// accordingly, this will simply leak all contained edges, not calling the
-/// `Edge`'s `Drop` implementation.
-struct LevelViewSet<'id, DI: DiagramInfo>(huge::RawTable<Own<Edge<'id, DI>>>);
+/// accordingly, this will simply leak all contained edges.
+struct LevelViewSet<'id, DI: DiagramInfo>(huge::RawTable<ManuallyDrop<Own<Edge<'id, DI>>>>);
 
 #[inline]
 fn hash_node<N: NodeBase>(node: &N) -> u64 {
@@ -1310,7 +1305,6 @@ impl<'id, DI: DiagramInfo> LevelViewSet<'id, DI> {
                 false
             }
             Err(slot) => {
-                let edge = ManuallyDrop::into_inner(edge);
                 // SAFETY: `slot` was returned by `find_or_find_insert_slot`.
                 // We have exclusive access to the hash table and did not modify
                 // it in between.
@@ -1324,20 +1318,19 @@ impl<'id, DI: DiagramInfo> LevelViewSet<'id, DI> {
     ///
     /// If `node` is not yet present in the hash table, `insert` is called to
     /// insert the node into `nodes`.
-    #[inline(always)]
+    #[inline]
     fn get_or_insert(
         &mut self,
-        nodes: &SlotSlice<'id, DI>,
+        store: &Store<'id, DI>,
         node: DI::InnerNode<'id>,
-        insert: impl FnOnce(DI::InnerNode<'id>) -> AllocResult<[Own<Edge<'id, DI>>; 2]>,
-        drop: impl FnOnce(DI::InnerNode<'id>),
     ) -> AllocResult<Own<Edge<'id, DI>>> {
-        let hash = hash_node(&node);
+        let node = scopeguard::guard(node, |node| store.drop_node(node));
+        let hash = hash_node(&*node);
         match self.0.find_or_find_insert_slot(hash, |edge| {
             let edge = edge.borrowed();
             // SAFETY: The hash table only contains untagged edges referencing
             // inner nodes.
-            (unsafe { nodes.inner_node_unchecked(edge) }) == &node
+            *(unsafe { store.inner_nodes.inner_node_unchecked(edge) }) == *node
         }) {
             Ok(slot) => {
                 drop(node);
@@ -1347,10 +1340,11 @@ impl<'id, DI: DiagramInfo> LevelViewSet<'id, DI> {
                 let edge = unsafe { self.0.get_at_slot_unchecked(slot) }.borrowed();
                 // SAFETY: All edges in the table are untagged and refer to
                 // inner nodes.
-                Ok(unsafe { nodes.clone_edge_unchecked(edge) })
+                Ok(unsafe { store.inner_nodes.clone_edge_unchecked(edge) })
             }
             Err(slot) => {
-                let [e1, e2] = insert(node)?;
+                let [e1, e2] = store.add_node(ScopeGuard::into_inner(node))?;
+                let e1 = ManuallyDrop::new(e1);
                 // SAFETY: `slot` was returned by `find_or_find_insert_slot`.
                 // We have exclusive access to the hash table and did not modify
                 // it in between.
@@ -1380,7 +1374,7 @@ impl<'id, DI: DiagramInfo> LevelViewSet<'id, DI> {
                 // SAFETY (next 2): `edge` is untagged and points to an inner
                 // node
                 let slot_ptr = unsafe { inner_nodes.slot_pointer_unchecked(borrowed) };
-                let raw = edge.into_raw();
+                let raw = edge.raw();
                 let id = unsafe { raw.node_id_unchecked() };
 
                 // SAFETY: Since `rc` is 1, this is the last reference. We use
@@ -1397,8 +1391,10 @@ impl<'id, DI: DiagramInfo> LevelViewSet<'id, DI> {
     /// Returns `Some(edge)` if `node` was present, `None` otherwise
     #[inline]
     fn remove(&mut self, node: &DI::InnerNode<'id>, node_id: u32) -> Option<Own<Edge<'id, DI>>> {
-        self.0
-            .remove_entry(hash_node(node), |e| e.raw().0 == node_id)
+        Some(ManuallyDrop::into_inner(
+            self.0
+                .remove_entry(hash_node(node), |e| e.raw().0 == node_id)?,
+        ))
     }
 
     /// Remove the node referenced by `edge` if it is contained in this level
@@ -1449,21 +1445,6 @@ impl<'id, DI: DiagramInfo> LevelViewSet<'id, DI> {
     fn iter(&self) -> LevelViewIter<'_, 'id, DI> {
         LevelViewIter(self.0.iter())
     }
-
-    /// Iterator that consumes all [`Edge`]s in the set
-    #[inline]
-    fn drain(&mut self) -> linear_hashtbl::raw::Drain<'_, Own<Edge<'id, DI>>, u32> {
-        self.0.drain()
-    }
-}
-
-impl<DI: DiagramInfo> Drop for LevelViewSet<'_, DI> {
-    #[inline]
-    fn drop(&mut self) {
-        // If the nodes need drop, this is handled by the `Manager` `Drop` impl
-        // or the `TakenLevelView` `Drop` impl, respectively.
-        self.0.reset_no_drop();
-    }
 }
 
 impl<DI: DiagramInfo> Default for LevelViewSet<'_, DI> {
@@ -1473,21 +1454,8 @@ impl<DI: DiagramInfo> Default for LevelViewSet<'_, DI> {
     }
 }
 
-impl<'id, DI: DiagramInfo> IntoIterator for LevelViewSet<'id, DI> {
-    type Item = Own<Edge<'id, DI>>;
-
-    type IntoIter = huge::RawTableIntoIter<Own<Edge<'id, DI>>>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        let this = ManuallyDrop::new(self);
-        // SAFETY: We move out of `this` (and forget `this`)
-        let set = unsafe { std::ptr::read(&this.0) };
-        set.into_iter()
-    }
-}
-
 pub struct LevelViewIter<'a, 'id, DI: DiagramInfo>(
-    linear_hashtbl::raw::Iter<'a, Own<Edge<'id, DI>>, u32>,
+    linear_hashtbl::raw::Iter<'a, ManuallyDrop<Own<Edge<'id, DI>>>, u32>,
 );
 
 impl<'a, 'id, DI: DiagramInfo> Iterator for LevelViewIter<'a, 'id, DI> {
@@ -1577,9 +1545,12 @@ unsafe impl<'a, 'id, DI: DiagramInfo> oxidd_core::LevelView<Edge<'id, DI>, DI::I
 
     #[inline(always)]
     fn get_or_insert(&mut self, node: DI::InnerNode<'id>) -> AllocResult<Own<Edge<'id, DI>>> {
-        node.assert_level_matches(self.level);
-        // SAFETY: we checked the level as required
-        unsafe { self.get_or_insert_unchecked(node) }
+        let guard = scopeguard::guard(node, |node| self.store.drop_node(node));
+        guard.assert_level_matches(self.level);
+        // No need to check if the children of `node` are stored in `self.store`
+        // due to lifetime restrictions.
+        self.set
+            .get_or_insert(&self.store, ScopeGuard::into_inner(guard))
     }
 
     unsafe fn get_or_insert_unchecked(
@@ -1588,12 +1559,7 @@ unsafe impl<'a, 'id, DI: DiagramInfo> oxidd_core::LevelView<Edge<'id, DI>, DI::I
     ) -> AllocResult<Own<Edge<'id, DI>>> {
         // No need to check if the children of `node` are stored in `self.store`
         // due to lifetime restrictions.
-        self.set.get_or_insert(
-            &self.store.inner_nodes,
-            node,
-            |node| self.store.add_node(node),
-            |node| node.drop_with(|edge| self.store.drop_edge(edge)),
-        )
+        self.set.get_or_insert(&self.store, node)
     }
 
     #[inline]
@@ -1714,9 +1680,12 @@ unsafe impl<'id, DI: DiagramInfo> oxidd_core::LevelView<Edge<'id, DI>, DI::Inner
 
     #[inline(always)]
     fn get_or_insert(&mut self, node: DI::InnerNode<'id>) -> AllocResult<Own<Edge<'id, DI>>> {
-        node.assert_level_matches(self.level);
-        // SAFETY: we checked the level as required
-        unsafe { self.get_or_insert_unchecked(node) }
+        let guard = scopeguard::guard(node, |node| self.store.drop_node(node));
+        guard.assert_level_matches(self.level);
+        // No need to check if the children of `node` are stored in `self.store`
+        // due to lifetime restrictions.
+        self.set
+            .get_or_insert(&self.store, ScopeGuard::into_inner(guard))
     }
 
     unsafe fn get_or_insert_unchecked(
@@ -1725,12 +1694,7 @@ unsafe impl<'id, DI: DiagramInfo> oxidd_core::LevelView<Edge<'id, DI>, DI::Inner
     ) -> AllocResult<Own<Edge<'id, DI>>> {
         // No need to check if the children of `node` are stored in `self.store`
         // due to lifetime restrictions.
-        self.set.get_or_insert(
-            &self.store.inner_nodes,
-            node,
-            |node| self.store.add_node(node),
-            |node| node.drop_with(|edge| self.store.drop_edge(edge)),
-        )
+        self.set.get_or_insert(&self.store, node)
     }
 
     #[inline]
@@ -1776,7 +1740,8 @@ unsafe impl<'id, DI: DiagramInfo> oxidd_core::LevelView<Edge<'id, DI>, DI::Inner
 
 impl<'id, DI: DiagramInfo> Drop for TakenLevelView<'_, 'id, DI> {
     fn drop(&mut self) {
-        for edge in self.set.drain() {
+        for edge in self.set.0.drain() {
+            let edge = ManuallyDrop::into_inner(edge);
             // SAFETY: Edges in unique tables are untagged and point to inner
             // nodes.
             unsafe { self.store.drop_unique_table_edge(edge) }
@@ -1954,6 +1919,7 @@ pub fn new_manager<DI: DiagramInfo + 'static>(
     data: DI::ManagerData<'static>,
 ) -> io::Result<ManagerRef<DI>> {
     const { assert!(DI::TERMINALS >= 1, "TERMINALS must be >= 1") };
+    let data = scopeguard::guard(data, |data| data.drop_with(std::mem::forget));
 
     let workers = oxidd_core::util::Workers::new(threads)?;
 
@@ -1975,35 +1941,40 @@ pub fn new_manager<DI: DiagramInfo + 'static>(
     let gc_hwm = inner_node_capacity / 100 * 95;
 
     let gc_signal = Arc::new((Mutex::new(GCSignal::RunGC), Condvar::new()));
-    let arc = Arc::new(Store {
-        inner_nodes: SlotSlice::new_boxed(inner_node_capacity),
-        state: CachePadded::new(Mutex::new(SharedStoreState {
-            next_free: Vec::new(),
-            allocated: 0,
-            node_count: 0,
-            gc_state: if gc_lwm < gc_hwm {
-                GCState::Init
-            } else {
-                GCState::Disabled
-            },
-            gc_lwm,
-            gc_hwm,
-        })),
-        manager: RwLock::new(Manager {
-            unique_table: Vec::new(),
-            var_level_map: VarLevelMap::new(),
-            var_name_map: VarNameMap::new(),
-            data: ManuallyDrop::new(data),
-            store: std::ptr::null(),
-            gc_count: AtomicU64::new(0),
-            reorder_count: 0,
-            gc_ongoing: TryLock::new(),
-            reorder_gc_prepared: false,
-        }),
-        terminal_manager: DI::TerminalManager::<'static>::with_capacity(terminal_node_capacity),
-        gc_signal: GCSignalSender(gc_signal.clone()),
-        workers,
-    });
+    let arc = {
+        let inner_nodes = SlotSlice::new_boxed(inner_node_capacity);
+        let terminal_manager =
+            DI::TerminalManager::<'static>::with_capacity(terminal_node_capacity);
+        Arc::new(Store {
+            inner_nodes,
+            state: CachePadded::new(Mutex::new(SharedStoreState {
+                next_free: Vec::new(),
+                allocated: 0,
+                node_count: 0,
+                gc_state: if gc_lwm < gc_hwm {
+                    GCState::Init
+                } else {
+                    GCState::Disabled
+                },
+                gc_lwm,
+                gc_hwm,
+            })),
+            manager: RwLock::new(Manager {
+                unique_table: Vec::new(),
+                var_level_map: VarLevelMap::new(),
+                var_name_map: VarNameMap::new(),
+                data: ManuallyDrop::new(ScopeGuard::into_inner(data)),
+                store: std::ptr::null(),
+                gc_count: AtomicU64::new(0),
+                reorder_count: 0,
+                gc_ongoing: TryLock::new(),
+                reorder_gc_prepared: false,
+            }),
+            terminal_manager,
+            gc_signal: GCSignalSender(gc_signal.clone()),
+            workers,
+        })
+    };
 
     let store_addr = addr(&*arc);
     arc.workers.spawn_broadcast(move |_| {
