@@ -184,8 +184,8 @@ fn terminal_bin<'a, M: Manager<Terminal = T>, T: NumberBase, const OP: u8>(
             (Terminal(t), _) | (_, Terminal(t)) if t.borrow().is_nan() => {
                 Done(m.get_terminal(T::nan())?)
             }
-            _ if f > g => Binary(MTBDDOp::Min, g, f),
-            _ => Binary(MTBDDOp::Min, f, g),
+            _ if f > g => Binary(MTBDDOp::Max, g, f),
+            _ => Binary(MTBDDOp::Max, f, g),
         }
     } else {
         unreachable!("invalid binary operator")
