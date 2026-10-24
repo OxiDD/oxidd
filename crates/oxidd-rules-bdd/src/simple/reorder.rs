@@ -4,7 +4,7 @@ use oxidd_core::{HasLevel, InnerNode, Manager};
 
 use super::BDDRules;
 
-impl<M: Manager> SafeLevelSwapper<M> for BDDRules
+impl<M: Manager<InnerNodeValue = ()>> SafeLevelSwapper<M> for BDDRules
 where
     M::InnerNode: HasLevel,
 {
@@ -35,7 +35,7 @@ where
             if t == e {
                 Ok(manager.clone_edge(t))
             } else {
-                lower.get_or_insert(manager, &[t, e])
+                lower.get_or_insert(manager, &[t, e], &())
             }
         };
 

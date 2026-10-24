@@ -6,7 +6,7 @@ use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 
 use oxidd::{BooleanFunction, Function, HasLevel, ManagerRef};
-use oxidd_core::function::{ETagOfFunc, INodeOfFunc, TermOfFunc};
+use oxidd_core::function::{ETagOfFunc, INodeOfFunc, INodeValOfFunc, TermOfFunc};
 use oxidd_dump::dddmp;
 
 // spell-checker:dictionaries dddmp
@@ -236,6 +236,7 @@ pub fn import_dddmp<'py, F: BooleanFunction + oxidd_dump::DumpDeserialize>(
 ) -> PyResult<Vec<F>>
 where
     for<'id> INodeOfFunc<'id, F>: HasLevel,
+    for<'id> INodeValOfFunc<'id, F>: Default,
     for<'id> TermOfFunc<'id, F>: oxidd_dump::ParseTagged<ETagOfFunc<'id, F>>,
 {
     let Some(reader) = &mut file.reader else {

@@ -59,6 +59,7 @@ pub fn print_stats() {
 
 #[cfg(all(feature = "manager-index", not(feature = "manager-pointer")))]
 mod index {
+    use oxidd_core::AtomicLevelNo;
     use oxidd_rules_bdd::simple::{BDDOp, BDDRules, BDDTerminal};
 
     use crate::util::type_cons::{DD, IndexDD};
@@ -66,7 +67,9 @@ mod index {
     pub struct BDDInfo;
     impl oxidd_manager_index::DiagramInfo for BDDInfo {
         type EdgeTag = ();
-        type InnerNode<'id> = oxidd_manager_index::node::fixed_arity::NodeWithLevel<'id, Self, 2>;
+        type InnerNode<'id> =
+            oxidd_manager_index::node::fixed_arity::Node<'id, Self, AtomicLevelNo, 2>;
+        type InnerNodeValue = ();
         const TERMINALS: u32 = 2;
         type TerminalNode = BDDTerminal;
         type TerminalManager<'id> =
@@ -109,7 +112,7 @@ mod index {
 
 #[cfg(feature = "manager-pointer")]
 mod pointer {
-    use oxidd_manager_pointer::node::fixed_arity::NodeWithLevel;
+    use oxidd_manager_pointer::node::fixed_arity::Node;
     use oxidd_manager_pointer::terminal_manager::StaticTerminalManager;
     use oxidd_rules_bdd::simple::{BDDOp, BDDRules, BDDTerminal};
 
@@ -120,7 +123,8 @@ mod pointer {
         type PageSizeInfo = crate::PageSizeInfo;
         type EdgeTag = ();
         const TAG_BITS: u32 = 0;
-        type InnerNode<'id> = NodeWithLevel<'id, Self, 2>;
+        type InnerNode<'id> = Node<'id, Self, oxidd_core::AtomicLevelNo, 2>;
+        type InnerNodeValue = ();
         type TerminalNode = BDDTerminal;
         type TerminalManager<'id> = StaticTerminalManager<'id, Self>;
         type Rules = BDDRules;

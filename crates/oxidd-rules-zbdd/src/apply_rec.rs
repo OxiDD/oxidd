@@ -32,19 +32,28 @@ use super::{
 // spell-checker:ignore flevel,glevel,hlevel,ghlevel,vlevel
 // spell-checker:ignore symm
 
+trait ZBDDManager:
+    Manager<Terminal = ZBDDTerminal, InnerNode: HasLevel, InnerNodeValue = ()>
+    + HasApplyCache<Self, ZBDDOp>
+    + HasZBDDCache<Self::Edge>
+{
+}
+impl<M> ZBDDManager for M where
+    M: Manager<Terminal = ZBDDTerminal, InnerNode: HasLevel, InnerNodeValue = ()>
+        + HasApplyCache<Self, ZBDDOp>
+        + HasZBDDCache<Self::Edge>
+{
+}
+
 /// Recursively compute the subset with `var` set to `VAL`, or change `var` if
 /// `VAL == -1`
-fn subset<M, R: Recursor<M>, const VAL: i8>(
+fn subset<M: ZBDDManager, R: Recursor<M>, const VAL: i8>(
     manager: &M,
     rec: R,
     f: Ref<'_, M::Edge>,
     var: VarNo,
     var_level: LevelNo,
-) -> AllocResult<Own<M::Edge>>
-where
-    M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, ZBDDOp>,
-    M::InnerNode: HasLevel,
-{
+) -> AllocResult<Own<M::Edge>> {
     if rec.should_switch_to_sequential() {
         return subset::<M, _, VAL>(manager, SequentialRecursor, f, var, var_level);
     }
@@ -112,17 +121,13 @@ where
     Ok(h)
 }
 
-fn restrict<M, R: Recursor<M>>(
+fn restrict<M: ZBDDManager, R: Recursor<M>>(
     manager: &M,
     rec: R,
     f: Ref<'_, M::Edge>,
     vars: Ref<'_, M::Edge>,
     level: LevelNo,
-) -> AllocResult<Own<M::Edge>>
-where
-    M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, ZBDDOp> + HasZBDDCache<M::Edge>,
-    M::InnerNode: HasLevel,
-{
+) -> AllocResult<Own<M::Edge>> {
     if rec.should_switch_to_sequential() {
         return restrict(manager, SequentialRecursor, f, vars, level);
     }
@@ -130,15 +135,11 @@ where
     use ZBDDTerminal::*;
     stat!(call Restrict);
 
-    fn restrict_base<M>(
+    fn restrict_base<M: ZBDDManager>(
         manager: &M,
         vars: Ref<'_, M::Edge>,
         level: LevelNo,
-    ) -> AllocResult<Own<M::Edge>>
-    where
-        M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, ZBDDOp> + HasZBDDCache<M::Edge>,
-        M::InnerNode: HasLevel,
-    {
+    ) -> AllocResult<Own<M::Edge>> {
         Ok(match manager.get_node(vars) {
             Node::Inner(node) => {
                 let (hi, lo) = collect_children(node);
@@ -155,8 +156,8 @@ where
                 let mut res = restrict_base(manager, hi, node_level + 1)?;
                 if node_level > level && !is_empty(manager, res.borrowed()) {
                     for l in (level..node_level).rev() {
-                        res =
-                            manager.get_or_insert(l, [manager.clone_edge(res.borrowed()), res])?;
+                        let children = [manager.clone_edge(res.borrowed()), res];
+                        res = manager.get_or_insert(l, children, ())?;
                     }
                 }
                 res
@@ -245,16 +246,12 @@ where
 }
 
 /// Recursively apply the union operator to `f` and `g`
-fn apply_union<M, R: Recursor<M>>(
+fn apply_union<M: ZBDDManager, R: Recursor<M>>(
     manager: &M,
     rec: R,
     f: Ref<'_, M::Edge>,
     g: Ref<'_, M::Edge>,
-) -> AllocResult<Own<M::Edge>>
-where
-    M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, ZBDDOp>,
-    M::InnerNode: HasLevel,
-{
+) -> AllocResult<Own<M::Edge>> {
     if rec.should_switch_to_sequential() {
         return apply_union(manager, SequentialRecursor, f, g);
     }
@@ -312,16 +309,12 @@ where
 }
 
 /// Recursively apply the intersection operator to `f` and `g`
-fn apply_intsec<M, R: Recursor<M>>(
+fn apply_intsec<M: ZBDDManager, R: Recursor<M>>(
     manager: &M,
     rec: R,
     f: Ref<'_, M::Edge>,
     g: Ref<'_, M::Edge>,
-) -> AllocResult<Own<M::Edge>>
-where
-    M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, ZBDDOp>,
-    M::InnerNode: HasLevel,
-{
+) -> AllocResult<Own<M::Edge>> {
     if rec.should_switch_to_sequential() {
         return apply_intsec(manager, SequentialRecursor, f, g);
     }
@@ -378,16 +371,12 @@ where
 }
 
 /// Recursively apply the difference operator to `f` and `g`
-fn apply_diff<M, R: Recursor<M>>(
+fn apply_diff<M: ZBDDManager, R: Recursor<M>>(
     manager: &M,
     rec: R,
     f: Ref<'_, M::Edge>,
     g: Ref<'_, M::Edge>,
-) -> AllocResult<Own<M::Edge>>
-where
-    M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, ZBDDOp>,
-    M::InnerNode: HasLevel,
-{
+) -> AllocResult<Own<M::Edge>> {
     if rec.should_switch_to_sequential() {
         return apply_diff(manager, SequentialRecursor, f, g);
     }
@@ -440,30 +429,22 @@ where
     Ok(h)
 }
 
-fn apply_not<M, R: Recursor<M>>(
+fn apply_not<M: ZBDDManager, R: Recursor<M>>(
     manager: &M,
     rec: R,
     f: Ref<'_, M::Edge>,
-) -> AllocResult<Own<M::Edge>>
-where
-    M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, ZBDDOp> + HasZBDDCache<M::Edge>,
-    M::InnerNode: HasLevel,
-{
+) -> AllocResult<Own<M::Edge>> {
     let taut = manager.zbdd_cache().tautology(0);
     apply_diff(manager, rec, taut, f)
 }
 
 /// Recursively apply the symmetric difference operator to `f` and `g`
-fn apply_symm_diff<M, R: Recursor<M>>(
+fn apply_symm_diff<M: ZBDDManager, R: Recursor<M>>(
     manager: &M,
     rec: R,
     f: Ref<'_, M::Edge>,
     g: Ref<'_, M::Edge>,
-) -> AllocResult<Own<M::Edge>>
-where
-    M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, ZBDDOp>,
-    M::InnerNode: HasLevel,
-{
+) -> AllocResult<Own<M::Edge>> {
     if rec.should_switch_to_sequential() {
         return apply_symm_diff(manager, SequentialRecursor, f, g);
     }
@@ -524,17 +505,13 @@ where
 }
 
 /// Recursively apply the if-then-else operator (`if f { g } else { h }`)
-fn apply_ite<M, R: Recursor<M>>(
+fn apply_ite<M: ZBDDManager, R: Recursor<M>>(
     manager: &M,
     rec: R,
     f: Ref<'_, M::Edge>,
     g: Ref<'_, M::Edge>,
     h: Ref<'_, M::Edge>,
-) -> AllocResult<Own<M::Edge>>
-where
-    M: Manager<Terminal = ZBDDTerminal> + HasApplyCache<M, ZBDDOp> + HasZBDDCache<M::Edge>,
-    M::InnerNode: HasLevel,
-{
+) -> AllocResult<Own<M::Edge>> {
     if rec.should_switch_to_sequential() {
         return apply_ite(manager, SequentialRecursor, f, g, h);
     }
@@ -639,10 +616,6 @@ where
 
 // --- Function Interface ------------------------------------------------------
 
-/// Workaround for https://github.com/rust-lang/rust/issues/49601
-trait HasZBDDOpApplyCache<M: Manager>: HasApplyCache<M, ZBDDOp> {}
-impl<M: Manager + HasApplyCache<M, ZBDDOp>> HasZBDDOpApplyCache<M> for M {}
-
 /// Boolean function backed by a zero-suppressed binary decision diagram
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Function, Debug)]
 #[repr_id = "ZBDD"]
@@ -666,10 +639,7 @@ impl<F: Function> ZBDDFunction<F> {
 
 impl<F: Function> BooleanVecSet for ZBDDFunction<F>
 where
-    for<'id> F::Manager<'id>: Manager<Terminal = ZBDDTerminal>
-        + HasZBDDOpApplyCache<F::Manager<'id>>
-        + HasZBDDCache<EdgeOfFunc<'id, F>>,
-    for<'id> INodeOfFunc<'id, F>: HasLevel,
+    for<'id> F::Manager<'id>: ZBDDManager,
 {
     fn singleton_edge<'id>(
         manager: &Self::Manager<'id>,
@@ -678,7 +648,7 @@ where
         let level = manager.var_to_level(var);
         let hi = manager.get_terminal(ZBDDTerminal::Base).unwrap();
         let lo = manager.get_terminal(ZBDDTerminal::Empty).unwrap();
-        manager.get_or_insert(level, [hi, lo])
+        manager.get_or_insert(level, [hi, lo], ())
     }
 
     #[inline]
@@ -754,10 +724,7 @@ where
 
 impl<F: Function> BooleanFunction for ZBDDFunction<F>
 where
-    for<'id> F::Manager<'id>: Manager<Terminal = ZBDDTerminal>
-        + HasZBDDOpApplyCache<F::Manager<'id>>
-        + HasZBDDCache<EdgeOfFunc<'id, F>>,
-    for<'id> INodeOfFunc<'id, F>: HasLevel,
+    for<'id> F::Manager<'id>: ZBDDManager,
 {
     fn var_edge<'id>(
         manager: &Self::Manager<'id>,
@@ -766,7 +733,7 @@ where
         let level = manager.var_to_level(var);
         let hi = manager.clone_edge(manager.zbdd_cache().tautology(level + 1));
         let lo = manager.get_terminal(ZBDDTerminal::Empty).unwrap();
-        let mut edge = manager.get_or_insert(level, [hi, lo])?;
+        let mut edge = manager.get_or_insert(level, [hi, lo], ())?;
 
         // Build the chain bottom up. We need to skip the newly created level.
         let levels = manager.levels().rev();
@@ -778,7 +745,7 @@ where
 
             let level = view.level_no();
             let edge2 = manager.clone_edge(edge.borrowed());
-            edge = view.get_or_insert(InnerNode::new(level, [edge, edge2]))?;
+            edge = view.get_or_insert(InnerNode::new(level, [edge, edge2], ()))?;
         }
 
         Ok(edge)
@@ -911,7 +878,7 @@ where
     ) -> N {
         fn inner<M, N, S>(manager: &M, e: Ref<'_, M::Edge>, cache: &mut SatCountCache<N, S>) -> N
         where
-            M: Manager<Terminal = ZBDDTerminal>,
+            M: ZBDDManager,
             N: SatCountNumber,
             S: BuildHasher,
         {
@@ -983,14 +950,11 @@ where
         edge: Ref<'_, EdgeOfFunc<'id, Self>>,
         choice: impl FnMut(&Self::Manager<'id>, Ref<'_, EdgeOfFunc<'id, Self>>, LevelNo) -> bool,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
-        fn inner<M: Manager<Terminal = ZBDDTerminal>>(
+        fn inner<M: ZBDDManager>(
             manager: &M,
             edge: Ref<'_, M::Edge>,
             mut choice: impl FnMut(&M, Ref<'_, M::Edge>, LevelNo) -> bool,
-        ) -> AllocResult<Own<M::Edge>>
-        where
-            M::InnerNode: HasLevel,
-        {
+        ) -> AllocResult<Own<M::Edge>> {
             let Node::Inner(node) = manager.get_node(edge) else {
                 return Ok(manager.clone_edge(edge));
             };
@@ -1015,7 +979,7 @@ where
             } else {
                 manager.get_terminal(ZBDDTerminal::Empty)?
             };
-            manager.get_or_insert(level, [hi.into_edge(), lo])
+            manager.get_or_insert(level, [hi.into_edge(), lo], ())
         }
 
         inner(manager, edge, choice)
@@ -1027,14 +991,11 @@ where
         edge: Ref<'_, EdgeOfFunc<'id, Self>>,
         literal_set: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
-        fn inner<'a, M: Manager<Terminal = ZBDDTerminal>>(
+        fn inner<'a, M: ZBDDManager>(
             manager: &'a M,
             edge: Ref<'a, M::Edge>,
             mut literal_set: Ref<'a, M::Edge>,
-        ) -> AllocResult<Own<M::Edge>>
-        where
-            M::InnerNode: HasLevel,
-        {
+        ) -> AllocResult<Own<M::Edge>> {
             let Node::Inner(node) = manager.get_node(edge) else {
                 return Ok(manager.clone_edge(edge));
             };
@@ -1078,7 +1039,7 @@ where
             } else {
                 manager.get_terminal(ZBDDTerminal::Empty)?
             };
-            manager.get_or_insert(level, [hi.into_edge(), lo])
+            manager.get_or_insert(level, [hi.into_edge(), lo], ())
         }
 
         inner(manager, edge, literal_set)
@@ -1125,16 +1086,14 @@ where
 
 impl<F: Function> oxidd_dump::DumpDeserialize for ZBDDFunction<F>
 where
-    for<'id> F::Manager<'id>: Manager<Terminal = ZBDDTerminal>
-        + HasZBDDOpApplyCache<F::Manager<'id>>
-        + HasZBDDCache<EdgeOfFunc<'id, F>>,
-    for<'id> INodeOfFunc<'id, F>: HasLevel,
+    for<'id> F::Manager<'id>: ZBDDManager,
 {
     #[inline]
     fn reduce<'id>(
         manager: &Self::Manager<'id>,
         level: LevelNo,
         children: impl IntoIterator<Item = OwnEdgeOfFunc<'id, Self>>,
+        _value: (),
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         let [hi, lo] = collect_edges_exact(manager, children);
         reduce(manager, level, hi, lo, ZBDDOp::MkNode)
@@ -1186,12 +1145,7 @@ pub mod mt {
 
     impl<F: Function> BooleanVecSet for ZBDDFunctionMT<F>
     where
-        for<'id> F::Manager<'id>: Manager<Terminal = ZBDDTerminal>
-            + super::HasZBDDOpApplyCache<F::Manager<'id>>
-            + super::HasZBDDCache<EdgeOfFunc<'id, F>>
-            + HasWorkers,
-        for<'id> INodeOfFunc<'id, F>: HasLevel,
-        for<'id> EdgeOfFunc<'id, F>: Send + Sync,
+        for<'id> F::Manager<'id>: ZBDDManager<Edge: Send + Sync> + HasWorkers,
     {
         #[inline(always)]
         fn singleton_edge<'id>(
@@ -1274,12 +1228,7 @@ pub mod mt {
 
     impl<F: Function> BooleanFunction for ZBDDFunctionMT<F>
     where
-        for<'id> F::Manager<'id>: Manager<Terminal = ZBDDTerminal>
-            + super::HasZBDDOpApplyCache<F::Manager<'id>>
-            + super::HasZBDDCache<EdgeOfFunc<'id, F>>
-            + HasWorkers,
-        for<'id> INodeOfFunc<'id, F>: HasLevel,
-        for<'id> EdgeOfFunc<'id, F>: Send + Sync,
+        for<'id> F::Manager<'id>: ZBDDManager<Edge: Send + Sync> + HasWorkers,
     {
         #[inline(always)]
         fn var_edge<'id>(
@@ -1460,18 +1409,16 @@ pub mod mt {
 
     impl<F: Function> oxidd_dump::DumpDeserialize for ZBDDFunctionMT<F>
     where
-        for<'id> F::Manager<'id>: Manager<Terminal = ZBDDTerminal>
-            + HasZBDDOpApplyCache<F::Manager<'id>>
-            + HasZBDDCache<EdgeOfFunc<'id, F>>,
-        for<'id> INodeOfFunc<'id, F>: HasLevel,
+        for<'id> F::Manager<'id>: ZBDDManager,
     {
         #[inline]
         fn reduce<'id>(
             manager: &Self::Manager<'id>,
             level: LevelNo,
             children: impl IntoIterator<Item = OwnEdgeOfFunc<'id, Self>>,
+            value: (),
         ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
-            ZBDDFunction::<F>::reduce(manager, level, children)
+            ZBDDFunction::<F>::reduce(manager, level, children, value)
         }
 
         #[inline]
