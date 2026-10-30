@@ -330,6 +330,8 @@ fn compute_proj<M: LDDManager>(manager: &M, proj: &[u32]) -> AllocResult<Own<M::
     // Convert projection vectors to meta information.
     let mut result: Vec<M::InnerNodeValue> = Vec::new();
     for i in 0..length {
+        // Requires worst-case quadratic time, but the projection array is
+        // typically small.
         result.push(if proj.contains(&i) {
             M::InnerNodeValue::true_value()
         } else {
@@ -492,6 +494,8 @@ fn relation_product_meta<M: LDDManager>(
 
     let mut offset: usize = 0;
     for i in 0..length {
+        // Requires worst-case quadratic time, but the projection arrays are
+        // typically small.
         let read = read_proj.contains(&i);
         let write = write_proj.contains(&i);
         if read && write {
@@ -536,7 +540,7 @@ fn relation_product_meta<M: LDDManager>(
 /// write half of a pair, where `set` was already descended at the read half.
 ///
 /// # Cache
-/// 
+///
 /// Therefore, `level` is part of the cache key. Usually `set` determines the
 /// result level, since every inner node resides in the unique table of one
 /// level. However, at a write half where the read half consumed the last
@@ -544,10 +548,10 @@ fn relation_product_meta<M: LDDManager>(
 /// remain, and they reside on meta levels, not result levels. A read+write pair
 /// occupies two meta levels but one result level, so the same meta level
 /// corresponds to different result levels depending on the number of pairs
-/// before it. 
-/// 
+/// before it.
+///
 /// # Example
-/// 
+///
 /// The meta-LDDs `[3, 4, 3, 4]` and `[0, 0, 3, 4]` share the suffix `[4]` at
 /// meta level 3, which is at result level 1 for sets of length 2 and at result
 /// level 2 for sets of length 3. If `rel` also shares its suffix, both calls
@@ -581,13 +585,19 @@ fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
         Node::Inner(n) => n,
     };
 
-    // Empty set or empty relation → empty result.
-    if manager.get_node(set).is_terminal(&LDDTerminal::Empty) {
-        return manager.get_terminal(LDDTerminal::Empty);
-    }
-    if manager.get_node(rel).is_terminal(&LDDTerminal::Empty) {
-        return manager.get_terminal(LDDTerminal::Empty);
-    }
+    // Empty set or empty relation → empty result. Set can still be the `True`
+    // terminal at a write half.
+    let (set_node, rel_node) = match (manager.get_node(set), manager.get_node(rel)) {
+        (Node::Inner(s), Node::Inner(r)) => (Some(s), r),
+        (Node::Terminal(s), Node::Inner(r)) if *s.borrow() == LDDTerminal::True => (None, r),
+        (s, r) => {
+            debug_assert!(
+                s.is_terminal(&LDDTerminal::Empty) || r.is_terminal(&LDDTerminal::Empty),
+                "rel must have as many levels as meta"
+            );
+            return manager.get_terminal(LDDTerminal::Empty);
+        }
+    };
 
     // At a write half of a pair, `set` may already be the `True` terminal, so
     // the operands do not determine the result level; it is part of the key
@@ -608,9 +618,7 @@ fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
     let result = if *meta_value == M::InnerNodeValue::false_value() {
         // 0: not in relation - keep all set values, advance meta into next
         // level.
-        let set_node = manager
-            .get_node(set)
-            .expect_inner("set must have as many levels as meta");
+        let set_node = set_node.expect("set must have as many levels as meta");
         let set_value = set_node.value();
         let (set_down, set_right) = collect_children(set_node);
 
@@ -638,12 +646,7 @@ fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
     } else if *meta_value == M::InnerNodeValue::read_only_value() {
         // 1: read only - match set and rel values; keep matched values in
         // output.
-        let set_node = manager
-            .get_node(set)
-            .expect_inner("set must have as many levels as meta");
-        let rel_node = manager
-            .get_node(rel)
-            .expect_inner("rel must have as many levels as meta");
+        let set_node = set_node.expect("set must have as many levels as meta");
         let set_value = set_node.value();
         let (set_down, set_right) = collect_children(set_node);
         let rel_value = rel_node.value();
@@ -684,9 +687,6 @@ fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
     } else if *meta_value == M::InnerNodeValue::write_only_value() {
         // 2: write only - union all set down-branches (ignoring their values),
         // then write each rel value with that combined continuation.
-        let rel_node = manager
-            .get_node(rel)
-            .expect_inner("rel must have as many levels as meta");
         let rel_value = rel_node.value();
         let (rel_down, rel_right) = collect_children(rel_node);
 
@@ -735,12 +735,7 @@ fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
     } else if *meta_value == M::InnerNodeValue::read_of_pair_value() {
         // 3: read half of a read+write pair - match values (not emitted);
         // union the matched continuation with the remaining-pairs result.
-        let set_node = manager
-            .get_node(set)
-            .expect_inner("set must have as many levels as meta");
-        let rel_node = manager
-            .get_node(rel)
-            .expect_inner("rel must have as many levels as meta");
+        let set_node = set_node.expect("set must have as many levels as meta");
         let set_value = set_node.value();
         let (set_down, set_right) = collect_children(set_node);
         let rel_value = rel_node.value();
@@ -773,9 +768,6 @@ fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
         }
     } else if *meta_value == M::InnerNodeValue::write_of_pair_value() {
         // 4: write half of a read+write pair - emit rel values.
-        let rel_node = manager
-            .get_node(rel)
-            .expect_inner("rel must have as many levels as meta");
         let rel_value = rel_node.value();
         let (rel_down, rel_right) = collect_children(rel_node);
 
@@ -853,16 +845,9 @@ fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
     }
     stat!(call LDDOp::RelationalPredecessor);
 
-    // An empty set, relation, or universe yields the empty set.
-    if manager.get_node(set).is_terminal(&LDDTerminal::Empty)
-        || manager.get_node(rel).is_terminal(&LDDTerminal::Empty)
-        || manager.get_node(universe).is_terminal(&LDDTerminal::Empty)
-    {
-        return manager.get_terminal(LDDTerminal::Empty);
-    }
-
     // meta == True means all meta levels are consumed; the remaining source
-    // vectors are exactly those in both `set` and `universe`.
+    // vectors are exactly those in both `set` and `universe`, unless `rel` is
+    // empty.
     let meta_node = match manager.get_node(meta) {
         Node::Terminal(t) => {
             debug_assert_eq!(
@@ -870,9 +855,31 @@ fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
                 LDDTerminal::True,
                 "meta should never reach the Empty terminal"
             );
+            if manager.get_node(rel).is_terminal(&LDDTerminal::Empty) {
+                return manager.get_terminal(LDDTerminal::Empty);
+            }
             return apply_intersection(manager, rec, level, set, universe);
         }
         Node::Inner(n) => n,
+    };
+
+    // An empty set, relation, or universe yields the empty set. Since `meta`
+    // ends with a non-zero value, none of them can be the `True` terminal.
+    let (set_node, rel_node, universe_node) = match (
+        manager.get_node(set),
+        manager.get_node(rel),
+        manager.get_node(universe),
+    ) {
+        (Node::Inner(s), Node::Inner(r), Node::Inner(u)) => (s, r, u),
+        (s, r, u) => {
+            debug_assert!(
+                s.is_terminal(&LDDTerminal::Empty)
+                    || r.is_terminal(&LDDTerminal::Empty)
+                    || u.is_terminal(&LDDTerminal::Empty),
+                "set, rel and universe must have as many levels as meta"
+            );
+            return manager.get_terminal(LDDTerminal::Empty);
+        }
     };
 
     stat!(cache_query LDDOp::RelationalPredecessor);
@@ -890,12 +897,6 @@ fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
 
     let result = if *meta_value == M::InnerNodeValue::false_value() {
         // 0: not in relation - keep values present in both set and universe.
-        let set_node = manager
-            .get_node(set)
-            .expect_inner("set must have as many levels as meta");
-        let universe_node = manager
-            .get_node(universe)
-            .expect_inner("universe must have as many levels as meta");
         let set_value = set_node.value();
         let (set_down, set_right) = collect_children(set_node);
         let universe_value = universe_node.value();
@@ -936,15 +937,6 @@ fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
     } else if *meta_value == M::InnerNodeValue::read_only_value() {
         // 1: read only - the source value equals the target value, so emit
         // values that appear in set, rel, and universe simultaneously.
-        let set_node = manager
-            .get_node(set)
-            .expect_inner("set must have as many levels as meta");
-        let rel_node = manager
-            .get_node(rel)
-            .expect_inner("rel must have as many levels as meta");
-        let universe_node = manager
-            .get_node(universe)
-            .expect_inner("universe must have as many levels as meta");
         let set_value = set_node.value();
         let (set_down, set_right) = collect_children(set_node);
         let rel_value = rel_node.value();
@@ -997,12 +989,6 @@ fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
     } else if *meta_value == M::InnerNodeValue::write_only_value() {
         // 2: write only - the target value must appear in both set and rel; the
         // source value is unconstrained and ranges over the whole universe.
-        let set_node = manager
-            .get_node(set)
-            .expect_inner("set must have as many levels as meta");
-        let rel_node = manager
-            .get_node(rel)
-            .expect_inner("rel must have as many levels as meta");
         let set_value = set_node.value();
         let (set_down, set_right) = collect_children(set_node);
         let rel_value = rel_node.value();
@@ -1046,12 +1032,6 @@ fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
         // the universe and matched against the relation. The set and universe
         // are not descended here; the universe is descended at the paired write
         // level.
-        let rel_node = manager
-            .get_node(rel)
-            .expect_inner("rel must have as many levels as meta");
-        let universe_node = manager
-            .get_node(universe)
-            .expect_inner("universe must have as many levels as meta");
         let rel_value = rel_node.value();
         let (rel_down, rel_right) = collect_children(rel_node);
         let universe_value = universe_node.value();
@@ -1101,12 +1081,6 @@ fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
         // must appear in both set and rel; nothing is emitted. The source value
         // was already produced at the paired read level, so descend the
         // universe here.
-        let set_node = manager
-            .get_node(set)
-            .expect_inner("set must have as many levels as meta");
-        let rel_node = manager
-            .get_node(rel)
-            .expect_inner("rel must have as many levels as meta");
         let set_value = set_node.value();
         let (set_down, set_right) = collect_children(set_node);
         let rel_value = rel_node.value();
@@ -1122,9 +1096,6 @@ fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
                 apply_relational_predecessor(manager, rec, level, set, rel_right, meta, universe)?
             }
             Ordering::Equal => {
-                let universe_node = manager
-                    .get_node(universe)
-                    .expect_inner("universe must have as many levels as meta");
                 let (universe_down, _universe_right) = collect_children(universe_node);
                 let (down_result, right_result) = rec.quaternary(
                     apply_relational_predecessor,
