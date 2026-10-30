@@ -1525,7 +1525,6 @@ where
     /// [`relation_meta`][Self::relation_meta]).
     ///
     /// This is also known as the relational product.
-    #[doc(alias = "relational_product")]
     pub fn relational_successors(&self, rel: &Self, meta: &Self) -> AllocResult<Self> {
         self.with_manager_shared(|manager, set| {
             let edge = Self::relational_successors_edge(

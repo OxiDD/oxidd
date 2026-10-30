@@ -306,7 +306,7 @@ macro_rules! ldd_function_methods {
                 )?))
             }
 
-            /// Computes the relational predecessor using the already-borrowed
+            /// Computes the relational predecessors using the already-borrowed
             /// `manager`; the lock-free counterpart of
             /// [`relational_predecessors`][Self::relational_predecessors].
             pub fn relational_predecessors_edge(
