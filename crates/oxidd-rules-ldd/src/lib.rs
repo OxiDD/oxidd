@@ -3,7 +3,7 @@
 use std::hash::Hash;
 
 use oxidd_core::{
-    Edge, HasApplyCache, InnerNode, Manager,
+    Edge, HasApplyCache, InnerNode, LevelNo, Manager,
     util::{AllocResult, Own, Ref},
 };
 use oxidd_derive::Countable;
@@ -103,15 +103,21 @@ fn collect_children<E: Edge, N: InnerNode<E>>(node: &N) -> (Ref<'_, E>, Ref<'_, 
 /// Rules for list decision diagrams
 pub struct LDDRules;
 
-/// Create a node in `manager` if necessary
+/// Create a node at `level` in `manager` if necessary
+///
+/// LDDs are quasi-reduced: level `i` holds the nodes for position `i` of the
+/// vectors, so `down` must reside at `level + 1` and `right` at `level` (unless
+/// they are terminals). The nodes do not store their level, so the caller is
+/// responsible for this.
 #[inline(always)]
 fn make_node<M: LDDManager>(
     manager: &M,
+    level: LevelNo,
     value: &<M as Manager>::InnerNodeValue,
     down: Own<M::Edge>,
     right: Own<M::Edge>,
 ) -> AllocResult<Own<M::Edge>> {
-    manager.get_or_insert(0, [down, right], value.clone())
+    manager.get_or_insert(level, [down, right], value.clone())
 }
 
 /// Native operators of this LDD implementation
@@ -120,8 +126,8 @@ fn make_node<M: LDDManager>(
 #[allow(missing_docs)]
 pub enum LDDOp {
     Union,
-    Intsec,
-    Diff,
+    Intersection,
+    Difference,
 
     Project,
 

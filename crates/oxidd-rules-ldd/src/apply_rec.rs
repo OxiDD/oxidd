@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use oxidd_core::function::{EdgeOfFunc, Function, INodeValOfFunc, OwnEdgeOfFunc};
 use oxidd_core::util::{AllocResult, EdgeDropGuard, Own, Ref};
-use oxidd_core::{ApplyCache, InnerNode, Manager, Node, NodeID};
+use oxidd_core::{ApplyCache, InnerNode, LevelNo, Manager, Node, NodeID};
 use oxidd_derive::Function;
 
 use crate::recursor::{Recursor, SequentialRecursor};
@@ -20,29 +20,44 @@ use crate::{
 };
 
 /// Return a singleton LDD that contains only the list represented by `vector`.
+///
+/// The root resides at level 0. Panics if `vector` is longer than the number of
+/// levels of `manager`.
 fn singleton<M: LDDManager>(
     manager: &M,
     vector: &[M::InnerNodeValue],
 ) -> AllocResult<Own<M::Edge>> {
+    assert!(
+        vector.len() <= manager.num_levels() as usize,
+        "vector of length {} exceeds the {} reserved levels",
+        vector.len(),
+        manager.num_levels()
+    );
+
     let mut root = EdgeDropGuard::new(manager, manager.get_terminal(LDDTerminal::True)?);
 
-    for val in vector.iter().rev() {
+    for (level, val) in vector.iter().enumerate().rev() {
         let empty = manager.get_terminal(LDDTerminal::Empty)?;
-        root = EdgeDropGuard::new(manager, make_node(manager, val, root.into_edge(), empty)?);
+        root = EdgeDropGuard::new(
+            manager,
+            make_node(manager, level as LevelNo, val, root.into_edge(), empty)?,
+        );
     }
 
     Ok(root.into_edge())
 }
 
-/// Recursively apply the 'union' operator to `f` and `g`
+/// Recursively apply the 'union' operator to `a` and `b`, both residing at
+/// `level`
 fn apply_union<M: LDDManager, R: Recursor<M>>(
     manager: &M,
     rec: R,
+    level: LevelNo,
     a: Ref<'_, M::Edge>,
     b: Ref<'_, M::Edge>,
 ) -> AllocResult<Own<M::Edge>> {
     if rec.should_switch_to_sequential() {
-        return apply_union(manager, SequentialRecursor, a, b);
+        return apply_union(manager, SequentialRecursor, level, a, b);
     }
     stat!(call LDDOp::Union);
 
@@ -83,7 +98,7 @@ fn apply_union<M: LDDManager, R: Recursor<M>>(
         Ordering::Less => {
             let (a_down, a_right) = collect_children(a_node);
 
-            let right = apply_union(manager, rec, a_right, b)?;
+            let right = apply_union(manager, rec, level, a_right, b)?;
             (a_value, manager.clone_edge(a_down), right)
         }
         Ordering::Greater => {
@@ -91,7 +106,7 @@ fn apply_union<M: LDDManager, R: Recursor<M>>(
             // down-branch, and union a with b's remaining (right) values.
             let (a_down, b_right) = collect_children(b_node);
 
-            let right = apply_union(manager, rec, a, b_right)?;
+            let right = apply_union(manager, rec, level, a, b_right)?;
             (b_value, manager.clone_edge(a_down), right)
         }
         Ordering::Equal => {
@@ -100,12 +115,16 @@ fn apply_union<M: LDDManager, R: Recursor<M>>(
             let (a_down, a_right) = collect_children(a_node);
             let (b_down, b_right) = collect_children(b_node);
 
-            let (low, high) =
-                rec.binary(apply_union, manager, (a_down, b_down), (a_right, b_right))?;
+            let (low, high) = rec.binary(
+                apply_union,
+                manager,
+                (level + 1, a_down, b_down),
+                (level, a_right, b_right),
+            )?;
             (b_value, low.into_edge(), high.into_edge())
         }
     };
-    let result = make_node(manager, value, down, right)?;
+    let result = make_node(manager, level, value, down, right)?;
 
     manager
         .apply_cache()
@@ -114,17 +133,19 @@ fn apply_union<M: LDDManager, R: Recursor<M>>(
     Ok(result)
 }
 
-/// Computes the intersection `a ∩ b` of the two sets of vectors.
-fn apply_intsec<M: LDDManager, R: Recursor<M>>(
+/// Computes the intersection `a ∩ b` of the two sets of vectors, both residing
+/// at `level`.
+fn apply_intersection<M: LDDManager, R: Recursor<M>>(
     manager: &M,
     rec: R,
+    level: LevelNo,
     a: Ref<'_, M::Edge>,
     b: Ref<'_, M::Edge>,
 ) -> AllocResult<Own<M::Edge>> {
     if rec.should_switch_to_sequential() {
-        return apply_intsec(manager, SequentialRecursor, a, b);
+        return apply_intersection(manager, SequentialRecursor, level, a, b);
     }
-    stat!(call LDDOp::Intsec);
+    stat!(call LDDOp::Intersection);
 
     // a ∩ a == a
     if a == b {
@@ -141,15 +162,15 @@ fn apply_intsec<M: LDDManager, R: Recursor<M>>(
             // terminal.
             debug_assert!(
                 a_node.is_terminal(&LDDTerminal::Empty) || b_node.is_terminal(&LDDTerminal::Empty),
-                "a and b mut reside on the same level"
+                "a and b must reside on the same level"
             );
             return manager.get_terminal(LDDTerminal::Empty);
         }
     };
 
-    stat!(cache_query LDDOp::Intsec);
-    if let Some(res) = manager.apply_cache().get(manager, LDDOp::Intsec, &[a, b]) {
-        stat!(cache_hit LDDOp::Intsec);
+    stat!(cache_query LDDOp::Intersection);
+    if let Some(res) = manager.apply_cache().get(manager, LDDOp::Intersection, &[a, b]) {
+        stat!(cache_hit LDDOp::Intersection);
         return Ok(res);
     }
 
@@ -161,15 +182,19 @@ fn apply_intsec<M: LDDManager, R: Recursor<M>>(
     let result = match a_value.cmp(b_value) {
         Ordering::Less => {
             // a's value is not in b; skip it.
-            apply_intsec(manager, rec, a_right, b)?
+            apply_intersection(manager, rec, level, a_right, b)?
         }
         Ordering::Greater => {
             // b's value is not in a; skip it.
-            apply_intsec(manager, rec, a, b_right)?
+            apply_intersection(manager, rec, level, a, b_right)?
         }
         Ordering::Equal => {
-            let (down_result, right_result) =
-                rec.binary(apply_intsec, manager, (a_down, b_down), (a_right, b_right))?;
+            let (down_result, right_result) = rec.binary(
+                apply_intersection,
+                manager,
+                (level + 1, a_down, b_down),
+                (level, a_right, b_right),
+            )?;
             if manager
                 .get_node(down_result.borrowed())
                 .is_terminal(&LDDTerminal::Empty)
@@ -178,6 +203,7 @@ fn apply_intsec<M: LDDManager, R: Recursor<M>>(
             } else {
                 make_node(
                     manager,
+                    level,
                     a_value,
                     down_result.into_edge(),
                     right_result.into_edge(),
@@ -188,23 +214,24 @@ fn apply_intsec<M: LDDManager, R: Recursor<M>>(
 
     manager
         .apply_cache()
-        .add(manager, LDDOp::Intsec, &[a, b], result.borrowed());
+        .add(manager, LDDOp::Intersection, &[a, b], result.borrowed());
 
     Ok(result)
 }
 
 /// Returns the largest subset of `a` that contains no element of `b`
-/// (set difference `a \ b`).
-fn apply_diff<M: LDDManager, R: Recursor<M>>(
+/// (set difference `a \ b`), both residing at `level`.
+fn apply_difference<M: LDDManager, R: Recursor<M>>(
     manager: &M,
     rec: R,
+    level: LevelNo,
     a: Ref<'_, M::Edge>,
     b: Ref<'_, M::Edge>,
 ) -> AllocResult<Own<M::Edge>> {
     if rec.should_switch_to_sequential() {
-        return apply_diff(manager, SequentialRecursor, a, b);
+        return apply_difference(manager, SequentialRecursor, level, a, b);
     }
-    stat!(call LDDOp::Diff);
+    stat!(call LDDOp::Difference);
 
     // a \ a == ∅
     if a == b {
@@ -230,9 +257,9 @@ fn apply_diff<M: LDDManager, R: Recursor<M>>(
         }
     };
 
-    stat!(cache_query LDDOp::Diff);
-    if let Some(res) = manager.apply_cache().get(manager, LDDOp::Diff, &[a, b]) {
-        stat!(cache_hit LDDOp::Diff);
+    stat!(cache_query LDDOp::Difference);
+    if let Some(res) = manager.apply_cache().get(manager, LDDOp::Difference, &[a, b]) {
+        stat!(cache_hit LDDOp::Difference);
         return Ok(res);
     }
 
@@ -242,14 +269,24 @@ fn apply_diff<M: LDDManager, R: Recursor<M>>(
         Ordering::Less => {
             let (a_down, a_right) = collect_children(a_node);
             // b has no entry for this value - keep a's entry, advance a_right.
-            let right_result = apply_diff(manager, rec, a_right, b)?;
-            make_node(manager, a_value, manager.clone_edge(a_down), right_result)?
+            let right_result = apply_difference(manager, rec, level, a_right, b)?;
+            make_node(
+                manager,
+                level,
+                a_value,
+                manager.clone_edge(a_down),
+                right_result,
+            )?
         }
         Ordering::Equal => {
             let (a_down, a_right) = collect_children(a_node);
             let (b_down, b_right) = collect_children(b_node);
-            let (down_result, right_result) =
-                rec.binary(apply_diff, manager, (a_down, b_down), (a_right, b_right))?;
+            let (down_result, right_result) = rec.binary(
+                apply_difference,
+                manager,
+                (level + 1, a_down, b_down),
+                (level, a_right, b_right),
+            )?;
             if manager
                 .get_node(down_result.borrowed())
                 .is_terminal(&LDDTerminal::Empty)
@@ -258,6 +295,7 @@ fn apply_diff<M: LDDManager, R: Recursor<M>>(
             } else {
                 make_node(
                     manager,
+                    level,
                     a_value,
                     down_result.into_edge(),
                     right_result.into_edge(),
@@ -266,13 +304,13 @@ fn apply_diff<M: LDDManager, R: Recursor<M>>(
         }
         Ordering::Greater => {
             // a has no entry for b's value - skip b's entry.
-            apply_diff(manager, rec, a, b_node.child(RIGHT))?
+            apply_difference(manager, rec, level, a, b_node.child(RIGHT))?
         }
     };
 
     manager
         .apply_cache()
-        .add(manager, LDDOp::Diff, &[a, b], result.borrowed());
+        .add(manager, LDDOp::Difference, &[a, b], result.borrowed());
 
     Ok(result)
 }
@@ -314,14 +352,18 @@ fn compute_proj<M: LDDManager>(manager: &M, proj: &[u32]) -> AllocResult<Own<M::
 /// can take any array and ignores both duplicates and order. Also, it
 /// follows that i_k must be smaller than or equal to n as x_(i_k) is not
 /// defined otherwise.
-fn project<M: LDDManager, R: Recursor<M>>(
+///
+/// The result resides at `level`, the number of projected positions above it.
+/// A projection yields new vectors, so the top-level call starts at level 0.
+fn apply_project<M: LDDManager, R: Recursor<M>>(
     manager: &M,
     rec: R,
+    level: LevelNo,
     set: Ref<'_, M::Edge>,
     proj: Ref<'_, M::Edge>,
 ) -> AllocResult<Own<M::Edge>> {
     if rec.should_switch_to_sequential() {
-        return project(manager, SequentialRecursor, set, proj);
+        return apply_project(manager, SequentialRecursor, level, set, proj);
     }
     stat!(call LDDOp::Project);
 
@@ -352,10 +394,13 @@ fn project<M: LDDManager, R: Recursor<M>>(
         Node::Inner(set_node) => set_node,
     };
 
+    // Projection meta-LDDs with different prefixes may share a suffix, so the
+    // operands do not determine the result level; it is part of the key.
     stat!(cache_query LDDOp::Project);
-    if let Some(res) = manager
-        .apply_cache()
-        .get(manager, LDDOp::Project, &[set, proj])
+    if let Some(([res], [])) =
+        manager
+            .apply_cache()
+            .get_extended(manager, LDDOp::Project, (&[set, proj], &[level]))
     {
         stat!(cache_hit LDDOp::Project);
         return Ok(res);
@@ -369,19 +414,28 @@ fn project<M: LDDManager, R: Recursor<M>>(
     let result = if *proj_value == M::InnerNodeValue::false_value() {
         // This position is not in the projection: skip it and compute the union
         // of the right and down branches.
-        let (right_result, down_result) =
-            rec.binary(project, manager, (set_right, proj), (set_down, proj_down))?;
+        let (right_result, down_result) = rec.binary(
+            apply_project,
+            manager,
+            (level, set_right, proj),
+            (level, set_down, proj_down),
+        )?;
         apply_union(
             manager,
             rec,
+            level,
             right_result.borrowed(),
             down_result.borrowed(),
         )
     } else if *proj_value == M::InnerNodeValue::true_value() {
         // This position is in the projection: keep the current value and
         // recurse on both branches.
-        let (right_result, down_result) =
-            rec.binary(project, manager, (set_right, proj), (set_down, proj_down))?;
+        let (right_result, down_result) = rec.binary(
+            apply_project,
+            manager,
+            (level, set_right, proj),
+            (level + 1, set_down, proj_down),
+        )?;
 
         if manager
             .get_node(down_result.borrowed())
@@ -393,6 +447,7 @@ fn project<M: LDDManager, R: Recursor<M>>(
         } else {
             make_node(
                 manager,
+                level,
                 set_value,
                 down_result.into_edge(),
                 right_result.into_edge(),
@@ -402,9 +457,12 @@ fn project<M: LDDManager, R: Recursor<M>>(
         panic!("proj has unexpected value");
     }?;
 
-    manager
-        .apply_cache()
-        .add(manager, LDDOp::Project, &[set, proj], result.borrowed());
+    manager.apply_cache().add_extended(
+        manager,
+        LDDOp::Project,
+        (&[set, proj], &[level]),
+        (&[result.borrowed()], &[]),
+    );
 
     Ok(result)
 }
@@ -473,15 +531,40 @@ fn relation_product_meta<M: LDDManager>(
 /// - 3 - read half of a read+write pair: match values (not emitted); meta_down
 ///   is 4.
 /// - 4 - write half of a read+write pair: write rel values.
+///
+/// The result resides at `level`. This equals the level of `set`, except at a
+/// write half of a pair, where `set` was already descended at the read half.
+///
+/// # Cache
+/// 
+/// Therefore, `level` is part of the cache key. Usually `set` determines the
+/// result level, since every inner node resides in the unique table of one
+/// level. However, at a write half where the read half consumed the last
+/// position of `set`, `set` is the `True` terminal. Then only `rel` and `meta`
+/// remain, and they reside on meta levels, not result levels. A read+write pair
+/// occupies two meta levels but one result level, so the same meta level
+/// corresponds to different result levels depending on the number of pairs
+/// before it. 
+/// 
+/// # Example
+/// 
+/// The meta-LDDs `[3, 4, 3, 4]` and `[0, 0, 3, 4]` share the suffix `[4]` at
+/// meta level 3, which is at result level 1 for sets of length 2 and at result
+/// level 2 for sets of length 3. If `rel` also shares its suffix, both calls
+/// have the operands `(True, rel, meta)`, and without `level` in the key a
+/// cache hit would return a node from the wrong level. This cannot happen if
+/// all sets have the same length `n`, since then `set` is only `True` at a
+/// write half for result level `n - 1`.
 fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
     manager: &M,
     rec: R,
+    level: LevelNo,
     set: Ref<'_, M::Edge>,
     rel: Ref<'_, M::Edge>,
     meta: Ref<'_, M::Edge>,
 ) -> AllocResult<Own<M::Edge>> {
     if rec.should_switch_to_sequential() {
-        return apply_relational_product(manager, SequentialRecursor, set, rel, meta);
+        return apply_relational_product(manager, SequentialRecursor, level, set, rel, meta);
     }
     stat!(call LDDOp::RelationalProduct);
 
@@ -506,12 +589,15 @@ fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
         return manager.get_terminal(LDDTerminal::Empty);
     }
 
+    // At a write half of a pair, `set` may already be the `True` terminal, so
+    // the operands do not determine the result level; it is part of the key
+    // (see the function documentation).
     stat!(cache_query LDDOp::RelationalProduct);
-    if let Some(res) =
-        manager
-            .apply_cache()
-            .get(manager, LDDOp::RelationalProduct, &[set, rel, meta])
-    {
+    if let Some(([res], [])) = manager.apply_cache().get_extended(
+        manager,
+        LDDOp::RelationalProduct,
+        (&[set, rel, meta], &[level]),
+    ) {
         stat!(cache_hit LDDOp::RelationalProduct);
         return Ok(res);
     }
@@ -531,8 +617,8 @@ fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
         let (down_result, right_result) = rec.ternary(
             apply_relational_product,
             manager,
-            (set_down, rel, meta_down),
-            (set_right, rel, meta),
+            (level + 1, set_down, rel, meta_down),
+            (level, set_right, rel, meta),
         )?;
 
         if manager
@@ -543,6 +629,7 @@ fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
         } else {
             make_node(
                 manager,
+                level,
                 set_value,
                 down_result.into_edge(),
                 right_result.into_edge(),
@@ -565,14 +652,14 @@ fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
         match set_value.cmp(rel_value) {
             Ordering::Less => {
                 // No rel entry for this set value; skip it.
-                apply_relational_product(manager, rec, set_right, rel, meta)?
+                apply_relational_product(manager, rec, level, set_right, rel, meta)?
             }
             Ordering::Equal => {
                 let (down_result, right_result) = rec.ternary(
                     apply_relational_product,
                     manager,
-                    (set_down, rel_down, meta_down),
-                    (set_right, rel_right, meta),
+                    (level + 1, set_down, rel_down, meta_down),
+                    (level, set_right, rel_right, meta),
                 )?;
                 if manager
                     .get_node(down_result.borrowed())
@@ -582,6 +669,7 @@ fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
                 } else {
                     make_node(
                         manager,
+                        level,
                         set_value,
                         down_result.into_edge(),
                         right_result.into_edge(),
@@ -590,7 +678,7 @@ fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
             }
             Ordering::Greater => {
                 // No set entry for this rel value; skip the rel value.
-                apply_relational_product(manager, rec, set, rel_right, meta)?
+                apply_relational_product(manager, rec, level, set, rel_right, meta)?
             }
         }
     } else if *meta_value == M::InnerNodeValue::write_only_value() {
@@ -612,7 +700,7 @@ fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
 
                 let new_acc = EdgeDropGuard::new(
                     manager,
-                    apply_union(manager, rec, acc.borrowed(), cur_down)?,
+                    apply_union(manager, rec, level + 1, acc.borrowed(), cur_down)?,
                 );
                 acc = new_acc;
                 if manager.get_node(cur_right).is_terminal(&LDDTerminal::Empty) {
@@ -626,8 +714,8 @@ fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
         let (down_result, right_result) = rec.ternary(
             apply_relational_product,
             manager,
-            (combined.borrowed(), rel_down, meta_down),
-            (set, rel_right, meta),
+            (level + 1, combined.borrowed(), rel_down, meta_down),
+            (level, set, rel_right, meta),
         )?;
 
         if manager
@@ -638,6 +726,7 @@ fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
         } else {
             make_node(
                 manager,
+                level,
                 rel_value,
                 down_result.into_edge(),
                 right_result.into_edge(),
@@ -658,25 +747,29 @@ fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
         let (rel_down, rel_right) = collect_children(rel_node);
 
         match set_value.cmp(rel_value) {
-            Ordering::Less => apply_relational_product(manager, rec, set_right, rel, meta)?,
+            Ordering::Less => apply_relational_product(manager, rec, level, set_right, rel, meta)?,
             Ordering::Equal => {
                 // meta_down should be write_of_pair_value (4); it introduces
-                // the new values.  Union with the right-siblings result so all
-                // (read, write) pairs at this level are considered.
+                // the new values at this output level.  Union with the
+                // right-siblings result so all (read, write) pairs at this
+                // level are considered.
                 let (down_result, right_result) = rec.ternary(
                     apply_relational_product,
                     manager,
-                    (set_down, rel_down, meta_down),
-                    (set_right, rel_right, meta),
+                    (level, set_down, rel_down, meta_down),
+                    (level, set_right, rel_right, meta),
                 )?;
                 apply_union(
                     manager,
                     rec,
+                    level,
                     down_result.borrowed(),
                     right_result.borrowed(),
                 )?
             }
-            Ordering::Greater => apply_relational_product(manager, rec, set, rel_right, meta)?,
+            Ordering::Greater => {
+                apply_relational_product(manager, rec, level, set, rel_right, meta)?
+            }
         }
     } else if *meta_value == M::InnerNodeValue::write_of_pair_value() {
         // 4: write half of a read+write pair - emit rel values.
@@ -689,8 +782,8 @@ fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
         let (down_result, right_result) = rec.ternary(
             apply_relational_product,
             manager,
-            (set, rel_down, meta_down),
-            (set, rel_right, meta),
+            (level + 1, set, rel_down, meta_down),
+            (level, set, rel_right, meta),
         )?;
 
         if manager
@@ -701,6 +794,7 @@ fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
         } else {
             make_node(
                 manager,
+                level,
                 rel_value,
                 down_result.into_edge(),
                 right_result.into_edge(),
@@ -710,11 +804,11 @@ fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
         panic!("meta has unexpected value");
     };
 
-    manager.apply_cache().add(
+    manager.apply_cache().add_extended(
         manager,
         LDDOp::RelationalProduct,
-        &[set, rel, meta],
-        result.borrowed(),
+        (&[set, rel, meta], &[level]),
+        (&[result.borrowed()], &[]),
     );
 
     Ok(result)
@@ -739,16 +833,23 @@ fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
 ///   `universe` (matched against `rel`).
 /// - 4 - write half of a read+write pair: consume the target value (matched
 ///   against `set` and `rel`); no value is emitted.
+///
+/// The result resides at `level`. This equals the level of `universe`, except
+/// at a write half of a pair, where the source value was already emitted at the
+/// read half. The operands thus determine the level, so it is not part of the
+/// cache key.
 fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
     manager: &M,
     rec: R,
+    level: LevelNo,
     set: Ref<'_, M::Edge>,
     rel: Ref<'_, M::Edge>,
     meta: Ref<'_, M::Edge>,
     universe: Ref<'_, M::Edge>,
 ) -> AllocResult<Own<M::Edge>> {
     if rec.should_switch_to_sequential() {
-        return apply_relational_predecessor(manager, SequentialRecursor, set, rel, meta, universe);
+        let rec = SequentialRecursor;
+        return apply_relational_predecessor(manager, rec, level, set, rel, meta, universe);
     }
     stat!(call LDDOp::RelationalPredecessor);
 
@@ -769,7 +870,7 @@ fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
                 LDDTerminal::True,
                 "meta should never reach the Empty terminal"
             );
-            return apply_intsec(manager, rec, set, universe);
+            return apply_intersection(manager, rec, level, set, universe);
         }
         Node::Inner(n) => n,
     };
@@ -803,18 +904,18 @@ fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
         match set_value.cmp(universe_value) {
             Ordering::Less => {
                 // This set value is not in the universe; skip it.
-                apply_relational_predecessor(manager, rec, set_right, rel, meta, universe)?
+                apply_relational_predecessor(manager, rec, level, set_right, rel, meta, universe)?
             }
             Ordering::Greater => {
                 // This universe value is not in the set; skip it.
-                apply_relational_predecessor(manager, rec, set, rel, meta, universe_right)?
+                apply_relational_predecessor(manager, rec, level, set, rel, meta, universe_right)?
             }
             Ordering::Equal => {
                 let (down_result, right_result) = rec.quaternary(
                     apply_relational_predecessor,
                     manager,
-                    (set_down, rel, meta_down, universe_down),
-                    (set_right, rel, meta, universe_right),
+                    (level + 1, set_down, rel, meta_down, universe_down),
+                    (level, set_right, rel, meta, universe_right),
                 )?;
                 if manager
                     .get_node(down_result.borrowed())
@@ -824,6 +925,7 @@ fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
                 } else {
                     make_node(
                         manager,
+                        level,
                         set_value,
                         down_result.into_edge(),
                         right_result.into_edge(),
@@ -857,8 +959,8 @@ fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
             let (down_result, rest) = rec.quaternary(
                 apply_relational_predecessor,
                 manager,
-                (set_down, rel_down, meta_down, universe_down),
-                (set, rel_right, meta, universe),
+                (level + 1, set_down, rel_down, meta_down, universe_down),
+                (level, set, rel_right, meta, universe),
             )?;
             let node = EdgeDropGuard::new(
                 manager,
@@ -869,21 +971,27 @@ fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
                     manager.get_terminal(LDDTerminal::Empty)?
                 } else {
                     let empty = manager.get_terminal(LDDTerminal::Empty)?;
-                    make_node(manager, universe_value, down_result.into_edge(), empty)?
+                    make_node(
+                        manager,
+                        level,
+                        universe_value,
+                        down_result.into_edge(),
+                        empty,
+                    )?
                 },
             );
-            apply_union(manager, rec, node.borrowed(), rest.borrowed())?
+            apply_union(manager, rec, level, node.borrowed(), rest.borrowed())?
         } else {
             // Advance whichever operands are below the maximum value so that
             // all three line up on a common value.
             let max = set_value.max(rel_value).max(universe_value);
             if set_value < max {
-                apply_relational_predecessor(manager, rec, set_right, rel, meta, universe)?
+                apply_relational_predecessor(manager, rec, level, set_right, rel, meta, universe)?
             } else if universe_value < max {
-                apply_relational_predecessor(manager, rec, set, rel, meta, universe_right)?
+                apply_relational_predecessor(manager, rec, level, set, rel, meta, universe_right)?
             } else {
                 // rel_value < max
-                apply_relational_predecessor(manager, rec, set, rel_right, meta, universe)?
+                apply_relational_predecessor(manager, rec, level, set, rel_right, meta, universe)?
             }
         }
     } else if *meta_value == M::InnerNodeValue::write_only_value() {
@@ -903,11 +1011,11 @@ fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
         match set_value.cmp(rel_value) {
             Ordering::Less => {
                 // This set value is not written by the relation; skip it.
-                apply_relational_predecessor(manager, rec, set_right, rel, meta, universe)?
+                apply_relational_predecessor(manager, rec, level, set_right, rel, meta, universe)?
             }
             Ordering::Greater => {
                 // This relation value is not in the set; skip it.
-                apply_relational_predecessor(manager, rec, set, rel_right, meta, universe)?
+                apply_relational_predecessor(manager, rec, level, set, rel_right, meta, universe)?
             }
             Ordering::Equal => {
                 // Emit a source node for every value in the universe, all
@@ -915,16 +1023,19 @@ fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
                 let down_result = EdgeDropGuard::new(
                     manager,
                     relational_predecessor_universe(
-                        manager, rec, set_down, rel_down, meta_down, universe,
+                        manager, rec, level, set_down, rel_down, meta_down, universe,
                     )?,
                 );
                 let right_result = EdgeDropGuard::new(
                     manager,
-                    apply_relational_predecessor(manager, rec, set, rel_right, meta, universe)?,
+                    apply_relational_predecessor(
+                        manager, rec, level, set, rel_right, meta, universe,
+                    )?,
                 );
                 apply_union(
                     manager,
                     rec,
+                    level,
                     down_result.borrowed(),
                     right_result.borrowed(),
                 )?
@@ -949,11 +1060,11 @@ fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
         match universe_value.cmp(rel_value) {
             Ordering::Less => {
                 // This universe value cannot be read; skip it.
-                apply_relational_predecessor(manager, rec, set, rel, meta, universe_right)?
+                apply_relational_predecessor(manager, rec, level, set, rel, meta, universe_right)?
             }
             Ordering::Greater => {
                 // This relation value is not in the universe; skip it.
-                apply_relational_predecessor(manager, rec, set, rel_right, meta, universe)?
+                apply_relational_predecessor(manager, rec, level, set, rel_right, meta, universe)?
             }
             Ordering::Equal => {
                 // meta_down is the paired write level (4); the universe is kept
@@ -961,8 +1072,8 @@ fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
                 let (down_result, rest) = rec.quaternary(
                     apply_relational_predecessor,
                     manager,
-                    (set, rel_down, meta_down, universe),
-                    (set, rel_right, meta, universe),
+                    (level + 1, set, rel_down, meta_down, universe),
+                    (level, set, rel_right, meta, universe),
                 )?;
                 let node = EdgeDropGuard::new(
                     manager,
@@ -973,10 +1084,16 @@ fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
                         manager.get_terminal(LDDTerminal::Empty)?
                     } else {
                         let empty = manager.get_terminal(LDDTerminal::Empty)?;
-                        make_node(manager, universe_value, down_result.into_edge(), empty)?
+                        make_node(
+                            manager,
+                            level,
+                            universe_value,
+                            down_result.into_edge(),
+                            empty,
+                        )?
                     },
                 );
-                apply_union(manager, rec, node.borrowed(), rest.borrowed())?
+                apply_union(manager, rec, level, node.borrowed(), rest.borrowed())?
             }
         }
     } else if *meta_value == M::InnerNodeValue::write_of_pair_value() {
@@ -998,11 +1115,11 @@ fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
         match set_value.cmp(rel_value) {
             Ordering::Less => {
                 // This target value is not written by the relation; skip it.
-                apply_relational_predecessor(manager, rec, set_right, rel, meta, universe)?
+                apply_relational_predecessor(manager, rec, level, set_right, rel, meta, universe)?
             }
             Ordering::Greater => {
                 // This relation value is not in the set; skip it.
-                apply_relational_predecessor(manager, rec, set, rel_right, meta, universe)?
+                apply_relational_predecessor(manager, rec, level, set, rel_right, meta, universe)?
             }
             Ordering::Equal => {
                 let universe_node = manager
@@ -1012,12 +1129,13 @@ fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
                 let (down_result, right_result) = rec.quaternary(
                     apply_relational_predecessor,
                     manager,
-                    (set_down, rel_down, meta_down, universe_down),
-                    (set, rel_right, meta, universe),
+                    (level, set_down, rel_down, meta_down, universe_down),
+                    (level, set, rel_right, meta, universe),
                 )?;
                 apply_union(
                     manager,
                     rec,
+                    level,
                     down_result.borrowed(),
                     right_result.borrowed(),
                 )?
@@ -1048,6 +1166,7 @@ fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
 fn relational_predecessor_universe<M: LDDManager, R: Recursor<M>>(
     manager: &M,
     rec: R,
+    level: LevelNo,
     set: Ref<'_, M::Edge>,
     rel: Ref<'_, M::Edge>,
     meta: Ref<'_, M::Edge>,
@@ -1063,11 +1182,11 @@ fn relational_predecessor_universe<M: LDDManager, R: Recursor<M>>(
 
     let down_result = EdgeDropGuard::new(
         manager,
-        apply_relational_predecessor(manager, rec, set, rel, meta, universe_down)?,
+        apply_relational_predecessor(manager, rec, level + 1, set, rel, meta, universe_down)?,
     );
     let right_result = EdgeDropGuard::new(
         manager,
-        relational_predecessor_universe(manager, rec, set, rel, meta, universe_right)?,
+        relational_predecessor_universe(manager, rec, level, set, rel, meta, universe_right)?,
     );
 
     if manager
@@ -1078,6 +1197,7 @@ fn relational_predecessor_universe<M: LDDManager, R: Recursor<M>>(
     } else {
         make_node(
             manager,
+            level,
             universe_value,
             down_result.into_edge(),
             right_result.into_edge(),
@@ -1125,8 +1245,6 @@ fn len<M: LDDManager>(
     cache.insert(node_id, result);
     result
 }
-
-// --- Function Interface ------------------------------------------------------
 
 /// Function backed by a list decision diagram
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Function, Debug)]
@@ -1190,7 +1308,7 @@ where
     /// Compute the union `self ∪ other`.
     pub fn union(&self, other: &Self) -> AllocResult<Self> {
         self.with_manager_shared(|manager, a| {
-            let edge = Self::union_edge(manager, a, other.as_edge(manager))?;
+            let edge = Self::union_edge(manager, 0, a, other.as_edge(manager))?;
             Ok(Self::from_edge(manager, edge))
         })
     }
@@ -1198,7 +1316,7 @@ where
     /// Compute the intersection `self ∩ other`.
     pub fn intsec(&self, other: &Self) -> AllocResult<Self> {
         self.with_manager_shared(|manager, a| {
-            let edge = Self::intsec_edge(manager, a, other.as_edge(manager))?;
+            let edge = Self::intsec_edge(manager, 0, a, other.as_edge(manager))?;
             Ok(Self::from_edge(manager, edge))
         })
     }
@@ -1206,39 +1324,51 @@ where
     /// Compute the set difference `self \ other`.
     pub fn diff(&self, other: &Self) -> AllocResult<Self> {
         self.with_manager_shared(|manager, a| {
-            let edge = Self::diff_edge(manager, a, other.as_edge(manager))?;
+            let edge = Self::diff_edge(manager, 0, a, other.as_edge(manager))?;
             Ok(Self::from_edge(manager, edge))
         })
     }
 
     /// Compute the union `a ∪ b`
+    ///
+    /// `a` and `b` must reside at `level`, i.e., their roots are nodes for
+    /// position `level` of the vectors (0 for an LDD that is not a sub-LDD).
     #[inline]
     pub fn union_edge<'id>(
         manager: &<Self as Function>::Manager<'id>,
+        level: LevelNo,
         a: Ref<'_, EdgeOfFunc<'id, Self>>,
         b: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
-        apply_union(manager, SequentialRecursor, a, b)
+        apply_union(manager, SequentialRecursor, level, a, b)
     }
 
     /// Compute the intersection `a ∩ b`
+    ///
+    /// `a` and `b` must reside at `level`, i.e., their roots are nodes for
+    /// position `level` of the vectors (0 for an LDD that is not a sub-LDD).
     #[inline]
     pub fn intsec_edge<'id>(
         manager: &<Self as Function>::Manager<'id>,
+        level: LevelNo,
         a: Ref<'_, EdgeOfFunc<'id, Self>>,
         b: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
-        apply_intsec(manager, SequentialRecursor, a, b)
+        apply_intersection(manager, SequentialRecursor, level, a, b)
     }
 
     /// Compute the set difference `a \ b`
+    ///
+    /// `a` and `b` must reside at `level`, i.e., their roots are nodes for
+    /// position `level` of the vectors (0 for an LDD that is not a sub-LDD).
     #[inline]
     pub fn diff_edge<'id>(
         manager: &<Self as Function>::Manager<'id>,
+        level: LevelNo,
         a: Ref<'_, EdgeOfFunc<'id, Self>>,
         b: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
-        apply_diff(manager, SequentialRecursor, a, b)
+        apply_difference(manager, SequentialRecursor, level, a, b)
     }
 
     /// Computes a meta-LDD encoding the projection onto the indices in `proj`,
@@ -1262,13 +1392,15 @@ where
 
     /// Projects the vectors in `set` onto the indices encoded by `proj` (built
     /// via [`projection_meta`][Self::projection_meta]).
+    ///
+    /// The projected vectors are new vectors, so the result resides at level 0.
     #[inline]
     pub fn project_edge<'id>(
         manager: &<Self as Function>::Manager<'id>,
         set: Ref<'_, EdgeOfFunc<'id, Self>>,
         proj: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
-        project(manager, SequentialRecursor, set, proj)
+        apply_project(manager, SequentialRecursor, 0, set, proj)
     }
 
     #[inline]
@@ -1287,6 +1419,7 @@ where
         self.with_manager_shared(|manager, set| {
             let edge = Self::relational_product_edge(
                 manager,
+                0,
                 set,
                 rel.as_edge(manager),
                 meta.as_edge(manager),
@@ -1311,6 +1444,7 @@ where
         self.with_manager_shared(|manager, set| {
             let edge = Self::relational_predecessor_edge(
                 manager,
+                0,
                 set,
                 rel.as_edge(manager),
                 meta.as_edge(manager),
@@ -1323,14 +1457,18 @@ where
     /// Computes the set of vectors reachable in one step from `set` via the
     /// sparse relation `rel`.  `meta` must be produced by
     /// [`relation_product_meta`][Self::relation_product_meta].
+    ///
+    /// `set` must reside at `level`; `rel` and `meta` are sub-LDDs matching the
+    /// positions from `level` onwards.
     #[inline]
     pub fn relational_product_edge<'id>(
         manager: &<Self as Function>::Manager<'id>,
+        level: LevelNo,
         set: Ref<'_, EdgeOfFunc<'id, Self>>,
         rel: Ref<'_, EdgeOfFunc<'id, Self>>,
         meta: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
-        apply_relational_product(manager, SequentialRecursor, set, rel, meta)
+        apply_relational_product(manager, SequentialRecursor, level, set, rel, meta)
     }
 
     /// Computes the set of source vectors in `universe` that can reach a vector
@@ -1338,15 +1476,18 @@ where
     /// produced by [`relation_product_meta`][Self::relation_product_meta].
     ///
     /// This is the inverse of [`Self::relational_product_edge`].
+    ///
+    /// `set` and `universe` must reside at `level`.
     #[inline]
     pub fn relational_predecessor_edge<'id>(
         manager: &<Self as Function>::Manager<'id>,
+        level: LevelNo,
         set: Ref<'_, EdgeOfFunc<'id, Self>>,
         rel: Ref<'_, EdgeOfFunc<'id, Self>>,
         meta: Ref<'_, EdgeOfFunc<'id, Self>>,
         universe: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
-        apply_relational_predecessor(manager, SequentialRecursor, set, rel, meta, universe)
+        apply_relational_predecessor(manager, SequentialRecursor, level, set, rel, meta, universe)
     }
 
     /// Returns the number of vectors (lists) contained in `self`.
@@ -1451,7 +1592,7 @@ pub mod mt {
         /// See [`LDDFunction::union`].
         pub fn union(&self, other: &Self) -> AllocResult<Self> {
             self.with_manager_shared(|manager, a| {
-                let edge = Self::union_edge(manager, a, other.as_edge(manager))?;
+                let edge = Self::union_edge(manager, 0, a, other.as_edge(manager))?;
                 Ok(Self::from_edge(manager, edge))
             })
         }
@@ -1459,7 +1600,7 @@ pub mod mt {
         /// See [`LDDFunction::intsec`].
         pub fn intsec(&self, other: &Self) -> AllocResult<Self> {
             self.with_manager_shared(|manager, a| {
-                let edge = Self::intsec_edge(manager, a, other.as_edge(manager))?;
+                let edge = Self::intsec_edge(manager, 0, a, other.as_edge(manager))?;
                 Ok(Self::from_edge(manager, edge))
             })
         }
@@ -1467,7 +1608,7 @@ pub mod mt {
         /// See [`LDDFunction::diff`].
         pub fn diff(&self, other: &Self) -> AllocResult<Self> {
             self.with_manager_shared(|manager, a| {
-                let edge = Self::diff_edge(manager, a, other.as_edge(manager))?;
+                let edge = Self::diff_edge(manager, 0, a, other.as_edge(manager))?;
                 Ok(Self::from_edge(manager, edge))
             })
         }
@@ -1476,30 +1617,33 @@ pub mod mt {
         #[inline]
         pub fn union_edge<'id>(
             manager: &<Self as Function>::Manager<'id>,
+            level: LevelNo,
             a: Ref<'_, EdgeOfFunc<'id, Self>>,
             b: Ref<'_, EdgeOfFunc<'id, Self>>,
         ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
-            apply_union(manager, ParallelRecursor::new(manager), a, b)
+            apply_union(manager, ParallelRecursor::new(manager), level, a, b)
         }
 
         /// See [`LDDFunction::intsec_edge`].
         #[inline]
         pub fn intsec_edge<'id>(
             manager: &<Self as Function>::Manager<'id>,
+            level: LevelNo,
             a: Ref<'_, EdgeOfFunc<'id, Self>>,
             b: Ref<'_, EdgeOfFunc<'id, Self>>,
         ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
-            apply_intsec(manager, ParallelRecursor::new(manager), a, b)
+            apply_intersection(manager, ParallelRecursor::new(manager), level, a, b)
         }
 
         /// See [`LDDFunction::diff_edge`].
         #[inline]
         pub fn diff_edge<'id>(
             manager: &<Self as Function>::Manager<'id>,
+            level: LevelNo,
             a: Ref<'_, EdgeOfFunc<'id, Self>>,
             b: Ref<'_, EdgeOfFunc<'id, Self>>,
         ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
-            apply_diff(manager, ParallelRecursor::new(manager), a, b)
+            apply_difference(manager, ParallelRecursor::new(manager), level, a, b)
         }
 
         /// See [`LDDFunction::projection_meta`].
@@ -1526,7 +1670,7 @@ pub mod mt {
             set: Ref<'_, EdgeOfFunc<'id, Self>>,
             proj: Ref<'_, EdgeOfFunc<'id, Self>>,
         ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
-            project(manager, ParallelRecursor::new(manager), set, proj)
+            apply_project(manager, ParallelRecursor::new(manager), 0, set, proj)
         }
 
         /// See [`LDDFunction::relation_product_meta`].
@@ -1544,6 +1688,7 @@ pub mod mt {
             self.with_manager_shared(|manager, set| {
                 let edge = Self::relational_product_edge(
                     manager,
+                    0,
                     set,
                     rel.as_edge(manager),
                     meta.as_edge(manager),
@@ -1562,6 +1707,7 @@ pub mod mt {
             self.with_manager_shared(|manager, set| {
                 let edge = Self::relational_predecessor_edge(
                     manager,
+                    0,
                     set,
                     rel.as_edge(manager),
                     meta.as_edge(manager),
@@ -1575,24 +1721,33 @@ pub mod mt {
         #[inline]
         pub fn relational_product_edge<'id>(
             manager: &<Self as Function>::Manager<'id>,
+            level: LevelNo,
             set: Ref<'_, EdgeOfFunc<'id, Self>>,
             rel: Ref<'_, EdgeOfFunc<'id, Self>>,
             meta: Ref<'_, EdgeOfFunc<'id, Self>>,
         ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
-            apply_relational_product(manager, ParallelRecursor::new(manager), set, rel, meta)
+            apply_relational_product(
+                manager,
+                ParallelRecursor::new(manager),
+                level,
+                set,
+                rel,
+                meta,
+            )
         }
 
         /// See [`LDDFunction::relational_predecessor_edge`].
         #[inline]
         pub fn relational_predecessor_edge<'id>(
             manager: &<Self as Function>::Manager<'id>,
+            level: LevelNo,
             set: Ref<'_, EdgeOfFunc<'id, Self>>,
             rel: Ref<'_, EdgeOfFunc<'id, Self>>,
             meta: Ref<'_, EdgeOfFunc<'id, Self>>,
             universe: Ref<'_, EdgeOfFunc<'id, Self>>,
         ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             let rec = ParallelRecursor::new(manager);
-            apply_relational_predecessor(manager, rec, set, rel, meta, universe)
+            apply_relational_predecessor(manager, rec, level, set, rel, meta, universe)
         }
 
         /// See [`LDDFunction::len`].

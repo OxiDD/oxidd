@@ -12,37 +12,25 @@ cfg_if::cfg_if! {
 }
 
 /// Create a new manager for a list decision diagram
+///
+/// The manager initially has no levels, so it can only represent the empty set
+/// and the set containing the empty vector. Use
+/// [`LDDManagerRef::reserve_levels()`] to make room for longer vectors.
 #[allow(unused_variables)]
 pub fn new_manager(
     inner_node_capacity: usize,
     apply_cache_capacity: usize,
     threads: u32,
 ) -> LDDManagerRef {
-    let manager_ref = {
-        cfg_if::cfg_if! {
-            if #[cfg(feature = "manager-pointer")] {
-                pointer::LDDManagerRef::new_manager(inner_node_capacity, apply_cache_capacity, threads)
-            } else if #[cfg(feature = "manager-index")] {
-                index::LDDManagerRef::new_manager(inner_node_capacity, 2, apply_cache_capacity, threads)
-            } else {
-                unreachable!()
-            }
+    cfg_if::cfg_if! {
+        if #[cfg(feature = "manager-pointer")] {
+            pointer::LDDManagerRef::new_manager(inner_node_capacity, apply_cache_capacity, threads)
+        } else if #[cfg(feature = "manager-index")] {
+            index::LDDManagerRef::new_manager(inner_node_capacity, 2, apply_cache_capacity, threads)
+        } else {
+            unreachable!()
         }
-    };
-
-    // All LDD nodes reside on a single level (level 0); ensure it exists so
-    // that node creation via `Manager::level(0)` is valid.
-    #[cfg(any(feature = "manager-pointer", feature = "manager-index"))]
-    {
-        use ::oxidd_core::{Manager, ManagerRef};
-        manager_ref.with_manager_exclusive(|manager| {
-            if manager.num_levels() == 0 {
-                manager.add_vars(1);
-            }
-        });
     }
-
-    manager_ref
 }
 
 /// Print statistics to stderr
@@ -68,6 +56,30 @@ pub struct RelationProductMeta {
     pub read_positions: Vec<usize>,
     /// The positions of the write variables in the meta encoding.
     pub write_positions: Vec<usize>,
+}
+
+/// Generates the inherent methods of the public `LDDManagerRef` wrapper.
+macro_rules! ldd_manager_ref_methods {
+    () => {
+        impl LDDManagerRef {
+            /// Ensures that the manager has at least `levels` levels.
+            ///
+            /// Level `i` holds the nodes for position `i` of the vectors, so
+            /// this must be at least the length of the longest vector, relation
+            /// or meta-LDD that is constructed. Operations never create deeper
+            /// LDDs than their operands. This requires exclusive access to the
+            /// manager, so it must not be called while the manager is borrowed.
+            pub fn reserve_levels(&self, levels: ::oxidd_core::LevelNo) {
+                use ::oxidd_core::{Manager, ManagerRef};
+                self.with_manager_exclusive(|manager| {
+                    let current = manager.num_levels();
+                    if levels > current {
+                        manager.add_vars(levels - current);
+                    }
+                });
+            }
+        }
+    };
 }
 
 /// Generates the inherent methods of the public `LDDFunction` wrapper by
@@ -119,8 +131,14 @@ macro_rules! ldd_function_methods {
             /// so it can be called from within a
             /// [`with_manager_shared`][::oxidd_core::ManagerRef::with_manager_shared]
             /// block (e.g. to build many nodes under a single lock).
+            ///
+            /// `f` and `g` must reside at `level`: 0 for an LDD built from
+            /// vectors, `d` for a sub-LDD reached by descending `d` times from
+            /// such a root (e.g. via [`Self::node()`]). The same holds for the
+            /// `level` argument of the other `*_edge` operations.
             pub fn union_edge(
                 manager: &<Self as ::oxidd_core::function::Function>::Manager<'_>,
+                level: ::oxidd_core::LevelNo,
                 f: &Self,
                 g: &Self,
             ) -> ::oxidd_core::util::AllocResult<Self> {
@@ -129,7 +147,7 @@ macro_rules! ldd_function_methods {
                 let g = g.as_edge(manager);
                 Ok(Self(FunctionInner::from_edge(
                     manager,
-                    FunctionInner::union_edge(manager, f, g)?,
+                    FunctionInner::union_edge(manager, level, f, g)?,
                 )))
             }
 
@@ -142,6 +160,7 @@ macro_rules! ldd_function_methods {
             /// `manager`; the lock-free counterpart of [`Self::intsec()`].
             pub fn intsec_edge(
                 manager: &<Self as ::oxidd_core::function::Function>::Manager<'_>,
+                level: ::oxidd_core::LevelNo,
                 a: &Self,
                 b: &Self,
             ) -> ::oxidd_core::util::AllocResult<Self> {
@@ -150,7 +169,7 @@ macro_rules! ldd_function_methods {
                 let b = b.as_edge(manager);
                 Ok(Self(FunctionInner::from_edge(
                     manager,
-                    FunctionInner::intsec_edge(manager, a, b)?,
+                    FunctionInner::intsec_edge(manager, level, a, b)?,
                 )))
             }
 
@@ -163,6 +182,7 @@ macro_rules! ldd_function_methods {
             /// `manager`; the lock-free counterpart of [`Self::diff()`].
             pub fn diff_edge(
                 manager: &<Self as ::oxidd_core::function::Function>::Manager<'_>,
+                level: ::oxidd_core::LevelNo,
                 a: &Self,
                 b: &Self,
             ) -> ::oxidd_core::util::AllocResult<Self> {
@@ -171,7 +191,7 @@ macro_rules! ldd_function_methods {
                 let b = b.as_edge(manager);
                 Ok(Self(FunctionInner::from_edge(
                     manager,
-                    FunctionInner::diff_edge(manager, a, b)?,
+                    FunctionInner::diff_edge(manager, level, a, b)?,
                 )))
             }
 
@@ -248,6 +268,7 @@ macro_rules! ldd_function_methods {
             /// [`relational_product`][Self::relational_product].
             pub fn relational_product_edge(
                 manager: &<Self as ::oxidd_core::function::Function>::Manager<'_>,
+                level: ::oxidd_core::LevelNo,
                 set: &Self,
                 rel: &Self,
                 meta: &Self,
@@ -258,7 +279,7 @@ macro_rules! ldd_function_methods {
                 let meta = meta.as_edge(manager);
                 Ok(Self(FunctionInner::from_edge(
                     manager,
-                    FunctionInner::relational_product_edge(manager, set, rel, meta)?,
+                    FunctionInner::relational_product_edge(manager, level, set, rel, meta)?,
                 )))
             }
 
@@ -287,6 +308,7 @@ macro_rules! ldd_function_methods {
             /// [`relational_predecessor`][Self::relational_predecessor].
             pub fn relational_predecessor_edge(
                 manager: &<Self as ::oxidd_core::function::Function>::Manager<'_>,
+                level: ::oxidd_core::LevelNo,
                 set: &Self,
                 rel: &Self,
                 meta: &Self,
@@ -299,7 +321,9 @@ macro_rules! ldd_function_methods {
                 let universe = universe.as_edge(manager);
                 Ok(Self(FunctionInner::from_edge(
                     manager,
-                    FunctionInner::relational_predecessor_edge(manager, set, rel, meta, universe)?,
+                    FunctionInner::relational_predecessor_edge(
+                        manager, level, set, rel, meta, universe,
+                    )?,
                 )))
             }
 
@@ -345,18 +369,31 @@ macro_rules! ldd_function_methods {
                 })
             }
 
-            /// Creates the LDD node `(value, down, right)`.
+            /// Creates the LDD node `(value, down, right)` at `level`, i.e., for
+            /// position `level` of the vectors.
+            ///
+            /// `down` must reside at `level + 1` and `right` at `level`. Nodes
+            /// do not store their level, so this is not checked.
+            ///
+            /// Panics if `level` is not reserved (see
+            /// [`LDDManagerRef::reserve_levels()`]).
             pub fn make_node(
                 manager: &<Self as ::oxidd_core::function::Function>::Manager<'_>,
+                level: ::oxidd_core::LevelNo,
                 value: $crate::ldd::Value,
                 down: &Self,
                 right: &Self,
             ) -> ::oxidd_core::util::AllocResult<Self> {
                 use ::oxidd_core::{Manager, function::Function};
+                assert!(
+                    level < manager.num_levels(),
+                    "level {level} exceeds the {} reserved levels",
+                    manager.num_levels()
+                );
                 let down = down.as_edge(manager);
                 let right = right.as_edge(manager);
                 let children = [manager.clone_edge(down), manager.clone_edge(right)];
-                let edge = manager.get_or_insert(0, children, value)?;
+                let edge = manager.get_or_insert(level, children, value)?;
                 Ok(Self::from_edge(manager, edge))
             }
 
@@ -409,6 +446,7 @@ mod index {
     // Default implementation suffices
     impl oxidd_dump::dot::DotStyle<()> for LDDFunction {}
 
+    ldd_manager_ref_methods!();
     ldd_function_methods!();
 }
 
@@ -441,7 +479,7 @@ mod pointer {
     #[cfg(not(feature = "multi-threading"))]
     type FunctionInner = oxidd_rules_ldd::LDDFunction<<LDD as DD>::Function>;
     #[cfg(feature = "multi-threading")]
-    type FunctionInner = oxidd_rules_ldd::mt::LDDFunctionMT<<LDD as DD>::Function>;
+    type FunctionInner = oxidd_rules_ldd::LDDFunctionMT<<LDD as DD>::Function>;
 
     /// Function represented as LDD
     #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, oxidd_derive::Function)]
@@ -452,5 +490,6 @@ mod pointer {
     // Default implementation suffices
     impl oxidd_dump::dot::DotStyle<()> for LDDFunction {}
 
+    ldd_manager_ref_methods!();
     ldd_function_methods!();
 }

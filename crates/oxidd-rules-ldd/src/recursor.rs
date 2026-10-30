@@ -6,20 +6,32 @@
 //! `universe`), hence this version exposes [`Recursor::binary`],
 //! [`Recursor::ternary`], and [`Recursor::quaternary`] instead of the
 //! BDD-specific `unary`/`subst` operators.
+//!
+//! Every operator additionally takes the level at which its result resides.
+//! LDDs are quasi-reduced, so this level is determined by the recursion depth
+//! and passed along instead of being stored in the nodes.
 
-use oxidd_core::Manager;
 use oxidd_core::util::{AllocResult, EdgeDropGuard, Own, Ref};
+use oxidd_core::{LevelNo, Manager};
 
 type EdgeRef<'a, M> = Ref<'a, <M as Manager>::Edge>;
 
-type BinaryOp<M, R> = fn(&M, R, EdgeRef<M>, EdgeRef<M>) -> AllocResult<Own<<M as Manager>::Edge>>;
+type BinaryOp<M, R> =
+    fn(&M, R, LevelNo, EdgeRef<M>, EdgeRef<M>) -> AllocResult<Own<<M as Manager>::Edge>>;
 
-type TernaryOp<M, R> =
-    fn(&M, R, EdgeRef<M>, EdgeRef<M>, EdgeRef<M>) -> AllocResult<Own<<M as Manager>::Edge>>;
+type TernaryOp<M, R> = fn(
+    &M,
+    R,
+    LevelNo,
+    EdgeRef<M>,
+    EdgeRef<M>,
+    EdgeRef<M>,
+) -> AllocResult<Own<<M as Manager>::Edge>>;
 
 type QuaternaryOp<M, R> = fn(
     &M,
     R,
+    LevelNo,
     EdgeRef<M>,
     EdgeRef<M>,
     EdgeRef<M>,
@@ -37,8 +49,8 @@ pub trait Recursor<M: Manager>: Copy {
         self,
         op: BinaryOp<M, Self>,
         manager: &'a M,
-        a: (Ref<'_, M::Edge>, Ref<'_, M::Edge>),
-        b: (Ref<'_, M::Edge>, Ref<'_, M::Edge>),
+        a: (LevelNo, Ref<'_, M::Edge>, Ref<'_, M::Edge>),
+        b: (LevelNo, Ref<'_, M::Edge>, Ref<'_, M::Edge>),
     ) -> AllocResult<(EdgeDropGuard<'a, M>, EdgeDropGuard<'a, M>)>;
 
     #[allow(clippy::type_complexity)]
@@ -46,8 +58,18 @@ pub trait Recursor<M: Manager>: Copy {
         self,
         op: TernaryOp<M, Self>,
         manager: &'a M,
-        a: (Ref<'_, M::Edge>, Ref<'_, M::Edge>, Ref<'_, M::Edge>),
-        b: (Ref<'_, M::Edge>, Ref<'_, M::Edge>, Ref<'_, M::Edge>),
+        a: (
+            LevelNo,
+            Ref<'_, M::Edge>,
+            Ref<'_, M::Edge>,
+            Ref<'_, M::Edge>,
+        ),
+        b: (
+            LevelNo,
+            Ref<'_, M::Edge>,
+            Ref<'_, M::Edge>,
+            Ref<'_, M::Edge>,
+        ),
     ) -> AllocResult<(EdgeDropGuard<'a, M>, EdgeDropGuard<'a, M>)>;
 
     #[allow(clippy::type_complexity)]
@@ -56,12 +78,14 @@ pub trait Recursor<M: Manager>: Copy {
         op: QuaternaryOp<M, Self>,
         manager: &'a M,
         a: (
+            LevelNo,
             Ref<'_, M::Edge>,
             Ref<'_, M::Edge>,
             Ref<'_, M::Edge>,
             Ref<'_, M::Edge>,
         ),
         b: (
+            LevelNo,
             Ref<'_, M::Edge>,
             Ref<'_, M::Edge>,
             Ref<'_, M::Edge>,
@@ -88,11 +112,11 @@ impl<M: Manager> Recursor<M> for SequentialRecursor {
         self,
         op: BinaryOp<M, Self>,
         manager: &'a M,
-        a: (Ref<'_, M::Edge>, Ref<'_, M::Edge>),
-        b: (Ref<'_, M::Edge>, Ref<'_, M::Edge>),
+        a: (LevelNo, Ref<'_, M::Edge>, Ref<'_, M::Edge>),
+        b: (LevelNo, Ref<'_, M::Edge>, Ref<'_, M::Edge>),
     ) -> AllocResult<(EdgeDropGuard<'a, M>, EdgeDropGuard<'a, M>)> {
-        let ra = EdgeDropGuard::new(manager, op(manager, self, a.0, a.1)?);
-        let rb = EdgeDropGuard::new(manager, op(manager, self, b.0, b.1)?);
+        let ra = EdgeDropGuard::new(manager, op(manager, self, a.0, a.1, a.2)?);
+        let rb = EdgeDropGuard::new(manager, op(manager, self, b.0, b.1, b.2)?);
         Ok((ra, rb))
     }
 
@@ -101,11 +125,21 @@ impl<M: Manager> Recursor<M> for SequentialRecursor {
         self,
         op: TernaryOp<M, Self>,
         manager: &'a M,
-        a: (Ref<'_, M::Edge>, Ref<'_, M::Edge>, Ref<'_, M::Edge>),
-        b: (Ref<'_, M::Edge>, Ref<'_, M::Edge>, Ref<'_, M::Edge>),
+        a: (
+            LevelNo,
+            Ref<'_, M::Edge>,
+            Ref<'_, M::Edge>,
+            Ref<'_, M::Edge>,
+        ),
+        b: (
+            LevelNo,
+            Ref<'_, M::Edge>,
+            Ref<'_, M::Edge>,
+            Ref<'_, M::Edge>,
+        ),
     ) -> AllocResult<(EdgeDropGuard<'a, M>, EdgeDropGuard<'a, M>)> {
-        let ra = EdgeDropGuard::new(manager, op(manager, self, a.0, a.1, a.2)?);
-        let rb = EdgeDropGuard::new(manager, op(manager, self, b.0, b.1, b.2)?);
+        let ra = EdgeDropGuard::new(manager, op(manager, self, a.0, a.1, a.2, a.3)?);
+        let rb = EdgeDropGuard::new(manager, op(manager, self, b.0, b.1, b.2, b.3)?);
         Ok((ra, rb))
     }
 
@@ -115,20 +149,22 @@ impl<M: Manager> Recursor<M> for SequentialRecursor {
         op: QuaternaryOp<M, Self>,
         manager: &'a M,
         a: (
+            LevelNo,
             Ref<'_, M::Edge>,
             Ref<'_, M::Edge>,
             Ref<'_, M::Edge>,
             Ref<'_, M::Edge>,
         ),
         b: (
+            LevelNo,
             Ref<'_, M::Edge>,
             Ref<'_, M::Edge>,
             Ref<'_, M::Edge>,
             Ref<'_, M::Edge>,
         ),
     ) -> AllocResult<(EdgeDropGuard<'a, M>, EdgeDropGuard<'a, M>)> {
-        let ra = EdgeDropGuard::new(manager, op(manager, self, a.0, a.1, a.2, a.3)?);
-        let rb = EdgeDropGuard::new(manager, op(manager, self, b.0, b.1, b.2, b.3)?);
+        let ra = EdgeDropGuard::new(manager, op(manager, self, a.0, a.1, a.2, a.3, a.4)?);
+        let rb = EdgeDropGuard::new(manager, op(manager, self, b.0, b.1, b.2, b.3, b.4)?);
         Ok((ra, rb))
     }
 
@@ -165,29 +201,8 @@ pub mod mt {
             mut self,
             op: BinaryOp<M, Self>,
             manager: &'a M,
-            a: (Ref<'_, M::Edge>, Ref<'_, M::Edge>),
-            b: (Ref<'_, M::Edge>, Ref<'_, M::Edge>),
-        ) -> AllocResult<(EdgeDropGuard<'a, M>, EdgeDropGuard<'a, M>)> {
-            self.remaining_depth -= 1;
-            let (ra, rb) = manager.workers().join(
-                move || {
-                    let edge = op(manager, self, a.0, a.1)?;
-                    Ok(EdgeDropGuard::new(manager, edge))
-                },
-                move || {
-                    let edge = op(manager, self, b.0, b.1)?;
-                    Ok(EdgeDropGuard::new(manager, edge))
-                },
-            );
-            Ok((ra?, rb?))
-        }
-
-        fn ternary<'a>(
-            mut self,
-            op: TernaryOp<M, Self>,
-            manager: &'a M,
-            a: (Ref<'_, M::Edge>, Ref<'_, M::Edge>, Ref<'_, M::Edge>),
-            b: (Ref<'_, M::Edge>, Ref<'_, M::Edge>, Ref<'_, M::Edge>),
+            a: (LevelNo, Ref<'_, M::Edge>, Ref<'_, M::Edge>),
+            b: (LevelNo, Ref<'_, M::Edge>, Ref<'_, M::Edge>),
         ) -> AllocResult<(EdgeDropGuard<'a, M>, EdgeDropGuard<'a, M>)> {
             self.remaining_depth -= 1;
             let (ra, rb) = manager.workers().join(
@@ -203,18 +218,18 @@ pub mod mt {
             Ok((ra?, rb?))
         }
 
-        fn quaternary<'a>(
+        fn ternary<'a>(
             mut self,
-            op: QuaternaryOp<M, Self>,
+            op: TernaryOp<M, Self>,
             manager: &'a M,
             a: (
-                Ref<'_, M::Edge>,
+                LevelNo,
                 Ref<'_, M::Edge>,
                 Ref<'_, M::Edge>,
                 Ref<'_, M::Edge>,
             ),
             b: (
-                Ref<'_, M::Edge>,
+                LevelNo,
                 Ref<'_, M::Edge>,
                 Ref<'_, M::Edge>,
                 Ref<'_, M::Edge>,
@@ -228,6 +243,39 @@ pub mod mt {
                 },
                 move || {
                     let edge = op(manager, self, b.0, b.1, b.2, b.3)?;
+                    Ok(EdgeDropGuard::new(manager, edge))
+                },
+            );
+            Ok((ra?, rb?))
+        }
+
+        fn quaternary<'a>(
+            mut self,
+            op: QuaternaryOp<M, Self>,
+            manager: &'a M,
+            a: (
+                LevelNo,
+                Ref<'_, M::Edge>,
+                Ref<'_, M::Edge>,
+                Ref<'_, M::Edge>,
+                Ref<'_, M::Edge>,
+            ),
+            b: (
+                LevelNo,
+                Ref<'_, M::Edge>,
+                Ref<'_, M::Edge>,
+                Ref<'_, M::Edge>,
+                Ref<'_, M::Edge>,
+            ),
+        ) -> AllocResult<(EdgeDropGuard<'a, M>, EdgeDropGuard<'a, M>)> {
+            self.remaining_depth -= 1;
+            let (ra, rb) = manager.workers().join(
+                move || {
+                    let edge = op(manager, self, a.0, a.1, a.2, a.3, a.4)?;
+                    Ok(EdgeDropGuard::new(manager, edge))
+                },
+                move || {
+                    let edge = op(manager, self, b.0, b.1, b.2, b.3, b.4)?;
                     Ok(EdgeDropGuard::new(manager, edge))
                 },
             );
