@@ -45,17 +45,17 @@ pub fn print_stats() {
 /// We only expose a hard coded u32 valued LDDManager.
 pub type Value = u32;
 
-/// Result of [`LDDFunction::relation_product_meta`].
+/// Result of [`LDDFunction::relation_meta`].
 ///
 /// Bundles the meta-LDD encoding the read/write projection together with the
-/// positions of the read and write variables in that encoding.
-pub struct RelationProductMeta {
+/// positions of the read and write values in the relation vectors.
+pub struct RelationMeta {
     /// The meta-LDD encoding the read/write projection.
     pub meta: LDDFunction,
-    /// The positions of the read variables in the meta encoding.
-    pub read_positions: Vec<usize>,
-    /// The positions of the write variables in the meta encoding.
-    pub write_positions: Vec<usize>,
+    /// The positions of the read values in the relation vectors.
+    pub read_positions: Vec<::oxidd_core::LevelNo>,
+    /// The positions of the write values in the relation vectors.
+    pub write_positions: Vec<::oxidd_core::LevelNo>,
 }
 
 /// Generates the inherent methods of the public `LDDManagerRef` wrapper.
@@ -199,7 +199,7 @@ macro_rules! ldd_function_methods {
             /// `proj`, suitable as the argument of [`project`][Self::project].
             pub fn projection_meta(
                 manager: &<Self as ::oxidd_core::function::Function>::Manager<'_>,
-                proj: &[$crate::ldd::Value],
+                proj: &[::oxidd_core::LevelNo],
             ) -> ::oxidd_core::util::AllocResult<Self> {
                 use ::oxidd_core::function::Function;
                 Ok(Self(FunctionInner::from_edge(
@@ -231,21 +231,22 @@ macro_rules! ldd_function_methods {
                 )))
             }
 
-            /// Computes a meta-LDD for [`relational_product`][Self::relational_product]
+            /// Computes a meta-LDD for
+            /// [`relational_successors`][Self::relational_successors]
             /// from the `read` and `write` projection indices, together with the
             /// resulting read and write positions.
-            pub fn relation_product_meta(
+            pub fn relation_meta(
                 manager: &<Self as ::oxidd_core::function::Function>::Manager<'_>,
-                read: &[$crate::ldd::Value],
-                write: &[$crate::ldd::Value],
-            ) -> ::oxidd_core::util::AllocResult<$crate::ldd::RelationProductMeta> {
+                read: &[::oxidd_core::LevelNo],
+                write: &[::oxidd_core::LevelNo],
+            ) -> ::oxidd_core::util::AllocResult<$crate::ldd::RelationMeta> {
                 use ::oxidd_core::function::Function;
-                let ::oxidd_rules_ldd::RelationProductMeta {
+                let ::oxidd_rules_ldd::RelationMeta {
                     meta,
                     read_positions,
                     write_positions,
-                } = FunctionInner::relation_product_meta(manager, read, write)?;
-                Ok($crate::ldd::RelationProductMeta {
+                } = FunctionInner::relation_meta(manager, read, write)?;
+                Ok($crate::ldd::RelationMeta {
                     meta: Self(FunctionInner::from_edge(manager, meta)),
                     read_positions,
                     write_positions,
@@ -254,19 +255,21 @@ macro_rules! ldd_function_methods {
 
             /// Computes the set of vectors reachable in one step from `self` via
             /// the sparse relation `rel`, guided by `meta` (produced by
-            /// [`relation_product_meta`][Self::relation_product_meta]).
-            pub fn relational_product(
+            /// [`relation_meta`][Self::relation_meta]).
+            ///
+            /// This is also known as the relational product.
+            pub fn relational_successors(
                 &self,
                 rel: &Self,
                 meta: &Self,
             ) -> ::oxidd_core::util::AllocResult<Self> {
-                Ok(Self(self.0.relational_product(&rel.0, &meta.0)?))
+                Ok(Self(self.0.relational_successors(&rel.0, &meta.0)?))
             }
 
-            /// Computes the relational product using the already-borrowed
+            /// Computes the relational successors using the already-borrowed
             /// `manager`; the lock-free counterpart of
-            /// [`relational_product`][Self::relational_product].
-            pub fn relational_product_edge(
+            /// [`relational_successors`][Self::relational_successors].
+            pub fn relational_successors_edge(
                 manager: &<Self as ::oxidd_core::function::Function>::Manager<'_>,
                 level: ::oxidd_core::LevelNo,
                 set: &Self,
@@ -279,24 +282,24 @@ macro_rules! ldd_function_methods {
                 let meta = meta.as_edge(manager);
                 Ok(Self(FunctionInner::from_edge(
                     manager,
-                    FunctionInner::relational_product_edge(manager, level, set, rel, meta)?,
+                    FunctionInner::relational_successors_edge(manager, level, set, rel, meta)?,
                 )))
             }
 
             /// Computes the set of source vectors in `universe` from which a
             /// vector in `self` is reachable in one step via the sparse relation
             /// `rel`, guided by `meta` (produced by
-            /// [`relation_product_meta`][Self::relation_product_meta]).
+            /// [`relation_meta`][Self::relation_meta]).
             ///
             /// This is the inverse of
-            /// [`relational_product`][Self::relational_product].
-            pub fn relational_predecessor(
+            /// [`relational_successors`][Self::relational_successors].
+            pub fn relational_predecessors(
                 &self,
                 rel: &Self,
                 meta: &Self,
                 universe: &Self,
             ) -> ::oxidd_core::util::AllocResult<Self> {
-                Ok(Self(self.0.relational_predecessor(
+                Ok(Self(self.0.relational_predecessors(
                     &rel.0,
                     &meta.0,
                     &universe.0,
@@ -305,8 +308,8 @@ macro_rules! ldd_function_methods {
 
             /// Computes the relational predecessor using the already-borrowed
             /// `manager`; the lock-free counterpart of
-            /// [`relational_predecessor`][Self::relational_predecessor].
-            pub fn relational_predecessor_edge(
+            /// [`relational_predecessors`][Self::relational_predecessors].
+            pub fn relational_predecessors_edge(
                 manager: &<Self as ::oxidd_core::function::Function>::Manager<'_>,
                 level: ::oxidd_core::LevelNo,
                 set: &Self,
@@ -321,7 +324,7 @@ macro_rules! ldd_function_methods {
                 let universe = universe.as_edge(manager);
                 Ok(Self(FunctionInner::from_edge(
                     manager,
-                    FunctionInner::relational_predecessor_edge(
+                    FunctionInner::relational_predecessors_edge(
                         manager, level, set, rel, meta, universe,
                     )?,
                 )))

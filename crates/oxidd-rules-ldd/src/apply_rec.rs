@@ -15,8 +15,8 @@ use oxidd_derive::Function;
 
 use crate::recursor::{Recursor, SequentialRecursor};
 use crate::{
-    LDDManager, LDDOp, LDDTerminal, LDDValue, RIGHT, RelationProductMeta, collect_children,
-    make_node, stat,
+    LDDManager, LDDOp, LDDTerminal, LDDValue, RIGHT, RelationMeta, collect_children, make_node,
+    stat,
 };
 
 /// Return a singleton LDD that contains only the list represented by `vector`.
@@ -47,8 +47,8 @@ fn singleton<M: LDDManager>(
     Ok(root.into_edge())
 }
 
-/// Recursively apply the 'union' operator to `a` and `b`, both residing at
-/// `level`
+/// Computes the union `a ∪ b` of the two sets of vectors, both residing at
+/// `level`.
 fn apply_union<M: LDDManager, R: Recursor<M>>(
     manager: &M,
     rec: R,
@@ -219,8 +219,8 @@ fn apply_intersection<M: LDDManager, R: Recursor<M>>(
     Ok(result)
 }
 
-/// Returns the largest subset of `a` that contains no element of `b`
-/// (set difference `a \ b`), both residing at `level`.
+/// Computes the difference `a \ b` of the two sets of vectors, both residing
+/// at `level`.
 fn apply_difference<M: LDDManager, R: Recursor<M>>(
     manager: &M,
     rec: R,
@@ -320,7 +320,7 @@ fn apply_difference<M: LDDManager, R: Recursor<M>>(
 ///
 /// This function is useful to be able to cache the projection LDD instead of
 /// computing it from the projection array every time.
-fn compute_proj<M: LDDManager>(manager: &M, proj: &[u32]) -> AllocResult<Own<M::Edge>> {
+fn compute_proj<M: LDDManager>(manager: &M, proj: &[LevelNo]) -> AllocResult<Own<M::Edge>> {
     // Compute length of proj.
     let length = match proj.iter().max() {
         Some(x) => *x + 1,
@@ -368,6 +368,12 @@ fn apply_project<M: LDDManager, R: Recursor<M>>(
         return apply_project(manager, SequentialRecursor, level, set, proj);
     }
     stat!(call LDDOp::Project);
+
+    // Base case: the projection of the empty set is the empty set, even onto
+    // no positions.
+    if manager.get_node(set).is_terminal(&LDDTerminal::Empty) {
+        return manager.get_terminal(LDDTerminal::Empty);
+    }
 
     // Base case: if proj has reached the True terminal, the projection is
     // fully consumed - return the True terminal (empty vector).
@@ -471,15 +477,55 @@ fn apply_project<M: LDDManager, R: Recursor<M>>(
 
 /// Builds the meta-LDD encoding the read/write projection described by
 /// `read_proj` and `write_proj`, together with the positions of the read and
-/// write variables in that encoding.
+/// write values in the relation vectors.
 ///
-/// Shared implementation behind [`LDDFunction::relation_product_meta`] and
-/// [`mt::LDDFunctionMT::relation_product_meta`].
-fn relation_product_meta<M: LDDManager>(
+/// Let `R = read_proj`, `W = write_proj` and `L = max(R ∪ W) + 1`. The meta-LDD
+/// is the singleton `{m}`, where `m = m_0 · m_1 · … · m_{L-1}` is the
+/// concatenation of
+///
+/// ```text
+/// m_i = [read_of_pair, write_of_pair]  if i ∈ R ∩ W
+///       [read_only]                    if i ∈ R \ W
+///       [write_only]                   if i ∈ W \ R
+///       [false]                        otherwise (not in the relation)
+/// ```
+///
+/// Here `read_only` stands for [`LDDValue::read_only_value`], and similarly for
+/// the other names. A position in `R ∩ W` is a read+write pair, which occupies
+/// two levels of the meta-LDD: its *read half* and its *write half*.
+///
+/// A relation for this meta-LDD is a set of vectors `t = t_0 · t_1 · … ·
+/// t_{L-1}` with
+///
+/// ```text
+/// t_i = [a_i, b_i]  if i ∈ R ∩ W
+///       [a_i]       if i ∈ R \ W
+///       [b_i]       if i ∈ W \ R
+///       []          otherwise
+/// ```
+///
+/// where `a_i` is the value read and `b_i` the value written at position `i`.
+/// So `t` has one entry for every entry of `m` other than `false`.
+/// `read_positions` and
+/// `write_positions` are the indices of the `a_i` and `b_i` in `t` (not in
+/// `m`), in increasing order of `i`.
+///
+/// For example, `R = {0, 3}` and `W = {1, 3}` give
+///
+/// ```text
+/// m = [read_only, write_only, false, read_of_pair, write_of_pair]
+/// t = [a_0,       b_1,               a_3,          b_3          ]
+/// ```
+///
+/// so `read_positions = [0, 2]` and `write_positions = [1, 3]`.
+///
+/// Shared implementation behind [`LDDFunction::relation_meta`] and
+/// [`mt::LDDFunctionMT::relation_meta`].
+fn relation_meta<M: LDDManager>(
     manager: &M,
-    read_proj: &[u32],
-    write_proj: &[u32],
-) -> AllocResult<RelationProductMeta<Own<M::Edge>>> {
+    read_proj: &[LevelNo],
+    write_proj: &[LevelNo],
+) -> AllocResult<RelationMeta<Own<M::Edge>>> {
     // Compute length of meta.
     let length = std::cmp::max(
         read_proj.iter().max().map_or(0, |x| *x + 1),
@@ -492,7 +538,7 @@ fn relation_product_meta<M: LDDManager>(
 
     let mut meta: Vec<M::InnerNodeValue> = Vec::new();
 
-    let mut offset: usize = 0;
+    let mut offset: LevelNo = 0;
     for i in 0..length {
         // Requires worst-case quadratic time, but the projection arrays are
         // typically small.
@@ -517,7 +563,7 @@ fn relation_product_meta<M: LDDManager>(
         }
     }
 
-    Ok(RelationProductMeta {
+    Ok(RelationMeta {
         meta: singleton(manager, &meta)?,
         read_positions,
         write_positions,
@@ -525,41 +571,71 @@ fn relation_product_meta<M: LDDManager>(
 }
 
 /// Computes the set of vectors reachable in one step from `set` via the sparse
-/// relation `rel`, guided by `meta` (produced by
-/// [`LDDFunction::relation_product_meta`]).
+/// relation `rel`, guided by `meta` (produced by [`relation_meta`]).
 ///
-/// Meta values at each level:
-/// - 0 - position not in the relation: keep set values, advance meta only.
-/// - 1 - read-only: match set and rel values; keep matched values in output.
-/// - 2 - write-only: union all set values, then write each rel value.
-/// - 3 - read half of a read+write pair: match values (not emitted); meta_down
-///   is 4.
-/// - 4 - write half of a read+write pair: write rel values.
+/// # Definition
 ///
-/// The result resides at `level`. This equals the level of `set`, except at a
-/// write half of a pair, where `set` was already descended at the read half.
+/// Let `R`, `W`, `L`, `a_i(t)` and `b_i(t)` be as in [`relation_meta`].
+/// At the root call (`level = 0`), the result is
+///
+/// ```text
+/// { y | ∃ x ∈ set, t ∈ rel. (∀ i ∈ R. x_i = a_i(t))
+///                         ∧ (∀ i ∈ W. y_i = b_i(t))
+///                         ∧ (∀ i ∉ W. y_i = x_i) }
+/// ```
+///
+/// That is, `t` applies to `x` if `x` agrees with all read values of `t`. The
+/// successor `y` is then `x` with every position `i ∈ W` overwritten by the
+/// write value `b_i(t)`. All other positions, including those `≥ L`, are
+/// copied, so `y` has the same length as `x`.
+///
+/// # Algorithm
+///
+/// The function descends `set`, `rel` and `meta` simultaneously, and the value
+/// of `meta` determines how each level is treated:
+///
+/// - `false`: emit the values of `set`; `rel` is not descended.
+/// - `read_only`: emit the values of `set` that also occur in `rel`.
+/// - `write_only`: ignore the values of `set` and emit the values of `rel`.
+/// - `read_of_pair`: keep the values of `set` that also occur in `rel`, but do
+///   not emit them; the write half emits the new value instead.
+/// - `write_of_pair`: emit the values of `rel`; `set` is not descended, since
+///   the read half already did.
+///
+/// The result resides at `level`, and so does `set`, except at a write half,
+/// where `set` resides at `level + 1`.
 ///
 /// # Cache
 ///
-/// Therefore, `level` is part of the cache key. Usually `set` determines the
-/// result level, since every inner node resides in the unique table of one
-/// level. However, at a write half where the read half consumed the last
-/// position of `set`, `set` is the `True` terminal. Then only `rel` and `meta`
-/// remain, and they reside on meta levels, not result levels. A read+write pair
-/// occupies two meta levels but one result level, so the same meta level
-/// corresponds to different result levels depending on the number of pairs
-/// before it.
+/// Unlike for the other operations, `level` is part of the cache key. Usually
+/// `set` determines the result level, since every inner node resides in the
+/// unique table of exactly one level. However, at a write half where the read
+/// half consumed the last position of `set`, `set` is the `True` terminal. Then
+/// only `rel` and `meta` remain, and these reside on the levels of the relation
+/// vectors and the meta-LDD respectively. Neither determines the result level,
+/// since a read+write pair occupies two levels of both, but only one result
+/// level.
 ///
-/// # Example
+/// For example, take `read_proj = write_proj = [0, 1]` for sets of length 2,
+/// and `read_proj = [0, 2]`, `write_proj = [1, 2]` for sets of length 3. This
+/// gives
 ///
-/// The meta-LDDs `[3, 4, 3, 4]` and `[0, 0, 3, 4]` share the suffix `[4]` at
-/// meta level 3, which is at result level 1 for sets of length 2 and at result
-/// level 2 for sets of length 3. If `rel` also shares its suffix, both calls
-/// have the operands `(True, rel, meta)`, and without `level` in the key a
-/// cache hit would return a node from the wrong level. This cannot happen if
-/// all sets have the same length `n`, since then `set` is only `True` at a
-/// write half for result level `n - 1`.
-fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
+/// ```text
+/// m = [read_of_pair, write_of_pair, read_of_pair, write_of_pair]
+/// t = [a_0,          b_0,           a_1,          b_1          ]
+///
+/// m = [read_only,    write_only,    read_of_pair, write_of_pair]
+/// t = [a_0,          b_1,           a_2,          b_2          ]
+/// ```
+///
+/// In both cases, the last write half is at level 3 of `meta` and `rel`, but at
+/// result level 1 and 2, respectively. If both relations end with the same
+/// write values, the calls at these write halves have equal operands `(True,
+/// rel, meta)`, and without `level` in the key a cache hit would return a node
+/// from the wrong level. This cannot happen if all sets have the same length
+/// `n`, since then `set` is only `True` at a write half for result level
+/// `n - 1`.
+fn apply_relational_successors<M: LDDManager, R: Recursor<M>>(
     manager: &M,
     rec: R,
     level: LevelNo,
@@ -568,11 +644,13 @@ fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
     meta: Ref<'_, M::Edge>,
 ) -> AllocResult<Own<M::Edge>> {
     if rec.should_switch_to_sequential() {
-        return apply_relational_product(manager, SequentialRecursor, level, set, rel, meta);
+        return apply_relational_successors(manager, SequentialRecursor, level, set, rel, meta);
     }
-    stat!(call LDDOp::RelationalProduct);
+    stat!(call LDDOp::RelationalSuccessors);
 
-    // meta == True means all meta levels consumed; return set unchanged.
+    // `meta` is `True` once all of its levels are consumed; the remaining
+    // positions of `set` are copied unchanged. Then `rel` is `True` as well,
+    // unless it is the empty relation (with no read or write positions).
     let meta_node = match manager.get_node(meta) {
         Node::Terminal(t) => {
             debug_assert_eq!(
@@ -580,13 +658,17 @@ fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
                 LDDTerminal::True,
                 "meta should never reach the Empty terminal"
             );
+            if manager.get_node(rel).is_terminal(&LDDTerminal::Empty) {
+                return manager.get_terminal(LDDTerminal::Empty);
+            }
             return Ok(manager.clone_edge(set));
         }
         Node::Inner(n) => n,
     };
 
-    // Empty set or empty relation → empty result. Set can still be the `True`
-    // terminal at a write half.
+    // An empty set or relation yields the empty set. Since `meta` ends with a
+    // read or write level, `rel` cannot be the `True` terminal here, but `set`
+    // can be at a write half (see the function documentation).
     let (set_node, rel_node) = match (manager.get_node(set), manager.get_node(rel)) {
         (Node::Inner(s), Node::Inner(r)) => (Some(s), r),
         (Node::Terminal(s), Node::Inner(r)) if *s.borrow() == LDDTerminal::True => (None, r),
@@ -599,16 +681,15 @@ fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
         }
     };
 
-    // At a write half of a pair, `set` may already be the `True` terminal, so
-    // the operands do not determine the result level; it is part of the key
-    // (see the function documentation).
-    stat!(cache_query LDDOp::RelationalProduct);
+    // The operands do not always determine the result level, so it is part of
+    // the key (see the function documentation).
+    stat!(cache_query LDDOp::RelationalSuccessors);
     if let Some(([res], [])) = manager.apply_cache().get_extended(
         manager,
-        LDDOp::RelationalProduct,
+        LDDOp::RelationalSuccessors,
         (&[set, rel, meta], &[level]),
     ) {
-        stat!(cache_hit LDDOp::RelationalProduct);
+        stat!(cache_hit LDDOp::RelationalSuccessors);
         return Ok(res);
     }
 
@@ -616,14 +697,14 @@ fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
     let (meta_down, _meta_right) = collect_children(meta_node);
 
     let result = if *meta_value == M::InnerNodeValue::false_value() {
-        // 0: not in relation - keep all set values, advance meta into next
-        // level.
+        // Not in the relation: emit the values of `set` unchanged. `rel` does
+        // not have a level for this position, so it is not descended.
         let set_node = set_node.expect("set must have as many levels as meta");
         let set_value = set_node.value();
         let (set_down, set_right) = collect_children(set_node);
 
         let (down_result, right_result) = rec.ternary(
-            apply_relational_product,
+            apply_relational_successors,
             manager,
             (level + 1, set_down, rel, meta_down),
             (level, set_right, rel, meta),
@@ -644,8 +725,7 @@ fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
             )?
         }
     } else if *meta_value == M::InnerNodeValue::read_only_value() {
-        // 1: read only - match set and rel values; keep matched values in
-        // output.
+        // Read-only: emit the values of `set` that also occur in `rel`.
         let set_node = set_node.expect("set must have as many levels as meta");
         let set_value = set_node.value();
         let (set_down, set_right) = collect_children(set_node);
@@ -654,12 +734,12 @@ fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
 
         match set_value.cmp(rel_value) {
             Ordering::Less => {
-                // No rel entry for this set value; skip it.
-                apply_relational_product(manager, rec, level, set_right, rel, meta)?
+                // `rel` does not read this value of `set`; skip it.
+                apply_relational_successors(manager, rec, level, set_right, rel, meta)?
             }
             Ordering::Equal => {
                 let (down_result, right_result) = rec.ternary(
-                    apply_relational_product,
+                    apply_relational_successors,
                     manager,
                     (level + 1, set_down, rel_down, meta_down),
                     (level, set_right, rel_right, meta),
@@ -680,17 +760,14 @@ fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
                 }
             }
             Ordering::Greater => {
-                // No set entry for this rel value; skip the rel value.
-                apply_relational_product(manager, rec, level, set, rel_right, meta)?
+                // `set` does not contain this value of `rel`; skip it.
+                apply_relational_successors(manager, rec, level, set, rel_right, meta)?
             }
         }
     } else if *meta_value == M::InnerNodeValue::write_only_value() {
-        // 2: write only - union all set down-branches (ignoring their values),
-        // then write each rel value with that combined continuation.
-        let rel_value = rel_node.value();
-        let (rel_down, rel_right) = collect_children(rel_node);
-
-        // Collect union of all down-branches at this set level.
+        // Write-only: the value of `set` is overwritten, so continue with the
+        // union of all down-branches of `set`, and emit each value of `rel`.
+        // The union is computed once for all values of `rel`.
         let combined = {
             let mut acc = EdgeDropGuard::new(manager, manager.get_terminal(LDDTerminal::Empty)?);
             let mut cur = set;
@@ -711,30 +788,11 @@ fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
             acc
         };
 
-        let (down_result, right_result) = rec.ternary(
-            apply_relational_product,
-            manager,
-            (level + 1, combined.borrowed(), rel_down, meta_down),
-            (level, set, rel_right, meta),
-        )?;
-
-        if manager
-            .get_node(down_result.borrowed())
-            .is_terminal(&LDDTerminal::Empty)
-        {
-            right_result.into_edge()
-        } else {
-            make_node(
-                manager,
-                level,
-                rel_value,
-                down_result.into_edge(),
-                right_result.into_edge(),
-            )?
-        }
+        relational_successors_write_only(manager, rec, level, combined.borrowed(), rel, meta_down)?
     } else if *meta_value == M::InnerNodeValue::read_of_pair_value() {
-        // 3: read half of a read+write pair - match values (not emitted);
-        // union the matched continuation with the remaining-pairs result.
+        // Read half of a pair: keep the values of `set` that also occur in
+        // `rel`, but do not emit them; the write half emits the new values at
+        // this result level instead.
         let set_node = set_node.expect("set must have as many levels as meta");
         let set_value = set_node.value();
         let (set_down, set_right) = collect_children(set_node);
@@ -742,14 +800,17 @@ fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
         let (rel_down, rel_right) = collect_children(rel_node);
 
         match set_value.cmp(rel_value) {
-            Ordering::Less => apply_relational_product(manager, rec, level, set_right, rel, meta)?,
+            // `rel` does not read this value of `set`; skip it.
+            Ordering::Less => {
+                apply_relational_successors(manager, rec, level, set_right, rel, meta)?
+            }
             Ordering::Equal => {
-                // meta_down should be write_of_pair_value (4); it introduces
-                // the new values at this output level.  Union with the
-                // right-siblings result so all (read, write) pairs at this
-                // level are considered.
+                // `meta_down` is the write half, which stays at `level`.
+                // Different read values may write the same value, so the
+                // results of both branches can overlap and must be combined by
+                // a union instead of `make_node`.
                 let (down_result, right_result) = rec.ternary(
-                    apply_relational_product,
+                    apply_relational_successors,
                     manager,
                     (level, set_down, rel_down, meta_down),
                     (level, set_right, rel_right, meta),
@@ -763,16 +824,18 @@ fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
                 )?
             }
             Ordering::Greater => {
-                apply_relational_product(manager, rec, level, set, rel_right, meta)?
+                // `set` does not contain this value of `rel`; skip it.
+                apply_relational_successors(manager, rec, level, set, rel_right, meta)?
             }
         }
     } else if *meta_value == M::InnerNodeValue::write_of_pair_value() {
-        // 4: write half of a read+write pair - emit rel values.
+        // Write half of a pair: emit each value of `rel`. `set` was already
+        // descended at the read half, so it is passed on unchanged.
         let rel_value = rel_node.value();
         let (rel_down, rel_right) = collect_children(rel_node);
 
         let (down_result, right_result) = rec.ternary(
-            apply_relational_product,
+            apply_relational_successors,
             manager,
             (level + 1, set, rel_down, meta_down),
             (level, set, rel_right, meta),
@@ -798,7 +861,7 @@ fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
 
     manager.apply_cache().add_extended(
         manager,
-        LDDOp::RelationalProduct,
+        LDDOp::RelationalSuccessors,
         (&[set, rel, meta], &[level]),
         (&[result.borrowed()], &[]),
     );
@@ -806,31 +869,105 @@ fn apply_relational_product<M: LDDManager, R: Recursor<M>>(
     Ok(result)
 }
 
+/// Helper for the write-only ([`write_only_value`][LDDValue::write_only_value])
+/// case of [`apply_relational_successors`].
+///
+/// Builds the LDD with a node `(v, apply_relational_successors(combined,
+/// rel_v_down, meta))` for every value `v` in the right spine of `rel`, where
+/// `rel_v_down` is the down-branch of the `rel` node carrying `v`. Here
+/// `combined` is the union of all down-branches of `set`, and `combined` and
+/// `meta` are already descended past the write level. In contrast to recursing
+/// on the right sibling of `rel` in [`apply_relational_successors`], this
+/// computes `combined` only once.
+fn relational_successors_write_only<M: LDDManager, R: Recursor<M>>(
+    manager: &M,
+    rec: R,
+    level: LevelNo,
+    combined: Ref<'_, M::Edge>,
+    rel: Ref<'_, M::Edge>,
+    meta: Ref<'_, M::Edge>,
+) -> AllocResult<Own<M::Edge>> {
+    let rel_node = match manager.get_node(rel) {
+        // The right spine of `rel` ends at the Empty terminal.
+        Node::Terminal(_) => return manager.get_terminal(LDDTerminal::Empty),
+        Node::Inner(n) => n,
+    };
+    let rel_value = rel_node.value();
+    let (rel_down, rel_right) = collect_children(rel_node);
+
+    let down_result = EdgeDropGuard::new(
+        manager,
+        apply_relational_successors(manager, rec, level + 1, combined, rel_down, meta)?,
+    );
+    let right_result = EdgeDropGuard::new(
+        manager,
+        relational_successors_write_only(manager, rec, level, combined, rel_right, meta)?,
+    );
+
+    if manager
+        .get_node(down_result.borrowed())
+        .is_terminal(&LDDTerminal::Empty)
+    {
+        Ok(right_result.into_edge())
+    } else {
+        make_node(
+            manager,
+            level,
+            rel_value,
+            down_result.into_edge(),
+            right_result.into_edge(),
+        )
+    }
+}
+
 /// Computes the set of source vectors in `universe` that can reach a vector in
 /// `set` in one step via the sparse relation `rel`, guided by `meta` (produced
-/// by [`LDDFunction::relation_product_meta`]).
+/// by [`relation_meta`]).
 ///
-/// This is the inverse of [`apply_relational_product`]: where the relational
-/// product computes successors, this computes predecessors restricted to
-/// `universe`.
+/// This is the inverse of [`apply_relational_successors`]: where that computes
+/// the successors, this computes the predecessors restricted to `universe`.
 ///
-/// Meta values at each level (see [`apply_relational_product`]):
-/// - 0 - position not in the relation: keep values present in both `set` and
-///   `universe`, advance meta only.
-/// - 1 - read-only: the source value equals the target value; keep values that
-///   appear in `set`, `rel`, and `universe`.
-/// - 2 - write-only: the source value is unconstrained, ranging over all of
-///   `universe`; the target value must appear in `set` and `rel`.
-/// - 3 - read half of a read+write pair: emit the source value taken from
-///   `universe` (matched against `rel`).
-/// - 4 - write half of a read+write pair: consume the target value (matched
-///   against `set` and `rel`); no value is emitted.
+/// # Definition
 ///
-/// The result resides at `level`. This equals the level of `universe`, except
-/// at a write half of a pair, where the source value was already emitted at the
-/// read half. The operands thus determine the level, so it is not part of the
-/// cache key.
-fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
+/// Let `R`, `W`, `a_i(t)` and `b_i(t)` be as in [`relation_meta`]. At
+/// the root call (`level = 0`), the result is
+///
+/// ```text
+/// { x ∈ universe | ∃ y ∈ set, t ∈ rel. (∀ i ∈ R. x_i = a_i(t))
+///                                    ∧ (∀ i ∈ W. y_i = b_i(t))
+///                                    ∧ (∀ i ∉ W. y_i = x_i) }
+/// ```
+///
+/// That is, `x` is a predecessor if some `t ∈ rel` applies to `x` (see
+/// [`apply_relational_successors`]) and yields a successor `y ∈ set`.
+///
+/// # Algorithm
+///
+/// The function descends `set` (the targets `y`), `universe` (the sources `x`),
+/// `rel` and `meta` simultaneously, and the value of `meta` determines how each
+/// level is treated:
+///
+/// - `false`: the source value equals the target value; emit the values that
+///   occur in both `set` and `universe`. `rel` is not descended.
+/// - `read_only`: the source value equals the target value, and is read by
+///   `rel`; emit the values that occur in `set`, `rel` and `universe`.
+/// - `write_only`: the target value must occur in both `set` and `rel`, but the
+///   source value is unconstrained; emit every value of `universe`.
+/// - `read_of_pair`: emit the values of `universe` that are read by `rel`.
+///   `set` and `universe` are not descended; the write half does this.
+/// - `write_of_pair`: the target value must occur in both `set` and `rel`;
+///   nothing is emitted, since the read half already emitted the source value.
+///
+/// # Cache
+///
+/// The result resides at `level`, and so does `universe`, except at a write
+/// half, where `universe` still resides at the level of the source value that
+/// the read half emitted, i.e. `level - 1`. Unlike `set` in
+/// [`apply_relational_successors`], `universe` is never the `True` terminal
+/// while `meta` is an inner node, since the write half still descends it. Hence
+/// the operands determine the result level, and it is not part of the cache
+/// key.
+fn apply_relational_predecessors<M: LDDManager, R: Recursor<M>>(
     manager: &M,
     rec: R,
     level: LevelNo,
@@ -841,9 +978,9 @@ fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
 ) -> AllocResult<Own<M::Edge>> {
     if rec.should_switch_to_sequential() {
         let rec = SequentialRecursor;
-        return apply_relational_predecessor(manager, rec, level, set, rel, meta, universe);
+        return apply_relational_predecessors(manager, rec, level, set, rel, meta, universe);
     }
-    stat!(call LDDOp::RelationalPredecessor);
+    stat!(call LDDOp::RelationalPredecessors);
 
     // meta == True means all meta levels are consumed; the remaining source
     // vectors are exactly those in both `set` and `universe`, unless `rel` is
@@ -882,13 +1019,13 @@ fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
         }
     };
 
-    stat!(cache_query LDDOp::RelationalPredecessor);
+    stat!(cache_query LDDOp::RelationalPredecessors);
     if let Some(res) = manager.apply_cache().get(
         manager,
-        LDDOp::RelationalPredecessor,
+        LDDOp::RelationalPredecessors,
         &[set, rel, meta, universe],
     ) {
-        stat!(cache_hit LDDOp::RelationalPredecessor);
+        stat!(cache_hit LDDOp::RelationalPredecessors);
         return Ok(res);
     }
 
@@ -896,7 +1033,9 @@ fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
     let (meta_down, _meta_right) = collect_children(meta_node);
 
     let result = if *meta_value == M::InnerNodeValue::false_value() {
-        // 0: not in relation - keep values present in both set and universe.
+        // Not in the relation: emit the values that occur in both `set` and
+        // `universe`. `rel` does not have a level for this position, so it is
+        // not descended.
         let set_value = set_node.value();
         let (set_down, set_right) = collect_children(set_node);
         let universe_value = universe_node.value();
@@ -905,15 +1044,15 @@ fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
         match set_value.cmp(universe_value) {
             Ordering::Less => {
                 // This set value is not in the universe; skip it.
-                apply_relational_predecessor(manager, rec, level, set_right, rel, meta, universe)?
+                apply_relational_predecessors(manager, rec, level, set_right, rel, meta, universe)?
             }
             Ordering::Greater => {
                 // This universe value is not in the set; skip it.
-                apply_relational_predecessor(manager, rec, level, set, rel, meta, universe_right)?
+                apply_relational_predecessors(manager, rec, level, set, rel, meta, universe_right)?
             }
             Ordering::Equal => {
                 let (down_result, right_result) = rec.quaternary(
-                    apply_relational_predecessor,
+                    apply_relational_predecessors,
                     manager,
                     (level + 1, set_down, rel, meta_down, universe_down),
                     (level, set_right, rel, meta, universe_right),
@@ -935,8 +1074,8 @@ fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
             }
         }
     } else if *meta_value == M::InnerNodeValue::read_only_value() {
-        // 1: read only - the source value equals the target value, so emit
-        // values that appear in set, rel, and universe simultaneously.
+        // Read-only: the source value equals the target value, so emit the
+        // values that occur in `set`, `rel` and `universe`.
         let set_value = set_node.value();
         let (set_down, set_right) = collect_children(set_node);
         let rel_value = rel_node.value();
@@ -949,7 +1088,7 @@ fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
             // all of set, rel, and universe; the right siblings are explored by
             // advancing the relation.
             let (down_result, rest) = rec.quaternary(
-                apply_relational_predecessor,
+                apply_relational_predecessors,
                 manager,
                 (level + 1, set_down, rel_down, meta_down, universe_down),
                 (level, set, rel_right, meta, universe),
@@ -978,17 +1117,17 @@ fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
             // all three line up on a common value.
             let max = set_value.max(rel_value).max(universe_value);
             if set_value < max {
-                apply_relational_predecessor(manager, rec, level, set_right, rel, meta, universe)?
+                apply_relational_predecessors(manager, rec, level, set_right, rel, meta, universe)?
             } else if universe_value < max {
-                apply_relational_predecessor(manager, rec, level, set, rel, meta, universe_right)?
+                apply_relational_predecessors(manager, rec, level, set, rel, meta, universe_right)?
             } else {
                 // rel_value < max
-                apply_relational_predecessor(manager, rec, level, set, rel_right, meta, universe)?
+                apply_relational_predecessors(manager, rec, level, set, rel_right, meta, universe)?
             }
         }
     } else if *meta_value == M::InnerNodeValue::write_only_value() {
-        // 2: write only - the target value must appear in both set and rel; the
-        // source value is unconstrained and ranges over the whole universe.
+        // Write-only: the target value must occur in both `set` and `rel`, but
+        // the source value is unconstrained and ranges over all of `universe`.
         let set_value = set_node.value();
         let (set_down, set_right) = collect_children(set_node);
         let rel_value = rel_node.value();
@@ -997,24 +1136,24 @@ fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
         match set_value.cmp(rel_value) {
             Ordering::Less => {
                 // This set value is not written by the relation; skip it.
-                apply_relational_predecessor(manager, rec, level, set_right, rel, meta, universe)?
+                apply_relational_predecessors(manager, rec, level, set_right, rel, meta, universe)?
             }
             Ordering::Greater => {
                 // This relation value is not in the set; skip it.
-                apply_relational_predecessor(manager, rec, level, set, rel_right, meta, universe)?
+                apply_relational_predecessors(manager, rec, level, set, rel_right, meta, universe)?
             }
             Ordering::Equal => {
                 // Emit a source node for every value in the universe, all
                 // sharing the matched continuation.
                 let down_result = EdgeDropGuard::new(
                     manager,
-                    relational_predecessor_universe(
+                    relational_predecessors_universe(
                         manager, rec, level, set_down, rel_down, meta_down, universe,
                     )?,
                 );
                 let right_result = EdgeDropGuard::new(
                     manager,
-                    apply_relational_predecessor(
+                    apply_relational_predecessors(
                         manager, rec, level, set, rel_right, meta, universe,
                     )?,
                 );
@@ -1028,10 +1167,9 @@ fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
             }
         }
     } else if *meta_value == M::InnerNodeValue::read_of_pair_value() {
-        // 3: read half of a read+write pair - emit the source value, taken from
-        // the universe and matched against the relation. The set and universe
-        // are not descended here; the universe is descended at the paired write
-        // level.
+        // Read half of a pair: emit the values of `universe` that are read by
+        // `rel`. `set` and `universe` are not descended here, but at the write
+        // half.
         let rel_value = rel_node.value();
         let (rel_down, rel_right) = collect_children(rel_node);
         let universe_value = universe_node.value();
@@ -1040,17 +1178,17 @@ fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
         match universe_value.cmp(rel_value) {
             Ordering::Less => {
                 // This universe value cannot be read; skip it.
-                apply_relational_predecessor(manager, rec, level, set, rel, meta, universe_right)?
+                apply_relational_predecessors(manager, rec, level, set, rel, meta, universe_right)?
             }
             Ordering::Greater => {
                 // This relation value is not in the universe; skip it.
-                apply_relational_predecessor(manager, rec, level, set, rel_right, meta, universe)?
+                apply_relational_predecessors(manager, rec, level, set, rel_right, meta, universe)?
             }
             Ordering::Equal => {
-                // meta_down is the paired write level (4); the universe is kept
+                // `meta_down` is the write half; the universe is kept
                 // so that its down-branch is descended there.
                 let (down_result, rest) = rec.quaternary(
-                    apply_relational_predecessor,
+                    apply_relational_predecessors,
                     manager,
                     (level + 1, set, rel_down, meta_down, universe),
                     (level, set, rel_right, meta, universe),
@@ -1077,10 +1215,9 @@ fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
             }
         }
     } else if *meta_value == M::InnerNodeValue::write_of_pair_value() {
-        // 4: write half of a read+write pair - consume the target value, which
-        // must appear in both set and rel; nothing is emitted. The source value
-        // was already produced at the paired read level, so descend the
-        // universe here.
+        // Write half of a pair: the target value must occur in both `set` and
+        // `rel`; nothing is emitted. The read half already emitted the source
+        // value, so descend `universe` here.
         let set_value = set_node.value();
         let (set_down, set_right) = collect_children(set_node);
         let rel_value = rel_node.value();
@@ -1089,16 +1226,16 @@ fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
         match set_value.cmp(rel_value) {
             Ordering::Less => {
                 // This target value is not written by the relation; skip it.
-                apply_relational_predecessor(manager, rec, level, set_right, rel, meta, universe)?
+                apply_relational_predecessors(manager, rec, level, set_right, rel, meta, universe)?
             }
             Ordering::Greater => {
                 // This relation value is not in the set; skip it.
-                apply_relational_predecessor(manager, rec, level, set, rel_right, meta, universe)?
+                apply_relational_predecessors(manager, rec, level, set, rel_right, meta, universe)?
             }
             Ordering::Equal => {
                 let (universe_down, _universe_right) = collect_children(universe_node);
                 let (down_result, right_result) = rec.quaternary(
-                    apply_relational_predecessor,
+                    apply_relational_predecessors,
                     manager,
                     (level, set_down, rel_down, meta_down, universe_down),
                     (level, set, rel_right, meta, universe),
@@ -1118,7 +1255,7 @@ fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
 
     manager.apply_cache().add(
         manager,
-        LDDOp::RelationalPredecessor,
+        LDDOp::RelationalPredecessors,
         &[set, rel, meta, universe],
         result.borrowed(),
     );
@@ -1127,14 +1264,14 @@ fn apply_relational_predecessor<M: LDDManager, R: Recursor<M>>(
 }
 
 /// Helper for the write-only ([`write_only_value`][LDDValue::write_only_value])
-/// case of [`apply_relational_predecessor`].
+/// case of [`apply_relational_predecessors`].
 ///
 /// Builds the union over every value `v` in `universe` of the source node
-/// `(v, apply_relational_predecessor(set, rel, meta, universe_v_down))`, where
+/// `(v, apply_relational_predecessors(set, rel, meta, universe_v_down))`, where
 /// `universe_v_down` is the down-branch of the universe node carrying value
 /// `v`. The `set`, `rel`, and `meta` arguments are already descended past the
 /// write level.
-fn relational_predecessor_universe<M: LDDManager, R: Recursor<M>>(
+fn relational_predecessors_universe<M: LDDManager, R: Recursor<M>>(
     manager: &M,
     rec: R,
     level: LevelNo,
@@ -1153,11 +1290,11 @@ fn relational_predecessor_universe<M: LDDManager, R: Recursor<M>>(
 
     let down_result = EdgeDropGuard::new(
         manager,
-        apply_relational_predecessor(manager, rec, level + 1, set, rel, meta, universe_down)?,
+        apply_relational_predecessors(manager, rec, level + 1, set, rel, meta, universe_down)?,
     );
     let right_result = EdgeDropGuard::new(
         manager,
-        relational_predecessor_universe(manager, rec, level, set, rel, meta, universe_right)?,
+        relational_predecessors_universe(manager, rec, level, set, rel, meta, universe_right)?,
     );
 
     if manager
@@ -1347,7 +1484,7 @@ where
     #[inline]
     pub fn projection_meta<'id>(
         manager: &<Self as Function>::Manager<'id>,
-        proj: &[u32],
+        proj: &[LevelNo],
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
         compute_proj(manager, proj)
     }
@@ -1375,20 +1512,23 @@ where
     }
 
     #[inline]
-    pub fn relation_product_meta<'id>(
+    pub fn relation_meta<'id>(
         manager: &<Self as Function>::Manager<'id>,
-        read_proj: &[u32],
-        write_proj: &[u32],
-    ) -> AllocResult<RelationProductMeta<OwnEdgeOfFunc<'id, Self>>> {
-        relation_product_meta(manager, read_proj, write_proj)
+        read_proj: &[LevelNo],
+        write_proj: &[LevelNo],
+    ) -> AllocResult<RelationMeta<OwnEdgeOfFunc<'id, Self>>> {
+        relation_meta(manager, read_proj, write_proj)
     }
 
     /// Computes the set of vectors reachable in one step from `self` via the
     /// sparse relation `rel`, guided by `meta` (produced by
-    /// [`relation_product_meta`][Self::relation_product_meta]).
-    pub fn relational_product(&self, rel: &Self, meta: &Self) -> AllocResult<Self> {
+    /// [`relation_meta`][Self::relation_meta]).
+    ///
+    /// This is also known as the relational product.
+    #[doc(alias = "relational_product")]
+    pub fn relational_successors(&self, rel: &Self, meta: &Self) -> AllocResult<Self> {
         self.with_manager_shared(|manager, set| {
-            let edge = Self::relational_product_edge(
+            let edge = Self::relational_successors_edge(
                 manager,
                 0,
                 set,
@@ -1402,18 +1542,18 @@ where
     /// Computes the set of source vectors in `universe` from which a vector in
     /// `self` is reachable in one step via the sparse relation `rel`, guided by
     /// `meta` (produced by
-    /// [`relation_product_meta`][Self::relation_product_meta]).
+    /// [`relation_meta`][Self::relation_meta]).
     ///
     /// This is the inverse of
-    /// [`relational_product`][Self::relational_product].
-    pub fn relational_predecessor(
+    /// [`relational_successors`][Self::relational_successors].
+    pub fn relational_predecessors(
         &self,
         rel: &Self,
         meta: &Self,
         universe: &Self,
     ) -> AllocResult<Self> {
         self.with_manager_shared(|manager, set| {
-            let edge = Self::relational_predecessor_edge(
+            let edge = Self::relational_predecessors_edge(
                 manager,
                 0,
                 set,
@@ -1427,30 +1567,30 @@ where
 
     /// Computes the set of vectors reachable in one step from `set` via the
     /// sparse relation `rel`.  `meta` must be produced by
-    /// [`relation_product_meta`][Self::relation_product_meta].
+    /// [`relation_meta`][Self::relation_meta].
     ///
     /// `set` must reside at `level`; `rel` and `meta` are sub-LDDs matching the
     /// positions from `level` onwards.
     #[inline]
-    pub fn relational_product_edge<'id>(
+    pub fn relational_successors_edge<'id>(
         manager: &<Self as Function>::Manager<'id>,
         level: LevelNo,
         set: Ref<'_, EdgeOfFunc<'id, Self>>,
         rel: Ref<'_, EdgeOfFunc<'id, Self>>,
         meta: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
-        apply_relational_product(manager, SequentialRecursor, level, set, rel, meta)
+        apply_relational_successors(manager, SequentialRecursor, level, set, rel, meta)
     }
 
     /// Computes the set of source vectors in `universe` that can reach a vector
     /// in `set` in one step via the sparse relation `rel`.  `meta` must be
-    /// produced by [`relation_product_meta`][Self::relation_product_meta].
+    /// produced by [`relation_meta`][Self::relation_meta].
     ///
-    /// This is the inverse of [`Self::relational_product_edge`].
+    /// This is the inverse of [`Self::relational_successors_edge`].
     ///
     /// `set` and `universe` must reside at `level`.
     #[inline]
-    pub fn relational_predecessor_edge<'id>(
+    pub fn relational_predecessors_edge<'id>(
         manager: &<Self as Function>::Manager<'id>,
         level: LevelNo,
         set: Ref<'_, EdgeOfFunc<'id, Self>>,
@@ -1458,7 +1598,7 @@ where
         meta: Ref<'_, EdgeOfFunc<'id, Self>>,
         universe: Ref<'_, EdgeOfFunc<'id, Self>>,
     ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
-        apply_relational_predecessor(manager, SequentialRecursor, level, set, rel, meta, universe)
+        apply_relational_predecessors(manager, SequentialRecursor, level, set, rel, meta, universe)
     }
 
     /// Returns the number of vectors (lists) contained in `self`.
@@ -1621,7 +1761,7 @@ pub mod mt {
         #[inline]
         pub fn projection_meta<'id>(
             manager: &<Self as Function>::Manager<'id>,
-            proj: &[u32],
+            proj: &[LevelNo],
         ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             compute_proj(manager, proj)
         }
@@ -1644,20 +1784,20 @@ pub mod mt {
             apply_project(manager, ParallelRecursor::new(manager), 0, set, proj)
         }
 
-        /// See [`LDDFunction::relation_product_meta`].
+        /// See [`LDDFunction::relation_meta`].
         #[inline]
-        pub fn relation_product_meta<'id>(
+        pub fn relation_meta<'id>(
             manager: &<Self as Function>::Manager<'id>,
-            read_proj: &[u32],
-            write_proj: &[u32],
-        ) -> AllocResult<RelationProductMeta<OwnEdgeOfFunc<'id, Self>>> {
-            relation_product_meta(manager, read_proj, write_proj)
+            read_proj: &[LevelNo],
+            write_proj: &[LevelNo],
+        ) -> AllocResult<RelationMeta<OwnEdgeOfFunc<'id, Self>>> {
+            relation_meta(manager, read_proj, write_proj)
         }
 
-        /// See [`LDDFunction::relational_product`].
-        pub fn relational_product(&self, rel: &Self, meta: &Self) -> AllocResult<Self> {
+        /// See [`LDDFunction::relational_successors`].
+        pub fn relational_successors(&self, rel: &Self, meta: &Self) -> AllocResult<Self> {
             self.with_manager_shared(|manager, set| {
-                let edge = Self::relational_product_edge(
+                let edge = Self::relational_successors_edge(
                     manager,
                     0,
                     set,
@@ -1668,15 +1808,15 @@ pub mod mt {
             })
         }
 
-        /// See [`LDDFunction::relational_predecessor`].
-        pub fn relational_predecessor(
+        /// See [`LDDFunction::relational_predecessors`].
+        pub fn relational_predecessors(
             &self,
             rel: &Self,
             meta: &Self,
             universe: &Self,
         ) -> AllocResult<Self> {
             self.with_manager_shared(|manager, set| {
-                let edge = Self::relational_predecessor_edge(
+                let edge = Self::relational_predecessors_edge(
                     manager,
                     0,
                     set,
@@ -1688,16 +1828,16 @@ pub mod mt {
             })
         }
 
-        /// See [`LDDFunction::relational_product_edge`].
+        /// See [`LDDFunction::relational_successors_edge`].
         #[inline]
-        pub fn relational_product_edge<'id>(
+        pub fn relational_successors_edge<'id>(
             manager: &<Self as Function>::Manager<'id>,
             level: LevelNo,
             set: Ref<'_, EdgeOfFunc<'id, Self>>,
             rel: Ref<'_, EdgeOfFunc<'id, Self>>,
             meta: Ref<'_, EdgeOfFunc<'id, Self>>,
         ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
-            apply_relational_product(
+            apply_relational_successors(
                 manager,
                 ParallelRecursor::new(manager),
                 level,
@@ -1707,9 +1847,9 @@ pub mod mt {
             )
         }
 
-        /// See [`LDDFunction::relational_predecessor_edge`].
+        /// See [`LDDFunction::relational_predecessors_edge`].
         #[inline]
-        pub fn relational_predecessor_edge<'id>(
+        pub fn relational_predecessors_edge<'id>(
             manager: &<Self as Function>::Manager<'id>,
             level: LevelNo,
             set: Ref<'_, EdgeOfFunc<'id, Self>>,
@@ -1718,7 +1858,7 @@ pub mod mt {
             universe: Ref<'_, EdgeOfFunc<'id, Self>>,
         ) -> AllocResult<OwnEdgeOfFunc<'id, Self>> {
             let rec = ParallelRecursor::new(manager);
-            apply_relational_predecessor(manager, rec, level, set, rel, meta, universe)
+            apply_relational_predecessors(manager, rec, level, set, rel, meta, universe)
         }
 
         /// See [`LDDFunction::len`].

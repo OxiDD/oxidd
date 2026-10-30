@@ -14,7 +14,7 @@ mod recursor;
 #[cfg(feature = "statistics")]
 pub use apply_rec::print_stats;
 
-/// Terminal nodes of a list decision diagrams
+/// Terminal nodes of an LDD.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Countable, Debug)]
 #[repr(u8)]
 pub enum LDDTerminal {
@@ -25,27 +25,30 @@ pub enum LDDTerminal {
     True,
 }
 
-/// For LDDs it is essential that values are ordered and can be cloned.
+/// The trait for values stored in the inner nodes of LDDs.
+///
+/// The LDDs represent a set of vectors of these values. Typically we use
+/// numeric types such as `u32`.
 trait LDDValue: Clone + Ord + Eq + Hash {
     /// The value used to indicate "included" in a projection meta-LDD.
     fn true_value() -> Self;
 
     /// The value used to indicate "excluded" in a projection meta-LDD, and
-    /// "skip" (neither read nor write) in a relation-product meta-LDD.
+    /// "skip" (neither read nor write) in a relation meta-LDD.
     fn false_value() -> Self;
 
-    /// Value encoding a read-only position in a relation-product meta-LDD.
+    /// Value encoding a read-only position in a relation meta-LDD.
     fn read_only_value() -> Self;
 
-    /// Value encoding a write-only position in a relation-product meta-LDD.
+    /// Value encoding a write-only position in a relation meta-LDD.
     fn write_only_value() -> Self;
 
     /// Value encoding the *read* half of a read+write position pair in a
-    /// relation-product meta-LDD.
+    /// relation meta-LDD.
     fn read_of_pair_value() -> Self;
 
     /// Value encoding the *write* half of a read+write position pair in a
-    /// relation-product meta-LDD.
+    /// relation meta-LDD.
     fn write_of_pair_value() -> Self;
 }
 
@@ -131,8 +134,8 @@ pub enum LDDOp {
 
     Project,
 
-    RelationalProduct,
-    RelationalPredecessor,
+    RelationalSuccessors,
+    RelationalPredecessors,
 }
 
 trait LDDManager:
@@ -146,17 +149,17 @@ where
 {
 }
 
-/// Result of [`LDDFunction::relation_product_meta`].
+/// Result of [`LDDFunction::relation_meta`].
 ///
 /// Bundles the meta-LDD encoding the read/write projection together with the
-/// positions of the read and write variables in that encoding.
-pub struct RelationProductMeta<E> {
+/// positions of the read and write values in the relation vectors.
+pub struct RelationMeta<E> {
     /// The meta-LDD encoding the read/write projection.
     pub meta: E,
-    /// The positions of the read variables in the meta encoding.
-    pub read_positions: Vec<usize>,
-    /// The positions of the write variables in the meta encoding.
-    pub write_positions: Vec<usize>,
+    /// The positions of the read values in the relation vectors.
+    pub read_positions: Vec<LevelNo>,
+    /// The positions of the write values in the relation vectors.
+    pub write_positions: Vec<LevelNo>,
 }
 
 // --- Function Interface ------------------------------------------------------
