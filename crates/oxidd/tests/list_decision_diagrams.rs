@@ -184,7 +184,7 @@ fn naive_predecessors(
 /// vectors have one value per read and one per write position.
 fn representative_relations(read: &[LevelNo], write: &[LevelNo]) -> Vec<Vectors> {
     let len = (read.len() + write.len()) as LevelNo;
-    let mut rels = vec![
+    let mut relations = vec![
         Vectors::new(),
         Vectors::from([vec![2; len as usize]]),
         all_vectors(len, 2),
@@ -194,9 +194,9 @@ fn representative_relations(read: &[LevelNo], write: &[LevelNo]) -> Vec<Vectors>
             .collect(),
     ];
     // Without read or write positions, several of these coincide
-    rels.sort();
-    rels.dedup();
-    rels
+    relations.sort();
+    relations.dedup();
+    relations
 }
 
 #[test]
@@ -393,7 +393,7 @@ fn set_ops_identities() -> AllocResult<()> {
 }
 
 #[test]
-fn edge_ops_on_sub_ldds() -> AllocResult<()> {
+fn edge_ops_on_sub_diagrams() -> AllocResult<()> {
     let mref = setup(1);
     mref.with_manager_shared(|manager| {
         // Both down-branches reside at level 1
@@ -533,27 +533,27 @@ fn relational_ops_match_naive(threads: u32) -> AllocResult<()> {
                 for set in &sets {
                     let set_ldd = from_vectors(manager, set)?;
 
-                    let image = set_ldd.relational_successors(&rel_ldd, &meta)?;
+                    let successors = set_ldd.relational_successors(&rel_ldd, &meta)?;
                     let expected = naive_successors(set, &rel, &read, &write);
                     assert_eq!(
-                        to_vectors(&image),
+                        to_vectors(&successors),
                         expected,
                         "successors of {set:?} via {rel:?}, read {read:?}, write {write:?}"
                     );
-                    assert!(image == from_vectors(manager, &expected)?);
+                    assert!(successors == from_vectors(manager, &expected)?);
 
                     for universe in &universes {
                         let universe_ldd = from_vectors(manager, universe)?;
-                        let preimage =
+                        let predecessors =
                             set_ldd.relational_predecessors(&rel_ldd, &meta, &universe_ldd)?;
                         let expected = naive_predecessors(set, &rel, &read, &write, universe);
                         assert_eq!(
-                            to_vectors(&preimage),
+                            to_vectors(&predecessors),
                             expected,
                             "predecessors of {set:?} in {universe:?} via {rel:?}, read {read:?}, \
                              write {write:?}"
                         );
-                        assert!(preimage == from_vectors(manager, &expected)?);
+                        assert!(predecessors == from_vectors(manager, &expected)?);
                     }
                 }
             }

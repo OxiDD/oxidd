@@ -169,7 +169,10 @@ fn apply_intersection<M: LDDManager, R: Recursor<M>>(
     };
 
     stat!(cache_query LDDOp::Intersection);
-    if let Some(res) = manager.apply_cache().get(manager, LDDOp::Intersection, &[a, b]) {
+    if let Some(res) = manager
+        .apply_cache()
+        .get(manager, LDDOp::Intersection, &[a, b])
+    {
         stat!(cache_hit LDDOp::Intersection);
         return Ok(res);
     }
@@ -258,7 +261,10 @@ fn apply_difference<M: LDDManager, R: Recursor<M>>(
     };
 
     stat!(cache_query LDDOp::Difference);
-    if let Some(res) = manager.apply_cache().get(manager, LDDOp::Difference, &[a, b]) {
+    if let Some(res) = manager
+        .apply_cache()
+        .get(manager, LDDOp::Difference, &[a, b])
+    {
         stat!(cache_hit LDDOp::Difference);
         return Ok(res);
     }
@@ -333,9 +339,9 @@ fn compute_proj<M: LDDManager>(manager: &M, proj: &[LevelNo]) -> AllocResult<Own
         // Requires worst-case quadratic time, but the projection array is
         // typically small.
         result.push(if proj.contains(&i) {
-            M::InnerNodeValue::true_value()
+            M::InnerNodeValue::INCLUDE
         } else {
-            M::InnerNodeValue::false_value()
+            M::InnerNodeValue::EXCLUDE
         });
     }
 
@@ -419,7 +425,7 @@ fn apply_project<M: LDDManager, R: Recursor<M>>(
     let set_value = set_node.value();
     let (set_down, set_right) = collect_children(set_node);
 
-    let result = if *proj_value == M::InnerNodeValue::false_value() {
+    let result = if *proj_value == M::InnerNodeValue::EXCLUDE {
         // This position is not in the projection: skip it and compute the union
         // of the right and down branches.
         let (right_result, down_result) = rec.binary(
@@ -435,7 +441,7 @@ fn apply_project<M: LDDManager, R: Recursor<M>>(
             right_result.borrowed(),
             down_result.borrowed(),
         )
-    } else if *proj_value == M::InnerNodeValue::true_value() {
+    } else if *proj_value == M::InnerNodeValue::INCLUDE {
         // This position is in the projection: keep the current value and
         // recurse on both branches.
         let (right_result, down_result) = rec.binary(
@@ -545,21 +551,21 @@ fn relation_meta<M: LDDManager>(
         let read = read_proj.contains(&i);
         let write = write_proj.contains(&i);
         if read && write {
-            meta.push(M::InnerNodeValue::read_of_pair_value());
-            meta.push(M::InnerNodeValue::write_of_pair_value());
+            meta.push(M::InnerNodeValue::READ_OF_PAIR);
+            meta.push(M::InnerNodeValue::WRITE_OF_PAIR);
             read_positions.push(offset);
             write_positions.push(offset + 1);
             offset += 2;
         } else if read {
-            meta.push(M::InnerNodeValue::read_only_value());
+            meta.push(M::InnerNodeValue::READ_ONLY);
             read_positions.push(offset);
             offset += 1;
         } else if write {
-            meta.push(M::InnerNodeValue::write_only_value());
+            meta.push(M::InnerNodeValue::WRITE_ONLY);
             write_positions.push(offset);
             offset += 1;
         } else {
-            meta.push(M::InnerNodeValue::false_value());
+            meta.push(M::InnerNodeValue::SKIP);
         }
     }
 
@@ -696,7 +702,7 @@ fn apply_relational_successors<M: LDDManager, R: Recursor<M>>(
     let meta_value = meta_node.value();
     let (meta_down, _meta_right) = collect_children(meta_node);
 
-    let result = if *meta_value == M::InnerNodeValue::false_value() {
+    let result = if *meta_value == M::InnerNodeValue::SKIP {
         // Not in the relation: emit the values of `set` unchanged. `rel` does
         // not have a level for this position, so it is not descended.
         let set_node = set_node.expect("set must have as many levels as meta");
@@ -724,7 +730,7 @@ fn apply_relational_successors<M: LDDManager, R: Recursor<M>>(
                 right_result.into_edge(),
             )?
         }
-    } else if *meta_value == M::InnerNodeValue::read_only_value() {
+    } else if *meta_value == M::InnerNodeValue::READ_ONLY {
         // Read-only: emit the values of `set` that also occur in `rel`.
         let set_node = set_node.expect("set must have as many levels as meta");
         let set_value = set_node.value();
@@ -764,7 +770,7 @@ fn apply_relational_successors<M: LDDManager, R: Recursor<M>>(
                 apply_relational_successors(manager, rec, level, set, rel_right, meta)?
             }
         }
-    } else if *meta_value == M::InnerNodeValue::write_only_value() {
+    } else if *meta_value == M::InnerNodeValue::WRITE_ONLY {
         // Write-only: the value of `set` is overwritten, so continue with the
         // union of all down-branches of `set`, and emit each value of `rel`.
         // The union is computed once for all values of `rel`.
@@ -789,7 +795,7 @@ fn apply_relational_successors<M: LDDManager, R: Recursor<M>>(
         };
 
         relational_successors_write_only(manager, rec, level, combined.borrowed(), rel, meta_down)?
-    } else if *meta_value == M::InnerNodeValue::read_of_pair_value() {
+    } else if *meta_value == M::InnerNodeValue::READ_OF_PAIR {
         // Read half of a pair: keep the values of `set` that also occur in
         // `rel`, but do not emit them; the write half emits the new values at
         // this result level instead.
@@ -828,7 +834,7 @@ fn apply_relational_successors<M: LDDManager, R: Recursor<M>>(
                 apply_relational_successors(manager, rec, level, set, rel_right, meta)?
             }
         }
-    } else if *meta_value == M::InnerNodeValue::write_of_pair_value() {
+    } else if *meta_value == M::InnerNodeValue::WRITE_OF_PAIR {
         // Write half of a pair: emit each value of `rel`. `set` was already
         // descended at the read half, so it is passed on unchanged.
         let rel_value = rel_node.value();
@@ -1032,7 +1038,7 @@ fn apply_relational_predecessors<M: LDDManager, R: Recursor<M>>(
     let meta_value = meta_node.value();
     let (meta_down, _meta_right) = collect_children(meta_node);
 
-    let result = if *meta_value == M::InnerNodeValue::false_value() {
+    let result = if *meta_value == M::InnerNodeValue::SKIP {
         // Not in the relation: emit the values that occur in both `set` and
         // `universe`. `rel` does not have a level for this position, so it is
         // not descended.
@@ -1073,7 +1079,7 @@ fn apply_relational_predecessors<M: LDDManager, R: Recursor<M>>(
                 }
             }
         }
-    } else if *meta_value == M::InnerNodeValue::read_only_value() {
+    } else if *meta_value == M::InnerNodeValue::READ_ONLY {
         // Read-only: the source value equals the target value, so emit the
         // values that occur in `set`, `rel` and `universe`.
         let set_value = set_node.value();
@@ -1125,7 +1131,7 @@ fn apply_relational_predecessors<M: LDDManager, R: Recursor<M>>(
                 apply_relational_predecessors(manager, rec, level, set, rel_right, meta, universe)?
             }
         }
-    } else if *meta_value == M::InnerNodeValue::write_only_value() {
+    } else if *meta_value == M::InnerNodeValue::WRITE_ONLY {
         // Write-only: the target value must occur in both `set` and `rel`, but
         // the source value is unconstrained and ranges over all of `universe`.
         let set_value = set_node.value();
@@ -1166,7 +1172,7 @@ fn apply_relational_predecessors<M: LDDManager, R: Recursor<M>>(
                 )?
             }
         }
-    } else if *meta_value == M::InnerNodeValue::read_of_pair_value() {
+    } else if *meta_value == M::InnerNodeValue::READ_OF_PAIR {
         // Read half of a pair: emit the values of `universe` that are read by
         // `rel`. `set` and `universe` are not descended here, but at the write
         // half.
@@ -1214,7 +1220,7 @@ fn apply_relational_predecessors<M: LDDManager, R: Recursor<M>>(
                 apply_union(manager, rec, level, node.borrowed(), rest.borrowed())?
             }
         }
-    } else if *meta_value == M::InnerNodeValue::write_of_pair_value() {
+    } else if *meta_value == M::InnerNodeValue::WRITE_OF_PAIR {
         // Write half of a pair: the target value must occur in both `set` and
         // `rel`; nothing is emitted. The read half already emitted the source
         // value, so descend `universe` here.

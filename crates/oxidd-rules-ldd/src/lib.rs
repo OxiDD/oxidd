@@ -31,58 +31,40 @@ pub enum LDDTerminal {
 /// numeric types such as `u32`.
 trait LDDValue: Clone + Ord + Eq + Hash {
     /// The value used to indicate "included" in a projection meta-LDD.
-    fn true_value() -> Self;
+    const INCLUDE: Self;
 
-    /// The value used to indicate "excluded" in a projection meta-LDD, and
-    /// "skip" (neither read nor write) in a relation meta-LDD.
-    fn false_value() -> Self;
+    /// The value used to indicate "excluded" in a projection meta-LDD.
+    const EXCLUDE: Self;
+
+    /// Value encoding a skipped position (neither read nor written) in a
+    /// relation meta-LDD.
+    const SKIP: Self;
 
     /// Value encoding a read-only position in a relation meta-LDD.
-    fn read_only_value() -> Self;
+    const READ_ONLY: Self;
 
     /// Value encoding a write-only position in a relation meta-LDD.
-    fn write_only_value() -> Self;
+    const WRITE_ONLY: Self;
 
     /// Value encoding the *read* half of a read+write position pair in a
     /// relation meta-LDD.
-    fn read_of_pair_value() -> Self;
+    const READ_OF_PAIR: Self;
 
     /// Value encoding the *write* half of a read+write position pair in a
     /// relation meta-LDD.
-    fn write_of_pair_value() -> Self;
+    const WRITE_OF_PAIR: Self;
 }
 
-// The default LDDValue to be used.
+// The LDDValue that is used by default in the ldd manager.
 impl LDDValue for u32 {
-    #[inline(always)]
-    fn true_value() -> Self {
-        1
-    }
+    const INCLUDE: Self = 1;
+    const EXCLUDE: Self = 0;
 
-    #[inline(always)]
-    fn false_value() -> Self {
-        0
-    }
-
-    #[inline(always)]
-    fn read_only_value() -> Self {
-        1
-    }
-
-    #[inline(always)]
-    fn write_only_value() -> Self {
-        2
-    }
-
-    #[inline(always)]
-    fn read_of_pair_value() -> Self {
-        3
-    }
-
-    #[inline(always)]
-    fn write_of_pair_value() -> Self {
-        4
-    }
+    const SKIP: Self = 0;    
+    const READ_ONLY: Self = 1;
+    const WRITE_ONLY: Self = 2;
+    const READ_OF_PAIR: Self = 3;
+    const WRITE_OF_PAIR: Self = 4;
 }
 
 /// Index of the down branch in a node
