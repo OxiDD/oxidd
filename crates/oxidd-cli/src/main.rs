@@ -13,7 +13,7 @@ use clap::{Parser, ValueEnum};
 use oxidd::util::SatCountCache;
 use oxidd::{BooleanFunction, HasLevel, HasWorkers, Manager, ManagerRef, VarNo, WorkerPool};
 use oxidd_core::LevelSwapper;
-use oxidd_core::function::{ETagOfFunc, INodeOfFunc, RulesOfFunc, TermOfFunc};
+use oxidd_core::function::{ETagOfFunc, INodeOfFunc, INodeValOfFunc, RulesOfFunc, TermOfFunc};
 use oxidd_core::util::VarNameMap;
 use oxidd_core::{ApplyCache, HasApplyCache};
 use oxidd_dump::{dddmp, dot};
@@ -345,6 +345,7 @@ where
     for<'id> B: dot::DotStyle<ETagOfFunc<'id, B>>,
     for<'id> B::Manager<'id>: HasWorkers + HasApplyCache<B::Manager<'id>, O>,
     for<'id> INodeOfFunc<'id, B>: HasLevel,
+    for<'id> INodeValOfFunc<'id, B>: Default,
     for<'id> ETagOfFunc<'id, B>: fmt::Debug,
     for<'id> TermOfFunc<'id, B>:
         oxidd_dump::ParseTagged<ETagOfFunc<'id, B>> + fmt::Display + oxidd_dump::AsciiDisplay,

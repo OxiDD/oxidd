@@ -16,7 +16,7 @@ fn unreduce<'a, M: Manager>(
     }
 }
 
-impl<M: Manager> SafeLevelSwapper<M> for TDDRules
+impl<M: Manager<InnerNodeValue = ()>> SafeLevelSwapper<M> for TDDRules
 where
     M::InnerNode: HasLevel,
 {
@@ -50,7 +50,7 @@ where
             if t == u && u == e {
                 Ok(manager.clone_edge(t))
             } else {
-                lower.get_or_insert(manager, &[t, u, e])
+                lower.get_or_insert(manager, &[t, u, e], &())
             }
         };
 

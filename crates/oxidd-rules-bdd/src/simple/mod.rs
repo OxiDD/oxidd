@@ -20,17 +20,13 @@ pub struct BDDRules;
 
 /// Apply the reduction rules, creating a node in `manager` if necessary
 #[inline(always)]
-fn reduce<M>(
+fn reduce<M: Manager<InnerNode: HasLevel, InnerNodeValue = ()>>(
     manager: &M,
     level: LevelNo,
     t: Own<M::Edge>,
     e: Own<M::Edge>,
     op: BDDOp,
-) -> AllocResult<Own<M::Edge>>
-where
-    M: Manager<Terminal = BDDTerminal>,
-    M::InnerNode: HasLevel,
-{
+) -> AllocResult<Own<M::Edge>> {
     let t = EdgeDropGuard::new(manager, t);
     let e = EdgeDropGuard::new(manager, e);
     debug_assert!(manager.get_node(t.borrowed()).level() > level);
@@ -40,7 +36,7 @@ where
         stat!(reduced op);
         return Ok(t.into_edge());
     }
-    manager.get_or_insert(level, [t.into_edge(), e.into_edge()])
+    manager.get_or_insert(level, [t.into_edge(), e.into_edge()], ())
 }
 
 /// Collect the two children of a binary node

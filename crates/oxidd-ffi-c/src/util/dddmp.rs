@@ -3,7 +3,7 @@ use std::ffi::{OsStr, c_char};
 use std::{fs, io};
 
 use oxidd::{BooleanFunction, HasLevel, LevelNo, ManagerRef, VarNo};
-use oxidd_core::function::{ETagOfFunc, INodeOfFunc, TermOfFunc};
+use oxidd_core::function::{ETagOfFunc, INodeOfFunc, INodeValOfFunc, TermOfFunc};
 use oxidd_dump::{AsciiDisplay, ParseTagged, Visualizer, dddmp};
 
 use super::{CFunction, CManagerRef, error_t, handle_err, handle_err_or_init, slice, str_t};
@@ -27,6 +27,7 @@ impl dddmp_file_t {
     where
         CF::Function: BooleanFunction + oxidd_dump::DumpDeserialize,
         for<'id> INodeOfFunc<'id, CF::Function>: HasLevel,
+        for<'id> INodeValOfFunc<'id, CF::Function>: Default,
         for<'id> TermOfFunc<'id, CF::Function>: ParseTagged<ETagOfFunc<'id, CF::Function>>,
     {
         let support_vars = if support_vars.is_null() {

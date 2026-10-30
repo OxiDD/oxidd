@@ -1,0 +1,22 @@
+[package]
+name = "oxidd-rules-ldd"
+version = "0.8.0"
+edition = "2024"
+description = "List decision diagrams (LDDs) for OxiDD"
+readme = "../../README.md"
+
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[features]
+## Enable multi-threaded apply implementations
+multi-threading = []
+
+## Enable statistics generation
+statistics = []
+
+[dependencies]
+oxidd-core.workspace = true
+oxidd-derive.workspace = true

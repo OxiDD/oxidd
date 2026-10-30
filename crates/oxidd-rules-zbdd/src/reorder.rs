@@ -4,7 +4,7 @@ use oxidd_core::{HasLevel, InnerNode, Manager};
 
 use crate::{HI, LO, ZBDDRules, ZBDDTerminal};
 
-impl<M: Manager<Terminal = ZBDDTerminal>> SafeLevelSwapper<M> for ZBDDRules
+impl<M: Manager<Terminal = ZBDDTerminal, InnerNodeValue = ()>> SafeLevelSwapper<M> for ZBDDRules
 where
     M::InnerNode: HasLevel,
 {
@@ -36,7 +36,7 @@ where
             if hi == empty.borrowed() {
                 Ok(manager.clone_edge(lo))
             } else {
-                lower.get_or_insert(manager, &[hi, lo])
+                lower.get_or_insert(manager, &[hi, lo], &())
             }
         };
 

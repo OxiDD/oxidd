@@ -1,0 +1,241 @@
+//! List decision diagrams (LDDs) for OxiDD.
+
+use std::hash::Hash;
+
+use oxidd_core::{
+    Edge, HasApplyCache, InnerNode, LevelNo, Manager,
+    util::{AllocResult, Own, Ref},
+};
+use oxidd_derive::Countable;
+
+mod apply_rec;
+mod recursor;
+
+#[cfg(feature = "statistics")]
+pub use apply_rec::print_stats;
+
+/// Terminal nodes of an LDD.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Countable, Debug)]
+#[repr(u8)]
+pub enum LDDTerminal {
+    /// This represents the empty set, also denoted by `false`.
+    Empty,
+    /// This represents the set containing only the empty list, also denoted by
+    /// `true`.
+    True,
+}
+
+/// The trait for values stored in the inner nodes of LDDs.
+///
+/// The LDDs represent a set of vectors of these values. Typically we use
+/// numeric types such as `u32`.
+trait LDDValue: Clone + Ord + Eq + Hash {
+    /// The value used to indicate "included" in a projection meta-LDD.
+    const INCLUDE: Self;
+
+    /// The value used to indicate "excluded" in a projection meta-LDD.
+    const EXCLUDE: Self;
+
+    /// Value encoding a skipped position (neither read nor written) in a
+    /// relation meta-LDD.
+    const SKIP: Self;
+
+    /// Value encoding a read-only position in a relation meta-LDD.
+    const READ_ONLY: Self;
+
+    /// Value encoding a write-only position in a relation meta-LDD.
+    const WRITE_ONLY: Self;
+
+    /// Value encoding the *read* half of a read+write position pair in a
+    /// relation meta-LDD.
+    const READ_OF_PAIR: Self;
+
+    /// Value encoding the *write* half of a read+write position pair in a
+    /// relation meta-LDD.
+    const WRITE_OF_PAIR: Self;
+}
+
+// The LDDValue that is used by default in the ldd manager.
+impl LDDValue for u32 {
+    const INCLUDE: Self = 1;
+    const EXCLUDE: Self = 0;
+
+    const SKIP: Self = 0;    
+    const READ_ONLY: Self = 1;
+    const WRITE_ONLY: Self = 2;
+    const READ_OF_PAIR: Self = 3;
+    const WRITE_OF_PAIR: Self = 4;
+}
+
+/// Index of the down branch in a node
+#[allow(unused)] // for later usage
+const DOWN: usize = 0;
+/// Index of the right branch in a node
+const RIGHT: usize = 1;
+
+/// Collect the two children of a binary node
+#[inline]
+#[must_use]
+fn collect_children<E: Edge, N: InnerNode<E>>(node: &N) -> (Ref<'_, E>, Ref<'_, E>) {
+    const { assert!(N::ARITY == 2) };
+    let mut it = node.children();
+    let f_down = it.next().unwrap();
+    let f_right = it.next().unwrap();
+    debug_assert!(it.next().is_none());
+    (f_down, f_right)
+}
+
+/// Rules for list decision diagrams
+pub struct LDDRules;
+
+/// Create a node at `level` in `manager` if necessary
+///
+/// LDDs are quasi-reduced: level `i` holds the nodes for position `i` of the
+/// vectors, so `down` must reside at `level + 1` and `right` at `level` (unless
+/// they are terminals). The nodes do not store their level, so the caller is
+/// responsible for this.
+#[inline(always)]
+fn make_node<M: LDDManager>(
+    manager: &M,
+    level: LevelNo,
+    value: &<M as Manager>::InnerNodeValue,
+    down: Own<M::Edge>,
+    right: Own<M::Edge>,
+) -> AllocResult<Own<M::Edge>> {
+    manager.get_or_insert(level, [down, right], value.clone())
+}
+
+/// Native operators of this LDD implementation
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Hash, Ord, Countable, Debug)]
+#[repr(u8)]
+#[allow(missing_docs)]
+pub enum LDDOp {
+    Union,
+    Intersection,
+    Difference,
+
+    Project,
+
+    RelationalSuccessors,
+    RelationalPredecessors,
+}
+
+trait LDDManager:
+    Manager<Terminal = LDDTerminal, InnerNodeValue: LDDValue> + HasApplyCache<Self, LDDOp>
+{
+}
+impl<M> LDDManager for M
+where
+    M: Manager<Terminal = LDDTerminal> + HasApplyCache<M, LDDOp>,
+    M::InnerNodeValue: LDDValue,
+{
+}
+
+/// Result of [`LDDFunction::relation_meta`].
+///
+/// Bundles the meta-LDD encoding the read/write projection together with the
+/// positions of the read and write values in the relation vectors.
+pub struct RelationMeta<E> {
+    /// The meta-LDD encoding the read/write projection.
+    pub meta: E,
+    /// The positions of the read values in the relation vectors.
+    pub read_positions: Vec<LevelNo>,
+    /// The positions of the write values in the relation vectors.
+    pub write_positions: Vec<LevelNo>,
+}
+
+// --- Function Interface ------------------------------------------------------
+
+pub use apply_rec::LDDFunction;
+#[cfg(feature = "multi-threading")]
+pub use apply_rec::mt::LDDFunctionMT;
+
+// --- Statistics --------------------------------------------------------------
+
+#[cfg(feature = "statistics")]
+struct StatCounters {
+    calls: std::sync::atomic::AtomicI64,
+    cache_queries: std::sync::atomic::AtomicI64,
+    cache_hits: std::sync::atomic::AtomicI64,
+    reduced: std::sync::atomic::AtomicI64,
+}
+
+#[cfg(feature = "statistics")]
+impl StatCounters {
+    #[allow(clippy::declare_interior_mutable_const)]
+    const INIT: StatCounters = StatCounters {
+        calls: std::sync::atomic::AtomicI64::new(0),
+        cache_queries: std::sync::atomic::AtomicI64::new(0),
+        cache_hits: std::sync::atomic::AtomicI64::new(0),
+        reduced: std::sync::atomic::AtomicI64::new(0),
+    };
+
+    fn print<O: oxidd_core::Countable + std::fmt::Debug>(counters: &[Self]) {
+        // spell-checker:ignore ctrs
+        for (i, ctrs) in counters.iter().enumerate() {
+            let calls = ctrs.calls.swap(0, std::sync::atomic::Ordering::Relaxed);
+            let cache_queries = ctrs
+                .cache_queries
+                .swap(0, std::sync::atomic::Ordering::Relaxed);
+            let cache_hits = ctrs
+                .cache_hits
+                .swap(0, std::sync::atomic::Ordering::Relaxed);
+            let reduced = ctrs.reduced.swap(0, std::sync::atomic::Ordering::Relaxed);
+
+            if calls == 0 {
+                continue;
+            }
+
+            let terminal_percent = (calls - cache_queries) as f32 / calls as f32 * 100.0;
+            let cache_hit_percent = cache_hits as f32 / cache_queries as f32 * 100.0;
+            let op = <O as oxidd_core::Countable>::from_usize(i);
+            eprintln!(
+                "  {op:?}: calls: {calls}, cache queries: {cache_queries} ({terminal_percent} % terminal cases), cache hits: {cache_hits} ({cache_hit_percent} %), reduced: {reduced}"
+            );
+        }
+    }
+}
+
+#[cfg(feature = "statistics")]
+static STAT_COUNTERS: [StatCounters; <LDDOp as oxidd_core::Countable>::MAX_VALUE + 1] =
+    [StatCounters::INIT; <LDDOp as oxidd_core::Countable>::MAX_VALUE + 1];
+
+/// Print statistics to stderr
+#[cfg(feature = "statistics")]
+pub fn print_stats() {
+    eprintln!("[oxidd_rules_ldd]");
+    StatCounters::print::<LDDOp>(&STAT_COUNTERS);
+}
+
+macro_rules! stat {
+    (call $op:expr) => {
+        let _ = $op as usize;
+        #[cfg(feature = "statistics")]
+        STAT_COUNTERS[$op as usize]
+            .calls
+            .fetch_add(1, ::std::sync::atomic::Ordering::Relaxed);
+    };
+    (cache_query $op:expr) => {
+        let _ = $op as usize;
+        #[cfg(feature = "statistics")]
+        STAT_COUNTERS[$op as usize]
+            .cache_queries
+            .fetch_add(1, ::std::sync::atomic::Ordering::Relaxed);
+    };
+    (cache_hit $op:expr) => {
+        let _ = $op as usize;
+        #[cfg(feature = "statistics")]
+        STAT_COUNTERS[$op as usize]
+            .cache_hits
+            .fetch_add(1, ::std::sync::atomic::Ordering::Relaxed);
+    };
+    (reduced $op:expr) => {
+        let _ = $op as usize;
+        #[cfg(feature = "statistics")]
+        STAT_COUNTERS[$op as usize]
+            .reduced
+            .fetch_add(1, ::std::sync::atomic::Ordering::Relaxed);
+    };
+}
+
+pub(crate) use stat;
