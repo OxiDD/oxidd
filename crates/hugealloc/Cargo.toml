@@ -13,6 +13,8 @@ allocator-api2 = { version = "0.2", default-features = false }
 
 sptr = "0.3"
 
-[target.'cfg(all(any(target_family = "unix", target_family = "windows"), not(miri)))'.dependencies]
+# Linux-only until we actually use `mmap`
+# [target.'cfg(all(any(target_family = "unix", target_family = "windows"), not(miri)))'.dependencies]
+[target.'cfg(all(target_os = "linux", not(miri)))'.dependencies]
 # `mmap`, `madvise`
 libc = { version = "0.2.153", default-features = false }
