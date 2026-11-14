@@ -50,10 +50,23 @@ impl From<WorkerBuildError> for io::Error {
 impl Workers {
     /// Create a new worker pool with the given number of threads
     ///
-    /// If `threads` is 0, the thread count will be determined automatically.
-    /// The exact behavior is currently determined by
-    /// [`rayon::ThreadPoolBuilder::num_threads()`].
+    /// If `threads` is 0, the thread count will be determined automatically
+    /// based on the environment variable `OXIDD_NUM_THREADS` if present or
+    /// [`std::thread::available_parallelism()`].
     pub fn new(threads: u32) -> io::Result<Self> {
+        let threads = if threads > 0 {
+            threads
+        } else if let Ok(str) = std::env::var("OXIDD_NUM_THREADS")
+            && let Ok(threads) = str.parse()
+        {
+            threads
+        } else if let Ok(n) = std::thread::available_parallelism() {
+            n.get().try_into().unwrap_or(u32::MAX)
+        } else {
+            1
+        };
+        debug_assert_ne!(threads, 0);
+
         let stack_size: usize = if let Ok(str) = std::env::var("OXIDD_STACK_SIZE")
             && let Ok(size) = str.parse()
         {
