@@ -58,6 +58,7 @@ impl Workers {
             threads
         } else if let Ok(str) = std::env::var("OXIDD_NUM_THREADS")
             && let Ok(threads) = str.parse()
+            && threads > 0
         {
             threads
         } else if let Ok(n) = std::thread::available_parallelism() {
