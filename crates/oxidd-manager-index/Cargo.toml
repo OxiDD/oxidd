@@ -26,6 +26,9 @@ parking_lot = "0.12"
 # hash table for the unique table
 linear-hashtbl.workspace = true
 
+# `Equivalent` trait for looking up unique table entries by key
+equivalent = "1.0"
+
 # bit sets
 fixedbitset = "0.5.7"
 

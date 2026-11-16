@@ -632,6 +632,7 @@ dependencies = [
  "allocator-api2",
  "crossbeam-utils",
  "derive-where",
+ "equivalent",
  "fixedbitset",
  "hugealloc",
  "linear-hashtbl",

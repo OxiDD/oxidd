@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 mod var_level_map;
 pub use var_level_map::VarLevelMap;
 pub mod rwlock;
+pub mod sharded;
 
 #[inline(always)]
 pub fn hash_children<E: Hash, H: Hasher>(children: impl IntoIterator<Item = E>, state: &mut H) {
