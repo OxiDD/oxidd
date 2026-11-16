@@ -1,7 +1,7 @@
 //! Pointer-Based Manager Implementation
 
 use std::collections::HashMap;
-use std::hash::{BuildHasherDefault, Hasher};
+use std::hash::{BuildHasherDefault, Hash, Hasher};
 use std::io;
 use std::iter::FusedIterator;
 use std::marker::PhantomData;
@@ -909,6 +909,7 @@ impl<'id, DI: DiagramInfo> LevelViewSet<'id, DI> {
     ) -> Option<Ref<'_, Edge<'id, DI>>> {
         let mut hasher = FxHasher::default();
         crate::util::hash_children(children, &mut hasher);
+        value.hash(&mut hasher);
         let hash = hasher.finish();
 
         let edge = self.0.get(hash, move |edge| {

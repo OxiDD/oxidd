@@ -1233,6 +1233,7 @@ impl<'id, DI: DiagramInfo> LevelViewSet<'id, DI> {
     ) -> Option<Ref<'_, Edge<'id, DI>>> {
         let mut hasher = FxHasher::default();
         crate::util::hash_children(children, &mut hasher);
+        value.hash(&mut hasher);
         let hash = hasher.finish();
 
         let edge = self.0.get(hash, move |edge| {
