@@ -11,7 +11,9 @@ use std::ptr::NonNull;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering::{Acquire, Relaxed};
 
-use arcslab::{ArcSlab, ArcSlabRef, AtomicRefCounted, ExtHandle, IntHandle, PageSizeInfo};
+// Do not use `ArcSlab` and handle types directly to avoid type confusion. Use
+// the type aliases that only depend on the `DiagramInfo` (and `'id`) instead.
+use arcslab::{AtomicRefCounted, PageSizeInfo};
 use derive_where::derive_where;
 use fixedbitset::FixedBitSet;
 use parking_lot::{Mutex, MutexGuard};
@@ -42,7 +44,31 @@ pub struct StoreInner<'id, DI: DiagramInfo> {
     workers: oxidd_core::util::Workers,
 }
 
-type StoreSlab<'id, DI> = ArcSlab<
+type StoreSlab<'id, DI> = arcslab::ArcSlab<
+    <DI as DiagramInfo>::InnerNode<'id>,
+    StoreInner<'id, DI>,
+    <DI as DiagramInfo>::PageSizeInfo,
+>;
+
+/// Internal handle for an inner node stored in a [`StoreSlab`]
+///
+/// Internal handles do not contribute to the store's reference count.
+type IntHandle<'a, 'id, DI> = arcslab::IntHandle<
+    'a,
+    <DI as DiagramInfo>::InnerNode<'id>,
+    StoreInner<'id, DI>,
+    <DI as DiagramInfo>::PageSizeInfo,
+>;
+/// External handle for an inner node stored in a [`StoreSlab`]
+///
+/// External handles also contribute to the store's reference count.
+type ExtHandle<'id, DI> = arcslab::ExtHandle<
+    <DI as DiagramInfo>::InnerNode<'id>,
+    StoreInner<'id, DI>,
+    <DI as DiagramInfo>::PageSizeInfo,
+>;
+/// Reference-counted pointer to the [`StoreSlab`]
+type StoreSlabRef<'id, DI> = arcslab::ArcSlabRef<
     <DI as DiagramInfo>::InnerNode<'id>,
     StoreInner<'id, DI>,
     <DI as DiagramInfo>::PageSizeInfo,
@@ -84,7 +110,7 @@ impl<'id, DI: DiagramInfo> Drop for Manager<'id, DI> {
     fn drop(&mut self) {
         if !DI::InnerNode::<'id>::needs_drop() {
             // There is no need to free nodes, so we can just forget all edges
-            // and let the `ArcSlab` deallocate its pages.
+            // and let the `StoreSlab` deallocate its pages.
             unsafe { ManuallyDrop::take(&mut self.data) }.drop_with(std::mem::forget);
         } else {
             unsafe { ManuallyDrop::take(&mut self.data) }.drop_with(Self::drop_edge_common);
@@ -102,9 +128,7 @@ impl<'id, DI: DiagramInfo> Drop for Manager<'id, DI> {
 
 #[repr(transparent)]
 #[derive_where(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ManagerRef<DI: DiagramInfo>(
-    ArcSlabRef<DI::InnerNode<'static>, StoreInner<'static, DI>, DI::PageSizeInfo>,
-);
+pub struct ManagerRef<DI: DiagramInfo>(StoreSlabRef<'static, DI>);
 
 impl<'id, DI: DiagramInfo> StoreInner<'id, DI> {
     unsafe fn init_in(
@@ -156,7 +180,7 @@ fn add_node<'id, DI: DiagramInfo>(
     node: DI::InnerNode<'id>,
 ) -> AllocResult<[Own<Edge<'id, DI>>; 2]> {
     debug_assert!(node.load_rc(Relaxed) >= 2);
-    let ptr = IntHandle::into_raw(store.add_item(node)).cast();
+    let ptr = IntHandle::<'_, 'id, DI>::into_raw(store.add_item(node)).cast();
     let raw = Edge(ptr, PhantomData);
     // SAFETY: the initial reference count is (at least) 2
     Ok(unsafe { [Own::from_raw(raw), Own::from_raw(raw)] })
@@ -180,17 +204,16 @@ impl<'id, DI: DiagramInfo> Manager<'id, DI> {
         store_inner
     }
 
-    /// Get the node store / `ArcSlab` for this manager
+    /// Get the node store ([`StoreSlab`]) for this manager
     ///
-    /// Actually, this is the `ArcSlab`, in which this manager is stored. This
+    /// Actually, this is the `StoreSlab`, in which this manager is stored. This
     /// means that it is only safe to call this method in case this `Manager`
-    /// is embedded in an `ArcSlab<N, StoreInner<..>, PAGE_SIZE>`. But this
-    /// holds by construction.
+    /// is embedded in an `StoreSlab<'_, DI>`. But this holds by construction.
     ///
     /// This method must not be called during of store and manager.
     #[inline(always)]
     fn store(&self) -> &StoreSlab<'id, DI> {
-        let ptr = ArcSlab::from_data_ptr(self.store_inner_ptr());
+        let ptr = StoreSlab::from_data_ptr(self.store_inner_ptr());
         // SAFETY: After initialization, the pointer is guaranteed to be valid
         unsafe { &*ptr }
     }
@@ -221,13 +244,12 @@ impl<'id, DI: DiagramInfo> Manager<'id, DI> {
     ///   last reference).
     #[inline]
     unsafe fn force_drop_edge(edge: Own<Edge<'id, DI>>) {
-        let handle: IntHandle<'id, DI::InnerNode<'id>, Self, DI::PageSizeInfo> = {
+        let handle: IntHandle<'_, 'id, DI> = {
             let raw = edge.into_raw();
             debug_assert_eq!(raw.tag_bits(), 0);
             let ptr: NonNull<DI::InnerNode<'id>> = raw.0.cast();
             // SAFETY: By the type invariant, `ptr` was created from an
-            // `IntHandle`, the caller ensures that the type/const arguments
-            // of `IntHandle` match. Due to lifetime restrictions the `ArcSlab`
+            // `IntHandle`. Due to lifetime restrictions the `StoreSlab`
             // outlives the `IntHandle` we create.
             unsafe { IntHandle::from_raw(ptr) }
         };
@@ -242,12 +264,11 @@ impl<'id, DI: DiagramInfo> Manager<'id, DI> {
     /// `edge` must be untagged and point to an inner node
     #[inline(always)]
     unsafe fn drop_edge_from_unique_table(edge: Own<Edge<'id, DI>>) {
-        let handle: IntHandle<'id, DI::InnerNode<'id>, Self, DI::PageSizeInfo> = {
+        let handle: IntHandle<'_, 'id, DI> = {
             debug_assert_eq!(edge.raw().tag_bits(), 0);
             let ptr: NonNull<DI::InnerNode<'id>> = edge.into_raw().0.cast();
             // SAFETY: By the type invariant, `ptr` was created from an
-            // `IntHandle`, the caller ensures that the type/const arguments
-            // of `IntHandle` match. Due to lifetime restrictions the `ArcSlab`
+            // `IntHandle`. Due to lifetime restrictions the `StoreSlab`
             // outlives the `IntHandle` we create.
             unsafe { IntHandle::from_raw(ptr) }
         };
@@ -1499,7 +1520,7 @@ impl<DI: DiagramInfo> ManagerRef<DI> {
     /// `ManagerRef`.
     #[inline(always)]
     pub fn into_raw(self) -> *const std::ffi::c_void {
-        ArcSlabRef::into_raw(self.0).as_ptr().cast()
+        StoreSlabRef::into_raw(self.0).as_ptr().cast()
     }
 
     /// Convert `raw` into a `ManagerRef`
@@ -1514,7 +1535,7 @@ impl<DI: DiagramInfo> ManagerRef<DI> {
     pub unsafe fn from_raw(raw: *const std::ffi::c_void) -> Self {
         let ptr = NonNull::new(raw.cast_mut().cast()).expect("expected a non-null pointer");
         // SAFETY: Invariants are upheld by the caller.
-        Self(unsafe { ArcSlabRef::from_raw(ptr) })
+        Self(unsafe { StoreSlabRef::from_raw(ptr) })
     }
 }
 
@@ -1525,7 +1546,7 @@ impl<'a, 'id, DI: DiagramInfo> From<&'a Manager<'id, DI>> for ManagerRef<DI> {
         let store_ptr: *const StoreSlab<'id, DI> =
             StoreSlab::<'id, DI>::from_data_ptr(manager.store_inner_ptr());
         let store_ptr: *mut StoreSlab<'static, DI> = store_ptr.cast_mut().cast();
-        Self(unsafe { ArcSlabRef::from_raw(NonNull::new_unchecked(store_ptr)) })
+        Self(unsafe { StoreSlabRef::from_raw(NonNull::new_unchecked(store_ptr)) })
     }
 }
 
@@ -1571,7 +1592,7 @@ pub fn new_manager<DI: DiagramInfo>(
 
     let workers = oxidd_core::util::Workers::new(threads)?;
     let arc = unsafe {
-        ArcSlab::new_with(|slot| {
+        StoreSlab::new_with(|slot| {
             StoreInner::init_in(slot, scopeguard::ScopeGuard::into_inner(data), workers)
         })
     };
@@ -1603,10 +1624,12 @@ impl<DI: DiagramInfo> Function<DI> {
         let edge: Edge<'static, DI> = Edge(self.0, PhantomData);
         if edge.is_inner() {
             let ptr: NonNull<DI::InnerNode<'static>> = edge.all_untagged_ptr().cast();
-            let handle = ManuallyDrop::new(unsafe { ExtHandle::from_raw(ptr) });
+            // `ManuallyDrop` since the `ExtHandle` is just borrowed
+            let handle: ManuallyDrop<ExtHandle<'static, DI>> =
+                ManuallyDrop::new(unsafe { ExtHandle::from_raw(ptr) });
             NonNull::from(ExtHandle::slab(&*handle))
         } else {
-            let ptr = ArcSlab::from_data_ptr(StoreInner::from_terminal_manager_ptr(
+            let ptr = StoreSlab::from_data_ptr(StoreInner::from_terminal_manager_ptr(
                 TerminalManager::terminal_manager(unsafe { Ref::from_raw(edge) }).as_ptr(),
             ));
             unsafe { NonNull::new_unchecked(ptr.cast_mut()) }
@@ -1671,7 +1694,7 @@ impl<DI: DiagramInfo> Drop for Function<DI> {
 
         // We own a reference count, `store` is valid, and we do not use the
         // `store` pointer afterwards.
-        unsafe { ArcSlab::release(store) };
+        unsafe { StoreSlab::release(store) };
     }
 }
 
@@ -1702,7 +1725,7 @@ unsafe impl<DI: DiagramInfo> oxidd_core::function::Function for Function<DI> {
         assert!(std::ptr::eq(self.store().as_ptr().cast(), store));
         let this = ManuallyDrop::new(self);
         // SAFETY: we are dropping the manager reference part of `this`
-        unsafe { ArcSlab::release(NonNull::from(store)) };
+        unsafe { StoreSlab::release(NonNull::from(store)) };
         // SAFETY: we are converting the owned `Function` into an `Own<Edge>`
         unsafe { Own::from_raw(Edge(this.0, PhantomData)) }
     }
@@ -1711,7 +1734,7 @@ unsafe impl<DI: DiagramInfo> oxidd_core::function::Function for Function<DI> {
     fn manager_ref(&self) -> Self::ManagerRef {
         let store_ptr = self.store();
         unsafe { store_ptr.as_ref() }.retain();
-        ManagerRef(unsafe { ArcSlabRef::from_raw(store_ptr) })
+        ManagerRef(unsafe { StoreSlabRef::from_raw(store_ptr) })
     }
 
     #[inline]
