@@ -2,6 +2,8 @@
 
 # OxiDD
 
+[![Crates.io Version](https://img.shields.io/crates/v/oxidd?style=for-the-badge&logo=rust)](https://crates.io/crates/oxidd)
+[![PyPI Version](https://img.shields.io/pypi/v/oxidd?style=for-the-badge&logo=python&logoColor=white)](https://pypi.org/project/oxidd/)
 [![Matrix](https://img.shields.io/badge/matrix-join_chat-brightgreen?style=for-the-badge&logo=matrix)](https://matrix.to/#/#oxidd:matrix.org)
 
 
