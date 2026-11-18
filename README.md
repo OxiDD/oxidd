@@ -16,6 +16,7 @@ OxiDD is a highly modular decision diagram framework written in Rust. The most p
     - Zero-suppressed BDDs (ZBDDs, aka ZDDs/ZSDDs)
     - Multi-terminal BDDs (MTBDDs, aka ADDs)
     - Ternary decision diagrams (TDDs)
+    - List decision diagrams (LDDs)
 - **Extensibility**: Due to OxiDD’s modular design, one can implement new kinds of decision diagrams without having to reimplement core data structures.
 - **Concurrency**: Functions represented by DDs can safely be used in multi-threaded contexts. Furthermore, apply algorithms can be executed on multiple CPU cores in parallel.
 - **Performance**: Compared to other popular BDD libraries (e.g., BuDDy, CUDD, and Sylvan), OxiDD is already competitive or even outperforms them.
