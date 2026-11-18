@@ -18,7 +18,7 @@ jobs:
   lint:
     name: Lint
 
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
 
     steps:
       - uses: actions/checkout@v7
@@ -34,7 +34,7 @@ jobs:
   test:
     name: Test
 
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
 
     strategy:
       matrix:
@@ -48,6 +48,6 @@ jobs:
         with:
           toolchain: ${{ matrix.toolchain }}
       - name: Build
-        run: cargo build ${{ matrix.flags }} --verbose
+        run: cargo build ${{ matrix.flags }}
       - name: Run Tests
-        run: cargo test ${{ matrix.flags }} --verbose
+        run: cargo test ${{ matrix.flags }}

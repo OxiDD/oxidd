@@ -1,6 +1,6 @@
 name: C++
 
-# spell-checker:ignore ctest,DCMAKE,doxyindexer,pkgs
+# spell-checker:ignore ctest,DCMAKE,doxyindexer,pkgs,taiki
 
 on:
   push:
@@ -24,7 +24,7 @@ jobs:
   lint:
     name: Lint & Doc
 
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
 
     env:
       doxygen_version: 1.14.0
@@ -46,9 +46,9 @@ jobs:
         if: steps.cache-doxygen.outputs.cache-hit != 'true'
         run: |
           mkdir -p ~/.local
-          curl -fsSL https://www.doxygen.nl/files/doxygen-$doxygen_version.linux.bin.tar.gz | tar -xz -C ~/.local --strip-components=1 doxygen-$doxygen_version/bin/{doxygen,doxyindexer}
+          curl -fsSL "https://www.doxygen.nl/files/doxygen-$doxygen_version.linux.bin.tar.gz" | tar -xz -C ~/.local --strip-components=1 "doxygen-$doxygen_version"/bin/{doxygen,doxyindexer}
       - name: Add ~/.local/bin to PATH
-        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: CMake Configure
         run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
       - name: Build Docs
@@ -96,7 +96,7 @@ jobs:
   test-linux:
     name: Test (Linux)
 
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
 
     strategy:
       matrix:
@@ -137,10 +137,13 @@ jobs:
   test-win:
     name: Test (Windows)
 
-    runs-on: windows-2022
+    runs-on: windows-2025
 
     steps:
       - uses: actions/checkout@v7
+      - uses: taiki-e/cache-cargo-install-action@v3
+        with:
+          tool: cbindgen  
       - name: CMake Configure
         run: cmake -B build
       - name: Build

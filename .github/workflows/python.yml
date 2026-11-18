@@ -23,23 +23,21 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  linux:
-    name: Lint, Test, Doc & Build Wheels for Linux
+  linux-arm:
+    name: Lint, Test, Doc & Build Wheels for Linux (aarch64)
 
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04-arm
 
     outputs:
       package-tag: ${{ steps.build.outputs.tag }}
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: |
-            pypy3.11
-            3.14t
-            3.x
-          # last is the default
-          cache: pip
+            pypy3.12
+            3.11
+            3.15t
       - name: Build
         id: build
         run: |
@@ -65,9 +63,8 @@ jobs:
           PYTHONPATH=target/python/autodoc sphinx-build bindings/python/doc target/python/doc
       - name: Add Rust targets to build wheels
         run: |
-          rustup target add \
-            x86_64-unknown-linux-gnu x86_64-unknown-linux-musl \
-            i686-unknown-linux-gnu i686-unknown-linux-musl
+          rustup target add aarch64-unknown-linux-gnu aarch64-unknown-linux-musl \
+            armv7-unknown-linux-gnueabihf armv7-unknown-linux-musleabihf
       - name: Build wheels
         run: |
           manylinux=manylinux2014
@@ -75,32 +72,37 @@ jobs:
 
           maturin sdist --out dist
 
-          for py in python pypy3.11; do
-            for target in x86_64-unknown-linux-gnu i686-unknown-linux-gnu; do
+          for py in python3.11 python3.15t; do
+            for target in aarch64-unknown-linux-gnu armv7-unknown-linux-gnueabihf; do
               maturin build --release --out dist --interpreter $py --compatibility $manylinux --zig --target $target
             done
-            for target in x86_64-unknown-linux-musl i686-unknown-linux-musl; do
+            for target in aarch64-unknown-linux-musl armv7-unknown-linux-musleabihf; do
               maturin build --release --out dist --interpreter $py --compatibility $musllinux --zig --target $target
             done
           done
 
-          # apparently, we cannot cross-compile for free-threaded python
-          maturin build --release --out dist --interpreter python3.14t --compatibility $manylinux --zig --target x86_64-unknown-linux-gnu
-          maturin build --release --out dist --interpreter python3.14t --compatibility $musllinux --zig --target x86_64-unknown-linux-musl
+          for py in pypy3.12; do
+            for target in aarch64-unknown-linux-gnu; do
+              maturin build --release --out dist --interpreter $py --compatibility $manylinux --zig --target $target
+            done
+            for target in aarch64-unknown-linux-musl; do
+              maturin build --release --out dist --interpreter $py --compatibility $musllinux --zig --target $target
+            done
+          done
       - name: Test wheels
         run: |
           run_tests() {
-            $1 -m venv .venv-$1
-            .venv-$1/bin/pip install "${2}[test]"
-            .venv-$1/bin/pytest
+            "$1" -m venv ".venv-$1"
+            ".venv-$1/bin/pip" install "${2}[test]"
+            ".venv-$1/bin/pytest"
           }
-          run_tests python dist/oxidd-*-cp*-abi3-manylinux*_x86_64*.whl
-          run_tests python3.14t dist/oxidd-*-cp314-cp314t-manylinux*_x86_64*.whl
-          run_tests pypy3.11 dist/oxidd-*-pp311-*-manylinux*_x86_64*.whl
+          run_tests python3.11 dist/oxidd-*-cp*-abi3-manylinux*_aarch64*.whl
+          run_tests python3.15t dist/oxidd-*-cp*-*abi3t-manylinux*_aarch64*.whl
+          run_tests pypy3.12 dist/oxidd-*-pp312-*-manylinux*_aarch64*.whl
       - name: Upload wheels
         uses: actions/upload-artifact@v7
         with:
-          name: python-wheels-linux
+          name: python-wheels-linux-arm
           path: dist
       - name: Deploy Docs
         if: >-
@@ -123,63 +125,55 @@ jobs:
           KEY: ${{ secrets.WEBSITE_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.WEBSITE_SSH_KNOWN_HOSTS }}
 
-  linux-arm:
-    name: Build wheels for Linux aarch64
+  linux-x86_64:
+    name: Build wheels for Linux (x86_64)
 
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04
 
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: |
-            pypy3.11
-            3.14t
-            3.x
+            pypy3.12
+            3.11
+            3.15t
+          # last is the default
+          cache: pip
       - name: Install Python build dependencies
         run: python -m pip install maturin[zig] ruff
       - name: Add Rust targets to build wheels
         run: |
-          rustup target add aarch64-unknown-linux-gnu aarch64-unknown-linux-musl \
-            armv7-unknown-linux-gnueabihf armv7-unknown-linux-musleabihf
+          rustup target add \
+            x86_64-unknown-linux-gnu x86_64-unknown-linux-musl \
+            i686-unknown-linux-gnu i686-unknown-linux-musl
       - name: Build wheels
         run: |
           manylinux=manylinux2014
           musllinux=musllinux_1_2
 
-          for target in aarch64-unknown-linux-gnu armv7-unknown-linux-gnueabihf; do
-            maturin build --release --out dist --compatibility $manylinux --zig --target $target
-          done
-          for target in aarch64-unknown-linux-musl armv7-unknown-linux-musleabihf; do
-            maturin build --release --out dist --compatibility $musllinux --zig --target $target
-          done
-
-          # apparently, we cannot cross-compile for free-threaded python
-          maturin build --release --out dist --interpreter python3.14t --compatibility $manylinux --zig --target aarch64-unknown-linux-gnu
-          maturin build --release --out dist --interpreter python3.14t --compatibility $musllinux --zig --target aarch64-unknown-linux-musl
-
-          for py in pypy3.11; do
-            for target in aarch64-unknown-linux-gnu; do
+          for py in python3.11 python3.15t pypy3.12; do
+            for target in x86_64-unknown-linux-gnu i686-unknown-linux-gnu; do
               maturin build --release --out dist --interpreter $py --compatibility $manylinux --zig --target $target
             done
-            for target in aarch64-unknown-linux-musl; do
+            for target in x86_64-unknown-linux-musl i686-unknown-linux-musl; do
               maturin build --release --out dist --interpreter $py --compatibility $musllinux --zig --target $target
             done
           done
       - name: Test wheels
         run: |
           run_tests() {
-            $1 -m venv .venv-$1
-            .venv-$1/bin/pip install "${2}[test]"
-            .venv-$1/bin/pytest
+            "$1" -m venv ".venv-$1"
+            ".venv-$1/bin/pip" install "${2}[test]"
+            ".venv-$1/bin/pytest"
           }
-          run_tests python dist/oxidd-*-cp*-abi3-manylinux*_aarch64*.whl
-          run_tests python3.14t dist/oxidd-*-cp314-cp314t-manylinux*_aarch64*.whl
-          run_tests pypy3.11 dist/oxidd-*-pp311-*-manylinux*_aarch64*.whl
+          run_tests python3.11 dist/oxidd-*-cp*-abi3-manylinux*_x86_64*.whl
+          run_tests python3.15t dist/oxidd-*-cp*-*abi3t-manylinux*_x86_64*.whl
+          run_tests pypy3.12 dist/oxidd-*-pp312-*-manylinux*_x86_64*.whl
       - name: Upload wheels
         uses: actions/upload-artifact@v7
         with:
-          name: python-wheels-linux-arm
+          name: python-wheels-linux-x86_64
           path: dist
 
   mac:
@@ -189,77 +183,38 @@ jobs:
     strategy:
       matrix:
         os:
-          - { arch: x86_64, image: macos-15-intel }
           - { arch: arm64, image: macos-15 }
+          - { arch: x86_64, image: macos-15-intel }
 
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: |
-            pypy3.11
-            3.14t
-            3.x
+            pypy3.12
+            3.11
+            3.15t
       - name: Install Python build dependencies
         run: python -m pip install maturin ruff
-      - name: Build CPython wheel
-        run: maturin build --release --out dist
-      - name: Build CPython 3.14t wheel
-        run: maturin build --release --out dist --interpreter python3.14t
-      - name: Build PyPy 3.11 wheel
-        run: maturin build --release --out dist --interpreter pypy3.11
+      - name: Build CPython abi3 wheel
+        run: maturin build --release --out dist --interpreter python3.11
+      - name: Build CPython abi3t wheel
+        run: maturin build --release --out dist --interpreter python3.15t
+      - name: Build PyPy 3.12 wheel
+        run: maturin build --release --out dist --interpreter pypy3.12
       - name: Test wheels
         run: |
           run_tests() {
-            $1 -m venv .venv-$1
-            .venv-$1/bin/pip install "${2}[test]"
-            .venv-$1/bin/pytest
+            "$1" -m venv ".venv-$1"
+            ".venv-$1/bin/pip" install "${2}[test]"
+            ".venv-$1/bin/pytest"
           }
-          run_tests python dist/oxidd-*-cp*-abi3-*.whl
-          run_tests python3.14t dist/oxidd-*-cp314-cp314t-*.whl
-          run_tests pypy3.11 dist/oxidd-*-pp311-*.whl
+          run_tests python3.11 dist/oxidd-*-cp*-abi3-*.whl
+          run_tests python3.15t dist/oxidd-*-cp*-*abi3t-*.whl
+          run_tests pypy3.12 dist/oxidd-*-pp312-*.whl
       - uses: actions/upload-artifact@v7
         with:
           name: python-wheels-mac-${{ matrix.os.arch }}
-          path: dist
-
-  win:
-    name: Build wheels for Windows
-
-    runs-on: windows-2022
-
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
-        with:
-          python-version: |
-            pypy3.11
-            3.14t
-            3.x
-      - name: Install Python build dependencies
-        run: python -m pip install ruff maturin
-      - name: Install Rust targets
-        run: rustup target add x86_64-pc-windows-msvc
-      - name: Install Python build dependencies
-        run: python -m pip install ruff
-      - name: Build CPython wheel (x86_64)
-        run: maturin build --release --out dist
-      - name: Build CPython 3.14t wheel (x86_64)
-        run: maturin build --release --out dist --interpreter "$(where.exe python3.14t)"
-      - name: Build PyPy 3.11 wheel (x86_64)
-        run: maturin build --release --out dist --interpreter "$(where.exe pypy3.11)"
-      - name: Test
-        run: |
-          python -m venv .venv-abi3
-          python3.14t -m venv .venv-cp314t
-          pypy3.11 -m venv .venv-pypy311
-          foreach ($py in 'abi3', 'cp314t', 'pypy311') {
-            & ".venv-$py\Scripts\pip.exe" install "$(get-item dist\oxidd-*-$py*-*amd64.whl)[test]"
-            & ".venv-$py\Scripts\pytest.exe"
-          }
-      - uses: actions/upload-artifact@v7
-        with:
-          name: python-wheels-win
           path: dist
 
   win-arm:
@@ -269,23 +224,23 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
-        id: cp314t
+      - uses: actions/setup-python@v7
         with:
-          python-version: 3.14t
-          update-environment: false
+          python-version: |
+            3.11
+            3.15t
       - name: Install Python build dependencies
         run: python -m pip install ruff maturin
-      - name: Build CPython wheel
-        run: maturin build --release --out dist
-      - name: Build CPython 3.14t wheel
-        run: maturin build --release --out dist --interpreter ${{ steps.cp314t.outputs.python-path }}
+      - name: Build CPython abi3 wheel
+        run: maturin build --release --out dist --interpreter 3.11
+      - name: Build CPython abi3t wheel
+        run: maturin build --release --out dist --interpreter 3.15t
       - name: Test
         run: |
-          python -m venv .venv-abi3
-          ${{ steps.cp314t.outputs.python-path }} -m venv .venv-cp314t
-          foreach ($py in 'abi3', 'cp314t') {
-            & ".venv-$py\Scripts\pip.exe" install "$(get-item dist\oxidd-*-$py*-*arm64.whl)[test]"
+          py -3.11 -m venv .venv-abi3
+          py -3.15t -m venv .venv-abi3t
+          foreach ($py in 'abi3', 'abi3t') {
+            & ".venv-$py\Scripts\pip.exe" install "$(get-item dist\oxidd-*-*$py[-_]*arm64.whl)[test]"
             & ".venv-$py\Scripts\pytest.exe"
           }
       - uses: actions/upload-artifact@v7
@@ -293,14 +248,49 @@ jobs:
           name: python-wheels-win-arm
           path: dist
 
+  win-x86_64:
+    name: Build wheels for Windows (x86_64)
+
+    runs-on: windows-2025
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: |
+            pypy3.12
+            3.11
+            3.15t
+      - name: Install Python build dependencies
+        run: python -m pip install ruff maturin
+      - name: Build CPython abi3 wheel (x86_64)
+        run: maturin build --release --out dist --interpreter 3.11
+      - name: Build CPython abi3t wheel (x86_64)
+        run: maturin build --release --out dist --interpreter 3.15t
+      - name: Build PyPy 3.12 wheel (x86_64)
+        run: maturin build --release --out dist --interpreter pypy3.12
+      - name: Test
+        run: |
+          py -3.11 -m venv .venv-abi3
+          py -3.15t -m venv .venv-abi3t
+          pypy3.12 -m venv .venv-pypy312
+          foreach ($py in 'abi3', 'abi3t', 'pypy312') {
+            & ".venv-$py\Scripts\pip.exe" install "$(get-item dist\oxidd-*-*$py[-_]*amd64.whl)[test]"
+            & ".venv-$py\Scripts\pytest.exe"
+          }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: python-wheels-win-x86_64
+          path: dist
+
   release:
     name: Release
-    needs: [linux, mac, win]
+    needs: [linux-arm, linux-x86_64, mac, win-arm, win-x86_64]
     if: >-
       ${{
         github.repository == 'OxiDD/oxidd'
         && startsWith(github.ref, 'refs/tags/')
-        && github.ref_name == needs.linux.outputs.package-tag
+        && github.ref_name == needs.linux-arm.outputs.package-tag
       }}
 
     environment:
@@ -309,7 +299,7 @@ jobs:
     permissions:
       id-token: write
 
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-slim
 
     steps:
       - uses: actions/download-artifact@v8

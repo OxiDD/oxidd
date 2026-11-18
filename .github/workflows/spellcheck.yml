@@ -6,11 +6,11 @@ jobs:
   spellcheck:
     name: Spell Check
 
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-slim
 
     steps:
       - uses: actions/checkout@v7
-      - uses: streetsidesoftware/cspell-action@v8
+      - uses: streetsidesoftware/cspell-action@v9
         with:
           check_dot_files: true
           use_cspell_files: true
