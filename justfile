@@ -14,8 +14,8 @@ fmt-rust:
 
 # Lint Rust code
 lint-rust:
-    cargo +nightly clippy --all-targets --features="oxidd-core/static-leak-check,oxidd/tdd"
-    cargo +nightly clippy --all-targets --features="oxidd/tdd,oxidd/manager-pointer"
+    cargo +nightly clippy --all-targets --features="oxidd/statistics,oxidd-core/static-leak-check,oxidd/tdd"
+    cargo +nightly clippy --all-targets --features="oxidd/statistics,oxidd/tdd,oxidd/manager-pointer"
     cargo +nightly fmt --check
     cargo doc --no-deps
 
