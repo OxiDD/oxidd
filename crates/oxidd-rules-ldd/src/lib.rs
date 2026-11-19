@@ -11,9 +11,6 @@ use oxidd_derive::Countable;
 mod apply_rec;
 mod recursor;
 
-#[cfg(feature = "statistics")]
-pub use apply_rec::print_stats;
-
 /// Terminal nodes of an LDD.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Countable, Debug)]
 #[repr(u8)]

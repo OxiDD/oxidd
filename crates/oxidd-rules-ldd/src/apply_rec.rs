@@ -13,6 +13,8 @@ use oxidd_core::util::{AllocResult, EdgeDropGuard, Own, Ref};
 use oxidd_core::{ApplyCache, InnerNode, LevelNo, Manager, Node, NodeID};
 use oxidd_derive::Function;
 
+#[cfg(feature = "statistics")]
+use crate::STAT_COUNTERS;
 use crate::recursor::{Recursor, SequentialRecursor};
 use crate::{
     LDDManager, LDDOp, LDDTerminal, LDDValue, RIGHT, RelationMeta, collect_children, make_node,
