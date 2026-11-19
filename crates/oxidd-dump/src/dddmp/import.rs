@@ -505,33 +505,23 @@ where
     INodeValOfFunc<'id, F>: Default, // TODO: relax this restriction to allow importing, e.g., LDDs
     TermOfFunc<'id, F>: ParseTagged<ETagOfFunc<'id, F>>,
 {
-    let suppvar_level_map =
+    let suppvar_to_level =
         Vec::from_iter(support_vars.into_iter().map(|v| manager.var_to_level(v)));
     assert_eq!(
-        suppvar_level_map.len(),
+        suppvar_to_level.len(),
         header.ids.len(),
         "`support_vars` must provide one target variable per support variable in the DDDMP file",
     );
     assert!(
-        suppvar_level_map.iter().is_sorted_by(|a, b| a < b),
+        suppvar_to_level.iter().is_sorted_by(|a, b| a < b),
         "`support_vars` must be sorted by the variables' current level",
     );
 
     let nodes = if header.ascii {
-        import_ascii::<F>(&mut input, header, manager, &suppvar_level_map)
+        import_ascii::<F>
     } else {
-        let mut level_suppvar_map = vec![u32::MAX; manager.num_levels() as usize];
-        for (i, &level) in suppvar_level_map.iter().enumerate() {
-            level_suppvar_map[level as usize] = i as u32;
-        }
-        import_bin::<F>(
-            &mut input,
-            header,
-            manager,
-            &level_suppvar_map,
-            &suppvar_level_map,
-        )
-    }?;
+        import_bin::<F>
+    }(&mut input, header, manager, &suppvar_to_level)?;
     let nodes = EdgeVecDropGuard::new(manager, nodes);
     debug_assert_eq!(nodes.len(), header.nnodes);
 
@@ -565,7 +555,7 @@ fn import_ascii<'id, F: crate::DumpDeserialize>(
     mut input: impl io::BufRead,
     header: &DumpHeader,
     manager: &F::Manager<'id>,
-    suppvar_level_map: &[LevelNo],
+    suppvar_to_level: &[LevelNo],
 ) -> io::Result<Vec<OwnEdgeOfFunc<'id, F>>>
 where
     INodeOfFunc<'id, F>: HasLevel,
@@ -646,7 +636,7 @@ where
             manager.get_terminal(terminal)?.with_tag(tag)
         } else {
             let (_, var_id) = parse_u32(var_id, line_no)?;
-            let Some(&level) = suppvar_level_map.get(var_id as usize) else {
+            let Some(&level) = suppvar_to_level.get(var_id as usize) else {
                 return err(format!("variable out of range (line {line_no})"));
             };
 
@@ -685,8 +675,7 @@ fn import_bin<'id, F: crate::DumpDeserialize>(
     mut input: impl io::BufRead,
     header: &DumpHeader,
     manager: &F::Manager<'id>,
-    level_suppvar_map: &[u32],
-    suppvar_level_map: &[LevelNo],
+    suppvar_to_level: &[LevelNo],
 ) -> io::Result<Vec<OwnEdgeOfFunc<'id, F>>>
 where
     INodeOfFunc<'id, F>: HasLevel,
@@ -701,6 +690,11 @@ where
         panic!("could not find the T terminal")
     };
     let terminal = EdgeDropGuard::new(manager, manager.get_terminal(terminal)?.with_tag(tag));
+
+    let mut level_to_suppvar = vec![u32::MAX; manager.num_levels() as usize];
+    for (i, &level) in suppvar_to_level.iter().enumerate() {
+        level_to_suppvar[level as usize] = i as u32;
+    }
 
     fn idx(input: impl io::BufRead, node_id: usize, code: Code) -> io::Result<usize> {
         debug_assert!(node_id >= 1);
@@ -759,16 +753,13 @@ where
 
         let vid = match var_code {
             Code::Terminal => unreachable!(),
-            Code::AbsoluteID if vid >= suppvar_level_map.len() => {
-                return err("variable ID out of range");
-            }
             Code::AbsoluteID => vid,
             Code::RelativeID | Code::Relative1 => {
                 let min_level = std::cmp::min(t_level, e_level);
                 let child_min_suppvar = if min_level == LevelNo::MAX {
-                    level_suppvar_map.len()
+                    suppvar_to_level.len()
                 } else {
-                    level_suppvar_map[min_level as usize] as usize
+                    level_to_suppvar[min_level as usize] as usize
                 };
                 match child_min_suppvar.checked_sub(vid) {
                     Some(v) => v,
@@ -777,7 +768,9 @@ where
             }
         };
 
-        let level = suppvar_level_map[vid as usize];
+        let Some(&level) = suppvar_to_level.get(vid) else {
+            return err("variable ID out of range");
+        };
         if level >= t_level || level >= e_level {
             return err("node level must be less than the children's levels");
         }
