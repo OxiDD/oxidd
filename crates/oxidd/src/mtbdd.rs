@@ -94,6 +94,7 @@ mod index {
             oxidd_manager_index::terminal_manager::DynamicTerminalManager<'id, Self>;
         type Rules = MTBDDRules;
         type ManagerData<'id> = MTBDDManagerData<'id, T>;
+        type Hasher = rustc_hash::FxHasher;
     }
     type MTBDD<T> = IndexDD<MTBDDInfo<T>>;
 

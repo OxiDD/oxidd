@@ -17,7 +17,6 @@ use arcslab::{AtomicRefCounted, PageSizeInfo};
 use derive_where::derive_where;
 use fixedbitset::FixedBitSet;
 use parking_lot::{Mutex, MutexGuard};
-use rustc_hash::FxHasher;
 
 use oxidd_core::error::DuplicateVarName;
 use oxidd_core::function::{EdgeOfFunc, OwnEdgeOfFunc};
@@ -433,7 +432,7 @@ unsafe impl<'id, DI: DiagramInfo> oxidd_core::Manager for Manager<'id, DI> {
     where
         Self: 'a;
 
-    type NodeSet = NodeSet<DI::PageSizeInfo>;
+    type NodeSet = NodeSet<DI::PageSizeInfo, DI::Hasher>;
 
     type LevelView<'a>
         = LevelView<'a, 'id, DI>
@@ -900,14 +899,14 @@ impl<DI: DiagramInfo> oxidd_core::Edge for Edge<'_, DI> {
 /// `Edge`'s `Drop` implementation.
 struct LevelViewSet<'id, DI: DiagramInfo>(RawTable<ManuallyDrop<Own<Edge<'id, DI>>>>);
 
-#[inline]
-fn hash_node<N: NodeBase>(node: &N) -> u64 {
-    let mut hasher = FxHasher::default();
-    node.hash(&mut hasher);
-    hasher.finish()
-}
-
 impl<'id, DI: DiagramInfo> LevelViewSet<'id, DI> {
+    #[inline]
+    fn hash_node(node: &DI::InnerNode<'id>) -> u64 {
+        let mut hasher = DI::Hasher::default();
+        node.hash(&mut hasher);
+        hasher.finish()
+    }
+
     /// Get the number of nodes on this level
     #[inline]
     fn len(&self) -> usize {
@@ -928,7 +927,7 @@ impl<'id, DI: DiagramInfo> LevelViewSet<'id, DI> {
         children: &[Ref<'_, Edge<'id, DI>>],
         value: &DI::InnerNodeValue,
     ) -> Option<Ref<'_, Edge<'id, DI>>> {
-        let mut hasher = FxHasher::default();
+        let mut hasher = DI::Hasher::default();
         crate::util::hash_children(children, &mut hasher);
         value.hash(&mut hasher);
         let hash = hasher.finish();
@@ -982,7 +981,7 @@ impl<'id, DI: DiagramInfo> LevelViewSet<'id, DI> {
             node.assert_level_matches(expected_level);
         }
 
-        let hash = hash_node(node);
+        let hash = Self::hash_node(node);
         // SAFETY (next 2): The hash table only contains untagged edges
         // referencing inner nodes.
         match self
@@ -1020,7 +1019,7 @@ impl<'id, DI: DiagramInfo> LevelViewSet<'id, DI> {
         node: DI::InnerNode<'id>,
         store: &StoreSlab<'id, DI>,
     ) -> AllocResult<Own<Edge<'id, DI>>> {
-        let hash = hash_node(&node);
+        let hash = Self::hash_node(&node);
         match self.0.find_or_find_insert_slot(hash, |edge| {
             // SAFETY: The hash table only contains untagged edges referencing
             // inner nodes.
@@ -1082,7 +1081,7 @@ impl<'id, DI: DiagramInfo> LevelViewSet<'id, DI> {
     /// Returns the edge from the unique table entry if `node` was found.
     #[inline]
     fn remove(&mut self, node: &DI::InnerNode<'id>) -> Option<Own<Edge<'id, DI>>> {
-        let edge = self.0.remove_entry(hash_node(node), |e| {
+        let edge = self.0.remove_entry(Self::hash_node(node), |e| {
             std::ptr::eq(e.raw().0.as_ptr().cast(), node)
         })?;
         Some(ManuallyDrop::into_inner(edge))
@@ -1435,13 +1434,13 @@ where
 /// Since nodes are stored on large pages, we can use one bit vector per page.
 /// This reduces space consumption dramatically and increases the performance.
 #[derive_where(Clone, PartialEq, Eq, Default)]
-pub struct NodeSet<P: PageSizeInfo> {
+pub struct NodeSet<P: PageSizeInfo, H: Default + Hasher> {
     len: usize,
-    data: HashMap<usize, FixedBitSet, BuildHasherDefault<FxHasher>>,
+    data: HashMap<usize, FixedBitSet, BuildHasherDefault<H>>,
     phantom: PhantomData<P>,
 }
 
-impl<P: PageSizeInfo> NodeSet<P> {
+impl<P: PageSizeInfo, H: Hasher + Default> NodeSet<P, H> {
     const fn nodes_per_page<DI: DiagramInfo>() -> usize {
         P::PAGE_SIZE >> (DI::TAG_BITS + 1)
     }
@@ -1456,8 +1455,8 @@ impl<P: PageSizeInfo> NodeSet<P> {
     }
 }
 
-impl<'id, DI: DiagramInfo, P: PageSizeInfo> oxidd_core::util::NodeSet<Edge<'id, DI>>
-    for NodeSet<P>
+impl<'id, DI: DiagramInfo, P: PageSizeInfo, H: Default + Hasher>
+    oxidd_core::util::NodeSet<Edge<'id, DI>> for NodeSet<P, H>
 {
     #[inline(always)]
     fn len(&self) -> usize {

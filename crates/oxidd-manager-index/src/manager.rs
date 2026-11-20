@@ -16,7 +16,6 @@ use crossbeam_utils::CachePadded;
 use derive_where::derive_where;
 use fixedbitset::FixedBitSet;
 use parking_lot::{Condvar, Mutex, MutexGuard};
-use rustc_hash::FxHasher;
 
 use oxidd_core::error::{DuplicateVarName, OutOfMemory};
 use oxidd_core::function::{EdgeOfFunc, OwnEdgeOfFunc};
@@ -1202,14 +1201,14 @@ impl<'id, DI: DiagramInfo> oxidd_core::HasWorkers for Manager<'id, DI> {
 /// accordingly, this will simply leak all contained edges.
 struct LevelViewSet<'id, DI: DiagramInfo>(huge::RawTable<ManuallyDrop<Own<Edge<'id, DI>>>>);
 
-#[inline]
-fn hash_node<N: NodeBase>(node: &N) -> u64 {
-    let mut hasher = FxHasher::default();
-    node.hash(&mut hasher);
-    hasher.finish()
-}
-
 impl<'id, DI: DiagramInfo> LevelViewSet<'id, DI> {
+    #[inline]
+    fn hash_node(node: &DI::InnerNode<'id>) -> u64 {
+        let mut hasher = DI::Hasher::default();
+        node.hash(&mut hasher);
+        hasher.finish()
+    }
+
     /// Get the number of nodes on this level
     #[inline]
     fn len(&self) -> usize {
@@ -1231,7 +1230,7 @@ impl<'id, DI: DiagramInfo> LevelViewSet<'id, DI> {
         children: &[Ref<'_, Edge<'id, DI>>],
         value: &DI::InnerNodeValue,
     ) -> Option<Ref<'_, Edge<'id, DI>>> {
-        let mut hasher = FxHasher::default();
+        let mut hasher = DI::Hasher::default();
         crate::util::hash_children(children, &mut hasher);
         value.hash(&mut hasher);
         let hash = hasher.finish();
@@ -1295,7 +1294,7 @@ impl<'id, DI: DiagramInfo> LevelViewSet<'id, DI> {
             node.assert_level_matches(expected_level);
         }
 
-        let hash = hash_node(node);
+        let hash = Self::hash_node(node);
         match self.0.find_or_find_insert_slot(hash, |e| e.raw() == raw) {
             Ok(_) => {
                 // We need to drop `edge`. This simply amounts to decrementing
@@ -1329,7 +1328,7 @@ impl<'id, DI: DiagramInfo> LevelViewSet<'id, DI> {
         node: DI::InnerNode<'id>,
     ) -> AllocResult<Own<Edge<'id, DI>>> {
         let node = scopeguard::guard(node, |node| store.drop_node(node));
-        let hash = hash_node(&*node);
+        let hash = Self::hash_node(&*node);
         match self.0.find_or_find_insert_slot(hash, |edge| {
             let edge = edge.borrowed();
             // SAFETY: The hash table only contains untagged edges referencing
@@ -1397,7 +1396,7 @@ impl<'id, DI: DiagramInfo> LevelViewSet<'id, DI> {
     fn remove(&mut self, node: &DI::InnerNode<'id>, node_id: u32) -> Option<Own<Edge<'id, DI>>> {
         Some(ManuallyDrop::into_inner(
             self.0
-                .remove_entry(hash_node(node), |e| e.raw().0 == node_id)?,
+                .remove_entry(Self::hash_node(node), |e| e.raw().0 == node_id)?,
         ))
     }
 

@@ -9,7 +9,6 @@ use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 use crossbeam_utils::CachePadded;
 use linear_hashtbl::raw::RawTable;
 use parking_lot::{Mutex, MutexGuard};
-use rustc_hash::FxHasher;
 
 use oxidd_core::error::OutOfMemory;
 use oxidd_core::util::{AllocResult, Own};
@@ -63,10 +62,12 @@ unsafe fn retain<T>(store: &[UnsafeCell<Slot<T>>], id: u32) {
     }
 }
 
-fn hash<T: Hash>(terminal: &T) -> u64 {
-    let mut hasher = FxHasher::default();
-    terminal.hash(&mut hasher);
-    hasher.finish()
+impl<'id, DI: DiagramInfo> DynamicTerminalManager<'id, DI> {
+    fn hash(terminal: &DI::TerminalNode) -> u64 {
+        let mut hasher = DI::Hasher::default();
+        terminal.hash(&mut hasher);
+        hasher.finish()
+    }
 }
 
 impl<'id, DI: DiagramInfo> TerminalManager<'id, DI> for DynamicTerminalManager<'id, DI> {
@@ -143,7 +144,7 @@ impl<'id, DI: DiagramInfo> TerminalManager<'id, DI> for DynamicTerminalManager<'
     #[inline]
     fn get_edge(&self, terminal: DI::TerminalNode) -> AllocResult<Own<Edge<'id, DI>>> {
         let mut state = self.state.lock();
-        let hash = hash(&terminal);
+        let hash = Self::hash(&terminal);
         let id = match state.unique_table.find_or_find_insert_slot(
             hash,
             // SAFETY: The IDs stored in the table are valid, hence

@@ -76,6 +76,7 @@ mod index {
             oxidd_manager_index::terminal_manager::StaticTerminalManager<'id, Self>;
         type Rules = BDDRules;
         type ManagerData<'id> = BDDManagerData<'id>;
+        type Hasher = rustc_hash::FxHasher;
     }
     type BDD = IndexDD<BDDInfo>;
 
@@ -129,6 +130,7 @@ mod pointer {
         type TerminalManager<'id> = StaticTerminalManager<'id, Self>;
         type Rules = BDDRules;
         type ManagerData<'id> = BDDManagerData<'id>;
+        type Hasher = rustc_hash::FxHasher;
     }
     type BDD = PointerDD<BDDInfo>;
 

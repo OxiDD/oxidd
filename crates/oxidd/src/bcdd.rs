@@ -76,6 +76,7 @@ mod index {
             oxidd_manager_index::terminal_manager::StaticTerminalManager<'id, Self>;
         type Rules = BCDDRules;
         type ManagerData<'id> = BCDDManagerData<'id>;
+        type Hasher = rustc_hash::FxHasher;
     }
     type BCDD = IndexDD<BCDDInfo>;
 
@@ -129,6 +130,7 @@ mod pointer {
         type TerminalManager<'id> = StaticTerminalManager<'id, Self>;
         type Rules = BCDDRules;
         type ManagerData<'id> = BCDDManagerData<'id>;
+        type Hasher = rustc_hash::FxHasher;
     }
     type BCDD = PointerDD<BCDDInfo>;
 

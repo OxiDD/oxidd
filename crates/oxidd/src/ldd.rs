@@ -406,6 +406,7 @@ mod index {
             oxidd_manager_index::terminal_manager::StaticTerminalManager<'id, Self>;
         type Rules = LDDRules;
         type ManagerData<'id> = LDDManagerData<'id>;
+        type Hasher = rustc_hash::FxHasher;
     }
     type LDD = IndexDD<LDDInfo>;
 
@@ -449,6 +450,7 @@ mod pointer {
         type TerminalManager<'id> = StaticTerminalManager<'id, Self>;
         type Rules = LDDRules;
         type ManagerData<'id> = LDDManagerData<'id>;
+        type Hasher = rustc_hash::FxHasher;
     }
     type LDD = PointerDD<LDDInfo>;
 

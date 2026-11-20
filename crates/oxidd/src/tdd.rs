@@ -76,6 +76,7 @@ mod index {
             oxidd_manager_index::terminal_manager::StaticTerminalManager<'id, Self>;
         type Rules = TDDRules;
         type ManagerData<'id> = TDDManagerData<'id>;
+        type Hasher = rustc_hash::FxHasher;
     }
     type TDD = IndexDD<TDDInfo>;
 
@@ -134,6 +135,7 @@ mod pointer {
         type TerminalManager<'id> = StaticTerminalManager<'id, Self>;
         type Rules = TDDRules;
         type ManagerData<'id> = TDDManagerData<'id>;
+        type Hasher = rustc_hash::FxHasher;
     }
     type TDD = PointerDD<TDDInfo>;
 

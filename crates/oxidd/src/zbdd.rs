@@ -170,6 +170,7 @@ mod index {
             oxidd_manager_index::terminal_manager::StaticTerminalManager<'id, Self>;
         type Rules = ZBDDRules;
         type ManagerData<'id> = ZBDDManagerData<'id>;
+        type Hasher = rustc_hash::FxHasher;
     }
     type ZBDD = IndexDD<ZBDDInfo>;
 
@@ -222,6 +223,7 @@ mod pointer {
         type TerminalManager<'id> = StaticTerminalManager<'id, Self>;
         type Rules = ZBDDRules;
         type ManagerData<'id> = ZBDDManagerData<'id>;
+        type Hasher = rustc_hash::FxHasher;
     }
     type ZBDD = PointerDD<ZBDDInfo>;
 

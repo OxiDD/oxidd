@@ -36,4 +36,6 @@ pub trait DiagramInfo: Sized + Send + Sync {
         + oxidd_core::ManagerEventSubscriber<manager::Manager<'id, Self>>
         + Send
         + Sync;
+
+    type Hasher: Default + std::hash::Hasher;
 }

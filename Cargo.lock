@@ -637,7 +637,6 @@ dependencies = [
  "linear-hashtbl",
  "oxidd-core",
  "parking_lot",
- "rustc-hash",
  "scopeguard",
 ]
 
@@ -653,7 +652,6 @@ dependencies = [
  "linear-hashtbl",
  "oxidd-core",
  "parking_lot",
- "rustc-hash",
  "scopeguard",
 ]
 
