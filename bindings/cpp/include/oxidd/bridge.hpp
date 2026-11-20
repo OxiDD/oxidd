@@ -71,8 +71,8 @@ template <typename T> struct c_iter_vtable : public c_iter_vtable_base {
 /// Bridge between a C++ iterator and `iter_adapter<T>::c_iter_t`
 template <typename T, std::input_iterator I, std::sentinel_for<I> E = I,
           bool NoExcept = noexcept(std::declval<I>() != std::declval<E>()) &&
-                          noexcept(++(std::declval<I &>())) &&
-                          noexcept(*(std::declval<I>())) &&
+                          noexcept(++std::declval<I &>()) &&
+                          noexcept(*std::declval<I>()) &&
                           (std::is_lvalue_reference_v<std::iter_value_t<I>> ||
                            std::is_nothrow_move_constructible_v<
                                std::remove_cvref_t<std::iter_value_t<I>>>)>
@@ -84,7 +84,7 @@ class c_iter : c_iter_vtable<T> {
     try {
       if (ctx->_current.has_value()) {
         ctx->_current.reset();
-        ++(ctx->_begin); // NOLINT(*-pointer-arithmetic)
+        ++(ctx->_begin); // NOLINT(*-pointer-arithmetic,*-parentheses)
       }
       if (ctx->_begin != ctx->_end) {
         ctx->_current.emplace(*ctx->_begin);
@@ -110,7 +110,7 @@ class c_iter : c_iter_vtable<T> {
                   std::is_convertible_v<diff_ty, std::ptrdiff_t>) {
       return
           [](c_iter_vtable_base *ctx_base) noexcept -> capi::oxidd_size_hint_t {
-            auto *ctx = static_cast<c_iter *>(ctx_base);
+            const auto *ctx = static_cast<c_iter *>(ctx_base);
             try {
               const std::ptrdiff_t d = ctx->_end - ctx->_begin;
               if (d >= 0) {
@@ -166,7 +166,8 @@ public:
         .size_hint = c_iter_vtable_base::size_hint == nullptr
                          ? nullptr
                          : oxidd_size_hint_callback_helper,
-        .context = this};
+        .context = this,
+    };
     const auto result =
         std::invoke(std::forward<F>(f), std::forward<Args>(args)..., c_iter);
 
@@ -231,6 +232,7 @@ template <std::invocable C, bool NoExcept = std::is_nothrow_invocable_v<C>>
            std::is_void_v<std::invoke_result_t<C>>
 class c_callback : c_callback_vtable {
   static void *_func_wrapper_fn(c_callback_vtable *ctx_base) {
+    // NOLINTNEXTLINE(*-const-correctness)
     auto *ctx = static_cast<c_callback *>(ctx_base);
     try {
       if constexpr (std::is_void_v<result_t>) {
@@ -275,10 +277,12 @@ public:
     if constexpr (std::is_pointer_v<C>)
       _func = nullptr;
   }
-  c_callback(const C &func) noexcept(std::is_nothrow_copy_constructible_v<C>)
+  explicit c_callback(const C &func) noexcept(
+      std::is_nothrow_copy_constructible_v<C>)
     requires std::is_copy_constructible_v<C>
       : c_callback_vtable{.func_wrapper = &_func_wrapper_fn}, _func(func) {}
-  c_callback(C &&func) noexcept(std::is_nothrow_move_constructible_v<C>)
+  explicit c_callback(C &&func) noexcept(
+      std::is_nothrow_move_constructible_v<C>)
       : c_callback_vtable{.func_wrapper = &_func_wrapper_fn},
         _func(std::move(func)) {}
 
@@ -362,8 +366,10 @@ to_c_export_settings(const std::optional<util::dddmp_export_settings> settings,
   target.version = static_cast<capi::oxidd_dddmp_version>(settings->version);
   target.ascii = settings->ascii;
   target.strict = settings->strict;
-  target.diagram_name = {.ptr = settings->diagram_name.data(),
-                         .len = settings->diagram_name.size()};
+  target.diagram_name = {
+      .ptr = settings->diagram_name.data(),
+      .len = settings->diagram_name.size(),
+  };
 
   return &target;
 }
@@ -1216,7 +1222,7 @@ public:
   [[nodiscard]] DDFunc var(var_no_t var) const noexcept {
     const Derived &self = *static_cast<const Derived *>(this);
     assert(!self.is_invalid());
-    return Derived::_c_var(self.to_c_api(), var);
+    return DDFunc(Derived::_c_var(self.to_c_api(), var));
   }
   /// Get the Boolean function that is true if and only if `var` is false
   ///
@@ -1231,7 +1237,7 @@ public:
   [[nodiscard]] DDFunc not_var(var_no_t var) const noexcept {
     const Derived &self = *static_cast<const Derived *>(this);
     assert(!self.is_invalid());
-    return Derived::_c_not_var(self.to_c_api(), var);
+    return DDFunc(Derived::_c_not_var(self.to_c_api(), var));
   }
 
   /// Get the constant true DD function ⊤
@@ -1244,7 +1250,7 @@ public:
   [[nodiscard]] DDFunc t() const noexcept {
     const Derived &self = *static_cast<const Derived *>(this);
     assert(!self.is_invalid());
-    return Derived::_c_true(self.to_c_api());
+    return DDFunc(Derived::_c_true(self.to_c_api()));
   }
   /// Get the constant false DD function ⊥
   ///
@@ -1256,7 +1262,7 @@ public:
   [[nodiscard]] DDFunc f() const noexcept {
     const Derived &self = *static_cast<const Derived *>(this);
     assert(!self.is_invalid());
-    return Derived::_c_false(self.to_c_api());
+    return DDFunc(Derived::_c_false(self.to_c_api()));
   }
 };
 
@@ -1562,7 +1568,7 @@ public:
   template <std::ranges::input_range R>
     requires(util::pair_like<std::ranges::range_value_t<R>, var_no_t,
                              const function &>)
-  substitution(R &&range)
+  explicit substitution(R &&range)
       : _subst(DDFunc::_c_substitution_new(util::size_hint(range))) {
     for (const auto &[var, replacement] : std::forward<R>(range)) {
       assert(!replacement.is_invalid());
@@ -1623,7 +1629,7 @@ public:
   [[nodiscard]] Derived substitute(const substitution &subst) const noexcept {
     const Derived &self = *static_cast<const Derived *>(this);
     assert(!subst.is_invalid());
-    return Derived::_c_substitute(self.to_c_api(), subst.to_c_api());
+    return Derived(Derived::_c_substitute(self.to_c_api(), subst.to_c_api()));
   }
 };
 
@@ -1641,15 +1647,15 @@ template <class Derived> class boolean_function {
   // functions below (`operator&`, etc.).
   [[nodiscard]] Derived _and(const Derived &rhs) const noexcept {
     const Derived &self = *static_cast<const Derived *>(this);
-    return Derived::_c_and(self.to_c_api(), rhs.to_c_api());
+    return Derived(Derived::_c_and(self.to_c_api(), rhs.to_c_api()));
   }
   [[nodiscard]] Derived _or(const Derived &rhs) const noexcept {
     const Derived &self = *static_cast<const Derived *>(this);
-    return Derived::_c_or(self.to_c_api(), rhs.to_c_api());
+    return Derived(Derived::_c_or(self.to_c_api(), rhs.to_c_api()));
   }
   [[nodiscard]] Derived _xor(const Derived &rhs) const noexcept {
     const Derived &self = *static_cast<const Derived *>(this);
-    return Derived::_c_xor(self.to_c_api(), rhs.to_c_api());
+    return Derived(Derived::_c_xor(self.to_c_api(), rhs.to_c_api()));
   }
 
 public:
@@ -1663,7 +1669,7 @@ public:
   /// @returns  The DD function
   [[nodiscard]] Derived operator~() const noexcept {
     const Derived &self = *static_cast<const Derived *>(this);
-    return Derived::_c_not(self.to_c_api());
+    return Derived(Derived::_c_not(self.to_c_api()));
   }
 
   /// Compute the conjunction `lhs ∧ rhs`
@@ -1760,7 +1766,7 @@ public:
   ///           memory)
   [[nodiscard]] Derived nand(const Derived &rhs) const noexcept {
     const Derived &self = *static_cast<const Derived *>(this);
-    return Derived::_c_nand(self.to_c_api(), rhs.to_c_api());
+    return Derived(Derived::_c_nand(self.to_c_api(), rhs.to_c_api()));
   }
 
   /// Compute the negated disjunction `this ⊽ rhs`
@@ -1773,7 +1779,7 @@ public:
   ///           memory)
   [[nodiscard]] Derived nor(const Derived &rhs) const noexcept {
     const Derived &self = *static_cast<const Derived *>(this);
-    return Derived::_c_nor(self.to_c_api(), rhs.to_c_api());
+    return Derived(Derived::_c_nor(self.to_c_api(), rhs.to_c_api()));
   }
 
   /// Compute the equivalence `this ↔ rhs`
@@ -1786,7 +1792,7 @@ public:
   ///           memory)
   [[nodiscard]] Derived equiv(const Derived &rhs) const noexcept {
     const Derived &self = *static_cast<const Derived *>(this);
-    return Derived::_c_equiv(self.to_c_api(), rhs.to_c_api());
+    return Derived(Derived::_c_equiv(self.to_c_api(), rhs.to_c_api()));
   }
 
   /// Compute the implication `this → rhs` (or `this ≤ rhs`)
@@ -1799,7 +1805,7 @@ public:
   ///           memory)
   [[nodiscard]] Derived imp(const Derived &rhs) const noexcept {
     const Derived &self = *static_cast<const Derived *>(this);
-    return Derived::_c_imp(self.to_c_api(), rhs.to_c_api());
+    return Derived(Derived::_c_imp(self.to_c_api(), rhs.to_c_api()));
   }
 
   /// Compute the strict implication `this < rhs`
@@ -1812,7 +1818,7 @@ public:
   ///           memory)
   [[nodiscard]] Derived imp_strict(const Derived &rhs) const noexcept {
     const Derived &self = *static_cast<const Derived *>(this);
-    return Derived::_c_imp_strict(self.to_c_api(), rhs.to_c_api());
+    return Derived(Derived::_c_imp_strict(self.to_c_api(), rhs.to_c_api()));
   }
 
   /// Compute the conditional “if `this` then `t` else `e`”
@@ -1825,7 +1831,8 @@ public:
   ///           memory)
   [[nodiscard]] Derived ite(const Derived &t, const Derived &e) const noexcept {
     const Derived &self = *static_cast<const Derived *>(this);
-    return Derived::_c_ite(self.to_c_api(), t.to_c_api(), e.to_c_api());
+    return Derived(
+        Derived::_c_ite(self.to_c_api(), t.to_c_api(), e.to_c_api()));
   }
 
   /// @}
@@ -1857,7 +1864,7 @@ public:
   [[nodiscard]] std::pair<Derived, Derived> cofactors() const noexcept {
     const Derived &self = *static_cast<const Derived *>(this);
     const auto p = Derived::_c_cofactors(self.to_c_api());
-    return {p.first, p.second};
+    return {Derived(p.first), Derived(p.second)};
   }
   /// Get the cofactor `f_true` of `f`
   ///
@@ -1872,7 +1879,7 @@ public:
   ///           an invalid function.
   [[nodiscard]] Derived cofactor_true() const noexcept {
     const Derived &self = *static_cast<const Derived *>(this);
-    return Derived::_c_cofactor_true(self.to_c_api());
+    return Derived(Derived::_c_cofactor_true(self.to_c_api()));
   }
   /// Get the cofactor `f_false` of `f`
   ///
@@ -1887,7 +1894,7 @@ public:
   ///           otherwise an invalid function.
   [[nodiscard]] Derived cofactor_false() const noexcept {
     const Derived &self = *static_cast<const Derived *>(this);
-    return Derived::_c_cofactor_false(self.to_c_api());
+    return Derived(Derived::_c_cofactor_false(self.to_c_api()));
   }
 
   /// @}
@@ -1980,7 +1987,7 @@ public:
   ///           `f` is ⊥), ⊥ is returned.
   [[nodiscard]] Derived pick_cube_dd() const noexcept {
     const Derived &self = *static_cast<const Derived *>(this);
-    return Derived::_c_pick_cube_dd(self.to_c_api());
+    return Derived(Derived::_c_pick_cube_dd(self.to_c_api()));
   }
 
   /// Pick a satisfying assignment, represented as DD, using the literals in
@@ -2000,8 +2007,8 @@ public:
   [[nodiscard]] Derived
   pick_cube_dd_set(const Derived &literal_set) const noexcept {
     const Derived &self = *static_cast<const Derived *>(this);
-    return Derived::_c_pick_cube_dd_set(self.to_c_api(),
-                                        literal_set.to_c_api());
+    return Derived(
+        Derived::_c_pick_cube_dd_set(self.to_c_api(), literal_set.to_c_api()));
   }
 
   /// Evaluate this Boolean function with arguments `args`
@@ -2061,7 +2068,7 @@ public:
   ///           memory)
   [[nodiscard]] Derived forall(const Derived &vars) const noexcept {
     const Derived &self = *static_cast<const Derived *>(this);
-    return Derived::_c_forall(self.to_c_api(), vars.to_c_api());
+    return Derived(Derived::_c_forall(self.to_c_api(), vars.to_c_api()));
   }
   /// Compute the existential quantification over `vars`
   ///
@@ -2077,7 +2084,7 @@ public:
   ///           memory)
   [[nodiscard]] Derived exists(const Derived &vars) const noexcept {
     const Derived &self = *static_cast<const Derived *>(this);
-    return Derived::_c_exists(self.to_c_api(), vars.to_c_api());
+    return Derived(Derived::_c_exists(self.to_c_api(), vars.to_c_api()));
   }
   /// Compute the unique quantification over `vars`
   ///
@@ -2100,7 +2107,7 @@ public:
   ///           memory)
   [[nodiscard]] Derived unique(const Derived &vars) const noexcept {
     const Derived &self = *static_cast<const Derived *>(this);
-    return Derived::_c_unique(self.to_c_api(), vars.to_c_api());
+    return Derived(Derived::_c_unique(self.to_c_api(), vars.to_c_api()));
   }
 
   /// Combined application of `op` and `forall()`
@@ -2113,9 +2120,9 @@ public:
                                      const Derived &rhs,
                                      const Derived &vars) const noexcept {
     const Derived &self = *static_cast<const Derived *>(this);
-    return Derived::_c_apply_forall(
+    return Derived(Derived::_c_apply_forall(
         static_cast<capi::oxidd_boolean_operator>(op), self.to_c_api(),
-        rhs.to_c_api(), vars.to_c_api());
+        rhs.to_c_api(), vars.to_c_api()));
   }
 
   /// Combined application of `op` and `exists()`
@@ -2128,9 +2135,9 @@ public:
                                      const Derived &rhs,
                                      const Derived &vars) const noexcept {
     const Derived &self = *static_cast<const Derived *>(this);
-    return Derived::_c_apply_exists(
+    return Derived(Derived::_c_apply_exists(
         static_cast<capi::oxidd_boolean_operator>(op), self.to_c_api(),
-        rhs.to_c_api(), vars.to_c_api());
+        rhs.to_c_api(), vars.to_c_api()));
   }
 
   /// Combined application of `op` and `unique()`
@@ -2143,9 +2150,9 @@ public:
                                      const Derived &rhs,
                                      const Derived &vars) const noexcept {
     const Derived &self = *static_cast<const Derived *>(this);
-    return Derived::_c_apply_unique(
+    return Derived(Derived::_c_apply_unique(
         static_cast<capi::oxidd_boolean_operator>(op), self.to_c_api(),
-        rhs.to_c_api(), vars.to_c_api());
+        rhs.to_c_api(), vars.to_c_api()));
   }
 };
 

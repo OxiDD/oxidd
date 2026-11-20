@@ -11,6 +11,7 @@ Checks:
   - "-misc-include-cleaner"
   - "-misc-multiple-inheritance"
   - "-misc-no-recursion"
+  - "-misc-static-assert" # currently leads to many false positives
   - "readability-*"
   - "-readability-braces-around-statements"
   - "-readability-function-cognitive-complexity"

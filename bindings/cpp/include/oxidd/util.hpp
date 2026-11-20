@@ -58,7 +58,7 @@ namespace util {
 class string {
   capi::oxidd_string_t _str;
 
-  string(capi::oxidd_string_t string) : _str(string) {}
+  explicit string(capi::oxidd_string_t string) : _str(string) {}
 
 public:
   /// Construct a `string` from a C API struct
@@ -74,7 +74,7 @@ public:
   /// @returns  The string object wrapping `c_string`
   [[nodiscard]] static string
   from_c_api(capi::oxidd_string_t c_string) noexcept {
-    return c_string;
+    return string(c_string);
   }
 
   /// Get the wrapped C API struct
@@ -142,7 +142,7 @@ public:
   ///
   /// Note that the returned string view is only valid until this object gets
   /// destructed.
-  [[nodiscard]] constexpr operator std::string_view() const noexcept {
+  [[nodiscard]] constexpr explicit operator std::string_view() const noexcept {
     return {_str.data, _str.len};
   }
 
@@ -160,7 +160,7 @@ public:
 class error {
   capi::oxidd_error_t _error;
 
-  error(capi::oxidd_error_t error) : _error(error) {}
+  explicit error(capi::oxidd_error_t error) : _error(error) {}
 
 public:
   /// Construct an `error` from a C API struct
@@ -175,7 +175,7 @@ public:
   ///
   /// @returns  The error object wrapping `c_error`
   [[nodiscard]] static error from_c_api(capi::oxidd_error_t c_error) noexcept {
-    return c_error;
+    return error(c_error);
   }
 
   /// Get the wrapped C API struct
@@ -247,7 +247,7 @@ public:
     return {_error.msg.data, _error.msg.len};
   }
   /// Conversion to a `std::string_view`, returns the same as `message()`
-  [[nodiscard]] constexpr operator std::string_view() const noexcept {
+  [[nodiscard]] constexpr explicit operator std::string_view() const noexcept {
     return message();
   }
 
@@ -414,12 +414,14 @@ public:
     return {data(), size()};
   }
   /// Conversion operator to `std::span<const opt_bool>`
-  operator std::span<const opt_bool>() const noexcept { return span(); }
+  explicit operator std::span<const opt_bool>() const noexcept {
+    return span();
+  }
 
   /// Copy the data into a `std::vector<opt_bool>`
   [[nodiscard]] std::vector<opt_bool> vec() const { return {begin(), end()}; }
   /// Conversion operator to `std::vector<opt_bool>`
-  operator std::vector<opt_bool>() const { return vec(); }
+  explicit operator std::vector<opt_bool>() const { return vec(); }
 };
 
 /// DDDMP header loaded as the first step of an import process
@@ -852,7 +854,7 @@ namespace num {
 class natural {
   capi::oxidd_natural_t _num;
 
-  natural(capi::oxidd_natural_t num) : _num(num) {}
+  explicit natural(capi::oxidd_natural_t num) : _num(num) {}
 
   static constexpr uint64_t nan_shl = std::numeric_limits<uint64_t>::max();
 
@@ -870,7 +872,7 @@ public:
   /// @returns  The natural object wrapping `c_natural`
   [[nodiscard]] static natural
   from_c_api(capi::oxidd_natural_t c_natural) noexcept {
-    return c_natural;
+    return natural(c_natural);
   }
 
   /// Get the wrapped C API struct

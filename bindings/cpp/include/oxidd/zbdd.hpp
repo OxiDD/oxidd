@@ -77,7 +77,7 @@ class OXIDD_EBO zbdd_manager
 #undef OXIDD_LINK_C
 
   /// Create a new ZBDD manager from a manager instance of the C API
-  zbdd_manager(capi::oxidd_zbdd_manager_t c_manager) noexcept
+  explicit zbdd_manager(capi::oxidd_zbdd_manager_t c_manager) noexcept
       : manager(c_manager) {}
 
 public:
@@ -194,7 +194,7 @@ class OXIDD_EBO zbdd_function
 #undef OXIDD_LINK_C
 
   /// Create a ZBDD function from a function instance of the C API
-  zbdd_function(capi::oxidd_zbdd_t c_function) noexcept
+  explicit zbdd_function(capi::oxidd_zbdd_t c_function) noexcept
       : function(c_function) {}
 
 public:
@@ -208,7 +208,7 @@ public:
   ///
   /// @returns  The DD set (may be invalid if the operation runs out of memory)
   [[nodiscard]] zbdd_function subset0(var_no_t var) const noexcept {
-    return capi::oxidd_zbdd_subset0(_func, var);
+    return zbdd_function(capi::oxidd_zbdd_subset0(_func, var));
   }
   /// Get the subsets of `set` containing `var` with `var` removed afterwards,
   /// formally `{s ∖ {{var}} | s ∈ set ∧ var ∈ s}`
@@ -217,7 +217,7 @@ public:
   ///
   /// @returns  The DD set (may be invalid if the operation runs out of memory)
   [[nodiscard]] zbdd_function subset1(var_no_t var) const noexcept {
-    return capi::oxidd_zbdd_subset1(_func, var);
+    return zbdd_function(capi::oxidd_zbdd_subset1(_func, var));
   }
   /// Swap `subset0` and `subset1` with respect to `var`, formally
   /// `{s ∪ {{var}} | s ∈ set ∧ {var} ∉ s} ∪
@@ -227,7 +227,7 @@ public:
   ///
   /// @returns  The DD set (may be invalid if the operation runs out of memory)
   [[nodiscard]] zbdd_function change(var_no_t var) const noexcept {
-    return capi::oxidd_zbdd_change(_func, var);
+    return zbdd_function(capi::oxidd_zbdd_change(_func, var));
   }
 
   /// Create a new ZBDD node at the level of `this` with the given `hi` and `lo`
@@ -245,23 +245,23 @@ public:
     const capi::oxidd_zbdd_t h = hi._func, l = lo._func;
     hi._func._p = nullptr;
     lo._func._p = nullptr;
-    return capi::oxidd_zbdd_make_node(_func, h, l);
+    return zbdd_function(capi::oxidd_zbdd_make_node(_func, h, l));
   }
   // NOLINTEND(*-moved)
 };
 
 inline zbdd_function zbdd_manager::empty() const noexcept {
   assert(!is_invalid());
-  return capi::oxidd_zbdd_empty(_manager);
+  return zbdd_function(capi::oxidd_zbdd_empty(_manager));
 }
 inline zbdd_function zbdd_manager::base() const noexcept {
   assert(!is_invalid());
-  return capi::oxidd_zbdd_base(_manager);
+  return zbdd_function(capi::oxidd_zbdd_base(_manager));
 }
 
 inline zbdd_function zbdd_manager::singleton(var_no_t var) const noexcept {
   assert(!is_invalid());
-  return capi::oxidd_zbdd_singleton(_manager, var);
+  return zbdd_function(capi::oxidd_zbdd_singleton(_manager, var));
 }
 
 /// @cond

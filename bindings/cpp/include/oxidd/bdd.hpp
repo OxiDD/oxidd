@@ -76,7 +76,7 @@ class OXIDD_EBO bdd_manager
 #undef OXIDD_LINK_C
 
   /// Create a new BDD manager from a manager instance of the C API
-  bdd_manager(capi::oxidd_bdd_manager_t c_manager) noexcept
+  explicit bdd_manager(capi::oxidd_bdd_manager_t c_manager) noexcept
       : manager(c_manager) {}
 
 public:
@@ -181,14 +181,15 @@ class OXIDD_EBO bdd_function
 #undef OXIDD_LINK_C
 
   /// Create a BDD function from a function instance of the C API
-  bdd_function(capi::oxidd_bdd_t c_function) noexcept : function(c_function) {}
+  explicit bdd_function(capi::oxidd_bdd_t c_function) noexcept
+      : function(c_function) {}
 
 public:
   /// Default constructor, yields an invalid BDD function
   bdd_function() noexcept = default;
 };
 
-/// Substituion type for BDDs
+/// Substitution type for BDDs
 ///
 /// @see  `bdd_function::substitute()`, `bridge::substitution`
 using bdd_substitution = bridge::substitution<bdd_function>;

@@ -68,15 +68,19 @@ int main(int argc, char **argv) {
   case 5: // NOLINT(*-magic-numbers)
     // This version accepts a range over pairs of a function and its name
     result = manager.export_dddmp_with_names(
-        path, std::array{std::make_pair(functions[0], "x&y"),
-                         std::make_pair(manager.var(2), "z")});
+        path, std::array{
+                  std::make_pair(functions[0], "x&y"),
+                  std::make_pair(manager.var(2), "z"),
+              });
     break;
   default:
-    result = manager.export_dddmp_with_names(
-        path,
-        std::array{std::make_pair(functions[0], "x&y"),
-                   std::make_pair(manager.var(2), "z")},
-        settings);
+    result =
+        manager.export_dddmp_with_names(path,
+                                        std::array{
+                                            std::make_pair(functions[0], "x&y"),
+                                            std::make_pair(manager.var(2), "z"),
+                                        },
+                                        settings);
   }
 
   if (!result.has_value()) {

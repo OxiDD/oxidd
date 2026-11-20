@@ -77,7 +77,7 @@ class OXIDD_EBO bcdd_manager
 #undef OXIDD_LINK_C
 
   /// Create a new BCDD manager from a manager instance of the C API
-  bcdd_manager(capi::oxidd_bcdd_manager_t c_manager) noexcept
+  explicit bcdd_manager(capi::oxidd_bcdd_manager_t c_manager) noexcept
       : manager(c_manager) {}
 
 public:
@@ -183,7 +183,7 @@ class OXIDD_EBO bcdd_function
 #undef OXIDD_LINK_C
 
   /// Create a BCDD function from a function instance of the C API
-  bcdd_function(capi::oxidd_bcdd_t c_function) noexcept
+  explicit bcdd_function(capi::oxidd_bcdd_t c_function) noexcept
       : function(c_function) {}
 
 public:
@@ -191,7 +191,7 @@ public:
   bcdd_function() noexcept = default;
 };
 
-/// Substituion type for BCDDs
+/// Substitution type for BCDDs
 ///
 /// @see  `bcdd_function::substitute()`, `bridge::substitution`
 using bcdd_substitution = bridge::substitution<bcdd_function>;

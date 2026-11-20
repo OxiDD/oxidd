@@ -33,7 +33,7 @@ namespace {
 
 using explicit_b_func = uint32_t;
 
-namespace my_enumerate {
+namespace unsigned_enumerate {
 
 template <class V>
 concept enumerable_view =
@@ -52,11 +52,7 @@ public:
   constexpr enumerate_view()
     requires std::default_initializable<V>
   = default;
-  // clang-format off
-  // Ubuntu 24.04. has clang-format 18.1.3, which wants to remove the space
-  // before `{}`. clang-format 18.1.8, however, wants the space.
   constexpr explicit enumerate_view(V base) : _base(std::move(base)) {};
-  // clang-format on
 
   [[nodiscard]] constexpr iterator begin() const {
     return iterator(std::ranges::begin(_base), 0);
@@ -75,11 +71,11 @@ public:
   using iterator_category = std::input_iterator_tag;
   using iterator_concept = std::forward_iterator_tag;
   using difference_type = std::ranges::range_difference_t<V>;
-  using value_type = std::tuple<difference_type, std::ranges::range_value_t<V>>;
+  using value_type = std::pair<std::size_t, std::ranges::range_value_t<V>>;
 
 private:
   std::ranges::iterator_t<V> _current = std::ranges::iterator_t<V>();
-  difference_type _pos = 0;
+  std::size_t _pos = 0;
 
   constexpr explicit iterator(std::ranges::iterator_t<V> current,
                               difference_type pos)
@@ -91,8 +87,8 @@ public:
   = default;
 
   constexpr auto operator*() const {
-    return std::tuple<difference_type, std::ranges::range_reference_t<V>>(
-        _pos, *_current);
+    return std::pair<std::size_t, std::ranges::range_reference_t<V>>(_pos,
+                                                                     *_current);
   }
 
   constexpr iterator &operator++() {
@@ -121,11 +117,9 @@ auto enumerate(R &&base) {
   return enumerate_view(std::forward<R>(base));
 }
 
-} // namespace my_enumerate
+} // namespace unsigned_enumerate
 
-// TODO: replace this by `using std::views::enumerate` once enumerate is
-// available in libc++ and the respective libc++ version is included in macOS
-using my_enumerate::enumerate;
+using unsigned_enumerate::enumerate;
 
 /// C++ translation `TestAllBooleanFunctions` form
 /// `crates/oxidd/tests/boolean_function.rs`
@@ -147,7 +141,7 @@ public:
   /// given variable set. `vars` are the Boolean functions representing the
   /// variables identified by `var_handles`. For BDDs, the two coincide, but
   /// not for ZBDDs.
-  test_all_boolean_functions(M mgr)
+  explicit test_all_boolean_functions(M mgr)
       : _mgr(std::move(mgr)), _nvars(_mgr.num_vars()) {
     const var_no_t nvars = _nvars;
     assert(std::bit_width(
@@ -157,8 +151,8 @@ public:
     // actually, only 2 are possible in a feasible amount of time (with
     // substitution)
 
-    const unsigned num_assignments = 1 << nvars;
-    const explicit_b_func num_functions = 1 << num_assignments;
+    const unsigned num_assignments = 1U << nvars;
+    const explicit_b_func num_functions = 1U << num_assignments;
     _boolean_functions.reserve(num_functions);
     _dd_to_boolean_func.reserve(num_functions);
 
@@ -173,13 +167,13 @@ public:
       typename M::function f = _mgr.f();
       for (unsigned assignment = 0; assignment < num_assignments;
            ++assignment) {
-        if ((explicit_f & (1 << assignment)) == 0)
+        if ((explicit_f & (1U << assignment)) == 0)
           continue; // not part of the on-set
         typename M::function cube = _mgr.t();
 
         for (unsigned var = 0; var < nvars; ++var) {
           typename M::function v = _mgr.var(var);
-          if ((assignment & (1 << var)) == 0)
+          if ((assignment & (1U << var)) == 0)
             v = ~v;
           cube &= v;
           assert(!cube.is_invalid());
@@ -192,9 +186,9 @@ public:
       // check that evaluating the function yields the desired values
       for (unsigned assignment = 0; assignment < num_assignments;
            ++assignment) {
-        const bool expected = (explicit_f & (1 << assignment)) != 0;
+        const bool expected = (explicit_f & (1U << assignment)) != 0;
         for (var_no_t var = 0; var < nvars; ++var)
-          args[var].second = (assignment & (1 << var)) != 0;
+          args[var].second = (assignment & (1U << var)) != 0;
         const bool actual = f.eval(args);
         assert(actual == expected);
         assert(f.sat_count_double(nvars) == std::popcount(explicit_f));
@@ -211,7 +205,7 @@ public:
     for (var_no_t i = 0; i < nvars; ++i) {
       explicit_b_func f = 0;
       for (unsigned assignment = 0; assignment < num_assignments; ++assignment)
-        f |= explicit_b_func{(assignment >> i) & 1} << assignment;
+        f |= explicit_b_func{(assignment >> i) & 1U} << assignment;
       _var_functions.push_back(f);
     }
   }
@@ -221,11 +215,11 @@ private:
                                            unsigned negative) const {
     assert((positive & negative) == 0);
 
-    explicit_b_func cube = (1 << (1 << _nvars)) - 1; // ⊤
+    explicit_b_func cube = (1U << (1U << _nvars)) - 1; // ⊤
     for (const auto [i, var] : enumerate(_var_functions)) {
-      if (((positive >> i) & 1) != 0) {
+      if (((positive >> i) & 1U) != 0) {
         cube &= var;
-      } else if (((negative >> i) & 1) != 0) {
+      } else if (((negative >> i) & 1U) != 0) {
         cube &= ~var;
       }
     }
@@ -236,8 +230,9 @@ private:
 public:
   /// Test basic operations on all Boolean functions
   void basic() const {
-    const unsigned num_assignments = 1 << _nvars;
-    const explicit_b_func num_functions = 1 << num_assignments;
+    const unsigned num_assignments = 1U << _nvars;
+    const explicit_b_func num_functions = 1U << num_assignments;
+    assert(num_functions == _boolean_functions.size());
     const explicit_b_func func_mask = num_functions - 1;
 
     // false & true
@@ -372,8 +367,9 @@ public:
             if ((pos & neg) != 0)
               continue;
 
-            const explicit_b_func actual = _dd_to_boolean_func.at(
-                f.pick_cube_dd_set(_boolean_functions[_make_cube(pos, neg)]));
+            const explicit_b_func actual =
+                _dd_to_boolean_func.at(f.pick_cube_dd_set(
+                    _boolean_functions.at(_make_cube(pos, neg))));
 
             if (f_explicit == 0) {
               assert(actual == 0);
@@ -381,20 +377,20 @@ public:
               assert((actual & !f_explicit) == 0);
 
               for (const auto &[var, var_func] : enumerate(_var_functions)) {
-                if ((actual & var_func) >> (1 << var) == (actual & ~var_func))
+                if ((actual & var_func) >> (1U << var) == (actual & ~var_func))
                   continue; // var is don't care
                 explicit_b_func flipped = 0;
                 if ((actual & var_func) == 0) { // selected to be false
-                  if ((pos & (1 << var)) == 0)
+                  if ((pos & (1U << var)) == 0)
                     continue; // was not requested to be true
-                  flipped = actual << (1 << var);
+                  flipped = actual << (1U << var);
                 } else {
                   assert((actual & ~var_func) == 0 &&
                          "not a conjunction of literals");
                   // selected to be false
-                  if ((neg & (1 << var)) == 0)
+                  if ((neg & (1U << var)) == 0)
                     continue; // was not requested to be true
-                  flipped = actual >> (1 << var);
+                  flipped = actual >> (1U << var);
                 }
 
                 // If the variable was selected to be the opposite of the
@@ -424,7 +420,7 @@ private:
         _subst_rec(replacements, current_var + 1);
       }
     } else {
-      const unsigned num_assignments = 1 << _nvars;
+      const unsigned num_assignments = 1U << _nvars;
 
       const typename M::function::substitution subst(
           enumerate(replacements) | std::views::filter([](const auto p) {
@@ -450,10 +446,10 @@ private:
                       :
                       // `var` is set in `assignment`?
                      assignment >> var) &
-                1;
+                1U;
             mapped_assignment |= val << var;
           }
-          expected |= ((f_explicit >> mapped_assignment) & 1) << assignment;
+          expected |= ((f_explicit >> mapped_assignment) & 1U) << assignment;
         }
 
         const explicit_b_func actual =
@@ -476,8 +472,8 @@ public:
   void quant() const
     requires(boolean_function_quant<typename M::function>)
   {
-    const unsigned num_assignments = 1 << _nvars;
-    const explicit_b_func num_functions = 1 << num_assignments;
+    const unsigned num_assignments = 1U << _nvars;
+    const explicit_b_func num_functions = 1U << num_assignments;
     const explicit_b_func func_mask = num_functions - 1;
 
     // TODO: restrict (once we have it in the C/C++ API)
@@ -487,7 +483,7 @@ public:
     for (unsigned var_set = 0; var_set < num_assignments; ++var_set) {
       explicit_b_func explicit_var_set = func_mask;
       for (const auto &[i, var] : enumerate(_var_functions)) {
-        if ((var_set & (1 << i)) != 0)
+        if ((var_set & (1U << i)) != 0)
           explicit_var_set &= var;
       }
       const typename M::function dd_var_set =
@@ -497,21 +493,21 @@ public:
       for (const auto &[assignment, mask] : enumerate(assignment_to_mask)) {
         explicit_b_func tmp = func_mask;
         for (const auto [i, func] : enumerate(_var_functions)) {
-          if (((var_set >> i) & 1) != 0)
+          if (((var_set >> i) & 1U) != 0)
             continue;
-          const explicit_b_func f = _var_functions[i];
-          tmp &= ((assignment >> i) & 1) != 0 ? f : ~f;
+          tmp &= ((assignment >> i) & 1U) != 0 ? func : ~func;
         }
         mask = tmp;
       }
 
-      for (const auto &[f_explicit, f] : enumerate(_boolean_functions)) {
+      for (const auto &[i, f] : enumerate(_boolean_functions)) {
+        const explicit_b_func f_explicit = i;
         explicit_b_func exists_expected = 0, forall_expected = 0,
                         unique_expected = 0;
         for (unsigned assignment = 0; assignment < num_assignments;
              ++assignment) {
           const explicit_b_func mask = assignment_to_mask[assignment];
-          const explicit_b_func bit = 1 << assignment;
+          const explicit_b_func bit = 1U << assignment;
 
           // or of all bits under mask
           if ((f_explicit & mask) != 0)
@@ -520,7 +516,8 @@ public:
           if ((f_explicit & mask) == mask)
             forall_expected |= bit;
           // xor of all bits under mask
-          if ((std::popcount(explicit_b_func(f_explicit) & mask) & 1) != 0)
+          if ((static_cast<unsigned>(std::popcount(f_explicit & mask)) & 1U) !=
+              0)
             unique_expected |= bit;
         }
 
@@ -537,11 +534,16 @@ public:
         assert(unique_actual == unique_expected);
 
         for (const auto &g : _boolean_functions) {
-          for (const boolean_operator op :
-               {boolean_operator::AND, boolean_operator::OR,
-                boolean_operator::XOR, boolean_operator::EQUIV,
-                boolean_operator::NAND, boolean_operator::NOR,
-                boolean_operator::IMP, boolean_operator::IMP_STRICT}) {
+          for (const boolean_operator op : {
+                   boolean_operator::AND,
+                   boolean_operator::OR,
+                   boolean_operator::XOR,
+                   boolean_operator::EQUIV,
+                   boolean_operator::NAND,
+                   boolean_operator::NOR,
+                   boolean_operator::IMP,
+                   boolean_operator::IMP_STRICT,
+               }) {
             typename M::function inner;
             switch (op) {
             case boolean_operator::AND:
@@ -648,7 +650,7 @@ private:
 
 public:
   var_name_iter() { _update_string(); };
-  var_name_iter(unsigned start) : _i(start) { _update_string(); };
+  explicit var_name_iter(unsigned start) : _i(start) { _update_string(); };
 
   std::string_view operator*() const { return _current.view(); }
 
@@ -753,9 +755,9 @@ void test_all_boolean_functions_2vars_t1() {
   assert(!mgr.is_invalid());
   assert(mgr.gc_count() == 0);
 
-  assert(mgr.run_in_worker_pool([]() { return 42; }) == 42);
-  assert(mgr.run_in_worker_pool([&mgr]() { return mgr; }) == mgr);
-  assert(mgr.run_in_worker_pool([&mgr]() { return &mgr; }) == &mgr);
+  assert(mgr.run_in_worker_pool([] { return 42; }) == 42);
+  assert(mgr.run_in_worker_pool([&mgr] { return mgr; }) == mgr);
+  assert(mgr.run_in_worker_pool([&mgr] { return &mgr; }) == &mgr);
 
   assert(mgr.run_in_worker_pool([]() noexcept { return 42; }) == 42);
   assert(mgr.run_in_worker_pool([&mgr]() noexcept { return mgr; }) == mgr);
@@ -766,7 +768,8 @@ void test_all_boolean_functions_2vars_t1() {
     constexpr int expected = 1337;
     int got = 0;
     try {
-      mgr.run_in_worker_pool([]() { throw int{expected}; });
+      // NOLINTNEXTLINE(bugprone-std-exception-baseclass)
+      mgr.run_in_worker_pool([] { throw int{expected}; });
     } catch (int i) {
       got = i;
     }
@@ -774,7 +777,7 @@ void test_all_boolean_functions_2vars_t1() {
   }
 #endif // __cpp_exceptions
 
-  mgr.run_in_worker_pool([&mgr]() {
+  mgr.run_in_worker_pool([&mgr] {
     const var_no_range_t added_vars =
         mgr.add_named_vars(std::array{"a", "b"}).value();
     assert(*added_vars.begin() == 0);

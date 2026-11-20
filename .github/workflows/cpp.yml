@@ -62,7 +62,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          version: 20
+          version: 22
           ignore: "|!bindings/cpp"
           database: "build/compile_commands.json"
           style: "file" # Use .clang-format config file

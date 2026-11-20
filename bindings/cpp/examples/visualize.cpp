@@ -49,8 +49,10 @@ int main(int argc, char **argv) {
   default:
     // This version accepts a range over pairs of a function and its name
     result = manager.visualize_with_names(
-        "foo", std::array{std::make_pair(functions[0], "x & y"),
-                          std::make_pair(manager.var(2), "z")});
+        "foo", std::array{
+                   std::make_pair(functions[0], "x & y"),
+                   std::make_pair(manager.var(2), "z"),
+               });
   }
 
   if (!result.has_value()) {
